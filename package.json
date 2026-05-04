@@ -1,0 +1,18 @@
+{
+  "name": "soma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "soma": "src/cli.js"
+  },
+  "scripts": {
+    "cli": "node src/cli.js",
+    "desktop-broker:build": "cargo build -p soma-desktop-broker",
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

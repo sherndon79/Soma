@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "modules": [
+    {
+      "id": "soma.module.pause-local-chat",
+      "name": "Pause Local Chat",
+      "version": "0.1.0",
+      "summary": "Temporarily disables local model chat.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": ["model.local.chat"]
+      }
+    },
+    {
+      "id": "soma.module.local-only",
+      "name": "Local Only",
+      "version": "0.1.0",
+      "summary": "Keeps model routing and network tool posture local-only.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": [
+          "model.remote.chat",
+          "model.remote.tool_calls",
+          "tool.network.call"
+        ]
+      }
+    },
+    {
+      "id": "soma.module.no-session-memory",
+      "name": "No Session Memory",
+      "version": "0.1.0",
+      "summary": "Disables ephemeral session-memory reads and writes.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": [
+          "memory.session.read",
+          "memory.session.write"
+        ]
+      }
+    },
+    {
+      "id": "soma.module.no-cognitive-load-stewardship",
+      "name": "No Cognitive Load Stewardship",
+      "version": "0.1.0",
+      "summary": "Disables text-only cognitive-load stewardship assessments.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": [
+          "stewardship.cognitive_load.assess"
+        ]
+      }
+    },
+    {
+      "id": "soma.module.no-file-read",
+      "name": "No File Read",
+      "version": "0.1.0",
+      "summary": "Disables read-only file access within granted scopes.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": [
+          "tool.files.read"
+        ]
+      }
+    },
+    {
+      "id": "soma.module.no-desktop-inspection",
+      "name": "No Desktop Inspection",
+      "version": "0.1.0",
+      "summary": "Disables read-only desktop accessibility inspection.",
+      "approval_state": "approved",
+      "promotion_state": "experimental",
+      "adoption": {
+        "impact_scope": "self",
+        "capability_effect": "narrowing",
+        "adoption_policy": "self_apply",
+        "revert_behavior": "drop_module"
+      },
+      "overlay": {
+        "disabled_capabilities": [
+          "desktop.inspect.accessibility_tree"
+        ]
+      }
+    }
+  ]
+}

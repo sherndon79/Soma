@@ -1,0 +1,5 @@
+[workspace]
+members = [
+  "crates/soma-desktop-broker"
+]
+resolver = "2"

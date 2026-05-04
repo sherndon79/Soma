@@ -1,0 +1,7 @@
+node_modules/
+models/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+target/

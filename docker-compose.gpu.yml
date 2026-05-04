@@ -1,0 +1,58 @@
+# GPU model runtime for Soma MVP testing.
+#
+# Usage:
+#   docker compose -f docker-compose.gpu.yml up gemma4-llm
+#
+# Requires:
+#   - NVIDIA GPU with CUDA support
+#   - nvidia-container-toolkit installed
+#
+# Optional overrides:
+#   - VLLM_IMAGE: pin/override inference image
+#   - LLM_MODEL: model id
+#   - LLM_PORT: host port, default 8000
+#   - VLLM_MAX_MODEL_LEN: context length, default 4096
+#   - VLLM_GPU_MEMORY_UTILIZATION: default 0.50
+#   - VLLM_MAX_CONCURRENCY: default 4
+#   - VLLM_TOOL_CALL_PARSER: default gemma4
+#   - VLLM_EXTRA_ARGS: append additional vLLM flags
+
+services:
+  gemma4-llm:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:gemma4-cu130}
+    container_name: soma-gemma4-llm
+    command: >-
+      --model ${LLM_MODEL:-ciocan/gemma-4-E4B-it-W4A16}
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-4096}
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.50}
+      --max-num-seqs ${VLLM_MAX_CONCURRENCY:-4}
+      --enable-auto-tool-choice
+      --tool-call-parser ${VLLM_TOOL_CALL_PARSER:-gemma4}
+      --trust-remote-code
+      --quantization gptq_marlin
+      ${VLLM_EXTRA_ARGS:-}
+      --enforce-eager
+    environment:
+      - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - HF_HOME=/models/cache
+      - HF_TOKEN=${HF_TOKEN:-}
+    ports:
+      - "${LLM_PORT:-8000}:8000"
+    volumes:
+      - ./models:/models/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 120s
+      retries: 12

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "default_profile": "gemma4-local",
+  "profiles": [
+    {
+      "id": "gemma4-local",
+      "name": "Gemma 4 Local",
+      "route": "local",
+      "endpoint": "http://127.0.0.1:8000",
+      "model": "ciocan/gemma-4-E4B-it-W4A16",
+      "max_context_tokens": 4096,
+      "tool_calls_supported": true,
+      "tool_calls_enabled": false,
+      "remote_service": false,
+      "allowed_data_classes": ["submitted_text"],
+      "description": "Local Gemma 4 model served by vLLM through an OpenAI-compatible API."
+    }
+  ]
+}

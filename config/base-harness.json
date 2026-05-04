@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "harness_id": "soma.base",
+  "name": "Soma Base Harness",
+  "mode": "local_text",
+  "capabilities": [
+    {
+      "key": "model.local.chat",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Send chat prompts to the configured local model runtime."
+    },
+    {
+      "key": "model.local.tool_calls",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Allow the local model to plan tool calls."
+    },
+    {
+      "key": "model.remote.chat",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Send prompts to a remote model provider."
+    },
+    {
+      "key": "memory.durable.write",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Persist durable memory beyond the current session."
+    },
+    {
+      "key": "memory.session.read",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Read ephemeral in-process session memory."
+    },
+    {
+      "key": "memory.session.write",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Write ephemeral in-process session memory."
+    },
+    {
+      "key": "provenance.read",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Read the in-process provenance log."
+    },
+    {
+      "key": "provenance.clear",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Clear the in-process provenance log."
+    },
+    {
+      "key": "stewardship.cognitive_load.assess",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Assess submitted text for non-diagnostic cognitive-load stewardship signals."
+    },
+    {
+      "key": "desktop.inspect.accessibility_tree",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Inspect desktop accessibility environment and, later, bounded AT-SPI trees without actuation."
+    },
+    {
+      "key": "tool.files.read",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Read text files within granted read scopes."
+    },
+    {
+      "key": "tool.files.write",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Write files within a granted scope."
+    },
+    {
+      "key": "tool.shell.run",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Run shell commands on the host."
+    },
+    {
+      "key": "perception.camera",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect camera or video input."
+    },
+    {
+      "key": "perception.microphone",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect microphone input."
+    },
+    {
+      "key": "perception.screen",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect screen or application state."
+    }
+  ],
+  "disclosure": {
+    "remote_services_used": false,
+    "memory_writes_enabled": false,
+    "perception_mode": "submitted_text_only"
+  },
+  "filesystem": {
+    "read_roots": ["."],
+    "max_read_bytes": 256000
+  }
+}

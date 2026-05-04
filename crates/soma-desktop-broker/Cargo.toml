@@ -1,0 +1,9 @@
+[package]
+name = "soma-desktop-broker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "soma-desktop-broker"
+path = "src/main.rs"

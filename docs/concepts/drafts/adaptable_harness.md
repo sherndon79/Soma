@@ -134,11 +134,18 @@ capability and provide a reason, scope, risk summary, data exposure, and fallbac
 must notify the user and wait for approval before any widening can occur. See
 [Capability Proposals](./capability_proposals.md).
 
+Extension should keep capability semantics separate from executable providers. A provider or plugin
+may advertise support for a known capability, but only the harness can grant authority under an
+explicit scope and constraints. See
+[Capability Catalog and Providers](./capability_catalog_and_providers.md).
+
 ## First Implementation Slice
 
 An early Soma slice could implement:
 
 - a static base harness manifest
+- a separate capability catalog
+- a provider registry
 - active mode disclosure
 - a local module registry in files or SQLite
 - self-apply narrowing modules

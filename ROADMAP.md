@@ -68,6 +68,8 @@ Constraints:
 
 ## Near-Term
 
+- Split the static base harness vocabulary into a capability catalog, provider registry, and grant
+  design before implementing activation.
 - Add proposal notification surfacing and show/revocation records without activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.

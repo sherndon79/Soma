@@ -216,6 +216,10 @@ network calls, or model-defined capabilities.
 The harness should reject proposals for unknown capabilities unless the proposal is being stored
 only as an unimplemented request for future design review.
 
+Known capability semantics should come from the capability catalog, not from a provider or model.
+Provider installation should never imply activation. See
+[Capability Catalog and Providers](./capability_catalog_and_providers.md).
+
 ## Phased Implementation
 
 Phase 1:

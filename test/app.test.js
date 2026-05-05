@@ -496,6 +496,7 @@ test("desktop accessibility inspection scaffold returns environment metadata and
   assert.equal(response.body.entries[0].id, provenanceId);
   assert.equal(response.body.entries[0].capability, "desktop.inspect.accessibility_tree");
   assert.equal(response.body.entries[0].broker_source, brokerSource);
+  assert.equal(response.body.entries[0].inspection_mode, "read_only_environment_probe");
   assert.equal(response.body.entries[0].tree_available, false);
 });
 
@@ -514,6 +515,70 @@ JSON
   assert.equal(inspection.broker_source, "rust_helper");
   assert.equal(inspection.platform, "linux");
   assert.equal(inspection.atspi_likely_available, true);
+});
+
+test("desktop broker asks rust helper for AT-SPI probe when requested", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-atspi-helper-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+if [ "$1" = "inspect-atspi" ]; then
+  printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+else
+  printf '%s\\n' '{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{},"commands":{},"tree":null,"tree_available":false}'
+fi
+`, "utf8");
+  await chmod(helperPath, 0o755);
+
+  const inspection = await inspectDesktopBrokerEnvironment({ helperPath, mode: "atspi" });
+
+  assert.equal(inspection.mode, "read_only_atspi_probe");
+  assert.equal(inspection.broker_source, "rust_helper");
+  assert.equal(inspection.application_count, 1);
+  assert.equal(inspection.tree_available, true);
+  assert.equal(inspection.tree.applications[0].process, "test-app");
+});
+
+test("desktop accessibility inspection can request bounded AT-SPI metadata", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-atspi-endpoint-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false},{"service":"org.a11y.atspi.Registry","pid":111,"process":"at-spi2-registryd","registry":true}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const handler = makeHandler({ harness: allowedHarness });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: { mode: "atspi" },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.inspection.mode, "read_only_atspi_probe");
+    assert.equal(response.body.inspection.application_count, 2);
+    assert.equal(response.body.inspection.tree.text_content_included, false);
+    const provenanceId = response.body.provenance_id;
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries[0].id, provenanceId);
+    assert.equal(response.body.entries[0].inspection_mode, "read_only_atspi_probe");
+    assert.equal(response.body.entries[0].application_count, 2);
+    assert.equal(response.body.entries[0].window_count, 0);
+    assert.equal(response.body.entries[0].tree_available, true);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
 });
 
 test("self-applied module disables desktop inspection", async () => {

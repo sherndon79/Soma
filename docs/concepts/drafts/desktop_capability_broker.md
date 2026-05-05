@@ -263,20 +263,26 @@ This validates the broker without crossing into irreversible or high-exposure be
 Current scaffold:
 
 - `desktop.inspect.accessibility_tree` is present in the base harness
-- `POST /desktop/inspect/accessibility-tree` returns environment metadata only
+- `POST /desktop/inspect/accessibility-tree` returns environment metadata by default
+- `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for a bounded
+  read-only AT-SPI probe
 - `soma desktop inspect --json` calls the endpoint
+- `soma desktop inspect --mode atspi --json` asks for AT-SPI bus participant metadata
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
-- `crates/soma-desktop-broker` contains a Rust environment-probe helper scaffold
+- `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper
+  commands
 - Node uses `./target/debug/soma-desktop-broker` when present, or `SOMA_DESKTOP_BROKER` when set
-- no actual AT-SPI tree traversal has been implemented yet
+- no screenshots, text extraction, pointer control, keyboard control, or model-driven desktop
+  actions are implemented
+- no actual AT-SPI accessibility object traversal has been implemented yet
 
 Likely next implementation shape:
 
 - keep the Node endpoint and capability vocabulary
 - compile and use the Rust `soma-desktop-broker` helper
-- call the helper over stdio or a Unix socket
-- return a bounded JSON accessibility tree
+- keep using one-shot stdio until the broker needs long-lived state
+- return a bounded JSON accessibility tree from the AT-SPI object graph
 - keep actuation out of scope
 
 ## Research Findings
@@ -303,6 +309,13 @@ Decision:
 AT-SPI / D-Bus should be Soma's first semantic desktop inspection path on Linux. It gives object
 roles, labels, states, text interfaces, and actions without requiring screenshots or raw pointer
 control.
+
+Implementation note:
+
+The first Soma AT-SPI command does not traverse the object graph yet. It uses the session bus
+`org.a11y.Bus` pointer to locate the separate AT-SPI bus, then lists bounded AT-SPI bus
+participants through `busctl`. This verifies the helper boundary, policy gate, provenance path,
+and failure behavior before adding object traversal.
 
 ### Accessibility Automation References
 

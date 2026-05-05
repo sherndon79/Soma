@@ -12,21 +12,42 @@ const DEFAULT_HELPER_PATH = fileURLToPath(
 );
 
 export async function inspectDesktopBrokerEnvironment({
+  mode = "environment",
   env = process.env,
   helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
 } = {}) {
-  const helperInspection = await inspectWithRustHelper(helperPath);
+  const normalizedMode = normalizeInspectionMode(mode);
+  const helperInspection = await inspectWithRustHelper(helperPath, normalizedMode);
   if (helperInspection) {
     return helperInspection;
   }
-  return inspectDesktopBrokerEnvironmentFallback({ env });
+  return inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode });
 }
 
-export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env } = {}) {
+export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env, mode = "environment" } = {}) {
   const commands = await detectCommands(["gdbus", "busctl", "qdbus", "wtype", "ydotool"], env);
   const sessionBusAvailable = Boolean(env.DBUS_SESSION_BUS_ADDRESS);
   const desktopSession = env.XDG_CURRENT_DESKTOP ?? "";
   const sessionType = env.XDG_SESSION_TYPE ?? "";
+
+  if (mode === "atspi") {
+    return {
+      mode: "read_only_atspi_probe",
+      broker_source: "javascript_fallback",
+      platform: process.platform,
+      release: os.release(),
+      desktop_session: desktopSession,
+      session_type: sessionType,
+      dbus_session_bus_available: sessionBusAvailable,
+      atspi_likely_available: sessionBusAvailable && (Boolean(env.DISPLAY) || Boolean(env.WAYLAND_DISPLAY)),
+      atspi_bus_address_available: false,
+      application_count: 0,
+      window_count: 0,
+      tree: null,
+      tree_available: false,
+      unavailable_reason: "rust_helper_unavailable",
+    };
+  }
 
   return {
     mode: "read_only_environment_probe",
@@ -52,13 +73,14 @@ export async function inspectDesktopBrokerEnvironmentFallback({ env = process.en
   };
 }
 
-async function inspectWithRustHelper(helperPath) {
+async function inspectWithRustHelper(helperPath, mode) {
   if (!helperPath || !(await isExecutable(helperPath))) {
     return null;
   }
 
   try {
-    const { stdout } = await execFileAsync(helperPath, ["inspect-environment"], {
+    const command = mode === "atspi" ? "inspect-atspi" : "inspect-environment";
+    const { stdout } = await execFileAsync(helperPath, [command], {
       timeout: 2000,
       maxBuffer: 256_000,
     });
@@ -70,6 +92,10 @@ async function inspectWithRustHelper(helperPath) {
   } catch {
     return null;
   }
+}
+
+function normalizeInspectionMode(mode) {
+  return mode === "atspi" ? "atspi" : "environment";
 }
 
 async function isExecutable(candidatePath) {

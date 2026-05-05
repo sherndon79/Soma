@@ -135,7 +135,7 @@ test("runCli files read sends expected request body", async () => {
 test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
   let captured;
 
-  await runCli(parseCli(["node", "soma", "desktop", "inspect"]), {
+  await runCli(parseCli(["node", "soma", "desktop", "inspect", "--mode", "atspi"]), {
     stdout: { write() {} },
     request: async (_baseUrl, method, requestPath, body) => {
       captured = { method, requestPath, body };
@@ -145,5 +145,5 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
 
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/desktop/inspect/accessibility-tree");
-  assert.deepEqual(captured.body, {});
+  assert.deepEqual(captured.body, { mode: "atspi" });
 });

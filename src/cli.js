@@ -145,7 +145,9 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "desktop" && subcommand === "inspect") {
-    writeOutput(stdout, await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {}), jsonOutput);
+    writeOutput(stdout, await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {
+      mode: flags.mode,
+    }), jsonOutput);
     return 0;
   }
 
@@ -257,7 +259,7 @@ Usage:
   soma modules list|adopt|drop [module-id] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
-  soma desktop inspect [--json]
+  soma desktop inspect [--mode environment|atspi] [--json]
   soma provenance summary|list|clear [--allowed true|false] [--capability key] [--event-type type] [--limit n] [--json]
   soma stewardship assess "text" [--json]
 

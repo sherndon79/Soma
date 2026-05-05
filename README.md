@@ -50,6 +50,7 @@ also present for the future nervous-system boundary:
 ```bash
 npm run desktop-broker:build
 ./target/debug/soma-desktop-broker inspect-environment
+./target/debug/soma-desktop-broker inspect-atspi
 ```
 
 When `./target/debug/soma-desktop-broker` exists, Soma uses it for desktop inspection. Override
@@ -68,6 +69,7 @@ npm run cli -- modules adopt soma.module.no-session-memory
 npm run cli -- memory add "Session note" --role note
 npm run cli -- files read README.md
 npm run cli -- desktop inspect
+npm run cli -- desktop inspect --mode atspi --json
 npm run cli -- provenance summary
 npm run cli -- stewardship assess "I feel overwhelmed and need a break"
 ```

@@ -222,7 +222,8 @@ export function createRequestHandler({
 
       if (req.method === "POST" && url.pathname === "/desktop/inspect/accessibility-tree") {
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
-        const inspection = await inspectDesktopBrokerEnvironment();
+        const body = await readJson(req);
+        const inspection = await inspectDesktopBrokerEnvironment({ mode: body.mode });
         const event = provenanceLog.append(createDesktopInspectionEvent({
           inspection,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -459,8 +460,11 @@ function createDesktopInspectionEvent({ inspection, caller }) {
     desktop_session: inspection.desktop_session,
     session_type: inspection.session_type,
     broker_source: inspection.broker_source,
+    inspection_mode: inspection.mode,
     dbus_session_bus_available: inspection.dbus_session_bus_available,
     atspi_likely_available: inspection.atspi_likely_available,
+    application_count: inspection.application_count ?? null,
+    window_count: inspection.window_count ?? null,
     tree_available: inspection.tree_available,
     memory_written: false,
     remote_service_used: false,

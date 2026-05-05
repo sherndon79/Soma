@@ -65,7 +65,8 @@ Constraints:
 ## Near-Term
 
 - Define the broker JSON schema for desktop inspection results.
-- Add bounded AT-SPI accessibility-tree traversal.
+- Expand bounded AT-SPI inspection from bus participant metadata into accessibility object
+  traversal.
 - Add capability keys for finer desktop inspection:
   - `desktop.inspect.applications`
   - `desktop.inspect.windows`

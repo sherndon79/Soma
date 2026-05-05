@@ -205,11 +205,12 @@ root, and byte count, but does not duplicate file content.
 
 ### `POST /desktop/inspect/accessibility-tree`
 
-Returns read-only desktop broker environment metadata when
-`desktop.inspect.accessibility_tree` is allowed.
+Returns read-only desktop broker metadata when `desktop.inspect.accessibility_tree` is allowed.
 
-The current scaffold does not traverse the AT-SPI tree yet. It reports platform, session, D-Bus,
-display, and candidate adapter availability, then records provenance.
+By default the endpoint reports platform, session, D-Bus, display, and candidate adapter
+availability. With `{ "mode": "atspi" }`, it asks the Rust helper for a bounded AT-SPI probe that
+lists bus participant metadata when available. The current scaffold does not traverse the AT-SPI
+object tree yet and does not extract text content, take screenshots, or perform actuation.
 
 ## Initial Capability Vocabulary
 

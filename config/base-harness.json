@@ -62,7 +62,25 @@
       "key": "desktop.inspect.accessibility_tree",
       "status": "allowed",
       "revocable": true,
-      "description": "Inspect desktop accessibility environment and, later, bounded AT-SPI trees without actuation."
+      "description": "Inspect bounded desktop accessibility environment, application root objects, and shallow child role/count metadata without actuation."
+    },
+    {
+      "key": "desktop.inspect.windows",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect window-level accessibility metadata beyond the root-object sample."
+    },
+    {
+      "key": "desktop.inspect.focus",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect currently focused desktop or accessibility object metadata."
+    },
+    {
+      "key": "desktop.inspect.text",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Inspect text content, child names, descriptions, or other potentially sensitive UI text."
     },
     {
       "key": "tool.files.read",

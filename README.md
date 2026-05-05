@@ -58,6 +58,9 @@ with `SOMA_DESKTOP_BROKER=/path/to/soma-desktop-broker`. The AT-SPI probe is rea
 bounded participant, root-object, and shallow child role/count metadata; it does not extract child
 names, text content, capture screenshots, or perform desktop actions.
 
+The current desktop inspection output contract is documented in
+[docs/schemas/desktop-inspection-result.schema.json](./docs/schemas/desktop-inspection-result.schema.json).
+
 ## CLI
 
 The local CLI talks to the running Soma service:

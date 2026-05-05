@@ -112,7 +112,10 @@
       },
       "overlay": {
         "disabled_capabilities": [
-          "desktop.inspect.accessibility_tree"
+          "desktop.inspect.accessibility_tree",
+          "desktop.inspect.windows",
+          "desktop.inspect.focus",
+          "desktop.inspect.text"
         ]
       }
     }

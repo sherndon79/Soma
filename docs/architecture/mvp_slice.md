@@ -250,8 +250,12 @@ MVP enables ephemeral session memory. Durable memory remains disabled.
 
 ### Desktop
 
-- `desktop.inspect.accessibility_tree` — inspect desktop broker readiness and, later, bounded
-  AT-SPI accessibility trees
+- `desktop.inspect.accessibility_tree` — inspect bounded desktop environment, application root
+  objects, and shallow child role/count metadata
+- `desktop.inspect.windows` — inspect window-level metadata beyond the root-object sample
+- `desktop.inspect.focus` — inspect currently focused desktop or accessibility object metadata
+- `desktop.inspect.text` — inspect text content, child names, descriptions, or other sensitive UI
+  text
 
 ### Tools
 
@@ -262,8 +266,9 @@ MVP enables ephemeral session memory. Durable memory remains disabled.
 - `tool.desktop.actuate` — operate desktop UI directly
 - `tool.network.call` — call external network services
 
-MVP enables read-only file access within granted scopes. File writes and other tool capabilities
-remain disabled.
+MVP enables read-only file access within granted scopes. `desktop.inspect.accessibility_tree` is
+enabled for the current bounded read-only AT-SPI probe. Desktop windows, focus, text inspection,
+file writes, and other tool capabilities remain disabled.
 
 ### Perception
 

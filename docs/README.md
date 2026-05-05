@@ -16,6 +16,11 @@ near each other without reducing either side to extraction.
 - [MVP Slice](./architecture/mvp_slice.md) — the current policy-gated local service scaffold.
 - [Roadmap](../ROADMAP.md) — current scaffold, next slice, and later capability areas.
 
+## Schemas
+
+- [Desktop Inspection Result](./schemas/desktop-inspection-result.schema.json) — current bounded
+  read-only desktop broker output contract.
+
 ## Draft Concepts
 
 Draft concepts are working documents. They are not final architecture, but they carry ideas that

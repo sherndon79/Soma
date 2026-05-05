@@ -68,14 +68,10 @@ Constraints:
 
 ## Near-Term
 
-- Define the broker JSON schema for desktop inspection results.
+- Add runtime validation for the documented desktop inspection schema.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal.
-- Add capability keys for finer desktop inspection:
-  - `desktop.inspect.applications`
-  - `desktop.inspect.windows`
-  - `desktop.inspect.focus`
-  - `desktop.inspect.text`
-- Keep `desktop.inspect.text` separate from tree structure because text content may be sensitive.
+- Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
+  content, states, or actions are exposed.
 - Expand provenance for desktop inspection without storing large trees by default.
 - Add a clearer module/provenance operator surface.
 - Decide whether Rust helper communication should remain one-shot stdio or move to JSON-RPC over

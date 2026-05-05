@@ -223,6 +223,7 @@ Possible future capability keys:
 - `desktop.inspect.accessibility_tree`
 - `desktop.inspect.focus`
 - `desktop.inspect.windows`
+- `desktop.inspect.text`
 - `desktop.perception.screencast`
 - `desktop.perception.screenshot`
 - `desktop.perception.ocr`
@@ -239,6 +240,15 @@ Possible future capability keys:
 The current MVP already names `tool.desktop.actuate`, but this draft splits the desktop surface
 more finely so inspection, perception, semantic action, window management, and raw input do not
 collapse into one grant.
+
+Current implemented inspection capabilities:
+
+- `desktop.inspect.accessibility_tree` is allowed in the base harness for bounded environment,
+  participant, application-root, and shallow child role/count metadata.
+- `desktop.inspect.windows` is present but disabled until window-level metadata is designed.
+- `desktop.inspect.focus` is present but disabled until focused-object inspection is designed.
+- `desktop.inspect.text` is present but disabled and must gate child names, descriptions, text
+  content, states that reveal private context, and actions.
 
 ## First Implementation Slice
 
@@ -263,6 +273,8 @@ This validates the broker without crossing into irreversible or high-exposure be
 Current scaffold:
 
 - `desktop.inspect.accessibility_tree` is present in the base harness
+- `desktop.inspect.windows`, `desktop.inspect.focus`, and `desktop.inspect.text` are present but
+  disabled
 - `POST /desktop/inspect/accessibility-tree` returns environment metadata by default
 - `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for bounded
   read-only AT-SPI bus participant, root-object, and shallow child role/count metadata
@@ -280,6 +292,8 @@ Current scaffold:
   references
 - shallow child-object reads include role and child count only; child names and descriptions are
   excluded by default
+- the current output contract is documented in
+  `docs/schemas/desktop-inspection-result.schema.json`
 - no recursive AT-SPI child-object traversal has been implemented yet
 
 Likely next implementation shape:

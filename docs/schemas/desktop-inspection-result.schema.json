@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soma.local/schemas/desktop-inspection-result.schema.json",
+  "title": "Soma Desktop Inspection Result",
+  "type": "object",
+  "required": [
+    "mode",
+    "broker_source",
+    "platform",
+    "release",
+    "desktop_session",
+    "session_type",
+    "dbus_session_bus_available",
+    "atspi_likely_available",
+    "tree",
+    "tree_available"
+  ],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "read_only_environment_probe",
+        "read_only_atspi_probe"
+      ]
+    },
+    "broker_source": {
+      "type": "string",
+      "enum": [
+        "rust_helper",
+        "javascript_fallback"
+      ]
+    },
+    "platform": {
+      "type": "string"
+    },
+    "release": {
+      "type": "string"
+    },
+    "desktop_session": {
+      "type": "string"
+    },
+    "session_type": {
+      "type": "string"
+    },
+    "wayland_display_present": {
+      "type": "boolean"
+    },
+    "x11_display_present": {
+      "type": "boolean"
+    },
+    "dbus_session_bus_available": {
+      "type": "boolean"
+    },
+    "atspi_likely_available": {
+      "type": "boolean"
+    },
+    "atspi_bus_address_available": {
+      "type": "boolean"
+    },
+    "application_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "root_object_available_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "window_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "candidate_adapters": {
+      "$ref": "#/$defs/candidate_adapters"
+    },
+    "commands": {
+      "$ref": "#/$defs/commands"
+    },
+    "tree": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/atspi_tree"
+        }
+      ]
+    },
+    "tree_available": {
+      "type": "boolean"
+    },
+    "unavailable_reason": {
+      "type": "string"
+    },
+    "diagnostic": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "candidate_adapters": {
+      "type": "object",
+      "required": [
+        "atspi_dbus",
+        "kde_kwin",
+        "xdg_desktop_portal",
+        "wayland_keyboard_input",
+        "uinput_input"
+      ],
+      "properties": {
+        "atspi_dbus": {
+          "type": "boolean"
+        },
+        "kde_kwin": {
+          "type": "boolean"
+        },
+        "xdg_desktop_portal": {
+          "type": "boolean"
+        },
+        "wayland_keyboard_input": {
+          "type": "boolean"
+        },
+        "uinput_input": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "required": [
+        "gdbus",
+        "busctl",
+        "qdbus",
+        "wtype",
+        "ydotool"
+      ],
+      "properties": {
+        "gdbus": {
+          "type": "boolean"
+        },
+        "busctl": {
+          "type": "boolean"
+        },
+        "qdbus": {
+          "type": "boolean"
+        },
+        "wtype": {
+          "type": "boolean"
+        },
+        "ydotool": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "atspi_tree": {
+      "type": "object",
+      "required": [
+        "applications",
+        "windows",
+        "bounded",
+        "text_content_included"
+      ],
+      "properties": {
+        "applications": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/application"
+          }
+        },
+        "windows": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "bounded": {
+          "type": "boolean",
+          "const": true
+        },
+        "text_content_included": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "application": {
+      "type": "object",
+      "required": [
+        "service",
+        "pid",
+        "process",
+        "registry",
+        "root_object",
+        "root_object_error"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "process": {
+          "type": "string"
+        },
+        "registry": {
+          "type": "boolean"
+        },
+        "root_object": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/root_object"
+            }
+          ]
+        },
+        "root_object_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "root_object": {
+      "type": "object",
+      "required": [
+        "path",
+        "name",
+        "role",
+        "child_count",
+        "children_sample",
+        "child_metadata_sample"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/org/a11y/atspi/accessible/root"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "child_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "children_sample": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/object_ref"
+          }
+        },
+        "child_metadata_sample": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/child_metadata"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "object_ref": {
+      "type": "object",
+      "required": [
+        "service",
+        "path"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "child_metadata": {
+      "type": "object",
+      "description": "Shallow child metadata intentionally excludes child names, descriptions, text content, states, and actions.",
+      "required": [
+        "service",
+        "path",
+        "role",
+        "child_count"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "child_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

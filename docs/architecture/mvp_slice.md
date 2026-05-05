@@ -130,6 +130,16 @@ Creates an in-memory pending capability proposal. Proposal creation requires req
 capability, reason, requested scope, data exposure, risk, and fallback. It records
 `capability.proposal.created` provenance and does not activate any capability.
 
+### `POST /capability-proposals/:id/approve`
+
+Marks a pending proposal approved with an explicit approved scope. It records
+`capability.proposal.approved` provenance and does not activate any capability.
+
+### `POST /capability-proposals/:id/deny`
+
+Marks a pending proposal denied with a denial reason. It records
+`capability.proposal.denied` provenance and does not activate any capability.
+
 ### `POST /chat`
 
 Sends a chat request to the local model runtime only when `model.local.chat` is allowed.

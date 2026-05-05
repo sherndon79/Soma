@@ -92,6 +92,18 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       writeOutput(stdout, response, jsonOutput, proposalListSummary(response));
       return 0;
     }
+    if (subcommand === "approve" || subcommand === "deny") {
+      const proposalId = rest[0];
+      if (!proposalId) {
+        throw usageError(`proposals ${subcommand} requires a proposal id.`);
+      }
+      const body = subcommand === "approve"
+        ? { approved_scope: flags.scope ?? "session", decided_by: flags.by ?? "user" }
+        : { reason: flags.reason, decided_by: flags.by ?? "user" };
+      const response = await request(baseUrl, "POST", `/capability-proposals/${proposalId}/${subcommand}`, body);
+      writeOutput(stdout, response, jsonOutput, proposalDecisionSummary(response));
+      return 0;
+    }
   }
 
   if (command === "memory") {
@@ -397,6 +409,26 @@ function proposalListSummary(response) {
   return lines.join("\n");
 }
 
+function proposalDecisionSummary(response) {
+  const proposal = response.proposal ?? {};
+  const decision = response.decision ?? {};
+  const lines = [
+    "Capability proposal decision",
+    `  proposal: ${proposal.id ?? "unknown"}`,
+    `  status: ${proposal.status ?? "unknown"}`,
+    `  capability: ${proposal.capability ?? "unknown"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  if (decision.approved_scope) {
+    lines.splice(4, 0, `  approved scope: ${decision.approved_scope}`);
+  }
+  if (decision.denial_reason) {
+    lines.splice(4, 0, `  denial reason: ${decision.denial_reason}`);
+  }
+  return lines.join("\n");
+}
+
 function appendCountMap(lines, label, value) {
   const entries = Object.entries(value ?? {});
   if (entries.length === 0) {
@@ -423,6 +455,8 @@ Usage:
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma modules list|adopt|drop [module-id] [--json]
   soma proposals list [--status pending] [--json]
+  soma proposals approve proposal-id [--scope once|session] [--by user] [--json]
+  soma proposals deny proposal-id --reason text [--by user] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
   soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]

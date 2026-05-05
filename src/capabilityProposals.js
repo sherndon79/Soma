@@ -25,6 +25,39 @@ export class CapabilityProposalStore {
   pendingCount() {
     return this.proposals.filter((proposal) => proposal.status === "pending").length;
   }
+
+  decide(id, input, decision) {
+    if (!["approved", "denied"].includes(decision)) {
+      throw validationError("decision must be approved or denied.");
+    }
+    const proposal = this.find(id);
+    if (proposal.status !== "pending") {
+      throw conflictError("Capability proposal has already been decided.");
+    }
+    const decidedAt = this.now().toISOString();
+    const decisionRecord = decision === "approved"
+      ? normalizeApproval(input, decidedAt)
+      : normalizeDenial(input, decidedAt);
+    proposal.status = decision;
+    proposal.decision = {
+      decision,
+      ...decisionRecord,
+      activation_performed: false,
+    };
+    proposal.updated_at = decidedAt;
+    return proposal;
+  }
+
+  find(id) {
+    const proposal = this.proposals.find((entry) => entry.id === id);
+    if (!proposal) {
+      const error = new Error("Capability proposal not found.");
+      error.statusCode = 404;
+      error.code = "capability_proposal_not_found";
+      throw error;
+    }
+    return proposal;
+  }
 }
 
 export function normalizeProposal(input, now = () => new Date()) {
@@ -81,6 +114,22 @@ function requiredScope(value) {
   return normalized;
 }
 
+function normalizeApproval(input, decidedAt) {
+  return {
+    approved_scope: requiredScope(input?.approved_scope ?? input?.scope),
+    decided_by: requiredString(input?.decided_by ?? input?.approved_by ?? "user", "decided_by"),
+    decided_at: decidedAt,
+  };
+}
+
+function normalizeDenial(input, decidedAt) {
+  return {
+    denial_reason: requiredString(input?.reason, "reason"),
+    decided_by: requiredString(input?.decided_by ?? input?.denied_by ?? "user", "decided_by"),
+    decided_at: decidedAt,
+  };
+}
+
 function requiredStringArray(value, field) {
   const normalized = optionalStringArray(value, field);
   if (normalized.length === 0) {
@@ -103,5 +152,12 @@ function validationError(message) {
   const error = new Error(message);
   error.statusCode = 400;
   error.code = "invalid_capability_proposal";
+  return error;
+}
+
+function conflictError(message) {
+  const error = new Error(message);
+  error.statusCode = 409;
+  error.code = "capability_proposal_already_decided";
   return error;
 }

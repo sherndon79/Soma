@@ -68,7 +68,7 @@ Constraints:
 
 ## Near-Term
 
-- Add proposal approval/denial records without activation.
+- Add proposal notification surfacing and show/revocation records without activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if

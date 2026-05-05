@@ -139,12 +139,24 @@ Modules are in-process state for the current service run.
 ## Review Capability Proposals
 
 Capability proposals are requests for future or disabled capability. They do not activate anything
-in the current Phase 1 implementation.
+in the current implementation, including after approval.
 
 List pending proposals:
 
 ```bash
 npm run cli -- proposals list
+```
+
+Approve a proposal record without activating the capability:
+
+```bash
+npm run cli -- proposals approve proposal-id --scope session
+```
+
+Deny a proposal record with a reason:
+
+```bash
+npm run cli -- proposals deny proposal-id --reason "Not needed right now."
 ```
 
 Full proposal JSON:
@@ -153,7 +165,8 @@ Full proposal JSON:
 npm run cli -- proposals list --json
 ```
 
-Proposal approval, denial, revocation, and activation are not implemented yet.
+Approval and denial write provenance decision records. Revocation and capability activation are not
+implemented yet.
 
 ## Read Files In Scope
 

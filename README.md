@@ -72,6 +72,8 @@ npm run cli -- chat "help me slow this down" --assess-load
 npm run cli -- modules list
 npm run cli -- modules adopt soma.module.no-session-memory
 npm run cli -- proposals list
+npm run cli -- proposals approve proposal-id --scope session
+npm run cli -- proposals deny proposal-id --reason "Not needed right now."
 npm run cli -- memory add "Session note" --role note
 npm run cli -- files read README.md
 npm run cli -- desktop inspect
@@ -96,6 +98,8 @@ records stay behind `--json`.
 - `POST /harness-modules/drop`
 - `GET /capability-proposals`
 - `POST /capability-proposals`
+- `POST /capability-proposals/:id/approve`
+- `POST /capability-proposals/:id/deny`
 - `GET /session-memory`
 - `POST /session-memory`
 - `DELETE /session-memory`

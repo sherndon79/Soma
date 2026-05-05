@@ -203,6 +203,123 @@ test("capability proposal creation requires reason scope risk exposure and fallb
   assert.equal(response.body.error, "invalid_capability_proposal");
 });
 
+test("capability proposals can be approved without activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposal.status, "approved");
+  assert.equal(response.body.decision.decision, "approved");
+  assert.equal(response.body.decision.approved_scope, "session");
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/harness-modules",
+  });
+  assert.equal(response.body.pending_capability_proposals, 0);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=capability.proposal.approved",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_id, proposalId);
+  assert.equal(response.body.entries[0].approved_scope, "session");
+  assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("capability proposals can be denied without activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/deny`,
+    body: { reason: "Not needed right now.", decided_by: "user" },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposal.status, "denied");
+  assert.equal(response.body.decision.decision, "denied");
+  assert.equal(response.body.decision.denial_reason, "Not needed right now.");
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=capability.proposal.denied",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_id, proposalId);
+  assert.equal(response.body.entries[0].denial_reason, "Not needed right now.");
+});
+
+test("capability proposal decisions cannot be repeated", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session" },
+  });
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/deny`,
+    body: { reason: "Changed my mind." },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "capability_proposal_already_decided");
+});
+
 test("POST /chat routes through local model when capability is allowed", async () => {
   const modelClient = {
     model: "local-test-model",

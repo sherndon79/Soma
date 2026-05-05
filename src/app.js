@@ -121,6 +121,31 @@ export function createRequestHandler({
         return;
       }
 
+      const proposalDecisionMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)\/(approve|deny)$/);
+      if (req.method === "POST" && proposalDecisionMatch) {
+        const [, proposalId, action] = proposalDecisionMatch;
+        const body = await readJson(req);
+        const proposal = capabilityProposals.decide(
+          proposalId,
+          body,
+          action === "approve" ? "approved" : "denied",
+        );
+        const event = provenanceLog.append(createCapabilityProposalDecisionEvent({
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        proposal.decision.provenance_id = event.id;
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          proposal,
+          decision: proposal.decision,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/harness-modules/adopt") {
         const body = await readJson(req);
         const moduleId = String(body.module_id ?? "");
@@ -449,6 +474,29 @@ function createCapabilityProposalEvent({ proposal, caller }) {
     proposal_fallback: proposal.fallback,
     data_exposed: proposal.data_exposed,
     excluded_data: proposal.excluded_data,
+    activation_performed: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createCapabilityProposalDecisionEvent({ proposal, caller }) {
+  const approved = proposal.status === "approved";
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: approved ? "capability.proposal.approved" : "capability.proposal.denied",
+    capability: "capability.proposal.decide",
+    caller_identity: caller,
+    allowed: true,
+    proposal_id: proposal.id,
+    proposal_status: proposal.status,
+    requested_by: proposal.requested_by,
+    requested_capability: proposal.capability,
+    requested_scope: proposal.requested_scope,
+    approved_scope: proposal.decision?.approved_scope ?? null,
+    denial_reason: proposal.decision?.denial_reason ?? null,
+    decided_by: proposal.decision?.decided_by ?? "",
     activation_performed: false,
     memory_written: false,
     remote_service_used: false,

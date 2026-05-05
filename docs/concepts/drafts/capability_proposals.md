@@ -233,15 +233,19 @@ Current implementation status:
 - `POST /capability-proposals` creates an in-memory pending proposal.
 - `GET /capability-proposals` lists proposals and supports `status=pending`.
 - `npm run cli -- proposals list` prints a concise proposal summary.
+- `POST /capability-proposals/:id/approve` records an approval decision with approved scope.
+- `POST /capability-proposals/:id/deny` records a denial decision with reason.
+- `npm run cli -- proposals approve proposal-id --scope session` records approval.
+- `npm run cli -- proposals deny proposal-id --reason "reason"` records denial.
 - `GET /harness-modules` includes `pending_capability_proposals` for operator status.
 - `capability.proposal.created` provenance is recorded.
-- approval, denial, revocation, and activation are not implemented.
+- `capability.proposal.approved` and `capability.proposal.denied` provenance are recorded.
+- revocation and activation are not implemented.
 
 Phase 2:
 
 - pending proposal notifications in `status`
-- CLI approve/deny
-- provenance for decisions
+- proposal show command
 - still no activation
 
 Phase 3:

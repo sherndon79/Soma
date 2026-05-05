@@ -203,6 +203,70 @@ test("runCli proposals list prints pending proposals", async () => {
   assert.match(writes.join(""), /reason: Need focused object role\./);
 });
 
+test("runCli proposals approve sends decision request", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "proposals",
+    "approve",
+    "proposal-1",
+    "--scope",
+    "session",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: { id: "proposal-1", status: "approved", capability: "desktop.inspect.focus" },
+        decision: { decision: "approved", approved_scope: "session" },
+        activation_performed: false,
+        provenance_id: "prov-1",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/capability-proposals/proposal-1/approve");
+  assert.deepEqual(captured.body, { approved_scope: "session", decided_by: "user" });
+  assert.match(writes.join(""), /status: approved/);
+  assert.match(writes.join(""), /activation performed: no/);
+});
+
+test("runCli proposals deny sends decision request", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "proposals",
+    "deny",
+    "proposal-1",
+    "--reason",
+    "Not needed.",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: { id: "proposal-1", status: "denied", capability: "desktop.inspect.focus" },
+        decision: { decision: "denied", denial_reason: "Not needed." },
+        activation_performed: false,
+        provenance_id: "prov-1",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/capability-proposals/proposal-1/deny");
+  assert.deepEqual(captured.body, { reason: "Not needed.", decided_by: "user" });
+  assert.match(writes.join(""), /status: denied/);
+  assert.match(writes.join(""), /denial reason: Not needed\./);
+});
+
 test("runCli files read sends expected request body", async () => {
   let captured;
   const writes = [];

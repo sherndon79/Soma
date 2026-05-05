@@ -294,6 +294,8 @@ Current scaffold:
   excluded by default
 - the current output contract is documented in
   `docs/schemas/desktop-inspection-result.schema.json`
+- Node validates desktop broker output against the current contract before returning it or
+  recording provenance
 - no recursive AT-SPI child-object traversal has been implemented yet
 
 Likely next implementation shape:

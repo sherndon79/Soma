@@ -6,6 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
+import { assertDesktopInspectionResult } from "./desktopInspectionSchema.js";
+
 const execFileAsync = promisify(execFile);
 const DEFAULT_HELPER_PATH = fileURLToPath(
   new URL("../target/debug/soma-desktop-broker", import.meta.url),
@@ -19,9 +21,11 @@ export async function inspectDesktopBrokerEnvironment({
   const normalizedMode = normalizeInspectionMode(mode);
   const helperInspection = await inspectWithRustHelper(helperPath, normalizedMode);
   if (helperInspection) {
-    return helperInspection;
+    return assertDesktopInspectionResult(helperInspection);
   }
-  return inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode });
+  return assertDesktopInspectionResult(
+    await inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode }),
+  );
 }
 
 export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env, mode = "environment" } = {}) {

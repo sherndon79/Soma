@@ -68,7 +68,8 @@ Constraints:
 
 ## Near-Term
 
-- Add runtime validation for the documented desktop inspection schema.
+- Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
+  the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal.
 - Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
   content, states, or actions are exposed.

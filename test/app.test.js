@@ -541,6 +541,22 @@ fi
   assert.equal(inspection.tree.applications[0].root_object.child_metadata_sample[0].role, "frame");
 });
 
+test("desktop broker rejects helper output that exceeds the inspection contract", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-invalid-helper-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","name":"test-app","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0,"name":"private child title"}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+
+  await assert.rejects(
+    () => inspectDesktopBrokerEnvironment({ helperPath, mode: "atspi" }),
+    {
+      code: "desktop_inspection_schema_invalid",
+    },
+  );
+});
+
 test("desktop accessibility inspection can request bounded AT-SPI metadata", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-atspi-endpoint-"));
   const helperPath = path.join(root, "soma-desktop-broker");

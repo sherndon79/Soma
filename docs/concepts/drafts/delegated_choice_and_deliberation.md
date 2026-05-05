@@ -185,6 +185,18 @@ Example:
 I can continue with current capabilities, or we can pause and review additional access later.
 ```
 
+## Interaction With Memory
+
+Delegated choice depends on remembered preferences, but memory should not silently become authority.
+Before acting on a likely preference, Soma should verify that the relevant memory is authored or
+confirmed, in scope, allowed for delegated use, and not marked sensitive or "do not use for
+delegation."
+
+The memory item should define allowed and forbidden uses. If the memory only supports empathy,
+context, or recommendation, Soma should not use it to act in the participant's stead.
+
+See [Memory Control Surface](./memory_control_surface.md).
+
 ## Interaction With Capabilities
 
 Delegated choice should itself be governable.

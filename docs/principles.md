@@ -41,6 +41,9 @@ Soma should not optimize for data capture, dependency, engagement, or enclosure.
 Memory exists to support continuity and care under user stewardship. It should not silently become
 training material, product telemetry, or leverage over the participant.
 
+Remembered context should remain inspectable, correctable, scoped, and revocable. Memory may inform
+care and low-risk defaults, but it should not become authority by itself.
+
 ## Cognitive Load Stewardship
 
 Deep collaboration can become too dense for a human participant to integrate in the moment.

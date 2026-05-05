@@ -36,6 +36,7 @@ should inform implementation.
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)
+- [Memory Control Surface](./concepts/drafts/memory_control_surface.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
 
 ## Related Projects

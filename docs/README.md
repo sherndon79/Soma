@@ -32,6 +32,7 @@ should inform implementation.
 - [Capability Catalog and Providers](./concepts/drafts/capability_catalog_and_providers.md)
 - [Capability Proposals](./concepts/drafts/capability_proposals.md)
 - [Cognitive Load Stewardship](./concepts/drafts/cognitive_load_stewardship.md)
+- [Delegated Choice and Deliberation](./concepts/drafts/delegated_choice_and_deliberation.md)
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)

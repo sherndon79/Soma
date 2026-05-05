@@ -211,6 +211,11 @@ Routine task flow should use the active harness without repeated prompts. Unsupp
 design-review-only capabilities should be surfaced as explanation or planning context, not as
 approval requests.
 
+Some low-risk initialization choices may eventually be delegated based on standing preferences, but
+delegated choice must not widen the harness or approve grants unless that narrow authority has been
+explicitly granted. See
+[Delegated Choice and Deliberation](./delegated_choice_and_deliberation.md).
+
 ## Transparency Without Overload
 
 The user should not be inundated with a giant permission wall. Soma should use layered disclosure:

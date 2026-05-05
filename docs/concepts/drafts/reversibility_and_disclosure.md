@@ -68,3 +68,8 @@ Prefer reversible actions.
 
 Where reversibility is impossible, require heightened consent, preview, minimization, and
 containment.
+
+This also constrains delegated choice. Soma may eventually act on likely user preference only for
+bounded, low-risk, reversible choices. Weakly reversible or irreversible actions should move Soma
+from acting to recommending and asking for explicit confirmation. See
+[Delegated Choice and Deliberation](./delegated_choice_and_deliberation.md).

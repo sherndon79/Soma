@@ -40,6 +40,7 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       mode: harness.mode,
       default_runtime_profile: harness.runtime_profiles?.default_profile,
       active_modules: modules.active_modules,
+      pending_capability_proposals: modules.pending_capability_proposals ?? 0,
       provenance_summary: provenance.summary,
     }, jsonOutput);
     return 0;
@@ -76,6 +77,19 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       writeOutput(stdout, await request(baseUrl, "POST", `/harness-modules/${subcommand}`, {
         module_id: moduleId,
       }), jsonOutput);
+      return 0;
+    }
+  }
+
+  if (command === "proposals") {
+    if (subcommand === "list" || !subcommand) {
+      const query = new URLSearchParams();
+      if (flags.status) {
+        query.set("status", String(flags.status));
+      }
+      const suffix = query.size > 0 ? `?${query}` : "";
+      const response = await request(baseUrl, "GET", `/capability-proposals${suffix}`);
+      writeOutput(stdout, response, jsonOutput, proposalListSummary(response));
       return 0;
     }
   }
@@ -357,6 +371,32 @@ function provenanceSummaryText(response) {
   return lines.join("\n");
 }
 
+function proposalListSummary(response) {
+  const proposals = Array.isArray(response.proposals) ? response.proposals : [];
+  if (proposals.length === 0) {
+    return "Capability proposals\n  none";
+  }
+
+  const lines = ["Capability proposals"];
+  for (const proposal of proposals) {
+    const dataExposed = Array.isArray(proposal.data_exposed) ? proposal.data_exposed.join(", ") : "";
+    lines.push([
+      `  ${proposal.id ?? "unknown-id"}`,
+      `[${proposal.status ?? "unknown-status"}]`,
+      `capability=${proposal.capability ?? "unknown"}`,
+      `requested_by=${proposal.requested_by ?? "unknown"}`,
+      `scope=${proposal.requested_scope ?? "unknown"}`,
+    ].join(" "));
+    lines.push(`    reason: ${proposal.reason ?? ""}`);
+    lines.push(`    risk: ${proposal.risk ?? ""}`);
+    lines.push(`    fallback: ${proposal.fallback ?? ""}`);
+    if (dataExposed) {
+      lines.push(`    data exposed: ${dataExposed}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function appendCountMap(lines, label, value) {
   const entries = Object.entries(value ?? {});
   if (entries.length === 0) {
@@ -382,6 +422,7 @@ Usage:
   soma status [--json]
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma modules list|adopt|drop [module-id] [--json]
+  soma proposals list [--status pending] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
   soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]

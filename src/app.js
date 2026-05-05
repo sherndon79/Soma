@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
+import { CapabilityProposalStore } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "./desktopBroker.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { requireCapability } from "./harness.js";
@@ -27,6 +28,7 @@ export function createApp({
   runtimeProfiles,
   modelClient,
   sessionMemory,
+  capabilityProposals,
   provenanceLog,
   logger = console,
 } = {}) {
@@ -36,6 +38,7 @@ export function createApp({
     runtimeProfiles,
     modelClient,
     sessionMemory,
+    capabilityProposals,
     provenanceLog,
     logger,
   }));
@@ -47,6 +50,7 @@ export function createRequestHandler({
   runtimeProfiles,
   modelClient,
   sessionMemory = new SessionMemory(),
+  capabilityProposals = new CapabilityProposalStore(),
   provenanceLog = new ProvenanceLog(),
   logger = console,
 } = {}) {
@@ -83,6 +87,36 @@ export function createRequestHandler({
         writeJson(res, 200, {
           modules: listVisibleModules(moduleRegistry),
           active_modules: activeModules,
+          pending_capability_proposals: capabilityProposals.pendingCount(),
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/capability-proposals") {
+        writeJson(res, 200, {
+          proposals: capabilityProposals.list({
+            status: url.searchParams.get("status") ?? "",
+          }),
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/capability-proposals") {
+        const body = await readJson(req);
+        const proposal = capabilityProposals.create(body);
+        const event = provenanceLog.append(createCapabilityProposalEvent({
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        proposal.provenance_id = event.id;
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          proposal,
+          notification: proposal.notification,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
         });
         return;
       }
@@ -392,6 +426,30 @@ function createHarnessModuleEvent({ eventType, moduleId, activeModules, caller }
     active_modules: [...activeModules],
     caller_identity: caller,
     allowed: true,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createCapabilityProposalEvent({ proposal, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "capability.proposal.created",
+    capability: "capability.proposal.create",
+    caller_identity: caller,
+    allowed: true,
+    proposal_id: proposal.id,
+    proposal_status: proposal.status,
+    requested_by: proposal.requested_by,
+    requested_capability: proposal.capability,
+    requested_scope: proposal.requested_scope,
+    proposal_reason: proposal.reason,
+    proposal_risk: proposal.risk,
+    proposal_fallback: proposal.fallback,
+    data_exposed: proposal.data_exposed,
+    excluded_data: proposal.excluded_data,
+    activation_performed: false,
     memory_written: false,
     remote_service_used: false,
   };

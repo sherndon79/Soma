@@ -136,6 +136,25 @@ npm run cli -- modules drop soma.module.no-desktop-inspection
 
 Modules are in-process state for the current service run.
 
+## Review Capability Proposals
+
+Capability proposals are requests for future or disabled capability. They do not activate anything
+in the current Phase 1 implementation.
+
+List pending proposals:
+
+```bash
+npm run cli -- proposals list
+```
+
+Full proposal JSON:
+
+```bash
+npm run cli -- proposals list --json
+```
+
+Proposal approval, denial, revocation, and activation are not implemented yet.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

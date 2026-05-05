@@ -1,6 +1,6 @@
 # Capability Proposals
 
-Status: draft concept, not implemented
+Status: draft concept, Phase 1 partially implemented
 
 Soma should let an assistant or tool ask for a capability it does not currently have, but it
 should never let that request activate the capability by itself. A request is a reviewable consent
@@ -227,6 +227,15 @@ Phase 1:
 - provenance for proposal creation
 - CLI list
 - no activation
+
+Current implementation status:
+
+- `POST /capability-proposals` creates an in-memory pending proposal.
+- `GET /capability-proposals` lists proposals and supports `status=pending`.
+- `npm run cli -- proposals list` prints a concise proposal summary.
+- `GET /harness-modules` includes `pending_capability_proposals` for operator status.
+- `capability.proposal.created` provenance is recorded.
+- approval, denial, revocation, and activation are not implemented.
 
 Phase 2:
 

@@ -103,6 +103,7 @@ This should make current capability terms and runtime profiles visible rather th
 ### `GET /harness-modules`
 
 Returns approved visible harness modules and the current active module stack.
+Also includes the current pending capability proposal count.
 
 MVP modules are self-scoped narrowing overlays only.
 
@@ -118,6 +119,16 @@ Widening, shared, or governance-mediated modules are not part of the MVP.
 Drops a previously adopted module from the active stack.
 
 Dropping a module restores the base harness posture plus any remaining active modules.
+
+### `GET /capability-proposals`
+
+Returns in-memory capability proposals. Supports `status=pending`.
+
+### `POST /capability-proposals`
+
+Creates an in-memory pending capability proposal. Proposal creation requires requester,
+capability, reason, requested scope, data exposure, risk, and fallback. It records
+`capability.proposal.created` provenance and does not activate any capability.
 
 ### `POST /chat`
 

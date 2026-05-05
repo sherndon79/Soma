@@ -129,6 +129,80 @@ test("GET /harness returns active harness", async () => {
   assert.equal(response.body.runtime_profiles.default_profile, "local-test");
 });
 
+test("capability proposals can be created and listed without activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need to identify the currently focused UI role before advising next action.",
+      requested_scope: "session",
+      data_exposed: ["focused object role", "focused object child count"],
+      excluded_data: ["text content", "screenshots"],
+      risk: "May reveal active application context.",
+      fallback: "Continue with broad desktop inspection summary only.",
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.proposal.status, "pending");
+  assert.equal(response.body.proposal.capability, "desktop.inspect.focus");
+  assert.equal(response.body.notification.title, "Capability requested");
+  assert.equal(response.body.activation_performed, false);
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+  const proposalId = response.body.proposal.id;
+  const provenanceId = response.body.provenance_id;
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/capability-proposals?status=pending",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposals.length, 1);
+  assert.equal(response.body.proposals[0].id, proposalId);
+  assert.equal(response.body.proposals[0].provenance_id, provenanceId);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/harness-modules",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.pending_capability_proposals, 1);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=capability.proposal.created",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].id, provenanceId);
+  assert.equal(response.body.entries[0].capability, "capability.proposal.create");
+  assert.equal(response.body.entries[0].requested_capability, "desktop.inspect.focus");
+  assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("capability proposal creation requires reason scope risk exposure and fallback", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/capability-proposals",
+    harness: allowedHarness,
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_capability_proposal");
+});
+
 test("POST /chat routes through local model when capability is allowed", async () => {
   const modelClient = {
     model: "local-test-model",

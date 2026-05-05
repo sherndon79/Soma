@@ -39,7 +39,7 @@ test("runCli status gathers operator summary", async () => {
         };
       }
       if (path === "/harness-modules") {
-        return { active_modules: ["pause-local-chat"] };
+        return { active_modules: ["pause-local-chat"], pending_capability_proposals: 2 };
       }
       if (path === "/provenance/summary") {
         return { summary: { total: 3 } };
@@ -53,6 +53,7 @@ test("runCli status gathers operator summary", async () => {
   assert.equal(payload.health.status, "ok");
   assert.equal(payload.harness_id, "soma.base");
   assert.deepEqual(payload.active_modules, ["pause-local-chat"]);
+  assert.equal(payload.pending_capability_proposals, 2);
   assert.equal(payload.provenance_summary.total, 3);
 });
 
@@ -167,6 +168,39 @@ test("runCli provenance summary prints operator summary", async () => {
   assert.match(writes.join(""), /total: 4/);
   assert.match(writes.join(""), /denied: 1/);
   assert.match(writes.join(""), /desktop\.inspect\.accessibility_tree: 1/);
+});
+
+test("runCli proposals list prints pending proposals", async () => {
+  let capturedPath = "";
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "proposals", "list", "--status", "pending"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      capturedPath = path;
+      return {
+        proposals: [
+          {
+            id: "proposal-1",
+            status: "pending",
+            requested_by: "assistant",
+            capability: "desktop.inspect.focus",
+            requested_scope: "session",
+            reason: "Need focused object role.",
+            risk: "May reveal active application context.",
+            fallback: "Continue with desktop summary.",
+            data_exposed: ["focused object role"],
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(capturedPath, "/capability-proposals?status=pending");
+  assert.match(writes.join(""), /Capability proposals/);
+  assert.match(writes.join(""), /desktop\.inspect\.focus/);
+  assert.match(writes.join(""), /reason: Need focused object role\./);
 });
 
 test("runCli files read sends expected request body", async () => {

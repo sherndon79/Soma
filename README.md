@@ -54,7 +54,9 @@ npm run desktop-broker:build
 ```
 
 When `./target/debug/soma-desktop-broker` exists, Soma uses it for desktop inspection. Override
-with `SOMA_DESKTOP_BROKER=/path/to/soma-desktop-broker`.
+with `SOMA_DESKTOP_BROKER=/path/to/soma-desktop-broker`. The AT-SPI probe is read-only and returns
+bounded participant/root-object metadata; it does not extract text content, capture screenshots, or
+perform desktop actions.
 
 ## CLI
 

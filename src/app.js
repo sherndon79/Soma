@@ -464,6 +464,7 @@ function createDesktopInspectionEvent({ inspection, caller }) {
     dbus_session_bus_available: inspection.dbus_session_bus_available,
     atspi_likely_available: inspection.atspi_likely_available,
     application_count: inspection.application_count ?? null,
+    root_object_available_count: inspection.root_object_available_count ?? null,
     window_count: inspection.window_count ?? null,
     tree_available: inspection.tree_available,
     memory_written: false,

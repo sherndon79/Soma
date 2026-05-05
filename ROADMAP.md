@@ -16,6 +16,7 @@ Implemented:
 - scoped read-only file access
 - read-only desktop broker environment inspection
 - Rust `soma-desktop-broker` helper scaffold
+- bounded AT-SPI bus participant and root-object metadata inspection
 - self-scoped narrowing modules for revocation
 - CI for Node tests and Rust helper build
 
@@ -27,7 +28,7 @@ Current authority boundary:
 
 ## Next Slice
 
-Add the first real read-only AT-SPI inspection path.
+Expand the read-only AT-SPI inspection path from root objects to a bounded accessibility tree.
 
 Target:
 
@@ -46,7 +47,8 @@ Expected shape:
     {
       "name": "Example",
       "role": "application",
-      "child_count": 4
+      "child_count": 4,
+      "children_sample": []
     }
   ]
 }
@@ -65,7 +67,7 @@ Constraints:
 ## Near-Term
 
 - Define the broker JSON schema for desktop inspection results.
-- Expand bounded AT-SPI inspection from bus participant metadata into accessibility object
+- Expand bounded AT-SPI inspection from application root metadata into shallow child object
   traversal.
 - Add capability keys for finer desktop inspection:
   - `desktop.inspect.applications`

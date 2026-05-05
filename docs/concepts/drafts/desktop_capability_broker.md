@@ -264,10 +264,11 @@ Current scaffold:
 
 - `desktop.inspect.accessibility_tree` is present in the base harness
 - `POST /desktop/inspect/accessibility-tree` returns environment metadata by default
-- `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for a bounded
-  read-only AT-SPI probe
+- `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for bounded
+  read-only AT-SPI bus participant and root-object metadata
 - `soma desktop inspect --json` calls the endpoint
-- `soma desktop inspect --mode atspi --json` asks for AT-SPI bus participant metadata
+- `soma desktop inspect --mode atspi --json` asks for AT-SPI participant and application-root
+  metadata
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
 - `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper
@@ -275,14 +276,16 @@ Current scaffold:
 - Node uses `./target/debug/soma-desktop-broker` when present, or `SOMA_DESKTOP_BROKER` when set
 - no screenshots, text extraction, pointer control, keyboard control, or model-driven desktop
   actions are implemented
-- no actual AT-SPI accessibility object traversal has been implemented yet
+- root object reads include root name, role, child count, and a bounded sample of child object
+  references
+- no recursive AT-SPI child-object metadata traversal has been implemented yet
 
 Likely next implementation shape:
 
 - keep the Node endpoint and capability vocabulary
 - compile and use the Rust `soma-desktop-broker` helper
 - keep using one-shot stdio until the broker needs long-lived state
-- return a bounded JSON accessibility tree from the AT-SPI object graph
+- return a bounded shallow JSON accessibility tree from the AT-SPI object graph
 - keep actuation out of scope
 
 ## Research Findings
@@ -312,10 +315,11 @@ control.
 
 Implementation note:
 
-The first Soma AT-SPI command does not traverse the object graph yet. It uses the session bus
-`org.a11y.Bus` pointer to locate the separate AT-SPI bus, then lists bounded AT-SPI bus
-participants through `busctl`. This verifies the helper boundary, policy gate, provenance path,
-and failure behavior before adding object traversal.
+The first Soma AT-SPI command uses the session bus `org.a11y.Bus` pointer to locate the separate
+AT-SPI bus, lists bounded AT-SPI bus participants through `busctl`, and reads each participant's
+accessible root object when available. The root-object read includes name, role, child count, and
+bounded child references. It does not recursively inspect child metadata, extract text content, or
+invoke actions.
 
 ### Accessibility Automation References
 

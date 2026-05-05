@@ -176,7 +176,14 @@ fn inspect_atspi_json() -> String {
     };
 
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
-    let applications = parse_atspi_bus_list(&list_stdout, 64);
+    let applications = parse_atspi_bus_list(&list_stdout, 64)
+        .into_iter()
+        .map(|application| application.with_root_object(&address))
+        .collect::<Vec<_>>();
+    let root_object_count = applications
+        .iter()
+        .filter(|application| application.root_object_available())
+        .count();
     let applications_json = applications
         .iter()
         .map(|application| application.to_json())
@@ -196,6 +203,7 @@ fn inspect_atspi_json() -> String {
             "\"atspi_likely_available\":true,",
             "\"atspi_bus_address_available\":true,",
             "\"application_count\":{},",
+            "\"root_object_available_count\":{},",
             "\"window_count\":0,",
             "\"tree\":{{",
             "\"applications\":[{}],",
@@ -212,6 +220,7 @@ fn inspect_atspi_json() -> String {
         json_escape(&session_type),
         dbus_session_bus_available,
         applications.len(),
+        root_object_count,
         applications_json,
     )
 }
@@ -236,6 +245,7 @@ fn atspi_unavailable_json(
             "\"atspi_likely_available\":{},",
             "\"atspi_bus_address_available\":false,",
             "\"application_count\":0,",
+            "\"root_object_available_count\":0,",
             "\"window_count\":0,",
             "\"tree\":null,",
             "\"tree_available\":false,",
@@ -277,17 +287,52 @@ struct AtspiApplication {
     pid: Option<u32>,
     process: String,
     registry: bool,
+    root_object: Option<AtspiRootObject>,
+    root_object_error: Option<String>,
 }
 
 impl AtspiApplication {
+    fn with_root_object(mut self, address: &str) -> Self {
+        if !self.service.starts_with(':') {
+            return self;
+        }
+
+        match inspect_root_object(address, &self.service) {
+            Ok(root_object) => {
+                self.root_object = Some(root_object);
+            }
+            Err(error) => {
+                self.root_object_error = Some(error);
+            }
+        }
+        self
+    }
+
+    fn root_object_available(&self) -> bool {
+        self.root_object.is_some()
+    }
+
     fn to_json(&self) -> String {
+        let root_object_json = self
+            .root_object
+            .as_ref()
+            .map(|root_object| root_object.to_json())
+            .unwrap_or_else(|| "null".to_string());
+        let root_object_error_json = self
+            .root_object_error
+            .as_ref()
+            .map(|error| format!("\"{}\"", json_escape(error)))
+            .unwrap_or_else(|| "null".to_string());
+
         format!(
             concat!(
                 "{{",
                 "\"service\":\"{}\",",
                 "\"pid\":{},",
                 "\"process\":\"{}\",",
-                "\"registry\":{}",
+                "\"registry\":{},",
+                "\"root_object\":{},",
+                "\"root_object_error\":{}",
                 "}}"
             ),
             json_escape(&self.service),
@@ -296,6 +341,56 @@ impl AtspiApplication {
                 .unwrap_or_else(|| "null".to_string()),
             json_escape(&self.process),
             self.registry,
+            root_object_json,
+            root_object_error_json,
+        )
+    }
+}
+
+struct AtspiRootObject {
+    name: String,
+    role: String,
+    child_count: i32,
+    children_sample: Vec<AtspiObjectRef>,
+}
+
+impl AtspiRootObject {
+    fn to_json(&self) -> String {
+        let children_json = self
+            .children_sample
+            .iter()
+            .map(|child| child.to_json())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            concat!(
+                "{{",
+                "\"path\":\"/org/a11y/atspi/accessible/root\",",
+                "\"name\":\"{}\",",
+                "\"role\":\"{}\",",
+                "\"child_count\":{},",
+                "\"children_sample\":[{}]",
+                "}}"
+            ),
+            json_escape(&self.name),
+            json_escape(&self.role),
+            self.child_count,
+            children_json,
+        )
+    }
+}
+
+struct AtspiObjectRef {
+    service: String,
+    path: String,
+}
+
+impl AtspiObjectRef {
+    fn to_json(&self) -> String {
+        format!(
+            "{{\"service\":\"{}\",\"path\":\"{}\"}}",
+            json_escape(&self.service),
+            json_escape(&self.path),
         )
     }
 }
@@ -326,7 +421,70 @@ fn parse_atspi_bus_list_line(line: &str) -> Option<AtspiApplication> {
         pid,
         process,
         registry,
+        root_object: None,
+        root_object_error: None,
     })
+}
+
+fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, String> {
+    const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
+    const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
+
+    let name_output = busctl_output(&[
+        "--address",
+        address,
+        "get-property",
+        service,
+        ROOT_PATH,
+        ACCESSIBLE_INTERFACE,
+        "Name",
+    ])?;
+    let role_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        service,
+        ROOT_PATH,
+        ACCESSIBLE_INTERFACE,
+        "GetRoleName",
+    ])?;
+    let child_count_output = busctl_output(&[
+        "--address",
+        address,
+        "get-property",
+        service,
+        ROOT_PATH,
+        ACCESSIBLE_INTERFACE,
+        "ChildCount",
+    ])?;
+    let children_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        service,
+        ROOT_PATH,
+        ACCESSIBLE_INTERFACE,
+        "GetChildren",
+    ])
+    .unwrap_or_default();
+
+    Ok(AtspiRootObject {
+        name: parse_busctl_string(&name_output).unwrap_or_default(),
+        role: parse_busctl_string(&role_output).unwrap_or_default(),
+        child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
+        children_sample: parse_atspi_object_refs(&children_output, 8),
+    })
+}
+
+fn busctl_output(args: &[&str]) -> Result<String, String> {
+    let output = Command::new("busctl")
+        .args(args)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(command_error(&output));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn parse_busctl_string(value: &str) -> Option<String> {
@@ -346,6 +504,62 @@ fn parse_busctl_string(value: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn parse_busctl_int(value: &str) -> Option<i32> {
+    value
+        .split_whitespace()
+        .find_map(|field| field.parse::<i32>().ok())
+}
+
+fn parse_atspi_object_refs(value: &str, limit: usize) -> Vec<AtspiObjectRef> {
+    let strings = parse_quoted_strings(value);
+    strings
+        .chunks(2)
+        .filter_map(|chunk| {
+            let service = chunk.first()?;
+            let path = chunk.get(1)?;
+            Some(AtspiObjectRef {
+                service: service.clone(),
+                path: path.clone(),
+            })
+        })
+        .take(limit)
+        .collect()
+}
+
+fn parse_quoted_strings(value: &str) -> Vec<String> {
+    let mut strings = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for character in value.chars() {
+        if !in_string {
+            if character == '"' {
+                in_string = true;
+                current.clear();
+            }
+            continue;
+        }
+
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+
+        match character {
+            '\\' => escaped = true,
+            '"' => {
+                strings.push(current.clone());
+                in_string = false;
+            }
+            character => current.push(character),
+        }
+    }
+
+    strings
 }
 
 fn command_error(output: &std::process::Output) -> String {

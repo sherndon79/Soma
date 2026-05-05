@@ -137,7 +137,8 @@ The Soma service defaults to `SOMA_LLM_URL=http://127.0.0.1:8000`, matching the 
 
 ## Docs
 
-Start with [docs/README.md](./docs/README.md).
+Start with [docs/README.md](./docs/README.md). For current runbook-style usage, see
+[docs/operators.md](./docs/operators.md).
 
 Project direction is tracked in [ROADMAP.md](./ROADMAP.md).
 

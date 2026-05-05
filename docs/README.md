@@ -14,6 +14,8 @@ near each other without reducing either side to extraction.
   design.
 - [Architecture Overview](./architecture/overview.md) — the first shape of Soma's service plane.
 - [MVP Slice](./architecture/mvp_slice.md) — the current policy-gated local service scaffold.
+- [Operator Guide](./operators.md) — current runbook-style commands for running, inspecting, and
+  revoking Soma capabilities.
 - [Roadmap](../ROADMAP.md) — current scaffold, next slice, and later capability areas.
 
 ## Schemas

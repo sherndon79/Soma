@@ -286,6 +286,7 @@ Current scaffold:
   validation
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
+- provenance records requested mode and requested output limits separately from returned counts
 - `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper
   commands
 - Node uses `./target/debug/soma-desktop-broker` when present, or `SOMA_DESKTOP_BROKER` when set

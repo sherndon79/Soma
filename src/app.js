@@ -230,6 +230,7 @@ export function createRequestHandler({
         });
         const event = provenanceLog.append(createDesktopInspectionEvent({
           inspection,
+          request: body,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -453,7 +454,7 @@ function createFileReadEvent({ file, caller }) {
   };
 }
 
-function createDesktopInspectionEvent({ inspection, caller }) {
+function createDesktopInspectionEvent({ inspection, request = {}, caller }) {
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
@@ -465,6 +466,9 @@ function createDesktopInspectionEvent({ inspection, caller }) {
     session_type: inspection.session_type,
     broker_source: inspection.broker_source,
     inspection_mode: inspection.mode,
+    requested_mode: normalizeDesktopInspectionRequestedMode(request.mode),
+    requested_max_apps: nullableFiniteNumber(request.max_apps),
+    requested_max_children: nullableFiniteNumber(request.max_children),
     dbus_session_bus_available: inspection.dbus_session_bus_available,
     atspi_likely_available: inspection.atspi_likely_available,
     application_count: inspection.application_count ?? null,
@@ -474,6 +478,18 @@ function createDesktopInspectionEvent({ inspection, caller }) {
     memory_written: false,
     remote_service_used: false,
   };
+}
+
+function normalizeDesktopInspectionRequestedMode(mode) {
+  return mode === "atspi" ? "atspi" : "environment";
+}
+
+function nullableFiniteNumber(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function cryptoRandomId() {

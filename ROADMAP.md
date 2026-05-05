@@ -74,7 +74,7 @@ Constraints:
 - Preserve operator narrowing controls as traversal expands.
 - Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
   content, states, or actions are exposed.
-- Expand provenance for desktop inspection without storing large trees by default.
+- Expand provenance for future desktop inspection modes without storing large trees by default.
 - Add a clearer module/provenance operator surface.
 - Decide whether Rust helper communication should remain one-shot stdio or move to JSON-RPC over
   stdio/Unix socket.

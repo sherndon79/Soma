@@ -213,7 +213,8 @@ lists bus participant metadata, application root-object metadata, and shallow ch
 metadata when available. The current scaffold does not recursively traverse AT-SPI child objects,
 read child names/descriptions, extract text content, take screenshots, or perform actuation.
 Callers may pass `max_apps` and `max_children` to narrow the returned application list and root
-child samples after broker output validation.
+child samples after broker output validation. Provenance records requested mode and requested
+limits separately from returned object counts.
 
 ## Initial Capability Vocabulary
 

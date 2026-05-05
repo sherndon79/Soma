@@ -622,6 +622,9 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.statusCode, 200);
     assert.equal(response.body.entries[0].id, provenanceId);
     assert.equal(response.body.entries[0].inspection_mode, "read_only_atspi_probe");
+    assert.equal(response.body.entries[0].requested_mode, "atspi");
+    assert.equal(response.body.entries[0].requested_max_apps, null);
+    assert.equal(response.body.entries[0].requested_max_children, null);
     assert.equal(response.body.entries[0].application_count, 2);
     assert.equal(response.body.entries[0].root_object_available_count, 1);
     assert.equal(response.body.entries[0].window_count, 0);
@@ -646,7 +649,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
     const handler = makeHandler({ harness: allowedHarness });
-    const response = await invokeHandler(handler, {
+    let response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/accessibility-tree",
       body: { mode: "atspi", max_apps: 1, max_children: 1 },
@@ -658,6 +661,16 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.body.inspection.tree.applications.length, 1);
     assert.equal(response.body.inspection.tree.applications[0].root_object.children_sample.length, 1);
     assert.equal(response.body.inspection.tree.applications[0].root_object.child_metadata_sample.length, 1);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries[0].requested_mode, "atspi");
+    assert.equal(response.body.entries[0].requested_max_apps, 1);
+    assert.equal(response.body.entries[0].requested_max_children, 1);
+    assert.equal(response.body.entries[0].application_count, 1);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;

@@ -37,8 +37,12 @@ export function writeJson(res, statusCode, payload) {
 }
 
 export function writeError(res, error) {
-  writeJson(res, error.statusCode ?? 500, {
+  const payload = {
     error: error.code ?? "internal_error",
     message: error.message,
-  });
+  };
+  if (Array.isArray(error.validation_errors)) {
+    payload.validation_errors = error.validation_errors;
+  }
+  writeJson(res, error.statusCode ?? 500, payload);
 }

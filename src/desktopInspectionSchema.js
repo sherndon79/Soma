@@ -63,6 +63,7 @@ export function assertDesktopInspectionResult(value) {
   const result = validateDesktopInspectionResult(value);
   if (!result.valid) {
     const error = new Error(`Desktop inspection result failed schema validation: ${result.errors.join("; ")}`);
+    error.statusCode = 502;
     error.code = "desktop_inspection_schema_invalid";
     error.validation_errors = result.errors;
     throw error;

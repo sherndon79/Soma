@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { validateDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
+import {
+  assertDesktopInspectionResult,
+  validateDesktopInspectionResult,
+} from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
 
@@ -114,4 +117,14 @@ test("desktop inspection runtime validator rejects child text over-disclosure", 
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.includes("result.tree.applications[0].root_object.child_metadata_sample[0].name is not allowed"));
+});
+
+test("desktop inspection runtime assertion uses stable broker contract error semantics", () => {
+  assert.throws(
+    () => assertDesktopInspectionResult({}),
+    {
+      code: "desktop_inspection_schema_invalid",
+      statusCode: 502,
+    },
+  );
 });

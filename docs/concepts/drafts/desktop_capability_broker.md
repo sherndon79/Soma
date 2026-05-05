@@ -296,6 +296,8 @@ Current scaffold:
   `docs/schemas/desktop-inspection-result.schema.json`
 - Node validates desktop broker output against the current contract before returning it or
   recording provenance
+- helper contract failures return `desktop_inspection_schema_invalid` with HTTP 502 and validation
+  paths, without returning the rejected helper payload
 - no recursive AT-SPI child-object traversal has been implemented yet
 
 Likely next implementation shape:

@@ -31,6 +31,7 @@ should inform implementation.
 - [Adaptable Harness](./concepts/drafts/adaptable_harness.md)
 - [Cognitive Load Stewardship](./concepts/drafts/cognitive_load_stewardship.md)
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
+- [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
 

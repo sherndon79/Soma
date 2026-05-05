@@ -68,9 +68,12 @@ Constraints:
 
 ## Near-Term
 
+- Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
+  inspection draft.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
-- Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal.
+- Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only
+  after focused inspection boundaries are validated.
 - Preserve operator narrowing controls as traversal expands.
 - Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
   content, states, or actions are exposed.

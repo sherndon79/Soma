@@ -306,11 +306,14 @@ Current scaffold:
 
 Likely next implementation shape:
 
-- keep the Node endpoint and capability vocabulary
-- compile and use the Rust `soma-desktop-broker` helper
+- keep the existing tree endpoint stable
+- design focused-object inspection separately behind `desktop.inspect.focus`
+- keep text/name/description/action exposure behind `desktop.inspect.text`
 - keep using one-shot stdio until the broker needs long-lived state
-- return a bounded shallow JSON accessibility tree from the AT-SPI object graph
 - keep actuation out of scope
+
+See [Focused Desktop Inspection](./focused_desktop_inspection.md) for the draft focused-object
+boundary.
 
 ## Research Findings
 

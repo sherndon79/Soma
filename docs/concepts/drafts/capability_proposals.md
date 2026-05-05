@@ -62,6 +62,14 @@ Every capability proposal must produce a user-facing notification. The notificat
 
 No reason means no valid proposal.
 
+Capability notifications should be just-in-time, not constant. Soma should present a summarized
+capability posture at initialization, then interrupt the user only when the current task materially
+requires a requestable capability that is not currently authorized.
+
+When several related capabilities are requested together, Soma should summarize them by family for
+readability while preserving exact capability keys in the underlying proposal and grant records.
+Grouping is for comprehension only; approval and activation remain atomic.
+
 ## Proposal Object
 
 Example:

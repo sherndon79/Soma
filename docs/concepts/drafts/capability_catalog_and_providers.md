@@ -165,6 +165,73 @@ Example:
 Grants should be explicit, inspectable, and revocable. Longer-lived grants require stronger
 disclosure and a clearer review surface.
 
+## Capability Views
+
+Soma should not ask a model to define its own capabilities. The harness should prepare a capability
+view from the catalog, provider registry, runtime profile, and current grants.
+
+The useful status classes are:
+
+- **active**: allowed in the effective harness now.
+- **requestable**: known, supported, disabled, and eligible for proposal.
+- **unsupported**: known to the catalog, but no installed provider or current runtime can support it.
+- **design_review**: not cataloged, or not yet specified enough to activate.
+- **forbidden**: known but intentionally non-activatable.
+- **excluded**: explicitly outside the current request.
+
+The model may use active capabilities, request requestable capabilities, and mention unsupported or
+design-review capabilities as unavailable or future design notes. It should not request forbidden
+capabilities or treat uncataloged ideas as activatable authority.
+
+Capability usability should be computed by Soma:
+
+```text
+catalog capability
+  + installed provider support
+  + current model/runtime profile traits
+  + current grant state
+  = active / requestable / unsupported / design_review / forbidden / excluded
+```
+
+Some capabilities are model-independent because the model only receives bounded results. Others
+need model/runtime traits such as structured tool calling, multimodal input, native audio, long
+context, or strict JSON output.
+
+## Review Cadence
+
+Soma should avoid a constant stream of permission prompts. Capability review should happen in two
+main places:
+
+- **Initialization review**: present the effective harness, active grants, available providers, and
+  a summarized catalog posture when Soma starts or enters a project/session.
+- **Just-in-time review**: request approval only when the current task materially needs a
+  requestable capability that is not currently authorized.
+
+Routine task flow should use the active harness without repeated prompts. Unsupported or
+design-review-only capabilities should be surfaced as explanation or planning context, not as
+approval requests.
+
+## Transparency Without Overload
+
+The user should not be inundated with a giant permission wall. Soma should use layered disclosure:
+
+1. **Task-relevant proposal**: the small set of capabilities requested for the current task.
+2. **Grouped digest**: a family-level summary such as desktop inspection, file access, memory,
+   network, audio, or actuation.
+3. **Expandable detail**: exact capability keys, provider, scope, data exposed, exclusions,
+   constraints, provenance, and revocation path.
+
+Related capabilities may be grouped for comprehension, but grants must remain atomic.
+
+Rule:
+
+**Summaries may group capabilities. Grants must record exact capability keys.**
+
+For example, a user-facing prompt may summarize "2 desktop inspection capabilities requested", but
+the grant store should record `desktop.inspect.focus` and `desktop.inspect.windows` separately, with
+explicit exclusions such as `desktop.inspect.text`, screenshots, pointer control, and keyboard
+actuation.
+
 ## Harness Modules
 
 Harness modules remain useful, but they should not become the only extension primitive.

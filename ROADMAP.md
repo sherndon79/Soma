@@ -68,6 +68,9 @@ Constraints:
 
 ## Near-Term
 
+- Add an in-memory capability proposal store with required reason, scope, risk, data exposure,
+  fallback, user notification shape, and provenance. Do not activate capabilities in the first
+  proposal slice.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if

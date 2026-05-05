@@ -129,6 +129,11 @@ The short rule:
 A participant may usually reduce their own exposure or power without approval. Increasing
 perception, persistence, actuation, export, or effect on others requires assent, review, or both.
 
+Capability widening should begin as a proposal, not an activation. A model or helper may request a
+capability and provide a reason, scope, risk summary, data exposure, and fallback, but the harness
+must notify the user and wait for approval before any widening can occur. See
+[Capability Proposals](./capability_proposals.md).
+
 ## First Implementation Slice
 
 An early Soma slice could implement:
@@ -138,6 +143,7 @@ An early Soma slice could implement:
 - a local module registry in files or SQLite
 - self-apply narrowing modules
 - explicit approval prompts for restricted widening
+- a capability proposal store before any widening activation
 - capability checks in tool, memory, perception, and model-routing paths
 - simple audit records for restricted or irreversible actions
 

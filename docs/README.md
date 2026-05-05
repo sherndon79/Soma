@@ -29,6 +29,7 @@ Draft concepts are working documents. They are not final architecture, but they 
 should inform implementation.
 
 - [Adaptable Harness](./concepts/drafts/adaptable_harness.md)
+- [Capability Proposals](./concepts/drafts/capability_proposals.md)
 - [Cognitive Load Stewardship](./concepts/drafts/cognitive_load_stewardship.md)
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)

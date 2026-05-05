@@ -281,6 +281,7 @@ Current scaffold:
 - `soma desktop inspect --json` calls the endpoint
 - `soma desktop inspect --mode atspi --json` asks for AT-SPI participant, application-root, and
   shallow child role/count metadata
+- `soma desktop inspect --mode atspi` prints a concise operator summary instead of the full tree
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
 - `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper

@@ -145,9 +145,10 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "desktop" && subcommand === "inspect") {
-    writeOutput(stdout, await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {
+    const response = await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {
       mode: flags.mode,
-    }), jsonOutput);
+    });
+    writeOutput(stdout, response, jsonOutput, desktopInspectionSummary(response));
     return 0;
   }
 
@@ -241,6 +242,47 @@ function writeOutput(stdout, payload, jsonOutput, textOutput = "") {
     return;
   }
   stdout.write(`${textOutput}\n`);
+}
+
+function desktopInspectionSummary(response) {
+  const inspection = response.inspection ?? {};
+  const tree = inspection.tree ?? {};
+  const applications = Array.isArray(tree.applications) ? tree.applications : [];
+  const rootObjects = applications.filter((application) => application.root_object).length;
+  const childMetadataCount = applications.reduce((count, application) => {
+    const sample = application.root_object?.child_metadata_sample;
+    return count + (Array.isArray(sample) ? sample.length : 0);
+  }, 0);
+
+  const lines = [
+    "Desktop inspection",
+    `  mode: ${inspection.mode ?? "unknown"}`,
+    `  broker: ${inspection.broker_source ?? "unknown"}`,
+    `  session: ${inspection.desktop_session ?? "unknown"} (${inspection.session_type ?? "unknown"})`,
+    `  tree available: ${booleanText(inspection.tree_available)}`,
+    `  applications: ${inspection.application_count ?? applications.length}`,
+    `  root objects: ${inspection.root_object_available_count ?? rootObjects}`,
+    `  shallow child metadata: ${childMetadataCount}`,
+    `  windows: ${inspection.window_count ?? 0}`,
+    `  text content included: ${booleanText(tree.text_content_included)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+
+  if (inspection.unavailable_reason) {
+    lines.splice(5, 0, `  unavailable reason: ${inspection.unavailable_reason}`);
+  }
+
+  return lines.join("\n");
+}
+
+function booleanText(value) {
+  if (value === true) {
+    return "yes";
+  }
+  if (value === false) {
+    return "no";
+  }
+  return "unknown";
 }
 
 function usageError(message) {

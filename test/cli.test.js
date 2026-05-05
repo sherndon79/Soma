@@ -134,16 +134,48 @@ test("runCli files read sends expected request body", async () => {
 
 test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
   let captured;
+  const writes = [];
 
   await runCli(parseCli(["node", "soma", "desktop", "inspect", "--mode", "atspi"]), {
-    stdout: { write() {} },
+    stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, method, requestPath, body) => {
       captured = { method, requestPath, body };
-      return { inspection: { mode: "read_only_environment_probe" } };
+      return {
+        provenance_id: "prov-1",
+        inspection: {
+          mode: "read_only_atspi_probe",
+          broker_source: "rust_helper",
+          desktop_session: "GNOME",
+          session_type: "wayland",
+          application_count: 2,
+          root_object_available_count: 1,
+          window_count: 0,
+          tree_available: true,
+          tree: {
+            text_content_included: false,
+            applications: [
+              {
+                root_object: {
+                  child_metadata_sample: [
+                    { role: "frame", child_count: 0 },
+                  ],
+                },
+              },
+              { root_object: null },
+            ],
+          },
+        },
+      };
     },
   });
 
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/desktop/inspect/accessibility-tree");
   assert.deepEqual(captured.body, { mode: "atspi" });
+  assert.match(writes.join(""), /Desktop inspection/);
+  assert.match(writes.join(""), /applications: 2/);
+  assert.match(writes.join(""), /root objects: 1/);
+  assert.match(writes.join(""), /shallow child metadata: 1/);
+  assert.match(writes.join(""), /text content included: no/);
+  assert.match(writes.join(""), /provenance: prov-1/);
 });

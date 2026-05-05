@@ -74,12 +74,15 @@ npm run cli -- modules adopt soma.module.no-session-memory
 npm run cli -- memory add "Session note" --role note
 npm run cli -- files read README.md
 npm run cli -- desktop inspect
+npm run cli -- desktop inspect --mode atspi
 npm run cli -- desktop inspect --mode atspi --json
 npm run cli -- provenance summary
+npm run cli -- provenance list --capability desktop.inspect.accessibility_tree
 npm run cli -- stewardship assess "I feel overwhelmed and need a break"
 ```
 
-Use `--json` on any command to print the full API response.
+Use `--json` on any command to print the full API response. `desktop inspect` prints a concise
+operator summary by default and keeps the full inspection tree behind `--json`.
 
 ## Endpoints
 

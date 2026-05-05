@@ -91,6 +91,7 @@ test("runCli chat sends expected request body", async () => {
 
 test("runCli provenance list builds filters", async () => {
   let capturedPath = "";
+  const writes = [];
   await runCli(parseCli([
     "node",
     "soma",
@@ -103,14 +104,34 @@ test("runCli provenance list builds filters", async () => {
     "--limit",
     "5",
   ]), {
-    stdout: { write() {} },
+    stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, _method, path) => {
       capturedPath = path;
-      return { entries: [] };
+      return {
+        entries: [
+          {
+            id: "prov-1",
+            timestamp: "2026-05-05T00:00:00.000Z",
+            event_type: "desktop.inspect.accessibility_tree",
+            capability: "desktop.inspect.accessibility_tree",
+            allowed: true,
+            inspection_mode: "read_only_atspi_probe",
+            requested_mode: "atspi",
+            requested_max_apps: 2,
+            requested_max_children: 1,
+            application_count: 2,
+            root_object_available_count: 2,
+          },
+        ],
+      };
     },
   });
 
   assert.equal(capturedPath, "/provenance?allowed=false&event_type=harness.module.adopted&limit=5");
+  assert.match(writes.join(""), /Provenance entries/);
+  assert.match(writes.join(""), /desktop\.inspect\.accessibility_tree/);
+  assert.match(writes.join(""), /max_apps=2/);
+  assert.match(writes.join(""), /apps=2/);
 });
 
 test("runCli files read sends expected request body", async () => {

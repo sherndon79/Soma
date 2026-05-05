@@ -182,6 +182,8 @@ Returns aggregate counts for provenance entries when `provenance.read` is allowe
 Clears the in-process provenance log when `provenance.clear` is allowed.
 
 The MVP provenance log is not durable. It is lost when the Soma process stops.
+The CLI prints concise provenance list summaries by default and keeps full event records behind
+`--json`.
 
 ### `POST /stewardship/cognitive-load`
 

@@ -123,7 +123,8 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
         query.set("limit", String(flags.limit));
       }
       const suffix = query.size > 0 ? `?${query}` : "";
-      writeOutput(stdout, await request(baseUrl, "GET", `/provenance${suffix}`), jsonOutput);
+      const response = await request(baseUrl, "GET", `/provenance${suffix}`);
+      writeOutput(stdout, response, jsonOutput, provenanceListSummary(response));
       return 0;
     }
     if (subcommand === "clear") {
@@ -285,6 +286,56 @@ function booleanText(value) {
     return "no";
   }
   return "unknown";
+}
+
+function provenanceListSummary(response) {
+  const entries = Array.isArray(response.entries) ? response.entries : [];
+  if (entries.length === 0) {
+    return "Provenance entries\n  none";
+  }
+
+  const lines = ["Provenance entries"];
+  for (const entry of entries) {
+    lines.push(formatProvenanceEntry(entry));
+  }
+  return lines.join("\n");
+}
+
+function formatProvenanceEntry(entry) {
+  const status = entry.allowed === false ? "denied" : "allowed";
+  const parts = [
+    `  ${entry.timestamp ?? "unknown-time"}`,
+    `[${status}]`,
+    entry.event_type ?? "unknown-event",
+    `capability=${entry.capability ?? "unknown"}`,
+  ];
+
+  if (entry.id) {
+    parts.push(`id=${entry.id}`);
+  }
+  if (entry.inspection_mode) {
+    parts.push(`mode=${entry.inspection_mode}`);
+  }
+  if (entry.requested_mode) {
+    parts.push(`requested=${entry.requested_mode}`);
+  }
+  if (entry.requested_max_apps !== undefined && entry.requested_max_apps !== null) {
+    parts.push(`max_apps=${entry.requested_max_apps}`);
+  }
+  if (entry.requested_max_children !== undefined && entry.requested_max_children !== null) {
+    parts.push(`max_children=${entry.requested_max_children}`);
+  }
+  if (entry.application_count !== undefined && entry.application_count !== null) {
+    parts.push(`apps=${entry.application_count}`);
+  }
+  if (entry.root_object_available_count !== undefined && entry.root_object_available_count !== null) {
+    parts.push(`roots=${entry.root_object_available_count}`);
+  }
+  if (entry.denial_reason) {
+    parts.push(`reason=${entry.denial_reason}`);
+  }
+
+  return parts.join(" ");
 }
 
 function usageError(message) {

@@ -134,6 +134,41 @@ test("runCli provenance list builds filters", async () => {
   assert.match(writes.join(""), /apps=2/);
 });
 
+test("runCli provenance summary prints operator summary", async () => {
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "provenance", "summary"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      assert.equal(path, "/provenance/summary");
+      return {
+        summary: {
+          total: 4,
+          allowed: 3,
+          denied: 1,
+          memory_read: 1,
+          memory_written: 2,
+          remote_service_used: 0,
+          cognitive_load_assessed: 1,
+          by_capability: {
+            "desktop.inspect.accessibility_tree": 1,
+            "model.local.chat": 2,
+          },
+          by_event_type: {
+            "desktop.inspect.accessibility_tree": 1,
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.match(writes.join(""), /Provenance summary/);
+  assert.match(writes.join(""), /total: 4/);
+  assert.match(writes.join(""), /denied: 1/);
+  assert.match(writes.join(""), /desktop\.inspect\.accessibility_tree: 1/);
+});
+
 test("runCli files read sends expected request body", async () => {
   let captured;
   const writes = [];

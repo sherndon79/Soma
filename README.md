@@ -82,8 +82,9 @@ npm run cli -- provenance list --capability desktop.inspect.accessibility_tree
 npm run cli -- stewardship assess "I feel overwhelmed and need a break"
 ```
 
-Use `--json` on any command to print the full API response. `desktop inspect` and
-`provenance list` print concise operator summaries by default; full records stay behind `--json`.
+Use `--json` on any command to print the full API response. `desktop inspect`,
+`provenance summary`, and `provenance list` print concise operator summaries by default; full
+records stay behind `--json`.
 
 ## Endpoints
 

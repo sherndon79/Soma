@@ -105,7 +105,8 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
 
   if (command === "provenance") {
     if (subcommand === "summary" || !subcommand) {
-      writeOutput(stdout, await request(baseUrl, "GET", "/provenance/summary"), jsonOutput);
+      const response = await request(baseUrl, "GET", "/provenance/summary");
+      writeOutput(stdout, response, jsonOutput, provenanceSummaryText(response));
       return 0;
     }
     if (subcommand === "list") {
@@ -336,6 +337,35 @@ function formatProvenanceEntry(entry) {
   }
 
   return parts.join(" ");
+}
+
+function provenanceSummaryText(response) {
+  const summary = response.summary ?? {};
+  const lines = [
+    "Provenance summary",
+    `  total: ${summary.total ?? 0}`,
+    `  allowed: ${summary.allowed ?? 0}`,
+    `  denied: ${summary.denied ?? 0}`,
+    `  memory read: ${summary.memory_read ?? 0}`,
+    `  memory written: ${summary.memory_written ?? 0}`,
+    `  remote service used: ${summary.remote_service_used ?? 0}`,
+    `  cognitive load assessed: ${summary.cognitive_load_assessed ?? 0}`,
+  ];
+
+  appendCountMap(lines, "by capability", summary.by_capability);
+  appendCountMap(lines, "by event type", summary.by_event_type);
+  return lines.join("\n");
+}
+
+function appendCountMap(lines, label, value) {
+  const entries = Object.entries(value ?? {});
+  if (entries.length === 0) {
+    return;
+  }
+  lines.push(`  ${label}:`);
+  for (const [key, count] of entries.sort(([left], [right]) => left.localeCompare(right))) {
+    lines.push(`    ${key}: ${count}`);
+  }
 }
 
 function usageError(message) {

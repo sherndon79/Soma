@@ -28,7 +28,8 @@ Current authority boundary:
 
 ## Next Slice
 
-Expand the read-only AT-SPI inspection path from root objects to a bounded accessibility tree.
+Expand the read-only AT-SPI inspection path from shallow child metadata to a bounded accessibility
+tree.
 
 Target:
 
@@ -48,7 +49,8 @@ Expected shape:
       "name": "Example",
       "role": "application",
       "child_count": 4,
-      "children_sample": []
+      "children_sample": [],
+      "child_metadata_sample": []
     }
   ]
 }
@@ -67,8 +69,7 @@ Constraints:
 ## Near-Term
 
 - Define the broker JSON schema for desktop inspection results.
-- Expand bounded AT-SPI inspection from application root metadata into shallow child object
-  traversal.
+- Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal.
 - Add capability keys for finer desktop inspection:
   - `desktop.inspect.applications`
   - `desktop.inspect.windows`

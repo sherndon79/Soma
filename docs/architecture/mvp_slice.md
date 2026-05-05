@@ -209,9 +209,9 @@ Returns read-only desktop broker metadata when `desktop.inspect.accessibility_tr
 
 By default the endpoint reports platform, session, D-Bus, display, and candidate adapter
 availability. With `{ "mode": "atspi" }`, it asks the Rust helper for a bounded AT-SPI probe that
-lists bus participant metadata and application root-object metadata when available. The current
-scaffold does not recursively traverse AT-SPI child objects and does not extract text content, take
-screenshots, or perform actuation.
+lists bus participant metadata, application root-object metadata, and shallow child role/count
+metadata when available. The current scaffold does not recursively traverse AT-SPI child objects,
+read child names/descriptions, extract text content, take screenshots, or perform actuation.
 
 ## Initial Capability Vocabulary
 

@@ -265,10 +265,10 @@ Current scaffold:
 - `desktop.inspect.accessibility_tree` is present in the base harness
 - `POST /desktop/inspect/accessibility-tree` returns environment metadata by default
 - `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for bounded
-  read-only AT-SPI bus participant and root-object metadata
+  read-only AT-SPI bus participant, root-object, and shallow child role/count metadata
 - `soma desktop inspect --json` calls the endpoint
-- `soma desktop inspect --mode atspi --json` asks for AT-SPI participant and application-root
-  metadata
+- `soma desktop inspect --mode atspi --json` asks for AT-SPI participant, application-root, and
+  shallow child role/count metadata
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
 - `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper
@@ -278,7 +278,9 @@ Current scaffold:
   actions are implemented
 - root object reads include root name, role, child count, and a bounded sample of child object
   references
-- no recursive AT-SPI child-object metadata traversal has been implemented yet
+- shallow child-object reads include role and child count only; child names and descriptions are
+  excluded by default
+- no recursive AT-SPI child-object traversal has been implemented yet
 
 Likely next implementation shape:
 
@@ -318,8 +320,9 @@ Implementation note:
 The first Soma AT-SPI command uses the session bus `org.a11y.Bus` pointer to locate the separate
 AT-SPI bus, lists bounded AT-SPI bus participants through `busctl`, and reads each participant's
 accessible root object when available. The root-object read includes name, role, child count, and
-bounded child references. It does not recursively inspect child metadata, extract text content, or
-invoke actions.
+bounded child references. It also reads shallow child role/count metadata for a small sample of root
+children. It does not recursively traverse child objects, read child names/descriptions, extract
+text content, or invoke actions.
 
 ### Accessibility Automation References
 

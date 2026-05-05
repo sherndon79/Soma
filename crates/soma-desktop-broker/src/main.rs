@@ -2,6 +2,10 @@ use std::env;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
+const MAX_APPLICATIONS: usize = 64;
+const MAX_ROOT_CHILD_REFS: usize = 8;
+const MAX_ROOT_CHILD_METADATA: usize = 4;
+
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
@@ -176,7 +180,7 @@ fn inspect_atspi_json() -> String {
     };
 
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
-    let applications = parse_atspi_bus_list(&list_stdout, 64)
+    let applications = parse_atspi_bus_list(&list_stdout, MAX_APPLICATIONS)
         .into_iter()
         .map(|application| application.with_root_object(&address))
         .collect::<Vec<_>>();
@@ -352,12 +356,19 @@ struct AtspiRootObject {
     role: String,
     child_count: i32,
     children_sample: Vec<AtspiObjectRef>,
+    child_metadata_sample: Vec<AtspiChildMetadata>,
 }
 
 impl AtspiRootObject {
     fn to_json(&self) -> String {
         let children_json = self
             .children_sample
+            .iter()
+            .map(|child| child.to_json())
+            .collect::<Vec<_>>()
+            .join(",");
+        let child_metadata_json = self
+            .child_metadata_sample
             .iter()
             .map(|child| child.to_json())
             .collect::<Vec<_>>()
@@ -369,13 +380,15 @@ impl AtspiRootObject {
                 "\"name\":\"{}\",",
                 "\"role\":\"{}\",",
                 "\"child_count\":{},",
-                "\"children_sample\":[{}]",
+                "\"children_sample\":[{}],",
+                "\"child_metadata_sample\":[{}]",
                 "}}"
             ),
             json_escape(&self.name),
             json_escape(&self.role),
             self.child_count,
             children_json,
+            child_metadata_json,
         )
     }
 }
@@ -383,6 +396,32 @@ impl AtspiRootObject {
 struct AtspiObjectRef {
     service: String,
     path: String,
+}
+
+struct AtspiChildMetadata {
+    service: String,
+    path: String,
+    role: String,
+    child_count: i32,
+}
+
+impl AtspiChildMetadata {
+    fn to_json(&self) -> String {
+        format!(
+            concat!(
+                "{{",
+                "\"service\":\"{}\",",
+                "\"path\":\"{}\",",
+                "\"role\":\"{}\",",
+                "\"child_count\":{}",
+                "}}"
+            ),
+            json_escape(&self.service),
+            json_escape(&self.path),
+            json_escape(&self.role),
+            self.child_count,
+        )
+    }
 }
 
 impl AtspiObjectRef {
@@ -468,11 +507,52 @@ fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, 
     ])
     .unwrap_or_default();
 
+    let children_sample = parse_atspi_object_refs(&children_output, MAX_ROOT_CHILD_REFS);
+    let child_metadata_sample = children_sample
+        .iter()
+        .take(MAX_ROOT_CHILD_METADATA)
+        .filter_map(|child| inspect_child_metadata(address, child).ok())
+        .collect();
+
     Ok(AtspiRootObject {
         name: parse_busctl_string(&name_output).unwrap_or_default(),
         role: parse_busctl_string(&role_output).unwrap_or_default(),
         child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
-        children_sample: parse_atspi_object_refs(&children_output, 8),
+        children_sample,
+        child_metadata_sample,
+    })
+}
+
+fn inspect_child_metadata(
+    address: &str,
+    child: &AtspiObjectRef,
+) -> Result<AtspiChildMetadata, String> {
+    const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
+
+    let role_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &child.service,
+        &child.path,
+        ACCESSIBLE_INTERFACE,
+        "GetRoleName",
+    ])?;
+    let child_count_output = busctl_output(&[
+        "--address",
+        address,
+        "get-property",
+        &child.service,
+        &child.path,
+        ACCESSIBLE_INTERFACE,
+        "ChildCount",
+    ])?;
+
+    Ok(AtspiChildMetadata {
+        service: child.service.clone(),
+        path: child.path.clone(),
+        role: parse_busctl_string(&role_output).unwrap_or_default(),
+        child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
     })
 }
 

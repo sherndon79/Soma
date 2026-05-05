@@ -70,6 +70,7 @@ Constraints:
 
 ## Near-Term
 
+- Add an opt-in local-model capability evaluation command before implementing grants or activation.
 - Add a grant design and durable-ish grant store shape before implementing activation.
 - Add proposal notification surfacing and show/revocation records without activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused

@@ -197,6 +197,11 @@ Some capabilities are model-independent because the model only receives bounded 
 need model/runtime traits such as structured tool calling, multimodal input, native audio, long
 context, or strict JSON output.
 
+The capability view should also be evaluated against the local model, not only tested as data.
+Model-facing evaluations should verify that the model does not claim unsupported authority and uses
+exact capability keys when proposing new access. See
+[Model Capability Evaluations](./model_capability_evaluations.md).
+
 ## Review Cadence
 
 Soma should avoid a constant stream of permission prompts. Capability review should happen in two

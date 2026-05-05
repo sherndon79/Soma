@@ -100,6 +100,20 @@ Returns the effective base harness manifest.
 
 This should make current capability terms and runtime profiles visible rather than implicit.
 
+### `GET /capability-view`
+
+Returns a read-only initialization/review view derived from the capability catalog, provider
+registry, and effective harness. The view groups capabilities by category and status:
+
+- `active`
+- `requestable`
+- `unsupported`
+- `disabled`
+- `forbidden`
+- `excluded`
+
+The capability view does not activate or grant capabilities.
+
 ### `GET /harness-modules`
 
 Returns approved visible harness modules and the current active module stack.

@@ -10,6 +10,8 @@ Implemented:
 - Node service plane for API, policy checks, harness modules, provenance, and CLI
 - local vLLM/OpenAI-compatible chat routing
 - runtime profiles
+- file-backed capability catalog and provider registry
+- grouped read-only capability view endpoint and CLI summary
 - ephemeral in-process session memory
 - bounded in-process provenance log with filters and summary
 - text-only cognitive-load stewardship
@@ -68,8 +70,7 @@ Constraints:
 
 ## Near-Term
 
-- Split the static base harness vocabulary into a capability catalog, provider registry, and grant
-  design before implementing activation.
+- Add a grant design and durable-ish grant store shape before implementing activation.
 - Add proposal notification surfacing and show/revocation records without activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.

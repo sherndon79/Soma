@@ -116,6 +116,58 @@ const moduleRegistry = {
   ],
 };
 
+const capabilityCatalog = {
+  schema_version: 1,
+  capabilities: [
+    {
+      key: "model.local.chat",
+      name: "Local Model Chat",
+      category: "model",
+      risk_class: "low",
+      default_status: "allowed",
+      activation_policy: "base_harness",
+    },
+    {
+      key: "desktop.inspect.focus",
+      name: "Focused Desktop Inspection",
+      category: "desktop",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.inspect.text",
+      name: "Desktop Text Inspection",
+      category: "desktop",
+      risk_class: "high",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+  ],
+};
+
+const providerRegistry = {
+  schema_version: 1,
+  providers: [
+    {
+      id: "local-model",
+      name: "Local Model",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: ["model.local.chat"],
+    },
+    {
+      id: "desktop-broker",
+      name: "Desktop Broker",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: ["desktop.inspect.focus"],
+    },
+  ],
+};
+
 test("GET /health returns ok", async () => {
   const response = await invoke({ method: "GET", url: "/health" });
   assert.equal(response.statusCode, 200);
@@ -127,6 +179,28 @@ test("GET /harness returns active harness", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.harness_id, allowedHarness.harness_id);
   assert.equal(response.body.runtime_profiles.default_profile, "local-test");
+});
+
+test("GET /capability-view groups active requestable and unsupported capabilities", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/capability-view",
+    harness: allowedHarness,
+    capabilityCatalog,
+    providerRegistry,
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.summary.total, 3);
+  assert.equal(response.body.summary.by_status.active, 1);
+  assert.equal(response.body.summary.by_status.requestable, 1);
+  assert.equal(response.body.summary.by_status.unsupported, 1);
+  assert.equal(response.body.grouped.desktop.total, 2);
+  const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
+  const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
+  assert.equal(focus.status, "requestable");
+  assert.equal(focus.providers[0].id, "desktop-broker");
+  assert.equal(text.status, "unsupported");
 });
 
 test("capability proposals can be created and listed without activation", async () => {
@@ -1199,6 +1273,8 @@ async function invoke({
   method,
   url,
   harness = allowedHarness,
+  capabilityCatalog: catalog,
+  providerRegistry: providers,
   runtimeProfiles: profiles = runtimeProfiles,
   modelClient = {
     model: "test-model",
@@ -1214,7 +1290,13 @@ async function invoke({
   },
   body,
 } = {}) {
-  return invokeHandler(makeHandler({ harness, runtimeProfiles: profiles, modelClient }), {
+  return invokeHandler(makeHandler({
+    harness,
+    capabilityCatalog: catalog,
+    providerRegistry: providers,
+    runtimeProfiles: profiles,
+    modelClient,
+  }), {
     method,
     url,
     body,
@@ -1223,6 +1305,8 @@ async function invoke({
 
 function makeHandler({
   harness = allowedHarness,
+  capabilityCatalog: catalog,
+  providerRegistry: providers,
   moduleRegistry: modules = moduleRegistry,
   runtimeProfiles: profiles = runtimeProfiles,
   modelClient = {
@@ -1240,6 +1324,8 @@ function makeHandler({
 } = {}) {
   return createRequestHandler({
     harness,
+    capabilityCatalog: catalog,
+    providerRegistry: providers,
     moduleRegistry: modules,
     runtimeProfiles: profiles,
     modelClient,

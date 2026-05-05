@@ -108,6 +108,26 @@ npm run cli -- provenance list --json
 
 The provenance log is in-process only. It is lost when the service stops.
 
+## Inspect Capability View
+
+The capability view summarizes the current effective harness against the known capability catalog
+and installed providers. It is read-only and does not activate anything.
+
+Concise grouped view:
+
+```bash
+npm run cli -- capabilities
+```
+
+Full capability keys, provider claims, data exposure, exclusions, and status classes:
+
+```bash
+npm run cli -- capabilities --json
+```
+
+Status classes include `active`, `requestable`, `unsupported`, `disabled`, `forbidden`, and
+`excluded`.
+
 ## Revoke Desktop Inspection
 
 Disable all current desktop inspection capabilities for the active process:

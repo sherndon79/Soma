@@ -170,6 +170,48 @@ test("runCli provenance summary prints operator summary", async () => {
   assert.match(writes.join(""), /desktop\.inspect\.accessibility_tree: 1/);
 });
 
+test("runCli capabilities prints grouped capability view", async () => {
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "capabilities"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      assert.equal(path, "/capability-view");
+      return {
+        summary: {
+          total: 3,
+          by_status: {
+            active: 1,
+            requestable: 1,
+            unsupported: 1,
+          },
+        },
+        grouped: {
+          desktop: {
+            total: 2,
+            by_status: {
+              requestable: 1,
+              unsupported: 1,
+            },
+          },
+          model: {
+            total: 1,
+            by_status: {
+              active: 1,
+            },
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.match(writes.join(""), /Capability view/);
+  assert.match(writes.join(""), /active: 1/);
+  assert.match(writes.join(""), /desktop: 2 \(requestable=1 unsupported=1\)/);
+  assert.match(writes.join(""), /model: 1 \(active=1\)/);
+});
+
 test("runCli proposals list prints pending proposals", async () => {
   let capturedPath = "";
   const writes = [];

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 
+import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "./desktopBroker.js";
@@ -24,6 +25,8 @@ import { SessionMemory } from "./sessionMemory.js";
 
 export function createApp({
   harness,
+  capabilityCatalog,
+  providerRegistry,
   moduleRegistry,
   runtimeProfiles,
   modelClient,
@@ -34,6 +37,8 @@ export function createApp({
 } = {}) {
   return createServer(createRequestHandler({
     harness,
+    capabilityCatalog,
+    providerRegistry,
     moduleRegistry,
     runtimeProfiles,
     modelClient,
@@ -46,6 +51,8 @@ export function createApp({
 
 export function createRequestHandler({
   harness,
+  capabilityCatalog,
+  providerRegistry,
   moduleRegistry = { schema_version: 1, modules: [] },
   runtimeProfiles,
   modelClient,
@@ -80,6 +87,15 @@ export function createRequestHandler({
           ...effectiveHarness,
           runtime_profiles: publicRuntimeProfiles(runtimeProfiles),
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/capability-view") {
+        writeJson(res, 200, buildCapabilityView({
+          catalog: capabilityCatalog,
+          providerRegistry,
+          harness: effectiveHarness,
+        }));
         return;
       }
 

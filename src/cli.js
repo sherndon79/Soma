@@ -81,6 +81,12 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     }
   }
 
+  if (command === "capabilities") {
+    const response = await request(baseUrl, "GET", "/capability-view");
+    writeOutput(stdout, response, jsonOutput, capabilityViewSummary(response));
+    return 0;
+  }
+
   if (command === "proposals") {
     if (subcommand === "list" || !subcommand) {
       const query = new URLSearchParams();
@@ -429,6 +435,31 @@ function proposalDecisionSummary(response) {
   return lines.join("\n");
 }
 
+function capabilityViewSummary(response) {
+  const summary = response.summary ?? {};
+  const grouped = response.grouped ?? {};
+  const lines = [
+    "Capability view",
+    `  total: ${summary.total ?? 0}`,
+  ];
+
+  appendCountMap(lines, "by status", summary.by_status);
+
+  const categories = Object.entries(grouped).sort(([left], [right]) => left.localeCompare(right));
+  if (categories.length > 0) {
+    lines.push("  by category:");
+  }
+  for (const [category, details] of categories) {
+    const statusParts = Object.entries(details.by_status ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([status, count]) => `${status}=${count}`)
+      .join(" ");
+    lines.push(`    ${category}: ${details.total ?? 0}${statusParts ? ` (${statusParts})` : ""}`);
+  }
+
+  return lines.join("\n");
+}
+
 function appendCountMap(lines, label, value) {
   const entries = Object.entries(value ?? {});
   if (entries.length === 0) {
@@ -453,6 +484,7 @@ function helpText() {
 Usage:
   soma status [--json]
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
+  soma capabilities [--json]
   soma modules list|adopt|drop [module-id] [--json]
   soma proposals list [--status pending] [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

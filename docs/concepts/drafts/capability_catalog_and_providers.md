@@ -303,15 +303,17 @@ activation.
 
 Soma currently has partial static versions of these pieces:
 
-- `config/base-harness.json` acts as the initial capability vocabulary and base policy.
+- `config/base-harness.json` acts as the base policy.
+- `config/capability-catalog.json` defines the first known capability catalog.
+- `config/provider-registry.json` defines the first installed provider claims.
 - `config/harness-modules.json` acts as a file-backed registry for approved self-scoped narrowing
   modules.
 - `src/capabilityProposals.js` stores in-memory capability proposals and approval/denial decisions.
+- `GET /capability-view` and `npm run cli -- capabilities` expose a grouped read-only capability
+  view.
 
 Soma does not yet have:
 
-- a separate capability catalog file
-- a provider registry
 - a grant store
 - activation from approved proposals
 - durable proposal or grant records

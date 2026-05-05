@@ -71,6 +71,7 @@ Constraints:
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal.
+- Preserve operator narrowing controls as traversal expands.
 - Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
   content, states, or actions are exposed.
 - Expand provenance for desktop inspection without storing large trees by default.

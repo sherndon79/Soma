@@ -15,16 +15,20 @@ const DEFAULT_HELPER_PATH = fileURLToPath(
 
 export async function inspectDesktopBrokerEnvironment({
   mode = "environment",
+  maxApps,
+  maxChildren,
   env = process.env,
   helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
 } = {}) {
   const normalizedMode = normalizeInspectionMode(mode);
   const helperInspection = await inspectWithRustHelper(helperPath, normalizedMode);
+  const limits = normalizeInspectionLimits({ maxApps, maxChildren });
   if (helperInspection) {
-    return assertDesktopInspectionResult(helperInspection);
+    return limitDesktopInspectionResult(assertDesktopInspectionResult(helperInspection), limits);
   }
-  return assertDesktopInspectionResult(
-    await inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode }),
+  return limitDesktopInspectionResult(
+    assertDesktopInspectionResult(await inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode })),
+    limits,
   );
 }
 
@@ -100,6 +104,57 @@ async function inspectWithRustHelper(helperPath, mode) {
 
 function normalizeInspectionMode(mode) {
   return mode === "atspi" ? "atspi" : "environment";
+}
+
+function normalizeInspectionLimits({ maxApps, maxChildren }) {
+  return {
+    maxApps: boundedInteger(maxApps, 1, 64),
+    maxChildren: boundedInteger(maxChildren, 0, 8),
+  };
+}
+
+function boundedInteger(value, minimum, maximum) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number)) {
+    return null;
+  }
+  return Math.max(minimum, Math.min(maximum, number));
+}
+
+function limitDesktopInspectionResult(inspection, { maxApps, maxChildren }) {
+  if (!inspection.tree || !Array.isArray(inspection.tree.applications)) {
+    return inspection;
+  }
+
+  const applications = maxApps === null
+    ? inspection.tree.applications
+    : inspection.tree.applications.slice(0, maxApps);
+  const limitedApplications = applications.map((application) => {
+    if (!application.root_object || maxChildren === null) {
+      return application;
+    }
+    return {
+      ...application,
+      root_object: {
+        ...application.root_object,
+        children_sample: application.root_object.children_sample.slice(0, maxChildren),
+        child_metadata_sample: application.root_object.child_metadata_sample.slice(0, maxChildren),
+      },
+    };
+  });
+
+  return {
+    ...inspection,
+    application_count: limitedApplications.length,
+    root_object_available_count: limitedApplications.filter((application) => application.root_object).length,
+    tree: {
+      ...inspection.tree,
+      applications: limitedApplications,
+    },
+  };
 }
 
 async function isExecutable(candidatePath) {

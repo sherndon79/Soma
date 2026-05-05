@@ -223,7 +223,11 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/desktop/inspect/accessibility-tree") {
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
         const body = await readJson(req);
-        const inspection = await inspectDesktopBrokerEnvironment({ mode: body.mode });
+        const inspection = await inspectDesktopBrokerEnvironment({
+          mode: body.mode,
+          maxApps: body.max_apps,
+          maxChildren: body.max_children,
+        });
         const event = provenanceLog.append(createDesktopInspectionEvent({
           inspection,
           caller: req.headers["x-soma-caller"] ?? "",

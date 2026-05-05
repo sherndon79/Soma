@@ -635,6 +635,38 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
+test("desktop accessibility inspection can limit returned applications and child samples", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-limited-endpoint-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":2,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","name":"test-app","role":"application","child_count":2,"children_sample":[{"service":":1.42","path":"/child-a"},{"service":":1.42","path":"/child-b"}],"child_metadata_sample":[{"service":":1.42","path":"/child-a","role":"frame","child_count":0},{"service":":1.42","path":"/child-b","role":"frame","child_count":0}]},"root_object_error":null},{"service":":1.43","pid":124,"process":"other-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","name":"other-app","role":"application","child_count":0,"children_sample":[],"child_metadata_sample":[]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const handler = makeHandler({ harness: allowedHarness });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: { mode: "atspi", max_apps: 1, max_children: 1 },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.inspection.application_count, 1);
+    assert.equal(response.body.inspection.root_object_available_count, 1);
+    assert.equal(response.body.inspection.tree.applications.length, 1);
+    assert.equal(response.body.inspection.tree.applications[0].root_object.children_sample.length, 1);
+    assert.equal(response.body.inspection.tree.applications[0].root_object.child_metadata_sample.length, 1);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
 test("self-applied module disables desktop inspection", async () => {
   const handler = makeHandler({ harness: allowedHarness, moduleRegistry });
 

@@ -147,6 +147,8 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   if (command === "desktop" && subcommand === "inspect") {
     const response = await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {
       mode: flags.mode,
+      max_apps: numberFlag(flags["max-apps"]),
+      max_children: numberFlag(flags["max-children"]),
     });
     writeOutput(stdout, response, jsonOutput, desktopInspectionSummary(response));
     return 0;
@@ -301,7 +303,7 @@ Usage:
   soma modules list|adopt|drop [module-id] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
-  soma desktop inspect [--mode environment|atspi] [--json]
+  soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]
   soma provenance summary|list|clear [--allowed true|false] [--capability key] [--event-type type] [--limit n] [--json]
   soma stewardship assess "text" [--json]
 

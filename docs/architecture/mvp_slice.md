@@ -212,6 +212,8 @@ availability. With `{ "mode": "atspi" }`, it asks the Rust helper for a bounded 
 lists bus participant metadata, application root-object metadata, and shallow child role/count
 metadata when available. The current scaffold does not recursively traverse AT-SPI child objects,
 read child names/descriptions, extract text content, take screenshots, or perform actuation.
+Callers may pass `max_apps` and `max_children` to narrow the returned application list and root
+child samples after broker output validation.
 
 ## Initial Capability Vocabulary
 

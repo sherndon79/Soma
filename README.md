@@ -75,6 +75,7 @@ npm run cli -- memory add "Session note" --role note
 npm run cli -- files read README.md
 npm run cli -- desktop inspect
 npm run cli -- desktop inspect --mode atspi
+npm run cli -- desktop inspect --mode atspi --max-apps 8 --max-children 2
 npm run cli -- desktop inspect --mode atspi --json
 npm run cli -- provenance summary
 npm run cli -- provenance list --capability desktop.inspect.accessibility_tree

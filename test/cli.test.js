@@ -136,7 +136,18 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
   let captured;
   const writes = [];
 
-  await runCli(parseCli(["node", "soma", "desktop", "inspect", "--mode", "atspi"]), {
+  await runCli(parseCli([
+    "node",
+    "soma",
+    "desktop",
+    "inspect",
+    "--mode",
+    "atspi",
+    "--max-apps",
+    "2",
+    "--max-children",
+    "1",
+  ]), {
     stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, method, requestPath, body) => {
       captured = { method, requestPath, body };
@@ -171,7 +182,7 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
 
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/desktop/inspect/accessibility-tree");
-  assert.deepEqual(captured.body, { mode: "atspi" });
+  assert.deepEqual(captured.body, { mode: "atspi", max_apps: 2, max_children: 1 });
   assert.match(writes.join(""), /Desktop inspection/);
   assert.match(writes.join(""), /applications: 2/);
   assert.match(writes.join(""), /root objects: 1/);

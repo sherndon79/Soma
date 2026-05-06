@@ -10,6 +10,7 @@
   "scripts": {
     "cli": "node src/cli.js",
     "desktop-broker:build": "cargo build -p soma-desktop-broker",
+    "eval:capabilities": "node scripts/eval-capabilities.js",
     "start": "node src/server.js",
     "test": "node --test"
   },

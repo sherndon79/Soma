@@ -119,6 +119,12 @@ records stay behind `--json`.
 npm test
 ```
 
+Opt-in local-model capability evals require the local OpenAI-compatible model runtime:
+
+```bash
+npm run eval:capabilities
+```
+
 ## Smoke Check
 
 With the local model runtime running, check the stack:

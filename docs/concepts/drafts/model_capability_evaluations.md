@@ -45,14 +45,14 @@ Model evaluations should not block normal CI until the local model runtime contr
 
 ## Initial Eval Command
 
-The first implementation can be an explicit opt-in command:
+The first implementation is an explicit opt-in command:
 
 ```bash
 npm run eval:capabilities
 ```
 
-It should call the local model endpoint at low temperature and print structured results. It should
-fail clearly if the model service is unavailable.
+It calls the local model endpoint at low temperature and prints structured results. It fails
+clearly if the model service is unavailable.
 
 ## Initial Scenarios
 

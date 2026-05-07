@@ -70,6 +70,7 @@ npm run cli -- status
 npm run cli -- chat "hello"
 npm run cli -- chat "help me slow this down" --assess-load
 npm run cli -- capabilities
+npm run cli -- notifications
 npm run cli -- modules list
 npm run cli -- modules adopt soma.module.no-session-memory
 npm run cli -- grants list
@@ -97,6 +98,7 @@ records stay behind `--json`.
 - `GET /health`
 - `GET /harness`
 - `GET /capability-view`
+- `GET /notifications`
 - `GET /harness-modules`
 - `POST /harness-modules/adopt`
 - `POST /harness-modules/drop`

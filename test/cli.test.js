@@ -269,6 +269,45 @@ test("runCli proposals list prints pending proposals", async () => {
   assert.doesNotMatch(writes.join(""), /risk: May reveal active application context\./);
 });
 
+test("runCli notifications prints proposal review actions", async () => {
+  let capturedPath = "";
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "notifications"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      capturedPath = path;
+      return {
+        notifications: [
+          {
+            id: "notification-proposal-1",
+            type: "capability_proposal",
+            status: "pending",
+            proposal_id: "proposal-1",
+            requested_by: "assistant",
+            capability: "desktop.inspect.focus",
+            requested_scope: "session",
+            reason: "Need focused object role.",
+            activation_performed: false,
+          },
+        ],
+        summary: { total: 1 },
+        activation_performed: false,
+        durable: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(capturedPath, "/notifications");
+  assert.match(writes.join(""), /Notifications/);
+  assert.match(writes.join(""), /desktop\.inspect\.focus/);
+  assert.match(writes.join(""), /show: soma proposals show proposal-1/);
+  assert.match(writes.join(""), /approve: soma proposals approve proposal-1 --scope session/);
+  assert.match(writes.join(""), /deny: soma proposals deny proposal-1 --reason text/);
+  assert.match(writes.join(""), /activation performed: no/);
+});
+
 test("runCli proposals show prints full review context", async () => {
   let capturedPath = "";
   const writes = [];

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
-import { CapabilityProposalStore } from "./capabilityProposals.js";
+import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "./desktopBroker.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
@@ -117,6 +117,19 @@ export function createRequestHandler({
           proposals: capabilityProposals.list({
             status: url.searchParams.get("status") ?? "",
           }),
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/notifications") {
+        const notifications = capabilityProposals.notifications({
+          status: url.searchParams.get("status") ?? "pending",
+        });
+        writeJson(res, 200, {
+          notifications,
+          summary: summarizeNotifications(notifications),
+          activation_performed: false,
           durable: false,
         });
         return;

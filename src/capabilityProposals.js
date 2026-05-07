@@ -22,6 +22,10 @@ export class CapabilityProposalStore {
     return entries.filter((proposal) => proposal.status === status);
   }
 
+  notifications({ status = "pending" } = {}) {
+    return this.list({ status }).map(proposalNotification);
+  }
+
   pendingCount() {
     return this.proposals.filter((proposal) => proposal.status === "pending").length;
   }
@@ -58,6 +62,60 @@ export class CapabilityProposalStore {
     }
     return proposal;
   }
+}
+
+export function proposalNotification(proposal) {
+  return {
+    id: `notification-${proposal.id}`,
+    type: "capability_proposal",
+    status: proposal.status,
+    title: proposal.notification?.title ?? "Capability requested",
+    proposal_id: proposal.id,
+    requested_by: proposal.requested_by,
+    capability: proposal.capability,
+    reason: proposal.reason,
+    requested_scope: proposal.requested_scope,
+    data_exposed: proposal.data_exposed,
+    excluded_data: proposal.excluded_data,
+    risk: proposal.risk,
+    fallback: proposal.fallback,
+    choices: [
+      {
+        action: "show",
+        method: "GET",
+        path: `/capability-proposals/${proposal.id}`,
+      },
+      {
+        action: "approve",
+        method: "POST",
+        path: `/capability-proposals/${proposal.id}/approve`,
+      },
+      {
+        action: "deny",
+        method: "POST",
+        path: `/capability-proposals/${proposal.id}/deny`,
+      },
+    ],
+    created_at: proposal.created_at,
+    updated_at: proposal.updated_at ?? "",
+    provenance_id: proposal.provenance_id ?? "",
+    activation_performed: false,
+    durable: false,
+  };
+}
+
+export function summarizeNotifications(notifications = []) {
+  const byType = {};
+  const byStatus = {};
+  for (const notification of notifications) {
+    byType[notification.type] = (byType[notification.type] ?? 0) + 1;
+    byStatus[notification.status] = (byStatus[notification.status] ?? 0) + 1;
+  }
+  return {
+    total: notifications.length,
+    by_type: byType,
+    by_status: byStatus,
+  };
 }
 
 export function normalizeProposal(input, now = () => new Date()) {

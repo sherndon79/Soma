@@ -114,6 +114,13 @@ registry, and effective harness. The view groups capabilities by category and st
 
 The capability view does not activate or grant capabilities.
 
+### `GET /notifications`
+
+Returns pending review notifications. The current implementation derives notifications from
+pending capability proposals and includes action paths for show, approve, and deny.
+
+Notification surfacing does not create grants or activate capabilities.
+
 ### `GET /harness-modules`
 
 Returns approved visible harness modules and the current active module stack.

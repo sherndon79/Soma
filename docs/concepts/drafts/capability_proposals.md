@@ -185,6 +185,7 @@ Initial proposal store:
 POST /capability-proposals
 GET /capability-proposals
 GET /capability-proposals/:id
+GET /notifications
 ```
 
 Later approval:
@@ -202,6 +203,7 @@ record proposals.
 
 ```bash
 npm run cli -- proposals list
+npm run cli -- notifications
 npm run cli -- proposals show proposal-id
 npm run cli -- proposals deny proposal-id
 npm run cli -- proposals approve proposal-id --scope session
@@ -245,7 +247,10 @@ Current implementation status:
 - `POST /capability-proposals` creates an in-memory pending proposal.
 - `GET /capability-proposals` lists proposals and supports `status=pending`.
 - `GET /capability-proposals/:id` shows full review context for one proposal.
+- `GET /notifications` surfaces pending proposal notifications with show/approve/deny action
+  paths.
 - `npm run cli -- proposals list` prints a concise proposal summary.
+- `npm run cli -- notifications` prints pending proposal-review notifications.
 - `npm run cli -- proposals show proposal-id` prints full review context.
 - `POST /capability-proposals/:id/approve` records an approval decision with approved scope.
 - `POST /capability-proposals/:id/deny` records a denial decision with reason.
@@ -259,8 +264,6 @@ Current implementation status:
 
 Phase 2:
 
-- pending proposal notifications in `status`
-- proposal show command
 - still no activation
 
 Phase 3:

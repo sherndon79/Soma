@@ -131,6 +131,24 @@ npm run cli -- capabilities --json
 Status classes include `active`, `requestable`, `unsupported`, `disabled`, `forbidden`, and
 `excluded`.
 
+## Inspect Notifications
+
+Notifications surface pending review work without granting or activating anything. Current
+notifications are derived from pending capability proposals.
+
+```bash
+npm run cli -- notifications
+```
+
+Full notification JSON:
+
+```bash
+npm run cli -- notifications --json
+```
+
+Notification actions point back to proposal review commands. Approval and denial still record
+proposal decisions only; they do not create grants or activate capabilities.
+
 ## Revoke Desktop Inspection
 
 Disable all current desktop inspection capabilities for the active process:

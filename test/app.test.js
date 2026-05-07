@@ -292,6 +292,25 @@ test("capability proposals can be created and listed without activation", async 
 
   response = await invokeHandler(handler, {
     method: "GET",
+    url: "/notifications",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.notifications.length, 1);
+  assert.equal(response.body.notifications[0].type, "capability_proposal");
+  assert.equal(response.body.notifications[0].proposal_id, proposalId);
+  assert.equal(response.body.notifications[0].capability, "desktop.inspect.focus");
+  assert.equal(response.body.notifications[0].activation_performed, false);
+  assert.equal(response.body.notifications[0].choices[0].path, `/capability-proposals/${proposalId}`);
+  assert.equal(response.body.notifications[0].choices[1].path, `/capability-proposals/${proposalId}/approve`);
+  assert.equal(response.body.notifications[0].choices[2].path, `/capability-proposals/${proposalId}/deny`);
+  assert.equal(response.body.summary.total, 1);
+  assert.equal(response.body.summary.by_type.capability_proposal, 1);
+  assert.equal(response.body.summary.by_status.pending, 1);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
     url: "/harness-modules",
   });
   assert.equal(response.statusCode, 200);

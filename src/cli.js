@@ -90,6 +90,17 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "notifications") {
+    const query = new URLSearchParams();
+    if (flags.status) {
+      query.set("status", String(flags.status));
+    }
+    const suffix = query.size > 0 ? `?${query}` : "";
+    const response = await request(baseUrl, "GET", `/notifications${suffix}`);
+    writeOutput(stdout, response, jsonOutput, notificationSummary(response));
+    return 0;
+  }
+
   if (command === "proposals") {
     if (subcommand === "list" || !subcommand) {
       const query = new URLSearchParams();
@@ -435,6 +446,33 @@ function proposalListSummary(response) {
   return lines.join("\n");
 }
 
+function notificationSummary(response) {
+  const notifications = Array.isArray(response.notifications) ? response.notifications : [];
+  if (notifications.length === 0) {
+    return "Notifications\n  none";
+  }
+
+  const lines = [
+    "Notifications",
+    `  total: ${response.summary?.total ?? notifications.length}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ];
+  for (const notification of notifications) {
+    lines.push([
+      `  ${notification.id ?? "unknown-id"}`,
+      `[${notification.status ?? "unknown-status"}]`,
+      `type=${notification.type ?? "unknown"}`,
+      `capability=${notification.capability ?? "unknown"}`,
+      `proposal=${notification.proposal_id ?? "unknown"}`,
+    ].join(" "));
+    lines.push(`    reason: ${notification.reason ?? ""}`);
+    lines.push(`    show: soma proposals show ${notification.proposal_id ?? "proposal-id"}`);
+    lines.push(`    approve: soma proposals approve ${notification.proposal_id ?? "proposal-id"} --scope ${notification.requested_scope ?? "session"}`);
+    lines.push(`    deny: soma proposals deny ${notification.proposal_id ?? "proposal-id"} --reason text`);
+  }
+  return lines.join("\n");
+}
+
 function proposalDetailSummary(response) {
   const proposal = response.proposal ?? {};
   const decision = proposal.decision ?? {};
@@ -603,6 +641,7 @@ Usage:
   soma status [--json]
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma capabilities [--json]
+  soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
   soma proposals list [--status pending] [--json]

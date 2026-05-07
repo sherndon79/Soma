@@ -23,6 +23,7 @@ Implemented:
 - bounded AT-SPI bus participant and root-object metadata inspection
 - self-scoped narrowing modules for revocation
 - proposal show/review endpoint and CLI surface
+- proposal notification endpoint and CLI surface
 - CI for Node tests and Rust helper build
 
 Current authority boundary:

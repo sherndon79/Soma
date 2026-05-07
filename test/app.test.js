@@ -1140,6 +1140,51 @@ fi
   }
 });
 
+test("focused desktop inspection preserves fail-closed unavailable output", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-unavailable-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":false,"focus_available":false,"focused_object":null,"unavailable_reason":"atspi_bus_address_unavailable","text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const handler = makeHandler({ harness: focusedInspectionHarness });
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      body: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.inspection.focus_available, false);
+    assert.equal(response.body.inspection.focused_object, null);
+    assert.equal(response.body.inspection.unavailable_reason, "atspi_bus_address_unavailable");
+    assert.equal(response.body.inspection.text_content_included, false);
+    assert.equal(response.body.inspection.dbus_session_bus_available, false);
+    const provenanceId = response.body.provenance_id;
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.focus",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].id, provenanceId);
+    assert.equal(response.body.entries[0].focus_available, false);
+    assert.equal(response.body.entries[0].focused_role, "");
+    assert.equal(response.body.entries[0].focused_child_count, null);
+    assert.equal(response.body.entries[0].text_content_included, false);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
 test("focused desktop inspection rejects text inclusion", async () => {
   const response = await invoke({
     method: "POST",

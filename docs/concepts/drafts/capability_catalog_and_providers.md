@@ -10,6 +10,11 @@ extension manifests, Kubernetes-style declarative resources, and operating-syste
 gates. Soma should borrow the manifest discipline without inheriting the common plugin-system
 mistake where installation, discovery, and permission collapse into one act.
 
+The architectural goal is an extensible harness, not a monolith. New behavior should be added as a
+capability contract plus one or more providers. The service plane should compose those pieces,
+enforce policy, and record provenance; it should not absorb every new behavior into a central
+agent loop or a single all-powerful broker.
+
 ## Core Distinction
 
 Soma should keep these concepts separate:
@@ -47,6 +52,37 @@ catalog defines capability semantics
 ```
 
 This keeps extensibility compatible with consent, disclosure, reversibility, and provenance.
+
+## Extension Boundary
+
+Soma can support several implementation forms:
+
+- in-process JavaScript modules for low-risk local service behavior
+- native helper binaries for OS integration or semi-privileged host access
+- MCP adapters for external tool ecosystems
+- local network services for model runtimes, speech, perception, or specialist workers
+- future shared libraries or plugin packages when packaging is worth the complexity
+
+Those forms should all enter through the same boundary:
+
+```text
+implementation package
+  -> provider manifest
+  -> known capability contract
+  -> grant and scope
+  -> policy-checked invocation
+  -> schema-checked result
+  -> provenance record
+```
+
+If a behavior cannot be described as a bounded capability with declared data exposure, exclusions,
+scope, reversibility, and provenance, it should remain a design-review item rather than becoming
+an implementation shortcut.
+
+Provider boundaries should stay narrow. A desktop broker should not become the audio broker, a
+memory service should not become the file broker, and a model runtime should not grant itself tool
+authority. Shared infrastructure may exist, but authority should remain attached to exact
+capability keys.
 
 ## Capability Definition
 

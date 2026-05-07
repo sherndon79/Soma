@@ -60,6 +60,31 @@ In this split, Node remains the initial policy and provenance authority. Rust ex
 bounded host capabilities and return structured results. If policy enforcement later moves closer
 to a Rust helper, it should do so explicitly rather than by accident.
 
+## Modularity Invariant
+
+Soma should stay modular by treating the harness as a governed composition layer, not as a single
+expanding agent process.
+
+New power should enter through explicit extension points:
+
+- **Capability definitions** name what a power means, what data it exposes, what it excludes, and
+  what grant policy applies.
+- **Provider manifests** advertise implementations for known capability contracts without granting
+  authority by themselves.
+- **Grant records** authorize exact capability/provider/scope combinations.
+- **Harness modules** apply reusable policy overlays instead of hiding behavior in runtime code.
+- **Runtime profiles** describe model traits and routing without changing capability semantics.
+- **Broker helpers** perform bounded host operations behind schema-checked interfaces.
+
+The central service plane may route, enforce policy, record provenance, and compose modules. It
+should not become the place where unrelated desktop, memory, audio, browser, filesystem, model, and
+device behavior accumulates as one-off code paths. If a feature needs new authority or a new host
+surface, first define the capability contract and provider boundary.
+
+This keeps Soma extensible without letting extension collapse into a monolith. A future plugin,
+MCP server, shared library, native helper, or remote utility should be adapted into this model
+rather than bypassing it.
+
 ## Core Services
 
 ### Policy Gateway

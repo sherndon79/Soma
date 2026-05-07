@@ -143,6 +143,9 @@ Soma/
 - Use ES modules.
 - Prefer dependency-free standard-library code unless a dependency materially reduces risk.
 - Keep request handlers small and explicit.
+- Keep the service plane modular. New behavior should enter through capability definitions,
+  provider manifests, grants, harness modules, runtime profiles, or bounded broker helpers rather
+  than as unrelated one-off logic in the central app.
 - Keep policy checks on the request path for every capability that can touch memory, tools,
   filesystem, desktop state, external services, or model routing.
 - Preserve response fields that communicate authority boundaries, such as `activation_performed`,
@@ -195,6 +198,8 @@ Soma/
 6. Add or update model capability evals when model behavior around the boundary matters, including
    unsupported authority claims, excluded-data requests, and proposal reason/scope/risk/fallback
    requirements.
+7. Avoid central catch-all handlers. If the capability needs a new implementation surface, add a
+   provider or broker boundary instead of folding it into an unrelated module.
 
 ### Add Desktop Broker Behavior
 

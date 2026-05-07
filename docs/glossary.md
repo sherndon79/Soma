@@ -79,6 +79,11 @@ be requested or activated.
 User-approved authority to use a capability through a provider under a scope and constraints. A
 grant should be inspectable, revocable, provenanced, and atomic by exact capability key.
 
+## Grant Store
+
+The file-backed collection of grant records. In the current MVP it is read-only inspection state;
+it does not activate capabilities or accept runtime writes.
+
 ## Harness
 
 The governed operating boundary around models, memory, tools, perception, providers, and desktop

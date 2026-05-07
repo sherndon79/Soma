@@ -168,6 +168,37 @@ const providerRegistry = {
   ],
 };
 
+const grantStore = {
+  schema_version: 1,
+  grants: [
+    {
+      id: "grant-1",
+      status: "active",
+      capability: "desktop.inspect.focus",
+      provider: "desktop-broker",
+      scope: "session",
+      constraints: { include_text: false },
+      approved_by: "user",
+      reason: "Need focused object role for the current session.",
+      created_at: "2026-05-06T12:00:00.000Z",
+      activation_performed: false,
+    },
+    {
+      id: "grant-2",
+      status: "revoked",
+      capability: "desktop.inspect.text",
+      provider: "desktop-broker",
+      scope: "session",
+      constraints: {},
+      approved_by: "user",
+      reason: "Previous text inspection test.",
+      created_at: "2026-05-06T12:10:00.000Z",
+      revoked_at: "2026-05-06T12:15:00.000Z",
+      activation_performed: false,
+    },
+  ],
+};
+
 test("GET /health returns ok", async () => {
   const response = await invoke({ method: "GET", url: "/health" });
   assert.equal(response.statusCode, 200);
@@ -256,6 +287,28 @@ test("capability proposals can be created and listed without activation", async 
   assert.equal(response.body.entries[0].capability, "capability.proposal.create");
   assert.equal(response.body.entries[0].requested_capability, "desktop.inspect.focus");
   assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("GET /grants lists file-backed grants without activation", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/grants?status=active",
+    harness: allowedHarness,
+    grantStore,
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].id, "grant-1");
+  assert.equal(response.body.grants[0].capability, "desktop.inspect.focus");
+  assert.equal(response.body.grants[0].activation_performed, false);
+  assert.equal(response.body.summary.total, 2);
+  assert.equal(response.body.summary.by_status.active, 1);
+  assert.equal(response.body.summary.by_status.revoked, 1);
+  assert.equal(response.body.file_backed, true);
+  assert.equal(response.body.writable, false);
+  assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.activation_performed, false);
 });
 
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {
@@ -1288,6 +1341,7 @@ async function invoke({
       return { text: "ok", model: "test-model", finish_reason: "stop", tokens_used: 1 };
     },
   },
+  grantStore: grants,
   body,
 } = {}) {
   return invokeHandler(makeHandler({
@@ -1296,6 +1350,7 @@ async function invoke({
     providerRegistry: providers,
     runtimeProfiles: profiles,
     modelClient,
+    grantStore: grants,
   }), {
     method,
     url,
@@ -1321,6 +1376,7 @@ function makeHandler({
       return { text: "ok", model, finish_reason: "stop", tokens_used: 1 };
     },
   },
+  grantStore: grants,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -1329,6 +1385,7 @@ function makeHandler({
     moduleRegistry: modules,
     runtimeProfiles: profiles,
     modelClient,
+    grantStore: grants,
     logger: { info() {} },
   });
 }

@@ -277,6 +277,43 @@ test("runCli proposals approve sends decision request", async () => {
   assert.match(writes.join(""), /activation performed: no/);
 });
 
+test("runCli grants list builds filters and prints non-activating summary", async () => {
+  let capturedPath = "";
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "grants", "list", "--status", "active"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      capturedPath = path;
+      return {
+        grants: [
+          {
+            id: "grant-1",
+            status: "active",
+            capability: "desktop.inspect.focus",
+            provider: "desktop-broker",
+            scope: "session",
+            reason: "Need focused object role.",
+            activation_performed: false,
+          },
+        ],
+        summary: { total: 1 },
+        file_backed: true,
+        writable: false,
+        runtime_writes_enabled: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(capturedPath, "/grants?status=active");
+  assert.match(writes.join(""), /Grants/);
+  assert.match(writes.join(""), /desktop\.inspect\.focus/);
+  assert.match(writes.join(""), /writable: no/);
+  assert.match(writes.join(""), /activation performed: no/);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

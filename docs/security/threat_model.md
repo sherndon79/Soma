@@ -239,6 +239,7 @@ Implemented controls:
 - file-backed provider registry
 - read-only capability view
 - proposal store with approval/denial records and no activation
+- read-only file-backed grant store shape with no activation
 - in-process provenance log
 - self-scoped narrowing modules
 - scoped read-only file access
@@ -248,7 +249,7 @@ Implemented controls:
 
 Design controls not yet fully implemented:
 
-- grant store
+- writable grant store and revocation records
 - durable memory controls
 - durable provenance retention policy
 - provider binary verification

@@ -247,6 +247,9 @@ Recovery:
 
 ### Grant Store Corrupt Or Unavailable
 
+The current MVP grant store is read-only and does not activate capabilities. Corruption or
+unavailability should block grant inspection, not base harness operation.
+
 Expected behavior:
 
 - fail closed for all grant-dependent capabilities

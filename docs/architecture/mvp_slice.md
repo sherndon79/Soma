@@ -154,6 +154,13 @@ Marks a pending proposal approved with an explicit approved scope. It records
 Marks a pending proposal denied with a denial reason. It records
 `capability.proposal.denied` provenance and does not activate any capability.
 
+### `GET /grants`
+
+Returns the file-backed grant store in a read-only operator shape. Supports `status=active`.
+
+The MVP grant route does not write grants, revoke grants, or activate capabilities. It exists so
+grant records have an inspectable shape before any widening path can depend on them.
+
 ### `POST /chat`
 
 Sends a chat request to the local model runtime only when `model.local.chat` is allowed.

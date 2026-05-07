@@ -188,6 +188,31 @@ npm run cli -- proposals list --json
 Approval and denial write provenance decision records. Revocation and capability activation are not
 implemented yet.
 
+## Inspect Grants
+
+The current grant store is file-backed and read-only. It records the intended shape of grants, but
+runtime writes and grant-based activation are not implemented.
+
+List grants:
+
+```bash
+npm run cli -- grants list
+```
+
+List grants by status:
+
+```bash
+npm run cli -- grants list --status active
+```
+
+Full grant JSON:
+
+```bash
+npm run cli -- grants list --json
+```
+
+`GET /grants` does not create, approve, revoke, or activate capabilities.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

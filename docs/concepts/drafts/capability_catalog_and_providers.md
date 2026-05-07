@@ -158,7 +158,8 @@ Example:
     "max_depth": 1
   },
   "created_at": "2026-05-05T00:00:00.000Z",
-  "revoked_at": null
+  "revoked_at": null,
+  "activation_performed": false
 }
 ```
 
@@ -311,15 +312,17 @@ Soma currently has partial static versions of these pieces:
 - `config/base-harness.json` acts as the base policy.
 - `config/capability-catalog.json` defines the first known capability catalog.
 - `config/provider-registry.json` defines the first installed provider claims.
+- `config/grants.json` defines the file-backed grant store shape.
 - `config/harness-modules.json` acts as a file-backed registry for approved self-scoped narrowing
   modules.
 - `src/capabilityProposals.js` stores in-memory capability proposals and approval/denial decisions.
 - `GET /capability-view` and `npm run cli -- capabilities` expose a grouped read-only capability
   view.
+- `GET /grants` and `npm run cli -- grants list` expose read-only grant inspection.
 
 Soma does not yet have:
 
-- a grant store
+- writable grant records
 - activation from approved proposals
 - durable proposal or grant records
 

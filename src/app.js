@@ -6,6 +6,7 @@ import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "./desktopBroker.js";
 import { readScopedTextFile } from "./fileAccess.js";
+import { listGrants, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
   adoptSelfApplyModule,
@@ -32,6 +33,7 @@ export function createApp({
   modelClient,
   sessionMemory,
   capabilityProposals,
+  grantStore,
   provenanceLog,
   logger = console,
 } = {}) {
@@ -44,6 +46,7 @@ export function createApp({
     modelClient,
     sessionMemory,
     capabilityProposals,
+    grantStore,
     provenanceLog,
     logger,
   }));
@@ -58,6 +61,7 @@ export function createRequestHandler({
   modelClient,
   sessionMemory = new SessionMemory(),
   capabilityProposals = new CapabilityProposalStore(),
+  grantStore = { schema_version: 1, grants: [] },
   provenanceLog = new ProvenanceLog(),
   logger = console,
 } = {}) {
@@ -114,6 +118,21 @@ export function createRequestHandler({
             status: url.searchParams.get("status") ?? "",
           }),
           durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/grants") {
+        writeJson(res, 200, {
+          grants: listGrants(grantStore, {
+            status: url.searchParams.get("status") ?? "",
+          }),
+          summary: summarizeGrants(grantStore),
+          schema_version: grantStore.schema_version ?? 1,
+          file_backed: true,
+          writable: false,
+          runtime_writes_enabled: false,
+          activation_performed: false,
         });
         return;
       }

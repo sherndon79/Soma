@@ -72,6 +72,7 @@ npm run cli -- chat "help me slow this down" --assess-load
 npm run cli -- capabilities
 npm run cli -- modules list
 npm run cli -- modules adopt soma.module.no-session-memory
+npm run cli -- grants list
 npm run cli -- proposals list
 npm run cli -- proposals approve proposal-id --scope session
 npm run cli -- proposals deny proposal-id --reason "Not needed right now."
@@ -98,6 +99,7 @@ records stay behind `--json`.
 - `GET /harness-modules`
 - `POST /harness-modules/adopt`
 - `POST /harness-modules/drop`
+- `GET /grants`
 - `GET /capability-proposals`
 - `POST /capability-proposals`
 - `POST /capability-proposals/:id/approve`

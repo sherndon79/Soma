@@ -112,6 +112,19 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     }
   }
 
+  if (command === "grants") {
+    if (subcommand === "list" || !subcommand) {
+      const query = new URLSearchParams();
+      if (flags.status) {
+        query.set("status", String(flags.status));
+      }
+      const suffix = query.size > 0 ? `?${query}` : "";
+      const response = await request(baseUrl, "GET", `/grants${suffix}`);
+      writeOutput(stdout, response, jsonOutput, grantListSummary(response));
+      return 0;
+    }
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -435,6 +448,42 @@ function proposalDecisionSummary(response) {
   return lines.join("\n");
 }
 
+function grantListSummary(response) {
+  const grants = Array.isArray(response.grants) ? response.grants : [];
+  const lines = [
+    "Grants",
+    `  total: ${response.summary?.total ?? grants.length}`,
+    `  file backed: ${booleanText(response.file_backed)}`,
+    `  writable: ${booleanText(response.writable)}`,
+    `  runtime writes enabled: ${booleanText(response.runtime_writes_enabled)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ];
+
+  if (grants.length === 0) {
+    lines.push("  none");
+    return lines.join("\n");
+  }
+
+  for (const grant of grants) {
+    lines.push([
+      `  ${grant.id ?? "unknown-id"}`,
+      `[${grant.status ?? "unknown-status"}]`,
+      `capability=${grant.capability ?? "unknown"}`,
+      `provider=${grant.provider ?? "unknown"}`,
+      `scope=${grant.scope ?? "unknown"}`,
+      `activation=${booleanText(grant.activation_performed)}`,
+    ].join(" "));
+    if (grant.reason) {
+      lines.push(`    reason: ${grant.reason}`);
+    }
+    if (grant.review_required) {
+      lines.push("    review required: yes");
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function capabilityViewSummary(response) {
   const summary = response.summary ?? {};
   const grouped = response.grouped ?? {};
@@ -486,6 +535,7 @@ Usage:
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma capabilities [--json]
   soma modules list|adopt|drop [module-id] [--json]
+  soma grants list [--status active|revoked|expired] [--json]
   soma proposals list [--status pending] [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]
   soma proposals deny proposal-id --reason text [--by user] [--json]

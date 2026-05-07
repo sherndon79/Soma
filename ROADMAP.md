@@ -11,6 +11,7 @@ Implemented:
 - local vLLM/OpenAI-compatible chat routing
 - runtime profiles
 - file-backed capability catalog and provider registry
+- file-backed read-only grant store shape
 - grouped read-only capability view endpoint and CLI summary
 - opt-in local-model capability evaluation harness
 - ephemeral in-process session memory
@@ -71,8 +72,8 @@ Constraints:
 
 ## Near-Term
 
-- Add a grant design and durable-ish grant store shape before implementing activation.
 - Add proposal notification surfacing and show/revocation records without activation.
+- Add writable grant/revocation design before implementing activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if

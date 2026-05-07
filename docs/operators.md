@@ -229,6 +229,9 @@ npm run cli -- grants list --json
 
 `GET /grants` does not create, approve, revoke, or activate capabilities.
 
+Future grant mutation command names are reserved in the design docs, but commands such as
+`grants create`, `grants revoke`, and `grants supersede` are not implemented.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

@@ -43,6 +43,7 @@ should inform implementation.
 - [Delegated Choice and Deliberation](./concepts/drafts/delegated_choice_and_deliberation.md)
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
+- [Grant Lifecycle](./concepts/drafts/grant_lifecycle.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)
 - [Memory Control Surface](./concepts/drafts/memory_control_surface.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)

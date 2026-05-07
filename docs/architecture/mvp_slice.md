@@ -169,6 +169,9 @@ grant records have an inspectable shape before any widening path can depend on t
 Revoked grant records may include `revoked_at`, `revoked_by`, `revocation_reason`, and
 `replacement_grant_id`.
 
+Reserved future mutation routes are documented in the grant lifecycle draft, but are not
+implemented in the MVP.
+
 ### `POST /chat`
 
 Sends a chat request to the local model runtime only when `model.local.chat` is allowed.

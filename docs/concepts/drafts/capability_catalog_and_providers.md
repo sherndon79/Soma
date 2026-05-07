@@ -183,6 +183,10 @@ Ambiguous revocation state should fail closed. A grant with `status: "revoked"` 
 revocation details is still revoked; a grant whose status cannot be interpreted should not
 authorize capability use.
 
+Future writable grant creation, revocation, supersession, and expiration are defined separately in
+[Grant Lifecycle](./grant_lifecycle.md). That lifecycle is design-only until mutation routes are
+implemented.
+
 ## Capability Views
 
 Soma should not ask a model to define its own capabilities. The harness should prepare a capability

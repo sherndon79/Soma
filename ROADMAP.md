@@ -74,7 +74,7 @@ Constraints:
 ## Near-Term
 
 - Add proposal notification surfacing without activation.
-- Add writable grant/revocation design before implementing activation.
+- Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if

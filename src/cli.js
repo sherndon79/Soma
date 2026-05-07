@@ -513,6 +513,7 @@ function grantListSummary(response) {
   const lines = [
     "Grants",
     `  total: ${response.summary?.total ?? grants.length}`,
+    `  examples available: ${booleanText(response.examples_available)}`,
     `  file backed: ${booleanText(response.file_backed)}`,
     `  writable: ${booleanText(response.writable)}`,
     `  runtime writes enabled: ${booleanText(response.runtime_writes_enabled)}`,
@@ -538,6 +539,14 @@ function grantListSummary(response) {
     }
     if (grant.review_required) {
       lines.push("    review required: yes");
+    }
+    if (grant.revoked_at) {
+      lines.push(`    revoked at: ${grant.revoked_at}`);
+      lines.push(`    revoked by: ${grant.revoked_by || "unknown"}`);
+      lines.push(`    revocation reason: ${grant.revocation_reason || "unspecified"}`);
+    }
+    if (grant.replacement_grant_id) {
+      lines.push(`    replacement grant: ${grant.replacement_grant_id}`);
     }
   }
 

@@ -215,7 +215,11 @@ List grants by status:
 
 ```bash
 npm run cli -- grants list --status active
+npm run cli -- grants list --status revoked
 ```
+
+Revoked grants include revocation metadata when available: `revoked_at`, `revoked_by`,
+`revocation_reason`, and `replacement_grant_id`.
 
 Full grant JSON:
 

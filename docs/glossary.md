@@ -78,6 +78,7 @@ be requested or activated.
 
 User-approved authority to use a capability through a provider under a scope and constraints. A
 grant should be inspectable, revocable, provenanced, and atomic by exact capability key.
+Revoked grants remain records but must not authorize capability use.
 
 ## Grant Store
 
@@ -140,6 +141,8 @@ currently disabled, and eligible for a user-reviewed proposal.
 
 The act of removing an active grant or dropping a module so a capability is no longer available.
 Revocation must remain visible and easy where a capability can be reversed.
+Grant revocation records should preserve who revoked, when, why, and whether a replacement grant
+superseded the old one.
 
 ## Scope
 

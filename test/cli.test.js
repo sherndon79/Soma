@@ -358,6 +358,7 @@ test("runCli grants list builds filters and prints non-activating summary", asyn
           },
         ],
         summary: { total: 1 },
+        examples_available: true,
         file_backed: true,
         writable: false,
         runtime_writes_enabled: false,
@@ -370,8 +371,48 @@ test("runCli grants list builds filters and prints non-activating summary", asyn
   assert.equal(capturedPath, "/grants?status=active");
   assert.match(writes.join(""), /Grants/);
   assert.match(writes.join(""), /desktop\.inspect\.focus/);
+  assert.match(writes.join(""), /examples available: yes/);
   assert.match(writes.join(""), /writable: no/);
   assert.match(writes.join(""), /activation performed: no/);
+});
+
+test("runCli grants list prints revocation metadata", async () => {
+  const writes = [];
+  await runCli(parseCli(["node", "soma", "grants", "list", "--status", "revoked"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      assert.equal(path, "/grants?status=revoked");
+      return {
+        grants: [
+          {
+            id: "grant-2",
+            status: "revoked",
+            capability: "desktop.inspect.text",
+            provider: "desktop-broker",
+            scope: "session",
+            reason: "Previous text inspection test.",
+            revoked_at: "2026-05-06T12:15:00.000Z",
+            revoked_by: "user",
+            revocation_reason: "Text inspection was no longer needed.",
+            replacement_grant_id: "grant-3",
+            activation_performed: false,
+          },
+        ],
+        summary: { total: 1 },
+        examples_available: false,
+        file_backed: true,
+        writable: false,
+        runtime_writes_enabled: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.match(writes.join(""), /revoked at: 2026-05-06T12:15:00\.000Z/);
+  assert.match(writes.join(""), /revoked by: user/);
+  assert.match(writes.join(""), /revocation reason: Text inspection was no longer needed\./);
+  assert.match(writes.join(""), /replacement grant: grant-3/);
 });
 
 test("runCli proposals deny sends decision request", async () => {

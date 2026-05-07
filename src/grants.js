@@ -11,6 +11,7 @@ export function normalizeGrantStore(config = {}) {
   return {
     schema_version: config.schema_version ?? 1,
     grants: Array.isArray(config.grants) ? config.grants.map(publicGrant) : [],
+    examples: Array.isArray(config.examples) ? config.examples.map(publicGrant) : [],
   };
 }
 
@@ -53,6 +54,9 @@ export function publicGrant(grant = {}) {
     created_at: String(grant.created_at ?? ""),
     review_required: Boolean(grant.review_required),
     revoked_at: grant.revoked_at ? String(grant.revoked_at) : null,
+    revoked_by: String(grant.revoked_by ?? ""),
+    revocation_reason: String(grant.revocation_reason ?? ""),
+    replacement_grant_id: String(grant.replacement_grant_id ?? ""),
     activation_performed: Boolean(grant.activation_performed),
   };
 }

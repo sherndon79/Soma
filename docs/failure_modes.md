@@ -255,6 +255,7 @@ Expected behavior:
 - fail closed for all grant-dependent capabilities
 - preserve base harness and self-scoped narrowing modules
 - do not infer grants from proposal history alone
+- do not treat ambiguous grant status or revocation state as active authority
 - require repair or explicit re-approval
 
 ### Durable Memory Corrupt Or Ambiguous

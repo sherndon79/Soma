@@ -171,7 +171,8 @@ A grant should include:
 - constraints
 - approval provenance id
 - created and reviewed timestamps
-- revocation state
+- revocation state, including `revoked_at`, `revoked_by`, `revocation_reason`, and any
+  `replacement_grant_id`
 
 Grant migration rules:
 
@@ -179,6 +180,7 @@ Grant migration rules:
 - do not infer grants from provider installation
 - do not infer grants from old active module state
 - fail closed if grant scope or constraints cannot be interpreted
+- fail closed if grant status or revocation state cannot be interpreted
 - require review if capability semantics changed since approval
 - require review if provider identity or contract changed materially
 

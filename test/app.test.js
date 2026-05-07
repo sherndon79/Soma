@@ -194,7 +194,17 @@ const grantStore = {
       reason: "Previous text inspection test.",
       created_at: "2026-05-06T12:10:00.000Z",
       revoked_at: "2026-05-06T12:15:00.000Z",
+      revoked_by: "user",
+      revocation_reason: "Text inspection was no longer needed.",
+      replacement_grant_id: "grant-3",
       activation_performed: false,
+    },
+  ],
+  examples: [
+    {
+      id: "example-grant",
+      status: "revoked",
+      capability: "desktop.inspect.focus",
     },
   ],
 };
@@ -315,10 +325,30 @@ test("GET /grants lists file-backed grants without activation", async () => {
   assert.equal(response.body.summary.total, 2);
   assert.equal(response.body.summary.by_status.active, 1);
   assert.equal(response.body.summary.by_status.revoked, 1);
+  assert.equal(response.body.examples_available, true);
   assert.equal(response.body.file_backed, true);
   assert.equal(response.body.writable, false);
   assert.equal(response.body.runtime_writes_enabled, false);
   assert.equal(response.body.activation_performed, false);
+});
+
+test("GET /grants exposes revoked grant metadata without activation", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/grants?status=revoked",
+    harness: allowedHarness,
+    grantStore,
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].id, "grant-2");
+  assert.equal(response.body.grants[0].status, "revoked");
+  assert.equal(response.body.grants[0].revoked_at, "2026-05-06T12:15:00.000Z");
+  assert.equal(response.body.grants[0].revoked_by, "user");
+  assert.equal(response.body.grants[0].revocation_reason, "Text inspection was no longer needed.");
+  assert.equal(response.body.grants[0].replacement_grant_id, "grant-3");
+  assert.equal(response.body.grants[0].activation_performed, false);
 });
 
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {

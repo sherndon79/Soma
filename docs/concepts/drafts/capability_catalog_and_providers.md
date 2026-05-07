@@ -148,6 +148,7 @@ Example:
 ```json
 {
   "id": "grant-123",
+  "status": "active",
   "capability": "desktop.inspect.focus",
   "provider": "soma.provider.desktop-broker",
   "scope": "session",
@@ -158,13 +159,29 @@ Example:
     "max_depth": 1
   },
   "created_at": "2026-05-05T00:00:00.000Z",
+  "review_required": false,
   "revoked_at": null,
+  "revoked_by": "",
+  "revocation_reason": "",
+  "replacement_grant_id": "",
   "activation_performed": false
 }
 ```
 
 Grants should be explicit, inspectable, and revocable. Longer-lived grants require stronger
 disclosure and a clearer review surface.
+
+Revocation metadata is part of the grant record, not an afterthought:
+
+- `status: "revoked"` means the grant must not authorize future capability use.
+- `revoked_at` records when the grant was removed or expired.
+- `revoked_by` records the actor who removed it where known.
+- `revocation_reason` records the participant-facing reason.
+- `replacement_grant_id` links to a narrower or corrected grant when a grant is superseded.
+
+Ambiguous revocation state should fail closed. A grant with `status: "revoked"` but missing
+revocation details is still revoked; a grant whose status cannot be interpreted should not
+authorize capability use.
 
 ## Capability Views
 
@@ -312,7 +329,7 @@ Soma currently has partial static versions of these pieces:
 - `config/base-harness.json` acts as the base policy.
 - `config/capability-catalog.json` defines the first known capability catalog.
 - `config/provider-registry.json` defines the first installed provider claims.
-- `config/grants.json` defines the file-backed grant store shape.
+- `config/grants.json` defines the file-backed grant store shape and non-authorizing examples.
 - `config/harness-modules.json` acts as a file-backed registry for approved self-scoped narrowing
   modules.
 - `src/capabilityProposals.js` stores in-memory capability proposals and approval/denial decisions.

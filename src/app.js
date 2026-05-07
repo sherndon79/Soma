@@ -140,6 +140,7 @@ export function createRequestHandler({
           }),
           summary: summarizeGrants(grantStore),
           schema_version: grantStore.schema_version ?? 1,
+          examples_available: Array.isArray(grantStore.examples) && grantStore.examples.length > 0,
           file_backed: true,
           writable: false,
           runtime_writes_enabled: false,

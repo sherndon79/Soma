@@ -161,10 +161,13 @@ Marks a pending proposal denied with a denial reason. It records
 
 ### `GET /grants`
 
-Returns the file-backed grant store in a read-only operator shape. Supports `status=active`.
+Returns the file-backed grant store in a read-only operator shape. Supports status filters such as
+`status=active` and `status=revoked`.
 
 The MVP grant route does not write grants, revoke grants, or activate capabilities. It exists so
 grant records have an inspectable shape before any widening path can depend on them.
+Revoked grant records may include `revoked_at`, `revoked_by`, `revocation_reason`, and
+`replacement_grant_id`.
 
 ### `POST /chat`
 

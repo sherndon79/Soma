@@ -73,7 +73,7 @@ Constraints:
 
 ## Near-Term
 
-- Add proposal notification surfacing and revocation records without activation.
+- Add proposal notification surfacing without activation.
 - Add writable grant/revocation design before implementing activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.

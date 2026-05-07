@@ -138,6 +138,11 @@ Dropping a module restores the base harness posture plus any remaining active mo
 
 Returns in-memory capability proposals. Supports `status=pending`.
 
+### `GET /capability-proposals/:id`
+
+Returns the full review context for one proposal, including reason, requested scope, exposed data,
+exclusions, risk, fallback, decision state, and activation status.
+
 ### `POST /capability-proposals`
 
 Creates an in-memory pending capability proposal. Proposal creation requires requester,

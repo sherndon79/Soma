@@ -272,6 +272,16 @@ test("capability proposals can be created and listed without activation", async 
 
   response = await invokeHandler(handler, {
     method: "GET",
+    url: `/capability-proposals/${proposalId}`,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposal.id, proposalId);
+  assert.equal(response.body.proposal.reason, "Need to identify the currently focused UI role before advising next action.");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
     url: "/harness-modules",
   });
   assert.equal(response.statusCode, 200);
@@ -328,6 +338,17 @@ test("capability proposal creation requires reason scope risk exposure and fallb
 
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "invalid_capability_proposal");
+});
+
+test("GET /capability-proposals/:id returns not found for unknown proposal", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/capability-proposals/not-found",
+    harness: allowedHarness,
+  });
+
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.body.error, "capability_proposal_not_found");
 });
 
 test("capability proposals can be approved without activation", async () => {

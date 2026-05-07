@@ -22,6 +22,7 @@ Implemented:
 - Rust `soma-desktop-broker` helper scaffold
 - bounded AT-SPI bus participant and root-object metadata inspection
 - self-scoped narrowing modules for revocation
+- proposal show/review endpoint and CLI surface
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -72,7 +73,7 @@ Constraints:
 
 ## Near-Term
 
-- Add proposal notification surfacing and show/revocation records without activation.
+- Add proposal notification surfacing and revocation records without activation.
 - Add writable grant/revocation design before implementing activation.
 - Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
   inspection draft.

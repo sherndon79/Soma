@@ -41,6 +41,26 @@ test("runCli status gathers operator summary", async () => {
       if (path === "/harness-modules") {
         return { active_modules: ["pause-local-chat"], pending_capability_proposals: 2 };
       }
+      if (path === "/capability-proposals?status=pending") {
+        return {
+          proposals: [
+            {
+              id: "proposal-1",
+              capability: "desktop.inspect.focus",
+              requested_by: "assistant",
+              requested_scope: "session",
+              reason: "Need focused object role.",
+            },
+            {
+              id: "proposal-2",
+              capability: "tool.files.write",
+              requested_by: "assistant",
+              requested_scope: "once",
+              reason: "Need to update a selected file.",
+            },
+          ],
+        };
+      }
       if (path === "/provenance/summary") {
         return { summary: { total: 3 } };
       }
@@ -54,6 +74,8 @@ test("runCli status gathers operator summary", async () => {
   assert.equal(payload.harness_id, "soma.base");
   assert.deepEqual(payload.active_modules, ["pause-local-chat"]);
   assert.equal(payload.pending_capability_proposals, 2);
+  assert.equal(payload.pending_capability_proposal_details[0].id, "proposal-1");
+  assert.equal(payload.pending_capability_proposal_details[0].capability, "desktop.inspect.focus");
   assert.equal(payload.provenance_summary.total, 3);
 });
 
@@ -243,6 +265,44 @@ test("runCli proposals list prints pending proposals", async () => {
   assert.match(writes.join(""), /Capability proposals/);
   assert.match(writes.join(""), /desktop\.inspect\.focus/);
   assert.match(writes.join(""), /reason: Need focused object role\./);
+  assert.match(writes.join(""), /proposals show proposal-id/);
+  assert.doesNotMatch(writes.join(""), /risk: May reveal active application context\./);
+});
+
+test("runCli proposals show prints full review context", async () => {
+  let capturedPath = "";
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "proposals", "show", "proposal-1"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      capturedPath = path;
+      return {
+        proposal: {
+          id: "proposal-1",
+          status: "pending",
+          requested_by: "assistant",
+          capability: "desktop.inspect.focus",
+          requested_scope: "session",
+          reason: "Need focused object role.",
+          risk: "May reveal active application context.",
+          fallback: "Continue with desktop summary.",
+          data_exposed: ["focused object role"],
+          excluded_data: ["text content"],
+          provenance_id: "prov-1",
+        },
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(capturedPath, "/capability-proposals/proposal-1");
+  assert.match(writes.join(""), /Capability proposal/);
+  assert.match(writes.join(""), /risk: May reveal active application context\./);
+  assert.match(writes.join(""), /data exposed: focused object role/);
+  assert.match(writes.join(""), /excluded data: text content/);
+  assert.match(writes.join(""), /activation performed: no/);
 });
 
 test("runCli proposals approve sends decision request", async () => {

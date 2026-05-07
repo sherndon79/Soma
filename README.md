@@ -74,6 +74,7 @@ npm run cli -- modules list
 npm run cli -- modules adopt soma.module.no-session-memory
 npm run cli -- grants list
 npm run cli -- proposals list
+npm run cli -- proposals show proposal-id
 npm run cli -- proposals approve proposal-id --scope session
 npm run cli -- proposals deny proposal-id --reason "Not needed right now."
 npm run cli -- memory add "Session note" --role note
@@ -101,6 +102,7 @@ records stay behind `--json`.
 - `POST /harness-modules/drop`
 - `GET /grants`
 - `GET /capability-proposals`
+- `GET /capability-proposals/:id`
 - `POST /capability-proposals`
 - `POST /capability-proposals/:id/approve`
 - `POST /capability-proposals/:id/deny`

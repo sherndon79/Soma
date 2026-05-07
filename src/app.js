@@ -122,6 +122,17 @@ export function createRequestHandler({
         return;
       }
 
+      const proposalShowMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)$/);
+      if (req.method === "GET" && proposalShowMatch) {
+        const [, proposalId] = proposalShowMatch;
+        writeJson(res, 200, {
+          proposal: capabilityProposals.find(proposalId),
+          activation_performed: false,
+          durable: false,
+        });
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/grants") {
         writeJson(res, 200, {
           grants: listGrants(grantStore, {

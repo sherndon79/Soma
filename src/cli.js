@@ -28,19 +28,22 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "status") {
-    const [health, harness, modules, provenance] = await Promise.all([
+    const [health, harness, modules, pendingProposals, provenance] = await Promise.all([
       request(baseUrl, "GET", "/health"),
       request(baseUrl, "GET", "/harness"),
       request(baseUrl, "GET", "/harness-modules"),
+      request(baseUrl, "GET", "/capability-proposals?status=pending"),
       request(baseUrl, "GET", "/provenance/summary"),
     ]);
+    const proposalSummaries = pendingProposalSummaries(pendingProposals.proposals);
     writeOutput(stdout, {
       health,
       harness_id: harness.harness_id,
       mode: harness.mode,
       default_runtime_profile: harness.runtime_profiles?.default_profile,
       active_modules: modules.active_modules,
-      pending_capability_proposals: modules.pending_capability_proposals ?? 0,
+      pending_capability_proposals: proposalSummaries.length,
+      pending_capability_proposal_details: proposalSummaries,
       provenance_summary: provenance.summary,
     }, jsonOutput);
     return 0;
@@ -96,6 +99,15 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       const suffix = query.size > 0 ? `?${query}` : "";
       const response = await request(baseUrl, "GET", `/capability-proposals${suffix}`);
       writeOutput(stdout, response, jsonOutput, proposalListSummary(response));
+      return 0;
+    }
+    if (subcommand === "show") {
+      const proposalId = rest[0];
+      if (!proposalId) {
+        throw usageError("proposals show requires a proposal id.");
+      }
+      const response = await request(baseUrl, "GET", `/capability-proposals/${proposalId}`);
+      writeOutput(stdout, response, jsonOutput, proposalDetailSummary(response));
       return 0;
     }
     if (subcommand === "approve" || subcommand === "deny") {
@@ -410,7 +422,6 @@ function proposalListSummary(response) {
 
   const lines = ["Capability proposals"];
   for (const proposal of proposals) {
-    const dataExposed = Array.isArray(proposal.data_exposed) ? proposal.data_exposed.join(", ") : "";
     lines.push([
       `  ${proposal.id ?? "unknown-id"}`,
       `[${proposal.status ?? "unknown-status"}]`,
@@ -419,12 +430,44 @@ function proposalListSummary(response) {
       `scope=${proposal.requested_scope ?? "unknown"}`,
     ].join(" "));
     lines.push(`    reason: ${proposal.reason ?? ""}`);
-    lines.push(`    risk: ${proposal.risk ?? ""}`);
-    lines.push(`    fallback: ${proposal.fallback ?? ""}`);
-    if (dataExposed) {
-      lines.push(`    data exposed: ${dataExposed}`);
-    }
   }
+  lines.push("  use `soma proposals show proposal-id` for full review context");
+  return lines.join("\n");
+}
+
+function proposalDetailSummary(response) {
+  const proposal = response.proposal ?? {};
+  const decision = proposal.decision ?? {};
+  const lines = [
+    "Capability proposal",
+    `  id: ${proposal.id ?? "unknown"}`,
+    `  status: ${proposal.status ?? "unknown"}`,
+    `  capability: ${proposal.capability ?? "unknown"}`,
+    `  requested by: ${proposal.requested_by ?? "unknown"}`,
+    `  requested scope: ${proposal.requested_scope ?? "unknown"}`,
+    `  reason: ${proposal.reason ?? ""}`,
+    `  risk: ${proposal.risk ?? ""}`,
+    `  fallback: ${proposal.fallback ?? ""}`,
+    `  data exposed: ${joinList(proposal.data_exposed)}`,
+    `  excluded data: ${joinList(proposal.excluded_data)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ];
+
+  if (proposal.provenance_id) {
+    lines.push(`  provenance: ${proposal.provenance_id}`);
+  }
+  if (decision.decision) {
+    lines.push(`  decision: ${decision.decision}`);
+    lines.push(`  decided by: ${decision.decided_by ?? "unknown"}`);
+    lines.push(`  decided at: ${decision.decided_at ?? "unknown"}`);
+  }
+  if (decision.approved_scope) {
+    lines.push(`  approved scope: ${decision.approved_scope}`);
+  }
+  if (decision.denial_reason) {
+    lines.push(`  denial reason: ${decision.denial_reason}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -446,6 +489,23 @@ function proposalDecisionSummary(response) {
     lines.splice(4, 0, `  denial reason: ${decision.denial_reason}`);
   }
   return lines.join("\n");
+}
+
+function pendingProposalSummaries(proposals) {
+  if (!Array.isArray(proposals)) {
+    return [];
+  }
+  return proposals.map((proposal) => ({
+    id: proposal.id ?? "",
+    capability: proposal.capability ?? "",
+    requested_by: proposal.requested_by ?? "",
+    requested_scope: proposal.requested_scope ?? "",
+    reason: proposal.reason ?? "",
+  }));
+}
+
+function joinList(value) {
+  return Array.isArray(value) && value.length > 0 ? value.join(", ") : "none";
 }
 
 function grantListSummary(response) {
@@ -537,6 +597,7 @@ Usage:
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
   soma proposals list [--status pending] [--json]
+  soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]
   soma proposals deny proposal-id --reason text [--by user] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]

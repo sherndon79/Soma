@@ -30,6 +30,9 @@ Use JSON when you need the full response:
 npm run cli -- status --json
 ```
 
+Status includes concise pending capability proposal details so an operator can see whether any
+review requests need attention without opening the full proposal records.
+
 ## Chat Through The Local Runtime
 
 ```bash
@@ -167,6 +170,12 @@ List pending proposals:
 npm run cli -- proposals list
 ```
 
+Show the full review context for a proposal:
+
+```bash
+npm run cli -- proposals show proposal-id
+```
+
 Approve a proposal record without activating the capability:
 
 ```bash
@@ -187,6 +196,9 @@ npm run cli -- proposals list --json
 
 Approval and denial write provenance decision records. Revocation and capability activation are not
 implemented yet.
+
+Proposal approval records intent. Grants record authority. Activation remains a separate future
+step and is not implied by either proposal creation or proposal approval.
 
 ## Inspect Grants
 

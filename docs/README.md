@@ -16,6 +16,7 @@ near each other without reducing either side to extraction.
 - [MVP Slice](./architecture/mvp_slice.md) — the current policy-gated local service scaffold.
 - [Operator Guide](./operators.md) — current runbook-style commands for running, inspecting, and
   revoking Soma capabilities.
+- [Glossary](./glossary.md) — stable definitions for Soma's load-bearing terms.
 - [Roadmap](../ROADMAP.md) — current scaffold, next slice, and later capability areas.
 
 ## Schemas

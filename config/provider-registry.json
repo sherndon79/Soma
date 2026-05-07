@@ -8,7 +8,13 @@
       "runtime": "openai-compatible-http",
       "local_only": true,
       "network_access": false,
-      "capabilities": ["model.local.chat"]
+      "capabilities": [
+        {
+          "key": "model.local.chat",
+          "provider_contract": "soma.model.chat.v1",
+          "output_schema": "soma.model.chat.response.v1"
+        }
+      ]
     },
     {
       "id": "soma.provider.session-memory",
@@ -17,7 +23,18 @@
       "runtime": "node-in-process",
       "local_only": true,
       "network_access": false,
-      "capabilities": ["memory.session.read", "memory.session.write"]
+      "capabilities": [
+        {
+          "key": "memory.session.read",
+          "provider_contract": "soma.memory.session.v1",
+          "output_schema": "soma.memory.session.read.response.v1"
+        },
+        {
+          "key": "memory.session.write",
+          "provider_contract": "soma.memory.session.v1",
+          "output_schema": "soma.memory.session.write.response.v1"
+        }
+      ]
     },
     {
       "id": "soma.provider.provenance-log",
@@ -26,7 +43,18 @@
       "runtime": "node-in-process",
       "local_only": true,
       "network_access": false,
-      "capabilities": ["provenance.read", "provenance.clear"]
+      "capabilities": [
+        {
+          "key": "provenance.read",
+          "provider_contract": "soma.provenance.v1",
+          "output_schema": "soma.provenance.read.response.v1"
+        },
+        {
+          "key": "provenance.clear",
+          "provider_contract": "soma.provenance.v1",
+          "output_schema": "soma.provenance.clear.response.v1"
+        }
+      ]
     },
     {
       "id": "soma.provider.stewardship",
@@ -35,7 +63,13 @@
       "runtime": "node-in-process",
       "local_only": true,
       "network_access": false,
-      "capabilities": ["stewardship.cognitive_load.assess"]
+      "capabilities": [
+        {
+          "key": "stewardship.cognitive_load.assess",
+          "provider_contract": "soma.stewardship.cognitive_load.v1",
+          "output_schema": "soma.stewardship.cognitive_load.response.v1"
+        }
+      ]
     },
     {
       "id": "soma.provider.scoped-files",
@@ -44,7 +78,13 @@
       "runtime": "node-in-process",
       "local_only": true,
       "network_access": false,
-      "capabilities": ["tool.files.read"]
+      "capabilities": [
+        {
+          "key": "tool.files.read",
+          "provider_contract": "soma.files.read.v1",
+          "output_schema": "soma.files.read.response.v1"
+        }
+      ]
     },
     {
       "id": "soma.provider.desktop-broker",
@@ -55,7 +95,20 @@
       "local_only": true,
       "network_access": false,
       "requires": ["at-spi2-core", "dbus-session"],
-      "capabilities": ["desktop.inspect.accessibility_tree", "desktop.inspect.focus"]
+      "capabilities": [
+        {
+          "key": "desktop.inspect.accessibility_tree",
+          "provider_contract": "soma.desktop.inspect.accessibility_tree.v1",
+          "output_schema": "docs/schemas/desktop-inspection-result.schema.json",
+          "command": "inspect-atspi"
+        },
+        {
+          "key": "desktop.inspect.focus",
+          "provider_contract": "soma.desktop.inspect.focus.v1",
+          "output_schema": "soma.desktop.inspect.focus.response.v1",
+          "command": "inspect-focus"
+        }
+      ]
     }
   ]
 }

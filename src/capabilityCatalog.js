@@ -57,7 +57,7 @@ export function buildCapabilityView({
       excluded_by_default: capability.excluded_by_default ?? [],
       reversible: capability.reversible ?? null,
       provider_contract: capability.provider_contract ?? "",
-      providers: providers.map(publicProvider),
+      providers: providers.map((provider) => publicProvider(provider, capability.key)),
       description: capability.description ?? "",
     };
   });
@@ -108,7 +108,8 @@ function capabilityKey(entry) {
   return entry?.key ?? "";
 }
 
-function publicProvider(provider) {
+function publicProvider(provider, key) {
+  const claim = providerClaimForCapability(provider, key);
   return {
     id: provider.id,
     name: provider.name ?? provider.id,
@@ -116,7 +117,15 @@ function publicProvider(provider) {
     runtime: provider.runtime ?? "",
     local_only: Boolean(provider.local_only),
     network_access: Boolean(provider.network_access),
+    provider_contract: claim?.provider_contract ?? "",
+    output_schema: claim?.output_schema ?? "",
   };
+}
+
+function providerClaimForCapability(provider, key) {
+  const capabilities = Array.isArray(provider.capabilities) ? provider.capabilities : [];
+  const claim = capabilities.find((entry) => capabilityKey(entry) === key);
+  return typeof claim === "object" && claim !== null ? claim : null;
 }
 
 function groupCapabilities(capabilities) {

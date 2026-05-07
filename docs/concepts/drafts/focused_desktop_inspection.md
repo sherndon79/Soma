@@ -164,6 +164,12 @@ requests it through the existing tree inspection path.
 If the helper cannot reliably identify focus, it should return `focus_available=false` with a
 reason. It should not guess from the first application, active window, or pointer location.
 
+The current Rust helper attempts a bounded semantic lookup by calling
+`org.a11y.atspi.Collection.GetActiveDescendant` on application root objects discovered from the
+AT-SPI bus. When an active descendant is returned, Soma queries only `GetRoleName` and
+`ChildCount` for that object. If the interface is unsupported or returns no descendant, the helper
+returns `focus_available=false` with `unavailable_reason=active_descendant_unavailable`.
+
 ## Non-Goals
 
 - no actuation
@@ -181,9 +187,8 @@ reason. It should not guess from the first application, active window, or pointe
 - `desktop.inspect.focus` remains disabled in the base harness.
 - `soma.provider.desktop-broker` advertises `desktop.inspect.focus` support so the capability is
   requestable.
-- The Rust helper supports `inspect-focus`, currently returning `focus_available=false` with
-  `unavailable_reason=focus_source_not_implemented` until a reliable semantic focus source is
-  implemented.
+- The Rust helper supports `inspect-focus` and attempts `GetActiveDescendant` on AT-SPI collection
+  roots.
 - The JavaScript fallback also returns explicit focus unavailable rather than guessing from a broad
   desktop tree.
 - Helper output is schema-checked to reject names, descriptions, text, states, actions, or other

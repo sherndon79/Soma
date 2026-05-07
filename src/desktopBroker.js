@@ -162,6 +162,7 @@ function assertFocusedDesktopInspection(result) {
     "release",
     "desktop_session",
     "session_type",
+    "dbus_session_bus_available",
     "focus_available",
     "focused_object",
     "unavailable_reason",

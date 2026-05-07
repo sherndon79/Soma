@@ -35,7 +35,67 @@ fn main() -> ExitCode {
 fn inspect_focus_json() -> String {
     let desktop_session = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let dbus_session_bus_available = env::var("DBUS_SESSION_BUS_ADDRESS").is_ok();
 
+    if !command_exists("busctl") {
+        return focus_unavailable_json(&desktop_session, &session_type, "busctl_not_found");
+    }
+
+    let Some(address) = get_atspi_bus_address() else {
+        return focus_unavailable_json(
+            &desktop_session,
+            &session_type,
+            "atspi_bus_address_unavailable",
+        );
+    };
+
+    let list_output = Command::new("busctl")
+        .args(["--address", &address, "list", "--no-legend", "--no-pager"])
+        .output();
+    let Ok(list_output) = list_output else {
+        return focus_unavailable_json(
+            &desktop_session,
+            &session_type,
+            "atspi_bus_list_command_failed",
+        );
+    };
+    if !list_output.status.success() {
+        return focus_unavailable_json(
+            &desktop_session,
+            &session_type,
+            "atspi_bus_list_unavailable",
+        );
+    }
+
+    let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+    for application in parse_atspi_bus_list(&list_stdout, MAX_APPLICATIONS) {
+        if application.registry || !application.service.starts_with(':') {
+            continue;
+        }
+        if let Ok(focused_object) =
+            inspect_focused_object_for_application(&address, &application.service)
+        {
+            return focused_object_json(
+                &desktop_session,
+                &session_type,
+                dbus_session_bus_available,
+                &focused_object,
+            );
+        }
+    }
+
+    focus_unavailable_json(
+        &desktop_session,
+        &session_type,
+        "active_descendant_unavailable",
+    )
+}
+
+fn focus_unavailable_json(
+    desktop_session: &str,
+    session_type: &str,
+    unavailable_reason: &str,
+) -> String {
     format!(
         concat!(
             "{{",
@@ -47,15 +107,16 @@ fn inspect_focus_json() -> String {
             "\"session_type\":\"{}\",",
             "\"focus_available\":false,",
             "\"focused_object\":null,",
-            "\"unavailable_reason\":\"focus_source_not_implemented\",",
+            "\"unavailable_reason\":\"{}\",",
             "\"text_content_included\":false,",
             "\"withheld_fields\":[\"name\",\"description\",\"text\",\"states\",\"actions\"]",
             "}}"
         ),
         json_escape(env::consts::OS),
         json_escape(&kernel_release()),
-        json_escape(&desktop_session),
-        json_escape(&session_type),
+        json_escape(desktop_session),
+        json_escape(session_type),
+        json_escape(unavailable_reason),
     )
 }
 
@@ -142,46 +203,13 @@ fn inspect_atspi_json() -> String {
         );
     }
 
-    let address_output = Command::new("busctl")
-        .args([
-            "--user",
-            "call",
-            "org.a11y.Bus",
-            "/org/a11y/bus",
-            "org.a11y.Bus",
-            "GetAddress",
-        ])
-        .output();
-    let address_output = match address_output {
-        Ok(output) if output.status.success() => output,
-        Ok(output) => {
-            return atspi_unavailable_json(
-                &desktop_session,
-                &session_type,
-                dbus_session_bus_available,
-                "atspi_bus_address_unavailable",
-                &command_error(&output),
-            );
-        }
-        Err(error) => {
-            return atspi_unavailable_json(
-                &desktop_session,
-                &session_type,
-                dbus_session_bus_available,
-                "atspi_bus_address_command_failed",
-                &error.to_string(),
-            );
-        }
-    };
-
-    let address_stdout = String::from_utf8_lossy(&address_output.stdout);
-    let Some(address) = parse_busctl_string(&address_stdout) else {
+    let Some(address) = get_atspi_bus_address() else {
         return atspi_unavailable_json(
             &desktop_session,
             &session_type,
             dbus_session_bus_available,
-            "atspi_bus_address_parse_failed",
-            &address_stdout,
+            "atspi_bus_address_unavailable",
+            "",
         );
     };
 
@@ -429,6 +457,13 @@ struct AtspiObjectRef {
     path: String,
 }
 
+struct AtspiFocusedObject {
+    object_ref: AtspiObjectRef,
+    role: String,
+    child_count: i32,
+    application: AtspiObjectRef,
+}
+
 struct AtspiChildMetadata {
     service: String,
     path: String,
@@ -496,6 +531,24 @@ fn parse_atspi_bus_list_line(line: &str) -> Option<AtspiApplication> {
     })
 }
 
+fn get_atspi_bus_address() -> Option<String> {
+    let address_output = Command::new("busctl")
+        .args([
+            "--user",
+            "call",
+            "org.a11y.Bus",
+            "/org/a11y/bus",
+            "org.a11y.Bus",
+            "GetAddress",
+        ])
+        .output()
+        .ok()?;
+    if !address_output.status.success() {
+        return None;
+    }
+    parse_busctl_string(&String::from_utf8_lossy(&address_output.stdout))
+}
+
 fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, String> {
     const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
     const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
@@ -552,6 +605,105 @@ fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, 
         children_sample,
         child_metadata_sample,
     })
+}
+
+fn inspect_focused_object_for_application(
+    address: &str,
+    service: &str,
+) -> Result<AtspiFocusedObject, String> {
+    const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
+    const COLLECTION_INTERFACE: &str = "org.a11y.atspi.Collection";
+    const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
+
+    let active_descendant_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        service,
+        ROOT_PATH,
+        COLLECTION_INTERFACE,
+        "GetActiveDescendant",
+    ])?;
+    let Some(object_ref) = parse_first_atspi_object_ref(&active_descendant_output) else {
+        return Err("active_descendant_missing".to_string());
+    };
+    if object_ref.path == "/org/a11y/atspi/null" || object_ref.service.is_empty() {
+        return Err("active_descendant_null".to_string());
+    }
+
+    let role_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &object_ref.service,
+        &object_ref.path,
+        ACCESSIBLE_INTERFACE,
+        "GetRoleName",
+    ])?;
+    let child_count_output = busctl_output(&[
+        "--address",
+        address,
+        "get-property",
+        &object_ref.service,
+        &object_ref.path,
+        ACCESSIBLE_INTERFACE,
+        "ChildCount",
+    ])?;
+
+    Ok(AtspiFocusedObject {
+        object_ref,
+        role: parse_busctl_string(&role_output).unwrap_or_default(),
+        child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
+        application: AtspiObjectRef {
+            service: service.to_string(),
+            path: ROOT_PATH.to_string(),
+        },
+    })
+}
+
+fn focused_object_json(
+    desktop_session: &str,
+    session_type: &str,
+    dbus_session_bus_available: bool,
+    focused_object: &AtspiFocusedObject,
+) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"mode\":\"read_only_focused_object_probe\",",
+            "\"broker_source\":\"rust_helper\",",
+            "\"platform\":\"{}\",",
+            "\"release\":\"{}\",",
+            "\"desktop_session\":\"{}\",",
+            "\"session_type\":\"{}\",",
+            "\"dbus_session_bus_available\":{},",
+            "\"focus_available\":true,",
+            "\"focused_object\":{{",
+            "\"service\":\"{}\",",
+            "\"path\":\"{}\",",
+            "\"role\":\"{}\",",
+            "\"child_count\":{},",
+            "\"application\":{{",
+            "\"service\":\"{}\",",
+            "\"path\":\"{}\"",
+            "}}",
+            "}},",
+            "\"text_content_included\":false,",
+            "\"withheld_fields\":[\"name\",\"description\",\"text\",\"states\",\"actions\"]",
+            "}}"
+        ),
+        json_escape(env::consts::OS),
+        json_escape(&kernel_release()),
+        json_escape(desktop_session),
+        json_escape(session_type),
+        dbus_session_bus_available,
+        json_escape(&focused_object.object_ref.service),
+        json_escape(&focused_object.object_ref.path),
+        json_escape(&focused_object.role),
+        focused_object.child_count,
+        json_escape(&focused_object.application.service),
+        json_escape(&focused_object.application.path),
+    )
 }
 
 fn inspect_child_metadata(
@@ -639,6 +791,16 @@ fn parse_atspi_object_refs(value: &str, limit: usize) -> Vec<AtspiObjectRef> {
         .collect()
 }
 
+fn parse_first_atspi_object_ref(value: &str) -> Option<AtspiObjectRef> {
+    let strings = parse_quoted_strings(value);
+    let service = strings.first()?;
+    let path = strings.get(1)?;
+    Some(AtspiObjectRef {
+        service: service.clone(),
+        path: path.clone(),
+    })
+}
+
 fn parse_quoted_strings(value: &str) -> Vec<String> {
     let mut strings = Vec::new();
     let mut current = String::new();
@@ -678,6 +840,49 @@ fn command_error(output: &std::process::Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let combined = format!("{} {}", stderr.trim(), stdout.trim());
     combined.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_active_descendant_object_ref() {
+        let object_ref =
+            parse_first_atspi_object_ref(r#"so ":1.42" "/org/a11y/atspi/accessible/7""#)
+                .expect("object ref");
+
+        assert_eq!(object_ref.service, ":1.42");
+        assert_eq!(object_ref.path, "/org/a11y/atspi/accessible/7");
+    }
+
+    #[test]
+    fn focused_object_json_omits_textual_fields() {
+        let focused = AtspiFocusedObject {
+            object_ref: AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/org/a11y/atspi/accessible/7".to_string(),
+            },
+            role: "frame".to_string(),
+            child_count: 2,
+            application: AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/org/a11y/atspi/accessible/root".to_string(),
+            },
+        };
+
+        let json = focused_object_json("GNOME", "wayland", true, &focused);
+
+        assert!(json.contains(r#""focus_available":true"#));
+        assert!(json.contains(r#""role":"frame""#));
+        assert!(json.contains(r#""child_count":2"#));
+        assert!(json.contains(r#""text_content_included":false"#));
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
+    }
 }
 
 fn json_escape(value: &str) -> String {

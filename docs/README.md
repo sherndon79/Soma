@@ -17,6 +17,8 @@ near each other without reducing either side to extraction.
 - [Operator Guide](./operators.md) — current runbook-style commands for running, inspecting, and
   revoking Soma capabilities.
 - [Glossary](./glossary.md) — stable definitions for Soma's load-bearing terms.
+- [Failure Modes](./failure_modes.md) — how Soma should fail, recover, and communicate degraded
+  operation.
 - [Threat Model](./security/threat_model.md) — current adversaries, assets, controls, and
   non-defenses.
 - [Roadmap](../ROADMAP.md) — current scaffold, next slice, and later capability areas.

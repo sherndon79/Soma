@@ -22,9 +22,11 @@ Implemented:
 - Rust `soma-desktop-broker` helper scaffold
 - bounded AT-SPI bus participant and root-object metadata inspection
 - focused-object inspection endpoint and CLI, disabled by default
+- bounded AT-SPI active-descendant focus lookup with fail-closed unavailable reasons
 - self-scoped narrowing modules for revocation
 - proposal show/review endpoint and CLI surface
 - proposal notification endpoint and CLI surface
+- documented modular harness invariant and extension boundary
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -32,51 +34,42 @@ Current authority boundary:
 - Node owns policy, provenance, CLI/API, harness modules, and model routing.
 - Rust helpers execute bounded host capabilities and return structured results.
 - MCP may become an adapter/facade layer, but not the trust boundary.
+- New behavior should enter through capability definitions, provider manifests, grants, harness
+  modules, runtime profiles, or bounded broker helpers rather than central one-off handlers.
 
 ## Next Slice
 
-Expand the read-only AT-SPI inspection path from shallow child metadata to a bounded accessibility
-tree.
+Make the provider/broker boundary more concrete so Soma stays modular as capabilities grow.
 
 Target:
 
-```bash
-soma-desktop-broker inspect-atspi
+```text
+capability contract
+  -> provider manifest
+  -> policy-checked invocation
+  -> schema-checked broker result
+  -> provenance record
 ```
 
-Expected shape:
+Expected work:
 
-```json
-{
-  "mode": "atspi_read_only_probe",
-  "broker_source": "rust_helper",
-  "tree_available": true,
-  "applications": [
-    {
-      "name": "Example",
-      "role": "application",
-      "child_count": 4,
-      "children_sample": [],
-      "child_metadata_sample": []
-    }
-  ]
-}
-```
+- define the first provider invocation contract in docs
+- ensure desktop broker calls remain behind capability-specific adapters
+- add tests that reject provider overreach for focused inspection and tree inspection
+- keep helper output schema-checked before provenance records are written
+- preserve the distinction between provider support and user-granted authority
 
 Constraints:
 
-- read-only
-- bounded output
-- no text extraction by default
-- no screenshots
-- no pointer or keyboard actuation
-- no model-driven desktop actions
-- provenance records broker source, inspection mode, tree availability, and application count
+- no generic all-powerful desktop provider
+- no plugin installation as permission
+- no model-defined capability keys for activation
+- no bypass around the catalog/provider/grant path
+- no merging desktop, memory, audio, filesystem, and model behavior into a single broker
 
 ## Near-Term
 
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
-- Implement reliable semantic focus lookup in the Rust desktop broker.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only

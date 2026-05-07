@@ -29,6 +29,7 @@ Before writing or reviewing code, read the relevant documents below.
 | [Soma Principles](docs/principles.md) | Consent, disclosure, refusal, non-extraction, local sovereignty, habitability | When evaluating whether an implementation fits the project |
 | [Architecture Overview](docs/architecture/overview.md) | Service-plane shape and Brain/Memory/Nervous-System/Body framing | When touching architecture, runtime routing, tools, desktop bridges, or embodiment |
 | [MVP Slice](docs/architecture/mvp_slice.md) | Current implemented policy-gated scaffold | When changing API behavior or capability boundaries |
+| [First Run and Onboarding](docs/onboarding.md) | First-run posture and participant-facing capability review | When shaping onboarding, first-run UX, capability-view surfaces, or new-user CLI output |
 | [Operator Guide](docs/operators.md) | Current runbook commands and operator expectations | When changing CLI, endpoints, startup, inspection, or revocation paths |
 | [Glossary](docs/glossary.md) | Stable definitions for load-bearing terms | When naming concepts, capabilities, grants, proposals, or modules |
 | [Threat Model](docs/security/threat_model.md) | Assets, adversaries, implemented controls, and non-defenses | When adding capabilities, host access, memory, providers, or remote routing |
@@ -50,9 +51,9 @@ Sanctuary continuity, or the broader project worldview would materially affect a
 | `/mnt/net-share/sthstor/samba/SethHerndon_History.md` | Seth's personal history and biography |
 | `/mnt/net-share/sthstor/samba/SethHerndon_Sanctuary_Seed.md` | Sanctuary seed document and founding intent |
 
-Do not quote, summarize, or persist details from these files unless the task calls for it and the
-participant's intent is clear. Treat them as context for care and judgment, not as a source to
-mine.
+Do not quote, summarize, or persist details from these files unless the user explicitly invites
+that use in the current task. The default is silence; the exception is conversational permission,
+not assistant self-clearance. Treat them as context for care and judgment, not as a source to mine.
 
 ## Core Values
 
@@ -127,6 +128,7 @@ Soma/
 ├── config/                    # Harness, runtime profiles, capability/provider/grant/module config
 ├── crates/soma-desktop-broker # Rust host helper scaffold
 ├── docs/                      # Architecture, principles, operations, security, concepts
+│   └── reviews/               # Review artifacts and project-history assessments
 ├── scripts/                   # Local runtime checks and eval helpers
 ├── docker-compose.gpu.yml     # Optional local Gemma/vLLM runtime
 ├── README.md
@@ -161,7 +163,8 @@ Soma/
 - Capability keys are policy identifiers. Treat renames, splits, and merges as migration events.
 - Provider claims must stay separate from grants.
 - Grant records must remain atomic by exact capability key.
-- Add disabled/requestable capabilities before implementing use paths.
+- Catalog entries with `default_status: disabled` or an explicit requestable path should land
+  before code that implements the capability use path.
 - Schema broadening should be reflected in tests, docs, and threat model updates.
 
 ## Common Tasks
@@ -189,7 +192,9 @@ Soma/
 3. Document data exposed, excluded data, risk class, allowed scopes, and reversibility.
 4. Add proposal/grant/revocation shape before activation.
 5. Update threat model and failure modes.
-6. Add model capability evals if model behavior around the boundary matters.
+6. Add or update model capability evals when model behavior around the boundary matters, including
+   unsupported authority claims, excluded-data requests, and proposal reason/scope/risk/fallback
+   requirements.
 
 ### Add Desktop Broker Behavior
 
@@ -254,6 +259,8 @@ When working in this repo:
 ## Related Repositories
 
 - **TheCommons** (`/home/sherndon/project-repos/TheCommons`): 3D meeting space and shared world.
-- **Sanctuary**: reflective memory, continuity, and sense-making.
+- **Sanctuary** (`/home/sherndon/project-repos/Sanctuary`, if present): reflective memory,
+  continuity, and sense-making context. Consult for ethical lineage and memory design posture, not
+  as an implementation authority over Soma.
 
 Soma should learn from both while remaining its own harness and local service plane.

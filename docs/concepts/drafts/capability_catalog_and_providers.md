@@ -175,6 +175,78 @@ Provider records should include:
 - output schemas
 - provenance behavior
 
+## Provider Invocation Contract
+
+A provider invocation is the bounded request Soma sends after policy has already determined that
+the capability may be used in the current context.
+
+The invocation contract should be explicit enough that a provider cannot infer extra authority
+from surrounding context.
+
+Minimum invocation envelope:
+
+```json
+{
+  "invocation_id": "inv-123",
+  "capability": "desktop.inspect.focus",
+  "provider": "soma.provider.desktop-broker",
+  "provider_contract": "soma.desktop.inspect.focus.v1",
+  "scope": "once",
+  "constraints": {
+    "include_text": false,
+    "include_screenshot": false,
+    "max_depth": 1
+  },
+  "request": {
+    "mode": "focused_object"
+  },
+  "provenance_context": {
+    "caller_identity": "cli",
+    "reason": "Need focused object role while troubleshooting.",
+    "grant_id": "grant-123"
+  }
+}
+```
+
+Rules:
+
+- the `capability` must be an exact catalog key
+- the `provider` must match an installed provider registry entry
+- the `provider_contract` must match the catalog and provider claim
+- the `scope` and `constraints` must be no broader than the active grant or base harness posture
+- the request body must contain only fields defined by the provider contract
+- excluded data should be stated negatively where useful, not left to assumption
+- provider output must be schema-checked before it is returned to the model, user, API client, or
+  provenance log
+- rejected provider output should produce a broker contract error and should not be echoed back in
+  full
+
+The provider may fail closed by returning an unavailable result with a reason. Unavailable is not
+the same as denied: denied means policy refused the invocation before provider execution;
+unavailable means the provider had authority to try but could not complete the bounded operation.
+
+Example focused-inspection fail-closed result:
+
+```json
+{
+  "mode": "read_only_focused_object_probe",
+  "broker_source": "rust_helper",
+  "focus_available": false,
+  "focused_object": null,
+  "unavailable_reason": "atspi_bus_address_unavailable",
+  "text_content_included": false,
+  "withheld_fields": ["name", "description", "text", "states", "actions"]
+}
+```
+
+Invocation provenance should record the capability, provider, contract, scope, constraints,
+allowed/denied state, broker source, result availability, and small summary metadata. It should
+not record sensitive payloads merely because a provider returned them.
+
+This contract is the seam between the service plane and providers. It is also the place where MCP
+servers, native helpers, local services, or future plugin packages should be adapted into Soma's
+governed model.
+
 ## Grant Object
 
 A grant is the user-approved authority to use a capability through a provider under a scope.

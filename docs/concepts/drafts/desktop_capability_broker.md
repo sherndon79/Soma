@@ -58,6 +58,17 @@ Node should remain the policy/provenance authority at first. The Rust helper sho
 capability executor. Any future move toward policy enforcement inside the helper should be
 intentional and documented.
 
+The desktop broker should be invoked through capability-specific contracts rather than a generic
+desktop command surface. For example, `desktop.inspect.focus` should map to the focused-object
+contract, while `desktop.inspect.accessibility_tree` should map to the bounded tree contract. The
+helper may share internal AT-SPI/D-Bus code, but the externally visible invocation and schema
+should remain capability-specific.
+
+Broker output must be schema-checked before Soma records provenance or exposes the result. If a
+helper returns text, names, descriptions, actions, states, screenshots, or input surfaces outside
+the active capability contract, Soma should reject the helper result as provider overreach rather
+than trim and continue silently.
+
 ## Layered Desktop Stack
 
 ```text

@@ -121,6 +121,18 @@ scope, exposed data, exclusions, risk, and fallback. A proposal is not activatio
 An implementation that can execute one or more capabilities. A provider may advertise support for
 a capability contract, but only the harness may grant authority to use it.
 
+## Provider Contract
+
+The declared interface between a capability and an implementation provider. A provider contract
+defines the request fields, constraints, result schema, unavailable reasons, exclusions, and
+provenance requirements for one capability boundary.
+
+## Provider Invocation
+
+A policy-checked request sent to a provider under an exact capability, provider contract, scope,
+and constraint set. Invocation is not discovery or installation; it is the governed execution
+attempt after authority has been established.
+
 ## Provider Registry
 
 The file-backed set of installed provider claims. The provider registry says what providers claim

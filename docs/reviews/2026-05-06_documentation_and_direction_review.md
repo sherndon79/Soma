@@ -186,3 +186,84 @@ Run another direction review after any of:
 - before durable memory comes online
 - before any remote model bridge lands
 - before the first external contributor PR in a heightened-review area
+
+---
+
+## Addendum — Codex Review Response
+
+**Date:** 2026-05-06
+**Reviewer:** Codex
+**Scope:** Response to Claude's documentation and direction review
+
+### Agreement
+
+The review is directionally sound. The strongest recommendations are the consolidated threat model,
+failure-mode documentation, migration/versioning policy, first-run/onboarding design, and glossary.
+Those are not cosmetic additions; they are the docs most likely to prevent architectural drift as
+Soma moves from read-only surfaces toward grants, activation, durable memory, and eventually
+actuation.
+
+The review correctly identifies that deterministic tests and model evaluations cover different
+risks. The code can enforce the harness, but model-facing evaluations are still needed to verify
+that the local model understands the boundary it is operating within.
+
+### Sequencing
+
+Recommended next sequence:
+
+1. `docs/glossary.md`
+2. `docs/security/threat_model.md`
+3. `docs/failure_modes.md`
+4. `docs/migration.md`
+5. first-run/onboarding sketch
+
+The glossary should come first because the terminology is now dense enough that threat modeling
+will be cleaner if terms like capability, provider, grant, proposal, activation, requestable,
+unsupported, excluded, and forbidden are stabilized first.
+
+The threat model should land before proposal activation or grant implementation. Once grants exist,
+Soma will need a clear answer for what adversaries it assumes and what it explicitly does not
+defend against.
+
+### Nuance And Pushback
+
+The political-economic grounding gap is real, but it should be handled carefully. A short
+`docs/grounding.md` would be useful. It should preserve the founding critique and explain why Soma
+refuses extraction, enclosure, and silent capability expansion without turning the main technical
+docs into a manifesto. The goal is continuity of intent across contributors, not ideological
+gatekeeping.
+
+The suggested `model.public.chat` capability should not be introduced yet. "Public" can mean
+publicly funded, open-weight, nonprofit, university-hosted, state-run, public endpoint, or commons
+operated. The term is politically important but technically underspecified. Soma should keep the
+public-compatibility principle while delaying a capability key until the operational semantics are
+clearer.
+
+Sanctuary and TheCommons attachment points are worth naming eventually, but they should remain
+placeholders for now. Soma should not prematurely couple itself to either project. A future
+"possible bridges" note is enough until an actual integration need appears.
+
+Multi-user and multi-agent scenarios are real future gaps, but they are lower priority than the
+threat model, failure modes, and migration/versioning work. The single-user, single-machine
+assumption is still appropriate for MVP as long as it remains explicit.
+
+### Additional Emphasis
+
+The first-run/onboarding concern is also a user-experience concern. The capability view is a good
+primitive, but users should not need to read the full concept library to understand the current
+posture. Soma needs an initialization experience that communicates:
+
+- what is active
+- what is disabled
+- what is unsupported
+- what can be revoked
+- what requires explicit approval
+- what Soma will not do
+
+This should happen without creating prompt fatigue.
+
+### Bottom Line
+
+The review should be preserved as project history. It names the right next pressure points. The
+main implementation path should not jump straight from model evals to grants without first
+stabilizing vocabulary, threat assumptions, failure behavior, and migration rules.

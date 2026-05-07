@@ -563,3 +563,40 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
   assert.match(writes.join(""), /text content included: no/);
   assert.match(writes.join(""), /provenance: prov-1/);
 });
+
+test("runCli desktop focus calls focused inspection endpoint", async () => {
+  let captured;
+  const writes = [];
+
+  await runCli(parseCli(["node", "soma", "desktop", "focus"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, requestPath, body) => {
+      captured = { method, requestPath, body };
+      return {
+        provenance_id: "prov-focus",
+        inspection: {
+          mode: "read_only_focused_object_probe",
+          broker_source: "rust_helper",
+          desktop_session: "GNOME",
+          session_type: "wayland",
+          focus_available: true,
+          focused_object: {
+            role: "frame",
+            child_count: 2,
+          },
+          text_content_included: false,
+        },
+      };
+    },
+  });
+
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.requestPath, "/desktop/inspect/focus");
+  assert.deepEqual(captured.body, { include_text: undefined });
+  assert.match(writes.join(""), /Focused desktop object/);
+  assert.match(writes.join(""), /available: yes/);
+  assert.match(writes.join(""), /role: frame/);
+  assert.match(writes.join(""), /child count: 2/);
+  assert.match(writes.join(""), /text content included: no/);
+  assert.match(writes.join(""), /provenance: prov-focus/);
+});

@@ -55,7 +55,7 @@
       "local_only": true,
       "network_access": false,
       "requires": ["at-spi2-core", "dbus-session"],
-      "capabilities": ["desktop.inspect.accessibility_tree"]
+      "capabilities": ["desktop.inspect.accessibility_tree", "desktop.inspect.focus"]
     }
   ]
 }

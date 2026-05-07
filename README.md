@@ -82,6 +82,7 @@ npm run cli -- memory add "Session note" --role note
 npm run cli -- files read README.md
 npm run cli -- desktop inspect
 npm run cli -- desktop inspect --mode atspi
+npm run cli -- desktop focus
 npm run cli -- desktop inspect --mode atspi --max-apps 8 --max-children 2
 npm run cli -- desktop inspect --mode atspi --json
 npm run cli -- provenance summary
@@ -117,6 +118,7 @@ records stay behind `--json`.
 - `POST /stewardship/cognitive-load`
 - `POST /files/read`
 - `POST /desktop/inspect/accessibility-tree`
+- `POST /desktop/inspect/focus`
 - `POST /chat`
 
 ## Test

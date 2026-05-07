@@ -30,6 +30,14 @@ const allowedHarness = {
   },
 };
 
+const focusedInspectionHarness = {
+  ...allowedHarness,
+  capabilities: [
+    ...allowedHarness.capabilities,
+    { key: "desktop.inspect.focus", status: "allowed" },
+  ],
+};
+
 const runtimeProfiles = {
   schema_version: 1,
   default_profile: "local-test",
@@ -1059,6 +1067,112 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.body.entries[0].requested_max_apps, 1);
     assert.equal(response.body.entries[0].requested_max_children, 1);
     assert.equal(response.body.entries[0].application_count, 1);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
+test("focused desktop inspection is blocked when focus capability is disabled", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/desktop/inspect/focus",
+    harness: allowedHarness,
+    body: {},
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "capability_not_allowed");
+});
+
+test("focused desktop inspection returns bounded focus metadata and provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-endpoint-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+if [ "$1" = "inspect-focus" ]; then
+  printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":2,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+else
+  printf '%s\\n' '{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{},"commands":{},"tree":null,"tree_available":false}'
+fi
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const handler = makeHandler({ harness: focusedInspectionHarness });
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      body: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.inspection.mode, "read_only_focused_object_probe");
+    assert.equal(response.body.inspection.focus_available, true);
+    assert.equal(response.body.inspection.focused_object.role, "frame");
+    assert.equal(response.body.inspection.focused_object.child_count, 2);
+    assert.equal(response.body.inspection.text_content_included, false);
+    assert.equal("name" in response.body.inspection.focused_object, false);
+    const provenanceId = response.body.provenance_id;
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.focus",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].id, provenanceId);
+    assert.equal(response.body.entries[0].capability, "desktop.inspect.focus");
+    assert.equal(response.body.entries[0].focus_available, true);
+    assert.equal(response.body.entries[0].focused_role, "frame");
+    assert.equal(response.body.entries[0].focused_child_count, 2);
+    assert.equal(response.body.entries[0].text_content_included, false);
+    assert.equal("focused_name" in response.body.entries[0], false);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
+test("focused desktop inspection rejects text inclusion", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/desktop/inspect/focus",
+    harness: focusedInspectionHarness,
+    body: { include_text: true },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "focused_desktop_text_not_allowed");
+});
+
+test("focused desktop inspection rejects helper over-disclosure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-invalid-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/focus","role":"entry","child_count":0,"name":"private field label"},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const response = await invoke({
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      harness: focusedInspectionHarness,
+      body: {},
+    });
+
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.body.error, "focused_desktop_inspection_schema_invalid");
+    assert.ok(response.body.validation_errors.includes("result.focused_object.name is not allowed"));
+    assert.equal("inspection" in response.body, false);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;

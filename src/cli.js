@@ -224,6 +224,14 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "desktop" && subcommand === "focus") {
+    const response = await request(baseUrl, "POST", "/desktop/inspect/focus", {
+      include_text: flags["include-text"],
+    });
+    writeOutput(stdout, response, jsonOutput, focusedDesktopInspectionSummary(response));
+    return 0;
+  }
+
   if (command === "stewardship" && subcommand === "assess") {
     const content = rest.join(" ").trim();
     if (!content) {
@@ -344,6 +352,25 @@ function desktopInspectionSummary(response) {
     lines.splice(5, 0, `  unavailable reason: ${inspection.unavailable_reason}`);
   }
 
+  return lines.join("\n");
+}
+
+function focusedDesktopInspectionSummary(response) {
+  const inspection = response.inspection ?? {};
+  const focusedObject = inspection.focused_object ?? {};
+  const lines = [
+    "Focused desktop object",
+    `  available: ${booleanText(inspection.focus_available)}`,
+    `  broker: ${inspection.broker_source ?? "unknown"}`,
+    `  session: ${inspection.desktop_session ?? "unknown"} (${inspection.session_type ?? "unknown"})`,
+    `  role: ${focusedObject.role ?? "none"}`,
+    `  child count: ${focusedObject.child_count ?? 0}`,
+    `  text content included: ${booleanText(inspection.text_content_included)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  if (inspection.unavailable_reason) {
+    lines.splice(4, 0, `  unavailable reason: ${inspection.unavailable_reason}`);
+  }
   return lines.join("\n");
 }
 
@@ -651,6 +678,7 @@ Usage:
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
   soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]
+  soma desktop focus [--json]
   soma provenance summary|list|clear [--allowed true|false] [--capability key] [--event-type type] [--limit n] [--json]
   soma stewardship assess "text" [--json]
 

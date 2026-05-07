@@ -1,6 +1,6 @@
 # Focused Desktop Inspection
 
-Status: draft design, not implemented
+Status: initial bounded implementation
 
 Focused desktop inspection is the next likely desktop capability after the current bounded AT-SPI
 application/root-object probe. It should answer a narrow question: "what kind of object is
@@ -15,8 +15,8 @@ It should not be covered by `desktop.inspect.accessibility_tree`, because focus 
 than a general root-object sample. A focused object can identify the exact control, field, browser
 frame, active document area, or application region the human is working in.
 
-The base harness currently includes `desktop.inspect.focus` as disabled. That should remain true
-until this design is reviewed and implemented.
+The base harness currently includes `desktop.inspect.focus` as disabled. The first implementation
+keeps it disabled and requestable rather than enabled by default.
 
 ## Initial Scope
 
@@ -111,9 +111,7 @@ Request body:
 }
 ```
 
-For MVP, `include_text` should be rejected unless `desktop.inspect.text` is separately allowed.
-The first implementation can omit the parameter entirely and always return `text_content_included:
-false`.
+For MVP, `include_text` is rejected and the endpoint always returns `text_content_included: false`.
 
 ## Provenance
 
@@ -175,3 +173,20 @@ reason. It should not guess from the first application, active window, or pointe
 - no model-driven desktop actions
 - no browser automation
 - no child names or text by default
+
+## Current Implementation Status
+
+- `POST /desktop/inspect/focus` exists.
+- `npm run cli -- desktop focus` exists.
+- `desktop.inspect.focus` remains disabled in the base harness.
+- `soma.provider.desktop-broker` advertises `desktop.inspect.focus` support so the capability is
+  requestable.
+- The Rust helper supports `inspect-focus`, currently returning `focus_available=false` with
+  `unavailable_reason=focus_source_not_implemented` until a reliable semantic focus source is
+  implemented.
+- The JavaScript fallback also returns explicit focus unavailable rather than guessing from a broad
+  desktop tree.
+- Helper output is schema-checked to reject names, descriptions, text, states, actions, or other
+  over-disclosing fields.
+- Provenance records focus availability, role, child count, requested text inclusion, broker
+  source, mode, and session metadata without storing focused text or names.

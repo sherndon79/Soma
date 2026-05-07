@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
-import { inspectDesktopBrokerEnvironment } from "./desktopBroker.js";
+import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
@@ -360,6 +360,29 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/desktop/inspect/focus") {
+        requireCapability(effectiveHarness, "desktop.inspect.focus");
+        const body = await readJson(req);
+        if (body.include_text === true) {
+          const error = new Error("Focused desktop inspection does not include text content.");
+          error.statusCode = 403;
+          error.code = "focused_desktop_text_not_allowed";
+          throw error;
+        }
+        const inspection = await inspectFocusedDesktopObject();
+        const event = provenanceLog.append(createFocusedDesktopInspectionEvent({
+          inspection,
+          request: body,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          inspection,
+          provenance_id: event.id,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/chat") {
         const body = await readJson(req);
         const messages = normalizeMessages(body.messages);
@@ -641,6 +664,29 @@ function createDesktopInspectionEvent({ inspection, request = {}, caller }) {
     root_object_available_count: inspection.root_object_available_count ?? null,
     window_count: inspection.window_count ?? null,
     tree_available: inspection.tree_available,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createFocusedDesktopInspectionEvent({ inspection, request = {}, caller }) {
+  const focusedObject = inspection.focused_object ?? {};
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "desktop.inspect.focus",
+    capability: "desktop.inspect.focus",
+    caller_identity: caller,
+    allowed: true,
+    desktop_session: inspection.desktop_session,
+    session_type: inspection.session_type,
+    broker_source: inspection.broker_source,
+    inspection_mode: inspection.mode,
+    requested_include_text: request.include_text === true,
+    focus_available: inspection.focus_available,
+    focused_role: focusedObject.role ?? "",
+    focused_child_count: focusedObject.child_count ?? null,
+    text_content_included: false,
     memory_written: false,
     remote_service_used: false,
   };

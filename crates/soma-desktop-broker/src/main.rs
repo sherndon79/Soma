@@ -17,8 +17,12 @@ fn main() -> ExitCode {
             println!("{}", inspect_atspi_json());
             ExitCode::SUCCESS
         }
+        Some("inspect-focus") => {
+            println!("{}", inspect_focus_json());
+            ExitCode::SUCCESS
+        }
         Some("help") | Some("--help") | None => {
-            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi");
+            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi|inspect-focus");
             ExitCode::SUCCESS
         }
         Some(command) => {
@@ -26,6 +30,33 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn inspect_focus_json() -> String {
+    let desktop_session = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
+
+    format!(
+        concat!(
+            "{{",
+            "\"mode\":\"read_only_focused_object_probe\",",
+            "\"broker_source\":\"rust_helper\",",
+            "\"platform\":\"{}\",",
+            "\"release\":\"{}\",",
+            "\"desktop_session\":\"{}\",",
+            "\"session_type\":\"{}\",",
+            "\"focus_available\":false,",
+            "\"focused_object\":null,",
+            "\"unavailable_reason\":\"focus_source_not_implemented\",",
+            "\"text_content_included\":false,",
+            "\"withheld_fields\":[\"name\",\"description\",\"text\",\"states\",\"actions\"]",
+            "}}"
+        ),
+        json_escape(env::consts::OS),
+        json_escape(&kernel_release()),
+        json_escape(&desktop_session),
+        json_escape(&session_type),
+    )
 }
 
 fn inspect_environment_json() -> String {

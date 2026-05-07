@@ -67,6 +67,12 @@ Read-only AT-SPI probe:
 npm run cli -- desktop inspect --mode atspi
 ```
 
+Focused object probe, when `desktop.inspect.focus` is explicitly allowed:
+
+```bash
+npm run cli -- desktop focus
+```
+
 Narrow returned output:
 
 ```bash
@@ -82,6 +88,11 @@ npm run cli -- desktop inspect --mode atspi --json
 The current AT-SPI probe is read-only. It returns bounded participant, application root-object, and
 shallow child role/count metadata. It does not read child names, descriptions, text content, states,
 actions, screenshots, pointer position, keyboard input, or camera/microphone data.
+
+Focused inspection is also read-only and non-textual. It is behind the disabled
+`desktop.inspect.focus` capability and returns only focus availability, focused object role, child
+count, service/path references, and withheld-field markers. It does not return names,
+descriptions, text, state lists, actions, screenshots, pointer position, or keyboard input.
 
 ## Inspect Provenance
 

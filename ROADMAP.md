@@ -21,6 +21,7 @@ Implemented:
 - read-only desktop broker environment inspection
 - Rust `soma-desktop-broker` helper scaffold
 - bounded AT-SPI bus participant and root-object metadata inspection
+- focused-object inspection endpoint and CLI, disabled by default
 - self-scoped narrowing modules for revocation
 - proposal show/review endpoint and CLI surface
 - proposal notification endpoint and CLI surface
@@ -74,10 +75,8 @@ Constraints:
 
 ## Near-Term
 
-- Add proposal notification surfacing without activation.
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
-- Add focused-object inspection behind disabled `desktop.inspect.focus`, following the focused
-  inspection draft.
+- Implement reliable semantic focus lookup in the Rust desktop broker.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only

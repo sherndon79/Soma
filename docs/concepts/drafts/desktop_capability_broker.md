@@ -351,8 +351,9 @@ boundary. See [Bounded Recursive AT-SPI Traversal](./bounded_recursive_atspi_tra
 draft traversal contract. See
 [Desktop Request Contract Baseline](./desktop_request_contract_baseline.md) for the current
 pre-traversal CLI/API request contract and test coverage map. See
-[Desktop Helper Limit Contract](./desktop_helper_limit_contract.md) for the future helper-side
-limit hint contract.
+[Desktop Helper Limit Contract](./desktop_helper_limit_contract.md) for the helper-side limit hint
+contract. See [Desktop Helper Transport](./desktop_helper_transport.md) for the decision to keep
+one-shot stdio until a long-lived helper transport is justified.
 
 ## Research Findings
 

@@ -47,6 +47,7 @@ Implemented:
 - tested desktop helper limit argument derivation
 - Node helper invocation uses derived AT-SPI limit arguments
 - Rust helper parses and enforces AT-SPI limit hints
+- documented one-shot stdio helper transport decision
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -59,23 +60,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Document the one-shot stdio helper boundary versus a future JSON-RPC helper transport.
+Design traversal root authorization before recursive traversal can open.
 
 Target:
 
 ```text
-current one-shot helper
-  -> transport tradeoff
-  -> migration trigger
-  -> no transport change
+previously disclosed objects
+  -> user-selected roots
+  -> request validation model
+  -> no traversal implementation
 ```
 
 Expected work:
 
-- document why one-shot stdio is still sufficient for current inspection
-- identify when JSON-RPC over stdio or Unix socket becomes useful
-- preserve Node as policy/provenance authority
-- keep helper commands capability-specific
+- define how a traversal root proves prior disclosure in the current session
+- define how explicit user selection could authorize a root
+- identify where root references should be stored, expired, and scoped
+- keep focused inspection separate from traversal fallback
 - keep current runtime behavior unchanged
 
 Constraints:

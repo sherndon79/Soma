@@ -44,6 +44,7 @@ should inform implementation.
 - [Delegated Choice and Deliberation](./concepts/drafts/delegated_choice_and_deliberation.md)
 - [Desktop Capability Broker](./concepts/drafts/desktop_capability_broker.md)
 - [Desktop Helper Limit Contract](./concepts/drafts/desktop_helper_limit_contract.md)
+- [Desktop Helper Transport](./concepts/drafts/desktop_helper_transport.md)
 - [Desktop Inspection Schema Validation](./concepts/drafts/desktop_inspection_schema_validation.md)
 - [Desktop Request Contract Baseline](./concepts/drafts/desktop_request_contract_baseline.md)
 - [Escalation and Planning](./concepts/drafts/escalation_and_planning.md)

@@ -62,7 +62,8 @@ The current desktop inspection output contract is documented in
 [docs/schemas/desktop-inspection-result.schema.json](./docs/schemas/desktop-inspection-result.schema.json).
 Future recursive traversal is expected to depend on an in-process
 [desktop disclosure registry](./docs/concepts/drafts/desktop_disclosure_registry.md) before any
-helper receives a traversal root.
+helper receives a traversal root. The future path for exposing opaque root ids is documented in
+[desktop root ref exposure](./docs/concepts/drafts/desktop_root_ref_exposure.md).
 
 ## CLI
 

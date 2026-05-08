@@ -53,6 +53,7 @@ Implemented:
 - in-process desktop disclosure registry module and unit tests
 - successful desktop inspections populate the disclosure registry after provenance append
 - desktop disclosure refs are revoked when desktop inspection is narrowed by module
+- documented future desktop root-ref exposure path
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -65,23 +66,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the future root-ref exposure path before traversal validation.
+Add schema fixtures for future `desktop_ref_id` exposure without enabling it at runtime.
 
 Target:
 
 ```text
 root authorization model
-  -> how root_ref ids become visible
-  -> operator-facing disclosure summary
+  -> future schema fixture coverage
+  -> current validator still rejects field
   -> no traversal implementation
 ```
 
 Expected work:
 
-- decide between per-object `desktop_ref_id`, operator-only summary, or explicit selection ids
-- define the schema change required before any response field is added
-- keep raw service/path out of model-selected traversal requests
-- preserve the option for explicit user-selected roots
+- add documentation or test fixtures for allowed future `desktop_ref_id` locations
+- prove current runtime validator still rejects `desktop_ref_id` today
+- prove `desktop_ref_id` will not be accepted on text/action/traversal payloads
+- keep the future response-field change separate from current runtime behavior
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

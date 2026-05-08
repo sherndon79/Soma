@@ -186,6 +186,9 @@ discloses them again.
 Future traversal needs a way for a model or operator surface to name a `root_ref`. This does not
 need to happen in the registry implementation slice.
 
+See [Desktop Root Ref Exposure](./desktop_root_ref_exposure.md) for the recommended future
+exposure path.
+
 Possible future exposure paths:
 
 - attach `desktop_ref_id` to already-disclosed object references once traversal is implemented

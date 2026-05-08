@@ -73,6 +73,9 @@ Initial sources that should not populate the registry:
 A future traversal request should reference a registry id or explicit selection id, not only a raw
 service/path pair:
 
+See [Desktop Root Ref Exposure](./desktop_root_ref_exposure.md) for how those opaque ids should
+become visible without making raw AT-SPI refs model-selectable traversal roots.
+
 ```json
 {
   "mode": "atspi",

@@ -71,6 +71,17 @@ Current scaffold:
 - No remote routing, provider registration, grant creation, capability activation, durable memory
   export, or raw task payload provenance is performed.
 
+Current heuristic limits:
+
+- `uncertainty` is triggered by explicit uncertainty phrases. It will miss confident wrong answers
+  and may over-trigger on harmless hedging.
+- `complexity` is triggered by simple task language and length cues. It is not a real difficulty
+  estimator.
+- `capability_gap` is triggered by escalation or remote-planning language. It does not yet inspect
+  failed capability validations from a tool-planning path.
+- Trigger families are advisory metadata, not decisions. They should never activate
+  `model.remote.plan`, create grants, or route to a remote service.
+
 ## The Pattern
 
 ```text

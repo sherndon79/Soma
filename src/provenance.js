@@ -8,6 +8,7 @@ export function createProvenance({
   memoryRead = false,
   memoryWritten = false,
   cognitiveLoadAssessed = false,
+  escalationAssessed = false,
   allowed = null,
   denialReason = "",
 }) {
@@ -22,6 +23,7 @@ export function createProvenance({
     memory_read: memoryRead,
     memory_written: memoryWritten,
     cognitive_load_assessed: cognitiveLoadAssessed,
+    escalation_assessed: escalationAssessed,
     tools_available: false,
     remote_service_used: route !== "local",
   };

@@ -69,6 +69,7 @@ The local CLI talks to the running Soma service:
 npm run cli -- status
 npm run cli -- chat "hello"
 npm run cli -- chat "help me slow this down" --assess-load
+npm run cli -- chat "this task may need a stronger planner" --assess-escalation --json
 npm run cli -- capabilities
 npm run cli -- notifications
 npm run cli -- modules list

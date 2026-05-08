@@ -62,6 +62,7 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       use_session_memory: Boolean(flags.memory),
       write_session_memory: Boolean(flags["write-memory"]),
       assess_cognitive_load: Boolean(flags["assess-load"]),
+      assess_escalation: Boolean(flags["assess-escalation"]),
     });
     writeOutput(stdout, response, jsonOutput, response.text);
     return 0;
@@ -666,7 +667,7 @@ function helpText() {
 
 Usage:
   soma status [--json]
-  soma chat "message" [--memory] [--write-memory] [--assess-load] [--profile id] [--max-tokens n] [--temperature n] [--json]
+  soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma capabilities [--json]
   soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]

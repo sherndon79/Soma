@@ -1304,6 +1304,88 @@ test("chat can include optional cognitive load assessment metadata", async () =>
   assert.equal(response.body.cognitive_load_assessment.memory_written, false);
 });
 
+test("chat can surface local escalation triggers without remote routing", async () => {
+  const escalationCatalog = {
+    schema_version: 1,
+    capabilities: [
+      {
+        key: "model.local.chat",
+        name: "Local Model Chat",
+        category: "model",
+        default_status: "allowed",
+        activation_policy: "base_harness",
+      },
+      {
+        key: "model.remote.plan",
+        name: "Remote Model Planning",
+        category: "model",
+        default_status: "disabled",
+        activation_policy: "explicit_grant",
+        provider_contract: "soma.model.remote.plan.v1",
+      },
+    ],
+  };
+  const modelClient = {
+    model: "local-test-model",
+    async chat() {
+      return {
+        text: "I am not sure this complex architecture request can be fully resolved locally.",
+        model: "local-test-model",
+        finish_reason: "stop",
+        tokens_used: 11,
+      };
+    },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityCatalog: escalationCatalog,
+    providerRegistry: { schema_version: 1, providers: [] },
+    modelClient,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      assess_escalation: true,
+      messages: [
+        {
+          role: "user",
+          content: "This is a complex architecture task. Should we escalate to a remote planner?",
+        },
+      ],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.remote_service_used, false);
+  assert.equal(response.body.escalation_assessment.triggers_fired, true);
+  assert.deepEqual(response.body.escalation_assessment.trigger_families, [
+    "uncertainty",
+    "complexity",
+    "capability_gap",
+  ]);
+  assert.equal(response.body.escalation_assessment.remote_planning_status, "unsupported");
+  assert.equal(response.body.escalation_assessment.remote_planning_available, false);
+  assert.match(response.body.escalation_assessment.provenance_id, /^[0-9a-f-]{36}$/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.local.escalation_proposed",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].capability, "model.local.chat");
+  assert.equal(response.body.entries[0].remote_service_used, false);
+  assert.equal(response.body.entries[0].remote_planning_status, "unsupported");
+  assert.deepEqual(response.body.entries[0].escalation_trigger_families, [
+    "uncertainty",
+    "complexity",
+    "capability_gap",
+  ]);
+  assert.equal("content" in response.body.entries[0], false);
+});
+
 test("self-applied module disables cognitive load stewardship", async () => {
   const handler = makeHandler({ harness: allowedHarness, moduleRegistry });
 

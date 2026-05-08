@@ -5,6 +5,7 @@ import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
+import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
@@ -389,7 +390,9 @@ export function createRequestHandler({
         const useSessionMemory = Boolean(body.use_session_memory);
         const writeSessionMemory = Boolean(body.write_session_memory);
         const assessLoad = Boolean(body.assess_cognitive_load);
+        const assessEscalation = Boolean(body.assess_escalation);
         let cognitiveLoadAssessment = null;
+        let escalationAssessment = null;
         if (assessLoad) {
           requireCapability(effectiveHarness, "stewardship.cognitive_load.assess");
           cognitiveLoadAssessment = assessCognitiveLoad(messages);
@@ -404,6 +407,7 @@ export function createRequestHandler({
           memoryRead: useSessionMemory,
           memoryWritten: writeSessionMemory,
           cognitiveLoadAssessed: assessLoad,
+          escalationAssessed: assessEscalation,
         });
         let memoryContext = "";
 
@@ -454,13 +458,37 @@ export function createRequestHandler({
           });
         }
 
+        if (assessEscalation) {
+          escalationAssessment = assessEscalationTriggers({
+            messages,
+            completionText: completion.text,
+            capabilityView: buildCapabilityView({
+              catalog: capabilityCatalog,
+              providerRegistry,
+              harness: effectiveHarness,
+            }),
+          });
+        }
+
         const allowedProvenance = {
           ...provenance,
           event_type: "model.chat.completed",
           allowed: true,
+          escalation_triggers_fired: escalationAssessment?.triggers_fired ?? false,
+          escalation_trigger_families: escalationAssessment?.trigger_families ?? [],
+          remote_planning_status: escalationAssessment?.remote_planning_status ?? "",
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
+        let escalationProvenanceId = null;
+        if (escalationAssessment?.triggers_fired) {
+          const escalationEvent = provenanceLog.append(createEscalationProposedEvent({
+            assessment: escalationAssessment,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          escalationProvenanceId = escalationEvent.id;
+          logger.info?.("soma.provenance", escalationEvent);
+        }
 
         writeJson(res, 200, {
           text: completion.text,
@@ -474,6 +502,12 @@ export function createRequestHandler({
           memory_read: useSessionMemory,
           memory_written: writeSessionMemory,
           cognitive_load_assessment: cognitiveLoadAssessment,
+          escalation_assessment: escalationAssessment
+            ? {
+                ...escalationAssessment,
+                provenance_id: escalationProvenanceId,
+              }
+            : null,
         });
         return;
       }
@@ -597,6 +631,24 @@ function createStewardshipAssessmentEvent({ assessment, caller }) {
     cognitive_load_assessed: true,
     cognitive_load_advisory_needed: assessment.advisory_needed,
     cognitive_load_confidence: assessment.confidence,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createEscalationProposedEvent({ assessment, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "model.local.escalation_proposed",
+    capability: "model.local.chat",
+    caller_identity: caller,
+    allowed: true,
+    escalation_triggers_fired: assessment.triggers_fired,
+    escalation_trigger_families: assessment.trigger_families,
+    remote_planning_capability: assessment.remote_planning_capability,
+    remote_planning_status: assessment.remote_planning_status,
+    remote_planning_available: assessment.remote_planning_available,
     memory_written: false,
     remote_service_used: false,
   };

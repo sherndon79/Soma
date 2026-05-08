@@ -39,13 +39,17 @@ review requests need attention without opening the full proposal records.
 npm run cli -- chat "hello"
 ```
 
-Session memory and cognitive-load stewardship are opt-in per request:
+Session memory, cognitive-load stewardship, and local-only escalation-trigger assessment are opt-in
+per request:
 
 ```bash
 npm run cli -- chat "help me keep track of this" --memory --write-memory --assess-load
+npm run cli -- chat "this architecture task may be too large" --assess-escalation --json
 ```
 
 Session memory is in-process only. It is lost when the service stops.
+Escalation assessment does not route to a remote model; it only reports local trigger metadata and
+records metadata-only provenance if triggers fire.
 
 ## Inspect Desktop State
 

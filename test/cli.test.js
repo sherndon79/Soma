@@ -91,6 +91,7 @@ test("runCli chat sends expected request body", async () => {
     "--memory",
     "--write-memory",
     "--assess-load",
+    "--assess-escalation",
     "--max-tokens",
     "10",
   ]), {
@@ -109,6 +110,7 @@ test("runCli chat sends expected request body", async () => {
   assert.equal(captured.body.use_session_memory, true);
   assert.equal(captured.body.write_session_memory, true);
   assert.equal(captured.body.assess_cognitive_load, true);
+  assert.equal(captured.body.assess_escalation, true);
   assert.equal(captured.body.max_tokens, 10);
 });
 

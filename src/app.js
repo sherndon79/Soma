@@ -14,6 +14,7 @@ import {
   adoptSelfApplyModule,
   applyActiveModules,
   dropModule,
+  findModule,
   listVisibleModules,
 } from "./harnessModules.js";
 import { readJson, writeError, writeJson } from "./http.js";
@@ -215,6 +216,11 @@ export function createRequestHandler({
         const body = await readJson(req);
         const moduleId = String(body.module_id ?? "");
         activeModules = adoptSelfApplyModule(moduleRegistry, activeModules, moduleId);
+        const adoptedModule = findModule(moduleRegistry, moduleId);
+        revokeDesktopDisclosureForDisabledCapabilities(
+          desktopDisclosureRegistry,
+          adoptedModule?.overlay?.disabled_capabilities ?? [],
+        );
         const event = provenanceLog.append(createHarnessModuleEvent({
           eventType: "harness.module.adopted",
           moduleId,
@@ -843,6 +849,14 @@ function createFocusedDesktopInspectionEvent({ inspection, request = {}, caller 
     memory_written: false,
     remote_service_used: false,
   };
+}
+
+function revokeDesktopDisclosureForDisabledCapabilities(desktopDisclosureRegistry, disabledCapabilities) {
+  for (const capability of disabledCapabilities) {
+    if (typeof capability === "string" && capability.startsWith("desktop.inspect.")) {
+      desktopDisclosureRegistry.revokeByCapability(capability);
+    }
+  }
 }
 
 function normalizeDesktopInspectionRequestedMode(mode) {

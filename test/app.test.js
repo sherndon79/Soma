@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
 import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
+import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 
 const allowedHarness = {
   capabilities: [
@@ -1228,6 +1229,66 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
+test("desktop disclosure registry revokes refs when desktop inspection is narrowed by module", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-registry-revoke-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","name":"test-app","role":"application","child_count":1,"children_sample":[{"service":":1.42","path":"/child"}],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const desktopDisclosureRegistry = new DesktopDisclosureRegistry({
+      idFactory: (() => {
+        let nextId = 0;
+        return () => `desktop-ref-${++nextId}`;
+      })(),
+    });
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: { mode: "atspi" },
+    });
+    assert.equal(response.statusCode, 200);
+    const [entry] = desktopDisclosureRegistry.snapshot();
+    assert.equal(desktopDisclosureRegistry.authorizeRootRef({
+      rootRef: entry.id,
+      capability: "desktop.inspect.accessibility_tree",
+    }).ok, true);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/harness-modules/adopt",
+      body: { module_id: "no-desktop-inspection" },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(desktopDisclosureRegistry.authorizeRootRef({
+      rootRef: entry.id,
+      capability: "desktop.inspect.accessibility_tree",
+    }), { ok: false, error: "desktop_traversal_root_revoked" });
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/harness-modules/drop",
+      body: { module_id: "no-desktop-inspection" },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(desktopDisclosureRegistry.authorizeRootRef({
+      rootRef: entry.id,
+      capability: "desktop.inspect.accessibility_tree",
+    }), { ok: false, error: "desktop_traversal_root_revoked" });
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
 test("focused desktop inspection is blocked when focus capability is disabled", async () => {
   const response = await invoke({
     method: "POST",
@@ -1910,6 +1971,7 @@ function createDesktopDisclosureRegistrySpy() {
       this.focusedInspectionCalls.push(args);
       return [];
     },
+    revokeByCapability() {},
   };
 }
 

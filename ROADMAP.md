@@ -52,6 +52,7 @@ Implemented:
 - documented in-process desktop disclosure registry design
 - in-process desktop disclosure registry module and unit tests
 - successful desktop inspections populate the disclosure registry after provenance append
+- desktop disclosure refs are revoked when desktop inspection is narrowed by module
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -64,23 +65,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Connect desktop disclosure registry revocation to narrowing paths before exposing traversal roots.
+Design the future root-ref exposure path before traversal validation.
 
 Target:
 
 ```text
 root authorization model
-  -> registry revocation on desktop narrowing
-  -> stale refs rejected internally
+  -> how root_ref ids become visible
+  -> operator-facing disclosure summary
   -> no traversal implementation
 ```
 
 Expected work:
 
-- clear or revoke desktop registry entries when desktop inspection is narrowed by module
-- define the equivalent hook point for future writable grant revocation
-- test module adoption does not leave usable desktop refs behind
-- keep module drop from resurrecting old refs
+- decide between per-object `desktop_ref_id`, operator-only summary, or explicit selection ids
+- define the schema change required before any response field is added
+- keep raw service/path out of model-selected traversal requests
+- preserve the option for explicit user-selected roots
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

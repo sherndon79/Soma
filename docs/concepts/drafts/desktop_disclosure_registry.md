@@ -175,6 +175,12 @@ Entries should be removed or rejected when:
 Module or grant restoration should not resurrect old references. A new inspection should be
 required to establish fresh roots.
 
+Writable grant revocation is not implemented yet. When grant mutation exists, the grant revocation
+path should call the same registry hook used by narrowing modules: every revoked
+`desktop.inspect.*` capability should revoke matching registry entries before the revoked grant is
+reported as inactive. A replacement grant should not inherit old refs unless a new inspection
+discloses them again.
+
 ## Response Exposure
 
 Future traversal needs a way for a model or operator surface to name a `root_ref`. This does not
@@ -214,4 +220,3 @@ Implementation should add focused unit tests before traversal opens:
 3. Decide and test the response exposure path for `root_ref` values.
 4. Add traversal request validation against the registry.
 5. Only then add helper traversal support.
-

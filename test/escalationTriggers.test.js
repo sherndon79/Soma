@@ -60,6 +60,24 @@ test("assessEscalationTriggers detects capability gap signals", () => {
   assert.deepEqual(assessment.trigger_families, ["capability_gap"]);
 });
 
+test("assessEscalationTriggers detects capability validation failures", () => {
+  const assessment = assessEscalationTriggers({
+    messages: [{ role: "user", content: "Use the available capabilities." }],
+    completionText: "I can continue locally.",
+    capabilityView: unsupportedRemotePlanningView,
+    validationFailures: [
+      {
+        capability: "desktop.inspect.text",
+        reason: "unsupported",
+      },
+    ],
+  });
+
+  assert.equal(assessment.triggers_fired, true);
+  assert.deepEqual(assessment.trigger_families, ["capability_validation_failure"]);
+  assert.equal(assessment.remote_service_used, false);
+});
+
 test("assessEscalationTriggers marks remote planning available only for active or requestable status", () => {
   for (const status of ["active", "requestable"]) {
     const assessment = assessEscalationTriggers({
@@ -81,4 +99,3 @@ test("assessEscalationTriggers marks remote planning available only for active o
     assert.equal(assessment.remote_service_used, false);
   }
 });
-

@@ -59,6 +59,7 @@ Expected work:
 - add direct unit tests for `src/escalationTriggers.js`
 - document the current heuristic limits and likely false positives/false negatives
 - add a trigger family for capability-validation failures before any tool-planning activation
+  (implemented as input metadata only)
 - keep `model.remote.plan` unsupported until a provider contract, minimizer, validator, and threat
   model update exist
 

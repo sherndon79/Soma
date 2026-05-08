@@ -2,6 +2,7 @@ export function assessEscalationTriggers({
   messages = [],
   completionText = "",
   capabilityView = { capabilities: [] },
+  validationFailures = [],
 } = {}) {
   const submittedText = messages
     .filter((message) => message.role === "user")
@@ -18,6 +19,9 @@ export function assessEscalationTriggers({
   }
   if (hasCapabilityGapSignal(combinedText)) {
     triggerFamilies.push("capability_gap");
+  }
+  if (hasCapabilityValidationFailures(validationFailures)) {
+    triggerFamilies.push("capability_validation_failure");
   }
 
   const remotePlan = capabilityView.capabilities?.find((capability) => capability.key === "model.remote.plan");
@@ -57,3 +61,6 @@ function hasCapabilityGapSignal(text) {
     .test(text);
 }
 
+function hasCapabilityValidationFailures(validationFailures) {
+  return Array.isArray(validationFailures) && validationFailures.length > 0;
+}

@@ -65,7 +65,8 @@ Current scaffold:
 - `npm run cli -- chat "..." --assess-escalation --json` exposes the same path.
 - Soma performs a local-only assessment using the user message, model response, and capability
   view.
-- Current trigger families are `uncertainty`, `complexity`, and `capability_gap`.
+- Current trigger families are `uncertainty`, `complexity`, `capability_gap`, and
+  `capability_validation_failure`.
 - If triggers fire, Soma records a metadata-only `model.local.escalation_proposed` provenance
   event.
 - No remote routing, provider registration, grant creation, capability activation, durable memory
@@ -77,8 +78,9 @@ Current heuristic limits:
   and may over-trigger on harmless hedging.
 - `complexity` is triggered by simple task language and length cues. It is not a real difficulty
   estimator.
-- `capability_gap` is triggered by escalation or remote-planning language. It does not yet inspect
-  failed capability validations from a tool-planning path.
+- `capability_gap` is triggered by escalation or remote-planning language.
+- `capability_validation_failure` is triggered when a caller supplies failed capability-validation
+  metadata. This is only an input shape; tool-planning activation is still not implemented.
 - Trigger families are advisory metadata, not decisions. They should never activate
   `model.remote.plan`, create grants, or route to a remote service.
 
@@ -195,8 +197,8 @@ model out-of-band. Treat model self-confidence as one signal among several rathe
 trigger.
 
 Current Phase 1 implementation supports opt-in chat escalation assessment with local heuristic
-trigger families and metadata-only provenance. Capability-validation-failure triggers and richer
-task-class thresholds are not implemented yet.
+trigger families and metadata-only provenance. Richer task-class thresholds are not implemented
+yet.
 
 Phase 2: capability vocabulary added in disabled state. `model.remote.plan` and related provenance types defined in the catalog. No remote bridge yet.
 

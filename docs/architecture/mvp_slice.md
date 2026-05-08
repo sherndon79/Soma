@@ -299,9 +299,14 @@ manifests, modules, audit records, UI, and future tools.
 - `model.local.tool_calls` — allow local model tool-call planning
 - `model.remote.chat` — send chat prompts to a remote model provider
 - `model.remote.tool_calls` — allow remote model tool-call planning
+- `model.remote.plan` — escalate a task to a remote model for structured planning, with each plan
+  step validated against the active harness before local execution; distinct from
+  `model.remote.chat` because the planner influences local execution paths, not only the
+  user-facing response. See
+  [Escalation and Planning](../concepts/drafts/escalation_and_planning.md).
 
-MVP enables local chat only for model routing. Tool-call planning and remote model routing remain
-disabled.
+MVP enables local chat only for model routing. Tool-call planning, remote chat, and remote
+planning remain disabled.
 
 ### Memory
 

@@ -110,6 +110,13 @@ Initial local runtime may build from TheCommons' vLLM pattern: an OpenAI-compati
 by local GPU acceleration and model cache. Soma should avoid coupling to one runtime by defining
 runtime profiles.
 
+When tasks scale beyond a small local model's capability, Soma should escalate to a remote planner
+under explicit consent rather than expand local capability silently or surrender intimate context
+by default. The planner's plan is validated against the active harness before any step executes.
+The orchestration layer Soma cares about is *security and consent*, not *workflow*: the model
+reasons in one continuous working context; Soma gates the actions it proposes. See
+[Escalation and Planning](../concepts/drafts/escalation_and_planning.md).
+
 ### Memory Service
 
 The memory service should store durable context only within explicit terms.

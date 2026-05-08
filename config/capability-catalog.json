@@ -44,6 +44,29 @@
       "description": "Send prompts to a remote model provider."
     },
     {
+      "key": "model.remote.plan",
+      "name": "Remote Model Planning",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "submitted task",
+        "active harness manifest",
+        "local model attempt and uncertainty signal"
+      ],
+      "excluded_by_default": [
+        "durable memory contents",
+        "raw user history",
+        "session conversation outside the current task",
+        "hidden plan execution"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.remote.plan.v1",
+      "description": "Escalate a task to a remote model for structured planning. Each plan step is validated against the active harness before local execution. Distinct from model.remote.chat because the planner influences local execution paths, not only the user-facing response."
+    },
+    {
       "key": "memory.session.read",
       "name": "Session Memory Read",
       "category": "memory",

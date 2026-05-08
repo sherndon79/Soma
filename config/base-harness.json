@@ -23,6 +23,12 @@
       "description": "Send prompts to a remote model provider."
     },
     {
+      "key": "model.remote.plan",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Escalate a task to a remote model for structured planning, with each plan step validated against the active harness before local execution."
+    },
+    {
       "key": "memory.durable.write",
       "status": "disabled",
       "requires": "explicit_grant",

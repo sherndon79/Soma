@@ -13,10 +13,16 @@ fn main() -> ExitCode {
             println!("{}", inspect_environment_json());
             ExitCode::SUCCESS
         }
-        Some("inspect-atspi") => {
-            println!("{}", inspect_atspi_json());
-            ExitCode::SUCCESS
-        }
+        Some("inspect-atspi") => match AtspiLimits::parse(args) {
+            Ok(limits) => {
+                println!("{}", inspect_atspi_json(limits));
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(2)
+            }
+        },
         Some("inspect-focus") => {
             println!("{}", inspect_focus_json());
             ExitCode::SUCCESS
@@ -30,6 +36,65 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AtspiLimits {
+    max_applications: usize,
+    max_root_child_refs: usize,
+    max_root_child_metadata: usize,
+}
+
+impl Default for AtspiLimits {
+    fn default() -> Self {
+        Self {
+            max_applications: MAX_APPLICATIONS,
+            max_root_child_refs: MAX_ROOT_CHILD_REFS,
+            max_root_child_metadata: MAX_ROOT_CHILD_METADATA,
+        }
+    }
+}
+
+impl AtspiLimits {
+    fn parse<I>(args: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut limits = Self::default();
+        let mut args = args.into_iter();
+        while let Some(flag) = args.next() {
+            let value = args
+                .next()
+                .ok_or_else(|| format!("{flag} requires a value"))?;
+            match flag.as_str() {
+                "--max-applications" => {
+                    limits.max_applications = parse_limit(&flag, &value, 1, MAX_APPLICATIONS)?;
+                }
+                "--max-root-child-refs" => {
+                    limits.max_root_child_refs =
+                        parse_limit(&flag, &value, 0, MAX_ROOT_CHILD_REFS)?;
+                }
+                "--max-root-child-metadata" => {
+                    limits.max_root_child_metadata =
+                        parse_limit(&flag, &value, 0, MAX_ROOT_CHILD_METADATA)?;
+                }
+                _ => return Err(format!("unknown inspect-atspi option: {flag}")),
+            }
+        }
+        Ok(limits)
+    }
+}
+
+fn parse_limit(flag: &str, value: &str, minimum: usize, maximum: usize) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("{flag} must be an integer from {minimum} to {maximum}"))?;
+    if parsed < minimum || parsed > maximum {
+        return Err(format!(
+            "{flag} must be an integer from {minimum} to {maximum}"
+        ));
+    }
+    Ok(parsed)
 }
 
 fn inspect_focus_json() -> String {
@@ -188,7 +253,7 @@ fn inspect_environment_json() -> String {
     )
 }
 
-fn inspect_atspi_json() -> String {
+fn inspect_atspi_json(limits: AtspiLimits) -> String {
     let desktop_session = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
     let dbus_session_bus_available = env::var("DBUS_SESSION_BUS_ADDRESS").is_ok();
@@ -239,9 +304,9 @@ fn inspect_atspi_json() -> String {
     };
 
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
-    let applications = parse_atspi_bus_list(&list_stdout, MAX_APPLICATIONS)
+    let applications = parse_atspi_bus_list(&list_stdout, limits.max_applications)
         .into_iter()
-        .map(|application| application.with_root_object(&address))
+        .map(|application| application.with_root_object(&address, limits))
         .collect::<Vec<_>>();
     let root_object_count = applications
         .iter()
@@ -355,12 +420,12 @@ struct AtspiApplication {
 }
 
 impl AtspiApplication {
-    fn with_root_object(mut self, address: &str) -> Self {
+    fn with_root_object(mut self, address: &str, limits: AtspiLimits) -> Self {
         if !self.service.starts_with(':') {
             return self;
         }
 
-        match inspect_root_object(address, &self.service) {
+        match inspect_root_object(address, &self.service, limits) {
             Ok(root_object) => {
                 self.root_object = Some(root_object);
             }
@@ -549,7 +614,11 @@ fn get_atspi_bus_address() -> Option<String> {
     parse_busctl_string(&String::from_utf8_lossy(&address_output.stdout))
 }
 
-fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, String> {
+fn inspect_root_object(
+    address: &str,
+    service: &str,
+    limits: AtspiLimits,
+) -> Result<AtspiRootObject, String> {
     const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
     const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
 
@@ -591,10 +660,10 @@ fn inspect_root_object(address: &str, service: &str) -> Result<AtspiRootObject, 
     ])
     .unwrap_or_default();
 
-    let children_sample = parse_atspi_object_refs(&children_output, MAX_ROOT_CHILD_REFS);
+    let children_sample = parse_atspi_object_refs(&children_output, limits.max_root_child_refs);
     let child_metadata_sample = children_sample
         .iter()
-        .take(MAX_ROOT_CHILD_METADATA)
+        .take(limits.max_root_child_metadata)
         .filter_map(|child| inspect_child_metadata(address, child).ok())
         .collect();
 
@@ -882,6 +951,77 @@ mod tests {
         assert!(!json.contains(r#""text":"#));
         assert!(!json.contains(r#""states":"#));
         assert!(!json.contains(r#""actions":"#));
+    }
+
+    #[test]
+    fn atspi_limits_default_to_schema_caps() {
+        assert_eq!(
+            AtspiLimits::parse(Vec::<String>::new()).expect("limits"),
+            AtspiLimits {
+                max_applications: MAX_APPLICATIONS,
+                max_root_child_refs: MAX_ROOT_CHILD_REFS,
+                max_root_child_metadata: MAX_ROOT_CHILD_METADATA,
+            }
+        );
+    }
+
+    #[test]
+    fn atspi_limits_parse_helper_hints() {
+        let limits = AtspiLimits::parse([
+            "--max-applications".to_string(),
+            "3".to_string(),
+            "--max-root-child-refs".to_string(),
+            "5".to_string(),
+            "--max-root-child-metadata".to_string(),
+            "4".to_string(),
+        ])
+        .expect("limits");
+
+        assert_eq!(
+            limits,
+            AtspiLimits {
+                max_applications: 3,
+                max_root_child_refs: 5,
+                max_root_child_metadata: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn atspi_limits_reject_unknown_flags() {
+        let error = AtspiLimits::parse(["--include-text".to_string(), "true".to_string()])
+            .expect_err("error");
+
+        assert_eq!(error, "unknown inspect-atspi option: --include-text");
+    }
+
+    #[test]
+    fn atspi_limits_reject_missing_values() {
+        let error = AtspiLimits::parse(["--max-applications".to_string()]).expect_err("error");
+
+        assert_eq!(error, "--max-applications requires a value");
+    }
+
+    #[test]
+    fn atspi_limits_reject_out_of_range_values() {
+        let error = AtspiLimits::parse(["--max-root-child-metadata".to_string(), "5".to_string()])
+            .expect_err("error");
+
+        assert_eq!(
+            error,
+            "--max-root-child-metadata must be an integer from 0 to 4"
+        );
+    }
+
+    #[test]
+    fn atspi_limits_reject_non_integer_values() {
+        let error = AtspiLimits::parse(["--max-root-child-refs".to_string(), "many".to_string()])
+            .expect_err("error");
+
+        assert_eq!(
+            error,
+            "--max-root-child-refs must be an integer from 0 to 8"
+        );
     }
 }
 

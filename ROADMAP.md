@@ -46,6 +46,7 @@ Implemented:
 - documented desktop helper-side limit hint contract
 - tested desktop helper limit argument derivation
 - Node helper invocation uses derived AT-SPI limit arguments
+- Rust helper parses and enforces AT-SPI limit hints
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -58,24 +59,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Teach the Rust desktop helper to parse and enforce AT-SPI limit hints.
+Document the one-shot stdio helper boundary versus a future JSON-RPC helper transport.
 
 Target:
 
 ```text
-Node helper args
-  -> Rust helper parsing
-  -> same response schema
-  -> no traversal
+current one-shot helper
+  -> transport tradeoff
+  -> migration trigger
+  -> no transport change
 ```
 
 Expected work:
 
-- parse `--max-applications`, `--max-root-child-refs`, and `--max-root-child-metadata`
-- reject unknown or malformed helper flags before AT-SPI queries
-- enforce helper-side hard caps aligned to the schema
-- preserve current defaults when flags are omitted
-- keep public response schema unchanged
+- document why one-shot stdio is still sufficient for current inspection
+- identify when JSON-RPC over stdio or Unix socket becomes useful
+- preserve Node as policy/provenance authority
+- keep helper commands capability-specific
+- keep current runtime behavior unchanged
 
 Constraints:
 

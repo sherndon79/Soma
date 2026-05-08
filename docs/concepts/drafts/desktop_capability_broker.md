@@ -314,8 +314,10 @@ Current scaffold:
 - provenance records requested mode and requested output limits separately from returned counts
 - focused inspection accepts only `include_text=false`; malformed focus requests fail before helper
   invocation or provenance recording, and `include_text=true` remains separately rejected
-- `crates/soma-desktop-broker` contains Rust `inspect-environment` and `inspect-atspi` helper
-  commands
+- `crates/soma-desktop-broker` contains Rust `inspect-environment`, `inspect-atspi`, and
+  `inspect-focus` helper commands
+- Rust `inspect-atspi` parses optional application and root-child sampling limits and rejects
+  malformed helper flags before AT-SPI queries
 - Node uses `./target/debug/soma-desktop-broker` when present, or `SOMA_DESKTOP_BROKER` when set
 - no screenshots, text extraction, pointer control, keyboard control, or model-driven desktop
   actions are implemented

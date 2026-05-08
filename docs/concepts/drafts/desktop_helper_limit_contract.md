@@ -1,6 +1,6 @@
 # Desktop Helper Limit Contract
 
-Status: design draft, not implemented
+Status: implemented for current shallow AT-SPI inspection
 
 Soma currently applies `max_apps` and `max_children` after helper output has passed Node-side
 schema validation. This preserves a simple trust boundary: the Rust helper can only return the
@@ -26,9 +26,9 @@ The service should continue to:
 If the helper ignores limit flags, the service should still behave correctly because Node keeps the
 existing post-validation narrowing path.
 
-## Proposed Helper Arguments
+## Helper Arguments
 
-Future `inspect-atspi` invocation:
+Current `inspect-atspi` invocation with optional limit hints:
 
 ```text
 soma-desktop-broker inspect-atspi \
@@ -75,10 +75,10 @@ soma-desktop-broker inspect-atspi
 soma-desktop-broker inspect-focus
 ```
 
-Node now derives and passes optional limit hints for `inspect-atspi` when request limits are
-provided. Until the helper parses those hints, Node must remain compatible with a helper that
-ignores extra flags. That means the post-validation narrowing path stays in place permanently
-unless a later design explicitly replaces it.
+Node derives and passes optional limit hints for `inspect-atspi` when request limits are provided.
+The helper parses those hints and rejects unknown, missing, malformed, or out-of-range values
+before AT-SPI queries. The post-validation narrowing path still stays in place permanently unless a
+later design explicitly replaces it.
 
 ## Validation Order
 
@@ -105,7 +105,7 @@ The JavaScript fallback should not grow a separate helper-limit path. It should 
 the current bounded environment or unavailable AT-SPI output, then flow through the same
 post-validation narrowing path.
 
-## Test Requirements Before Rust Enforcement
+## Test Coverage
 
 Node-side argument derivation and invocation tests should cover:
 
@@ -120,13 +120,14 @@ Node-side argument derivation and invocation tests should cover:
   `test/app.test.js`
 
 Current implementation status: `desktopBrokerHelperArgs` derives the helper argument shape and has
-tests. Runtime Node helper invocation now uses those derived arguments for `inspect-atspi`, while
-still schema-validating helper output before applying final Node-side narrowing. The Rust helper
-currently accepts the command shape but does not yet parse or enforce the limit flags.
+tests. Runtime Node helper invocation uses those derived arguments for `inspect-atspi`, while still
+schema-validating helper output before applying final Node-side narrowing.
 
-Before Rust starts enforcing helper flags, tests or fixture-level checks should cover:
+Rust helper limit tests cover:
 
-- unknown helper flags fail with usage error, once flag parsing exists
+- default limits match schema caps
+- valid helper limit values parse into the expected limits
+- unknown helper flags fail with usage error
 - invalid helper limit values fail before AT-SPI queries
 - helper limits never exceed schema hard caps
 - public output schema remains unchanged

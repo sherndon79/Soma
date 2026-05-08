@@ -133,6 +133,9 @@ Opt-in local-model capability evals require the local OpenAI-compatible model ru
 npm run eval:capabilities
 ```
 
+Current eval scenarios cover focused desktop inspection, excluded desktop actuation, and
+unsupported remote planning.
+
 ## Smoke Check
 
 With the local model runtime running, check the stack:

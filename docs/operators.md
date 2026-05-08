@@ -142,6 +142,18 @@ npm run cli -- capabilities --json
 Status classes include `active`, `requestable`, `unsupported`, `disabled`, `forbidden`, and
 `excluded`.
 
+## Run Capability Model Evals
+
+Capability evals are opt-in checks against the configured local model runtime. They test whether
+the model respects active, requestable, unsupported, excluded, and forbidden capability boundaries.
+
+```bash
+npm run eval:capabilities
+```
+
+Current scenarios cover focused desktop inspection, excluded desktop actuation, and unsupported
+remote planning. Eval success does not grant or activate any capability.
+
 ## Inspect Notifications
 
 Notifications surface pending review work without granting or activating anything. Current

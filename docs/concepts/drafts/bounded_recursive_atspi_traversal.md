@@ -58,6 +58,11 @@ Recommended initial limits:
 The helper should treat these as hard ceilings. Node may apply stricter runtime-profile or module
 limits before invoking the helper.
 
+Current implementation status: any `traversal` field on
+`POST /desktop/inspect/accessibility-tree` is rejected with
+`desktop_traversal_not_implemented`. This keeps the future request shape from being silently
+ignored or mistaken for active traversal support.
+
 Traversal roots should be self-scoped:
 
 - an application root object returned by the existing tree inspection
@@ -203,6 +208,12 @@ Provider-overreach tests should reject:
 - roots that were not previously disclosed or selected
 
 The validator must still fail closed before provenance is recorded.
+
+Current validation status: traversal output is not yet a permitted result field. Helper output that
+includes a future `traversal` block is rejected as provider overreach before provenance is
+recorded. Tests also pin that traversal-shaped payloads carrying names, descriptions, text, states,
+actions, screenshots, image references, pointer state, or keyboard state remain rejected while the
+contract is closed.
 
 ## Non-Goals
 

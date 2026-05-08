@@ -343,6 +343,7 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/desktop/inspect/accessibility-tree") {
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
         const body = await readJson(req);
+        rejectUnsupportedDesktopTraversal(body);
         const inspection = await inspectDesktopBrokerEnvironment({
           mode: body.mode,
           maxApps: body.max_apps,
@@ -530,6 +531,15 @@ function normalizeMemoryEntry(entry) {
     throw error;
   }
   return { role, content, source };
+}
+
+function rejectUnsupportedDesktopTraversal(body) {
+  if (body?.traversal !== undefined) {
+    const error = new Error("Recursive desktop traversal is not implemented.");
+    error.statusCode = 403;
+    error.code = "desktop_traversal_not_implemented";
+    throw error;
+  }
 }
 
 function parseProvenanceFilters(searchParams) {

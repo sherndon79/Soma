@@ -321,6 +321,8 @@ Current scaffold:
   expands enough to justify JSON Schema-backed validation
 - helper contract failures return `desktop_inspection_schema_invalid` with HTTP 502 and validation
   paths, without returning the rejected helper payload
+- traversal requests are rejected with `desktop_traversal_not_implemented` until recursive
+  traversal is implemented
 - no recursive AT-SPI child-object traversal has been implemented yet
 
 Likely next implementation shape:

@@ -36,6 +36,7 @@ Implemented:
 - threat-model and failure-mode coverage for unsupported remote planning
 - documented desktop inspection schema-validation decision
 - documented bounded recursive AT-SPI traversal contract
+- traversal privacy-boundary tests and explicit unsupported traversal request rejection
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -48,24 +49,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add tests for the future traversal privacy boundary before implementing traversal.
+Design the schema and validator update path for bounded recursive traversal.
 
 Target:
 
 ```text
-traversal contract
-  -> provider-overreach fixtures
-  -> validator expectations
+traversal contract + privacy tests
+  -> schema extension sketch
+  -> runtime validator migration steps
   -> no traversal implementation
 ```
 
 Expected work:
 
-- add tests that describe rejected traversal over-disclosure fields
-- cover names, descriptions, text, states, actions, screenshots, and input-state leakage
-- cover roots that are not previously disclosed or selected at the contract level
-- keep tests pending only as design fixtures if runtime shape has not been added yet
-- decide whether the existing validator should gain traversal stubs or remain unchanged
+- define the JSON schema additions needed for a future traversal block
+- define the runtime validator additions needed to enforce traversal limits
+- identify request validation needed for prior-disclosed or user-selected roots
+- decide whether schema migration should happen before helper implementation
+- keep current runtime responses closed
 
 Constraints:
 

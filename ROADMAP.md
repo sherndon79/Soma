@@ -37,6 +37,7 @@ Implemented:
 - documented desktop inspection schema-validation decision
 - documented bounded recursive AT-SPI traversal contract
 - traversal privacy-boundary tests and explicit unsupported traversal request rejection
+- documented schema and validator update path for bounded traversal
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -49,23 +50,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the schema and validator update path for bounded recursive traversal.
+Add request-schema tests for unsupported traversal and future bounded traversal validation.
 
 Target:
 
 ```text
-traversal contract + privacy tests
-  -> schema extension sketch
-  -> runtime validator migration steps
+schema/validator update path
+  -> request validation fixtures
+  -> future accepted/rejected traversal fixtures
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define the JSON schema additions needed for a future traversal block
-- define the runtime validator additions needed to enforce traversal limits
-- identify request validation needed for prior-disclosed or user-selected roots
-- decide whether schema migration should happen before helper implementation
+- add tests that pin current unsupported traversal request rejection
+- add pending or design-level fixtures for future bounded traversal request validation
+- cover unknown request fields, invalid roots, excessive limits, and non-AT-SPI modes
+- avoid accepting traversal output until the schema and validator are actually extended
 - keep current runtime responses closed
 
 Constraints:

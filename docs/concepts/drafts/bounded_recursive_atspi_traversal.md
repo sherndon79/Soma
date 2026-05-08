@@ -215,6 +215,131 @@ recorded. Tests also pin that traversal-shaped payloads carrying names, descript
 actions, screenshots, image references, pointer state, or keyboard state remain rejected while the
 contract is closed.
 
+## Schema And Validator Update Path
+
+Traversal should not be introduced by changing the helper first. The safer order is:
+
+1. Add request validation while keeping traversal disabled.
+2. Extend the JSON schema with the future traversal definitions.
+3. Extend the runtime validator to accept only the bounded traversal shape.
+4. Add passing and failing validator fixtures.
+5. Add provenance summary fields without storing traversal trees.
+6. Implement the helper traversal path behind the already-tested contract.
+
+### Request Validation
+
+The endpoint should continue to reject `traversal` until the schema and runtime validator are
+ready. When traversal opens, request validation should enforce:
+
+- `mode` must be `atspi`
+- `traversal.enabled` must be `true`
+- `traversal.root` must be present
+- root `service` and `path` must be strings
+- root must match an object previously disclosed in the same session or selected by the user
+- `max_depth`, `max_nodes`, and `max_children_per_node` must be positive integers
+- each requested limit must be less than or equal to the active runtime-profile or module ceiling
+- unknown traversal request fields must be rejected
+
+Request rejection should happen before helper invocation and before provenance is recorded. Once
+traversal is implemented, rejected requests should still produce a clear error such as
+`desktop_traversal_request_invalid`, not a broad desktop probe.
+
+### JSON Schema Additions
+
+The later schema should add definitions equivalent to:
+
+```json
+{
+  "$defs": {
+    "traversal": {
+      "type": "object",
+      "required": [
+        "root",
+        "nodes",
+        "limits",
+        "truncated",
+        "text_content_included",
+        "withheld_fields"
+      ],
+      "additionalProperties": false
+    },
+    "traversal_node": {
+      "type": "object",
+      "required": [
+        "id",
+        "service",
+        "path",
+        "role",
+        "child_count",
+        "depth",
+        "children"
+      ],
+      "additionalProperties": false
+    },
+    "traversal_limits": {
+      "type": "object",
+      "required": [
+        "max_depth",
+        "max_nodes",
+        "max_children_per_node"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+The actual schema should also enforce:
+
+- `text_content_included` is always `false`
+- `withheld_fields` includes `name`, `description`, `text`, `states`, and `actions`
+- `nodes.maxItems` does not exceed Soma's maximum accepted node count
+- every node `depth` is a non-negative integer
+- every node `child_count` is a non-negative integer
+- every node `children` list contains only local node ids
+- no traversal node fields for names, descriptions, text, values, states, actions, screenshots, or
+  input state
+
+Schema extension should not remove the existing root-object `children_sample` and
+`child_metadata_sample` fields. Traversal is a new optional block, not a reinterpretation of the
+existing samples.
+
+### Runtime Validator Additions
+
+The hand-rolled validator should add traversal-specific validation only after request validation
+and tests are ready. It should check:
+
+- `root_object.traversal` is optional
+- traversal object has only known keys
+- root object reference has only `service` and `path`
+- limits object has only `max_depth`, `max_nodes`, and `max_children_per_node`
+- returned limits do not exceed requested or profile ceilings
+- node count does not exceed `max_nodes`
+- maximum returned depth does not exceed `max_depth`
+- each node has only `id`, `service`, `path`, `role`, `child_count`, `depth`, and `children`
+- node ids are unique
+- children reference only included node ids
+- children per node does not exceed `max_children_per_node`
+- `truncated` is boolean
+- `text_content_included` is `false`
+- `withheld_fields` is present and does not claim protected fields were included
+
+The validator should keep the current fail-closed semantics:
+
+- helper contract failures return `desktop_inspection_schema_invalid`
+- the rejected helper payload is not returned
+- no desktop inspection provenance entry is recorded for rejected helper output
+
+### Migration Decision
+
+Schema and runtime validator changes should land before helper traversal implementation. That
+keeps the trust boundary stable: helpers can only return traversal after Node has already learned
+how to reject malformed or over-broad traversal output.
+
+Do not switch to a JSON Schema runtime dependency solely for traversal unless the hand-written
+checks become harder to audit than the dependency boundary. Traversal adds complexity, but it is
+still narrow enough for one more hand-rolled validator pass if tests cover the invariants above.
+
 ## Non-Goals
 
 - no traversal implementation in this slice

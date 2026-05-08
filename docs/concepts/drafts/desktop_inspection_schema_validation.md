@@ -57,6 +57,10 @@ Any future validator migration must preserve these details exactly:
 If a JSON Schema dependency replaces the current validator, tests should exercise both accepted
 and rejected broker payloads before the old validator is removed.
 
+For bounded recursive traversal, the schema and runtime validator should be extended before the
+Rust helper emits traversal output. This keeps Node as the trust boundary and prevents helper
+capability from outrunning validation.
+
 ## Migration Triggers
 
 Move to JSON Schema-backed runtime validation when at least one of these becomes true:

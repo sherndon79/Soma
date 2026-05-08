@@ -276,6 +276,32 @@ Expected behavior:
 - tell the participant what is known about whether disclosure occurred
 - record provenance without duplicating raw disclosed context
 
+### Remote Planning Unsupported Or Invalid
+
+Current posture:
+
+- `model.remote.plan` is cataloged and disabled, but unsupported because no provider is registered
+- unsupported remote-planning requests should be treated as design input, not live escalation
+  paths
+
+Expected behavior:
+
+- do not route to a remote planner when `model.remote.plan` is unsupported
+- do not convert unsupported remote-planning claims into capability proposals
+- continue locally where possible and disclose that escalation is unavailable
+- if a future planner provider returns malformed or overbroad plan steps, elide invalid steps
+  rather than executing or widening capabilities
+- if any task context may have crossed the local/remote boundary, treat the disclosure as
+  irreversible and report what is known
+- do not retry remote planning automatically after timeout, partial send, or invalid plan
+
+Provenance:
+
+- record escalation consideration, approval, disclosure status, plan receipt, validation failures,
+  elided step counts, and local execution summaries as metadata
+- do not record raw task payloads, raw plan contents, durable memory contents, or unnecessary
+  conversation history in provenance
+
 ### External Action Ambiguous Completion
 
 Examples:

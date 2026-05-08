@@ -1,0 +1,48 @@
+{
+  "status": "future_fixture_not_current_schema",
+  "purpose": "Document candidate locations for future opaque desktop_ref_id exposure without enabling them in the current runtime.",
+  "allowed_future_locations": [
+    "tree.applications[].root_object.desktop_ref_id",
+    "tree.applications[].root_object.children_sample[].desktop_ref_id",
+    "focused_object.desktop_ref_id",
+    "focused_object.application.desktop_ref_id"
+  ],
+  "must_not_be_added_to": [
+    "tree.applications[]",
+    "tree.applications[].root_object.child_metadata_sample[]",
+    "tree.applications[].root_object.traversal.nodes[]",
+    "any text, name, description, state, action, screenshot, pointer, or keyboard payload"
+  ],
+  "example_future_accessibility_tree": {
+    "tree": {
+      "applications": [
+        {
+          "service": ":1.42",
+          "root_object": {
+            "path": "/org/a11y/atspi/accessible/root",
+            "desktop_ref_id": "desktop-ref-root",
+            "children_sample": [
+              {
+                "service": ":1.42",
+                "path": "/child",
+                "desktop_ref_id": "desktop-ref-child"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "example_future_focus": {
+    "focused_object": {
+      "service": ":1.42",
+      "path": "/focus",
+      "desktop_ref_id": "desktop-ref-focus",
+      "application": {
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/root",
+        "desktop_ref_id": "desktop-ref-focus-app"
+      }
+    }
+  }
+}

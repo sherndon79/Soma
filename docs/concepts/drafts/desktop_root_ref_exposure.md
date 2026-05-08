@@ -135,6 +135,8 @@ model-supplied service/path traversal.
 Before adding `desktop_ref_id` to any runtime response:
 
 - update `docs/schemas/desktop-inspection-result.schema.json`
+- update `docs/fixtures/future-desktop-ref-id-locations.json` from future fixture into accepted
+  schema examples
 - update the focused-inspection response contract documentation or schema
 - update runtime validators to allow only string `desktop_ref_id` at approved object-ref locations
 - add over-disclosure tests proving `desktop_ref_id` is not accepted on role/text/action-bearing
@@ -181,4 +183,3 @@ Validation order:
 - no helper traversal support
 - no durable desktop refs
 - no model-selectable raw service/path roots
-

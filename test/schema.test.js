@@ -8,6 +8,10 @@ import {
 } from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
+const futureDesktopRefFixturePath = new URL(
+  "../docs/fixtures/future-desktop-ref-id-locations.json",
+  import.meta.url,
+);
 
 test("desktop inspection schema documents the current safe child metadata boundary", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
@@ -23,6 +27,22 @@ test("desktop inspection schema documents the current safe child metadata bounda
   assert.equal("description" in childMetadata.properties, false);
   assert.equal("text" in childMetadata.properties, false);
   assert.equal("actions" in childMetadata.properties, false);
+});
+
+test("future desktop_ref_id fixture documents locations without enabling the current schema", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const fixture = JSON.parse(await readFile(futureDesktopRefFixturePath, "utf8"));
+
+  assert.equal(fixture.status, "future_fixture_not_current_schema");
+  assert.deepEqual(fixture.allowed_future_locations, [
+    "tree.applications[].root_object.desktop_ref_id",
+    "tree.applications[].root_object.children_sample[].desktop_ref_id",
+    "focused_object.desktop_ref_id",
+    "focused_object.application.desktop_ref_id",
+  ]);
+  assert.equal("desktop_ref_id" in schema.$defs.root_object.properties, false);
+  assert.equal("desktop_ref_id" in schema.$defs.object_ref.properties, false);
+  assert.equal("desktop_ref_id" in schema.$defs.child_metadata.properties, false);
 });
 
 test("desktop inspection runtime validator accepts the current AT-SPI shape", () => {
@@ -114,6 +134,24 @@ test("desktop inspection runtime validator rejects traversal output until traver
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+});
+
+test("desktop inspection runtime validator rejects desktop_ref_id until exposure is implemented", () => {
+  for (const [name, result] of Object.entries({
+    root_object: atspiResultWithRootObjectField("desktop_ref_id", "desktop-ref-root"),
+    child_ref: baseAtspiResult({
+      children_sample: [{ service: ":1.42", path: "/child", desktop_ref_id: "desktop-ref-child" }],
+    }),
+    child_metadata: atspiResultWithChildField("desktop_ref_id", "desktop-ref-metadata"),
+  })) {
+    const validation = validateDesktopInspectionResult(result);
+
+    assert.equal(validation.valid, false, name);
+    assert.ok(
+      validation.errors.some((error) => error.endsWith(".desktop_ref_id is not allowed")),
+      name,
+    );
+  }
 });
 
 test("desktop inspection runtime validator rejects future traversal over-disclosure by keeping traversal closed", () => {

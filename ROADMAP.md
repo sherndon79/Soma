@@ -50,6 +50,7 @@ Implemented:
 - documented one-shot stdio helper transport decision
 - documented traversal root authorization model
 - documented in-process desktop disclosure registry design
+- in-process desktop disclosure registry module and unit tests
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -62,24 +63,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add the desktop disclosure registry module scaffold and unit tests without exposing traversal.
+Wire successful desktop inspection responses into the disclosure registry without exposing
+traversal.
 
 Target:
 
 ```text
 root authorization model
-  -> metadata-only registry implementation
-  -> expiration/revocation tests
+  -> registry population after provenance
+  -> no response-field changes
   -> no traversal implementation
 ```
 
 Expected work:
 
-- implement a Node-owned registry module with injectable time
-- test recording, deduplication, expiration, and revocation
-- test accessibility-tree and focused-inspection extraction helpers with fixture payloads
-- prove sensitive fields are not stored
-- keep registry entries metadata-only
+- create an injectable registry instance in the app/service process
+- populate it after successful accessibility-tree provenance append
+- populate it after successful focused-inspection provenance append
+- ensure rejected requests and schema failures leave the registry untouched
+- preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 
 Constraints:
@@ -87,7 +89,6 @@ Constraints:
 - no desktop capability expansion
 - no new desktop fields in runtime responses
 - no text, names, descriptions, states, actions, screenshots, or actuation
-- no endpoint wiring yet unless separately reviewed
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 

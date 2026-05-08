@@ -1,6 +1,6 @@
 # Escalation And Planning
 
-Status: draft concept, not implemented
+Status: draft concept, Phase 1 partially implemented
 
 Soma should remain useful as tasks scale beyond a small local model's capability without surrendering local sovereignty in the process. This draft names the pattern Soma should follow for that escalation: a local-first model handles what it can, escalates to a remote planner only when the task exceeds local capability, and executes the planner's plan only through the user's active harness.
 
@@ -58,6 +58,18 @@ of the following is true:
 Each of these signals on its own is weak. The combination is the trigger. Soma should also default
 to *not* escalating silently: when a trigger fires, the user is shown the choice rather than
 having the escalation happen automatically.
+
+Current scaffold:
+
+- `POST /chat` accepts `assess_escalation=true`.
+- `npm run cli -- chat "..." --assess-escalation --json` exposes the same path.
+- Soma performs a local-only assessment using the user message, model response, and capability
+  view.
+- Current trigger families are `uncertainty`, `complexity`, and `capability_gap`.
+- If triggers fire, Soma records a metadata-only `model.local.escalation_proposed` provenance
+  event.
+- No remote routing, provider registration, grant creation, capability activation, durable memory
+  export, or raw task payload provenance is performed.
 
 ## The Pattern
 
@@ -164,7 +176,16 @@ A future `model.local.escalation_proposal` capability could gate whether the loc
 
 Phase 0 (current): no escalation. Local model only.
 
-Phase 1: surface escalation triggers from local model output and Soma-side heuristics — uncertainty signals, capability-validation failures, missing-capability flags, complexity flags. No remote routing yet. Define the `model.local.escalation_proposed` provenance type. Add a user-facing surface that shows when triggers fired so the user can decide whether to invoke a more capable model out-of-band. Treat model self-confidence as one signal among several rather than the sole trigger.
+Phase 1: surface escalation triggers from local model output and Soma-side heuristics — uncertainty
+signals, capability-validation failures, missing-capability flags, complexity flags. No remote
+routing yet. Define the `model.local.escalation_proposed` provenance type. Add a user-facing
+surface that shows when triggers fired so the user can decide whether to invoke a more capable
+model out-of-band. Treat model self-confidence as one signal among several rather than the sole
+trigger.
+
+Current Phase 1 implementation supports opt-in chat escalation assessment with local heuristic
+trigger families and metadata-only provenance. Capability-validation-failure triggers and richer
+task-class thresholds are not implemented yet.
 
 Phase 2: capability vocabulary added in disabled state. `model.remote.plan` and related provenance types defined in the catalog. No remote bridge yet.
 

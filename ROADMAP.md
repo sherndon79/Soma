@@ -15,6 +15,7 @@ Implemented:
 - grouped read-only capability view endpoint and CLI summary
 - opt-in local-model capability evaluation harness
 - unsupported remote-planning capability posture and model eval guardrail
+- opt-in local escalation trigger assessment on chat with metadata-only provenance
 - ephemeral in-process session memory
 - bounded in-process provenance log with filters and summary
 - text-only cognitive-load stewardship
@@ -42,25 +43,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Surface local escalation triggers without adding remote routing.
+Make local escalation trigger assessment more explicit and testable.
 
 Target:
 
 ```text
-local model response + Soma-side heuristics
-  -> escalation triggers identified
-  -> user-facing "continue locally or consider future escalation" summary
-  -> provenance metadata
-  -> no remote send
+trigger family
+  -> documented heuristic
+  -> deterministic unit coverage
+  -> metadata-only response/provenance fields
 ```
 
 Expected work:
 
-- define a local-only escalation trigger result shape
-- record `model.local.escalation_proposed` provenance metadata without raw task payloads
-- expose whether triggers fired in chat responses or a small review endpoint
-- include uncertainty, capability gaps, complexity flags, and validation failures as trigger
-  families
+- add direct unit tests for `src/escalationTriggers.js`
+- document the current heuristic limits and likely false positives/false negatives
+- add a trigger family for capability-validation failures before any tool-planning activation
 - keep `model.remote.plan` unsupported until a provider contract, minimizer, validator, and threat
   model update exist
 

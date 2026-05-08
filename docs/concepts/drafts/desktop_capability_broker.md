@@ -348,7 +348,9 @@ See [Focused Desktop Inspection](./focused_desktop_inspection.md) for the draft 
 boundary. See [Bounded Recursive AT-SPI Traversal](./bounded_recursive_atspi_traversal.md) for the
 draft traversal contract. See
 [Desktop Request Contract Baseline](./desktop_request_contract_baseline.md) for the current
-pre-traversal CLI/API request contract and test coverage map.
+pre-traversal CLI/API request contract and test coverage map. See
+[Desktop Helper Limit Contract](./desktop_helper_limit_contract.md) for the future helper-side
+limit hint contract.
 
 ## Research Findings
 

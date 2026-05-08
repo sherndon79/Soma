@@ -131,8 +131,8 @@ the same session or explicitly selected by the user. Until that exists, traversa
 closed at both request and output validation boundaries.
 
 The current `max_apps` and `max_children` fields narrow returned output after helper output has
-passed validation. Future helper-side limit passing should be designed separately so narrowing can
-reduce host work without weakening provider-output validation.
+passed validation. Future helper-side limit passing is documented separately as an optimization
+hint; it must not replace provider-output validation or Node-side final narrowing.
 
 ## Non-Goals
 

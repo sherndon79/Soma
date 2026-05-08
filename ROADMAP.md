@@ -43,6 +43,7 @@ Implemented:
 - explicit focused desktop inspection request validation
 - explicit CLI validation for desktop inspection flags
 - documented desktop request contract baseline and coverage map
+- documented desktop helper-side limit hint contract
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -55,24 +56,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Design helper-side limit passing for AT-SPI inspection without weakening response validation.
+Add tests for desktop helper limit argument derivation before wiring Node invocation.
 
 Target:
 
 ```text
-current post-validation narrowing
-  -> helper invocation limit contract
-  -> same response schema
+helper limit contract
+  -> invocation argument tests
+  -> no schema change
   -> no traversal
 ```
 
 Expected work:
 
-- decide whether `max_apps` and `max_children` should be passed to the Rust helper
-- document helper argument shape and Node fallback behavior
-- preserve Node-side output validation before narrowing
-- keep current response schema unchanged
-- add tests only if a helper invocation contract is introduced
+- test how `max_apps` maps to `--max-applications`
+- test how `max_children` maps to child-reference and child-metadata helper hints
+- test omitted limits preserve current helper invocation
+- keep Node-side post-validation narrowing
+- avoid changing Rust behavior until the invocation contract is pinned
 
 Constraints:
 

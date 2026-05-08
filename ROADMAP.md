@@ -55,6 +55,7 @@ Implemented:
 - desktop disclosure refs are revoked when desktop inspection is narrowed by module
 - documented future desktop root-ref exposure path
 - fixture and tests document future `desktop_ref_id` locations while current schema rejects them
+- documented future traversal request validation against disclosed root refs
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -67,23 +68,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Design traversal request validation against disclosed root refs.
+Add a disabled traversal request validator scaffold behind current rejection.
 
 Target:
 
 ```text
 root authorization model
-  -> request-shape validator
-  -> registry authorization errors
+  -> unit-tested validator function
+  -> endpoint still rejects traversal
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define a future traversal request validator that accepts `root_ref` only
-- reject raw service/path traversal roots before helper invocation
-- map unknown, expired, revoked, and inactive root refs to stable errors
-- define tests before enabling traversal execution
+- add a pure validator module for future traversal request shapes
+- keep `/desktop/inspect/accessibility-tree` returning `desktop_traversal_not_implemented`
+- test root_ref-only acceptance at the pure validator layer
+- test raw service/path roots are rejected by the pure validator
+- keep helper invocation and provenance unchanged
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

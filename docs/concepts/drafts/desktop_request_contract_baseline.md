@@ -129,7 +129,9 @@ The main unresolved request-shape question is root authorization for recursive t
 future traversal request must define how a traversal root is proven to be previously disclosed in
 the same session or explicitly selected by the user. Until that exists, traversal should remain
 closed at both request and output validation boundaries. The draft authorization model is captured
-in [Traversal Root Authorization](./traversal_root_authorization.md).
+in [Traversal Root Authorization](./traversal_root_authorization.md), with future request
+validation outlined in
+[Desktop Traversal Request Validation](./desktop_traversal_request_validation.md).
 
 The current `max_apps` and `max_children` fields narrow returned output after helper output has
 passed validation. Node also derives helper-side limit hints for the Rust `inspect-atspi` command,

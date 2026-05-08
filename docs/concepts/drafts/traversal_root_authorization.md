@@ -140,6 +140,9 @@ Before traversal opens, request validation should enforce:
 
 Rejected traversal requests should fail before helper invocation and before provenance recording.
 
+See [Desktop Traversal Request Validation](./desktop_traversal_request_validation.md) for the
+future validator contract and test plan.
+
 Potential error codes:
 
 - `desktop_traversal_request_invalid`

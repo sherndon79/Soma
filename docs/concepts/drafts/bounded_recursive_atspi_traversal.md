@@ -34,10 +34,7 @@ The first traversal request should be explicit and bounded:
   "mode": "atspi",
   "traversal": {
     "enabled": true,
-    "root": {
-      "service": ":1.42",
-      "path": "/org/a11y/atspi/accessible/root"
-    },
+    "root_ref": "desktop-ref-uuid",
     "max_depth": 2,
     "max_nodes": 64,
     "max_children_per_node": 8
@@ -79,8 +76,9 @@ Traversal roots should be self-scoped:
 Soma should not accept an arbitrary service/path pair from a model without first tying it to a
 previously disclosed object in the same session or to an explicit user selection.
 
-See [Traversal Root Authorization](./traversal_root_authorization.md) for the draft mechanism:
-an in-process disclosure registry and future explicit user-selection path.
+See [Traversal Root Authorization](./traversal_root_authorization.md) and
+[Desktop Traversal Request Validation](./desktop_traversal_request_validation.md) for the draft
+mechanism: an in-process disclosure registry and future explicit user-selection path.
 
 ## Response Shape
 
@@ -242,9 +240,9 @@ ready. When traversal opens, request validation should enforce:
 
 - `mode` must be `atspi`
 - `traversal.enabled` must be `true`
-- `traversal.root` must be present
-- root `service` and `path` must be strings
-- root must match an object previously disclosed in the same session or selected by the user
+- `traversal.root_ref` must be present and must be a non-empty string
+- raw `traversal.root.service` and `traversal.root.path` must be rejected
+- root ref must match an object previously disclosed in the same session or selected by the user
 - `max_depth`, `max_nodes`, and `max_children_per_node` must be positive integers
 - each requested limit must be less than or equal to the active runtime-profile or module ceiling
 - unknown traversal request fields must be rejected

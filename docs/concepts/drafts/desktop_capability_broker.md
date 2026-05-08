@@ -326,13 +326,15 @@ Current scaffold:
 Likely next implementation shape:
 
 - keep the existing tree endpoint stable
-- design focused-object inspection separately behind `desktop.inspect.focus`
+- design bounded recursive AT-SPI traversal before adding recursive output
+- keep focused-object inspection separate behind `desktop.inspect.focus`
 - keep text/name/description/action exposure behind `desktop.inspect.text`
 - keep using one-shot stdio until the broker needs long-lived state
 - keep actuation out of scope
 
 See [Focused Desktop Inspection](./focused_desktop_inspection.md) for the draft focused-object
-boundary.
+boundary. See [Bounded Recursive AT-SPI Traversal](./bounded_recursive_atspi_traversal.md) for the
+draft traversal contract.
 
 ## Research Findings
 

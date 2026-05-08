@@ -37,6 +37,7 @@ Draft concepts are working documents. They are not final architecture, but they 
 should inform implementation.
 
 - [Adaptable Harness](./concepts/drafts/adaptable_harness.md)
+- [Bounded Recursive AT-SPI Traversal](./concepts/drafts/bounded_recursive_atspi_traversal.md)
 - [Capability Catalog and Providers](./concepts/drafts/capability_catalog_and_providers.md)
 - [Capability Proposals](./concepts/drafts/capability_proposals.md)
 - [Cognitive Load Stewardship](./concepts/drafts/cognitive_load_stewardship.md)

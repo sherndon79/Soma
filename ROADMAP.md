@@ -35,6 +35,7 @@ Implemented:
 - documented provider invocation contract and remote-planning escalation concept
 - threat-model and failure-mode coverage for unsupported remote planning
 - documented desktop inspection schema-validation decision
+- documented bounded recursive AT-SPI traversal contract
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -47,24 +48,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the bounded recursive AT-SPI traversal contract before implementing traversal.
+Add tests for the future traversal privacy boundary before implementing traversal.
 
 Target:
 
 ```text
-current root-and-child sample
-  -> bounded traversal contract
-  -> request limits and response shape
-  -> no implementation yet
+traversal contract
+  -> provider-overreach fixtures
+  -> validator expectations
+  -> no traversal implementation
 ```
 
 Expected work:
 
-- define request controls such as depth, node count, and application/window scope
-- decide how traversal results compose with focused-object inspection
-- identify schema fields that would be added later without adding them now
-- preserve the current child metadata privacy boundary by default
-- document failure modes for truncated, unavailable, or over-broad traversal
+- add tests that describe rejected traversal over-disclosure fields
+- cover names, descriptions, text, states, actions, screenshots, and input-state leakage
+- cover roots that are not previously disclosed or selected at the contract level
+- keep tests pending only as design fixtures if runtime shape has not been added yet
+- decide whether the existing validator should gain traversal stubs or remain unchanged
 
 Constraints:
 

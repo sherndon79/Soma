@@ -45,6 +45,7 @@ Implemented:
 - documented desktop request contract baseline and coverage map
 - documented desktop helper-side limit hint contract
 - tested desktop helper limit argument derivation
+- Node helper invocation uses derived AT-SPI limit arguments
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -57,25 +58,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Wire Node helper invocation to derived AT-SPI limit arguments while preserving validation order.
+Teach the Rust desktop helper to parse and enforce AT-SPI limit hints.
 
 Target:
 
 ```text
-helper limit contract
-  -> Node execFile args
+Node helper args
+  -> Rust helper parsing
   -> same response schema
   -> no traversal
 ```
 
 Expected work:
 
-- use the tested helper argument derivation for Rust helper invocation
-- preserve current invocation when limits are omitted
-- keep Node-side post-validation narrowing
-- keep helper output schema validation before narrowing
-- keep JavaScript fallback behavior unchanged
-- add or update tests that observe helper invocation arguments
+- parse `--max-applications`, `--max-root-child-refs`, and `--max-root-child-metadata`
+- reject unknown or malformed helper flags before AT-SPI queries
+- enforce helper-side hard caps aligned to the schema
+- preserve current defaults when flags are omitted
+- keep public response schema unchanged
 
 Constraints:
 

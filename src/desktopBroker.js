@@ -45,7 +45,8 @@ export async function inspectDesktopBrokerEnvironment({
   helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
 } = {}) {
   const normalizedMode = normalizeInspectionMode(mode);
-  const helperInspection = await inspectWithRustHelper(helperPath, normalizedMode);
+  const helperArgs = desktopBrokerHelperArgs({ mode: normalizedMode, maxApps, maxChildren });
+  const helperInspection = await inspectWithRustHelper(helperPath, helperArgs);
   const limits = normalizeInspectionLimits({ maxApps, maxChildren });
   if (helperInspection) {
     return limitDesktopInspectionResult(assertDesktopInspectionResult(helperInspection), limits);
@@ -120,14 +121,13 @@ export async function inspectFocusedDesktopObject({
   }));
 }
 
-async function inspectWithRustHelper(helperPath, mode) {
+async function inspectWithRustHelper(helperPath, args) {
   if (!helperPath || !(await isExecutable(helperPath))) {
     return null;
   }
 
   try {
-    const command = mode === "atspi" ? "inspect-atspi" : "inspect-environment";
-    const { stdout } = await execFileAsync(helperPath, [command], {
+    const { stdout } = await execFileAsync(helperPath, args, {
       timeout: 2000,
       maxBuffer: 256_000,
     });

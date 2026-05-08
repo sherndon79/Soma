@@ -67,7 +67,7 @@ the helper arguments keeps the helper aligned to the schema rather than treating
 
 ## Backward Compatibility
 
-The current Rust helper command shape is one-shot stdio:
+The Rust helper command shape is one-shot stdio:
 
 ```text
 soma-desktop-broker inspect-environment
@@ -75,10 +75,10 @@ soma-desktop-broker inspect-atspi
 soma-desktop-broker inspect-focus
 ```
 
-Limit flags should be introduced only after tests assert the intended invocation. Until the helper
-parses them, Node must remain compatible with a helper that ignores extra flags. That means the
-post-validation narrowing path stays in place permanently unless a later design explicitly
-replaces it.
+Node now derives and passes optional limit hints for `inspect-atspi` when request limits are
+provided. Until the helper parses those hints, Node must remain compatible with a helper that
+ignores extra flags. That means the post-validation narrowing path stays in place permanently
+unless a later design explicitly replaces it.
 
 ## Validation Order
 
@@ -105,22 +105,24 @@ The JavaScript fallback should not grow a separate helper-limit path. It should 
 the current bounded environment or unavailable AT-SPI output, then flow through the same
 post-validation narrowing path.
 
-## Test Requirements Before Implementation
+## Test Requirements Before Rust Enforcement
 
-Before Node starts passing helper flags, tests should cover:
+Node-side argument derivation and invocation tests should cover:
 
 - `max_apps` produces `--max-applications` - covered by `test/desktopBroker.test.js`
 - `max_children` produces both child-ref and child-metadata helper flags - covered by
   `test/desktopBroker.test.js`
 - `max_children > 4` caps helper metadata at `4` while preserving Node-side child-reference
-  narrowing
+  narrowing - covered by `test/desktopBroker.test.js` and `test/app.test.js`
 - omitted limits produce the current helper invocation - covered by `test/desktopBroker.test.js`
-- helper output is still schema-validated before narrowing
-- helper contract failures still produce no desktop inspection provenance
+- helper output is still schema-validated before narrowing - covered by `test/app.test.js`
+- helper contract failures still produce no desktop inspection provenance - covered by
+  `test/app.test.js`
 
-Current implementation status: `desktopBrokerHelperArgs` derives the future helper argument shape
-and has tests, but runtime Node helper invocation still uses the existing single-command helper
-call. Wiring the derived arguments into `execFile` should happen in a separate slice.
+Current implementation status: `desktopBrokerHelperArgs` derives the helper argument shape and has
+tests. Runtime Node helper invocation now uses those derived arguments for `inspect-atspi`, while
+still schema-validating helper output before applying final Node-side narrowing. The Rust helper
+currently accepts the command shape but does not yet parse or enforce the limit flags.
 
 Before Rust starts enforcing helper flags, tests or fixture-level checks should cover:
 

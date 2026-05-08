@@ -44,6 +44,7 @@ Implemented:
 - explicit CLI validation for desktop inspection flags
 - documented desktop request contract baseline and coverage map
 - documented desktop helper-side limit hint contract
+- tested desktop helper limit argument derivation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -56,24 +57,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add tests for desktop helper limit argument derivation before wiring Node invocation.
+Wire Node helper invocation to derived AT-SPI limit arguments while preserving validation order.
 
 Target:
 
 ```text
 helper limit contract
-  -> invocation argument tests
-  -> no schema change
+  -> Node execFile args
+  -> same response schema
   -> no traversal
 ```
 
 Expected work:
 
-- test how `max_apps` maps to `--max-applications`
-- test how `max_children` maps to child-reference and child-metadata helper hints
-- test omitted limits preserve current helper invocation
+- use the tested helper argument derivation for Rust helper invocation
+- preserve current invocation when limits are omitted
 - keep Node-side post-validation narrowing
-- avoid changing Rust behavior until the invocation contract is pinned
+- keep helper output schema validation before narrowing
+- keep JavaScript fallback behavior unchanged
+- add or update tests that observe helper invocation arguments
 
 Constraints:
 

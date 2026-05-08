@@ -12,6 +12,30 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_HELPER_PATH = fileURLToPath(
   new URL("../target/debug/soma-desktop-broker", import.meta.url),
 );
+const MAX_ROOT_CHILD_METADATA_LIMIT = 4;
+
+export function desktopBrokerHelperArgs({ mode = "environment", maxApps, maxChildren } = {}) {
+  const normalizedMode = normalizeInspectionMode(mode);
+  const command = normalizedMode === "atspi" ? "inspect-atspi" : "inspect-environment";
+  if (normalizedMode !== "atspi") {
+    return [command];
+  }
+
+  const limits = normalizeInspectionLimits({ maxApps, maxChildren });
+  const args = [command];
+  if (limits.maxApps !== null) {
+    args.push("--max-applications", String(limits.maxApps));
+  }
+  if (limits.maxChildren !== null) {
+    args.push(
+      "--max-root-child-refs",
+      String(limits.maxChildren),
+      "--max-root-child-metadata",
+      String(Math.min(limits.maxChildren, MAX_ROOT_CHILD_METADATA_LIMIT)),
+    );
+  }
+  return args;
+}
 
 export async function inspectDesktopBrokerEnvironment({
   mode = "environment",

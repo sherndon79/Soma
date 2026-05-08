@@ -109,13 +109,18 @@ post-validation narrowing path.
 
 Before Node starts passing helper flags, tests should cover:
 
-- `max_apps` produces `--max-applications`
-- `max_children` produces both child-ref and child-metadata helper flags
+- `max_apps` produces `--max-applications` - covered by `test/desktopBroker.test.js`
+- `max_children` produces both child-ref and child-metadata helper flags - covered by
+  `test/desktopBroker.test.js`
 - `max_children > 4` caps helper metadata at `4` while preserving Node-side child-reference
   narrowing
-- omitted limits produce the current helper invocation
+- omitted limits produce the current helper invocation - covered by `test/desktopBroker.test.js`
 - helper output is still schema-validated before narrowing
 - helper contract failures still produce no desktop inspection provenance
+
+Current implementation status: `desktopBrokerHelperArgs` derives the future helper argument shape
+and has tests, but runtime Node helper invocation still uses the existing single-command helper
+call. Wiring the derived arguments into `execFile` should happen in a separate slice.
 
 Before Rust starts enforcing helper flags, tests or fixture-level checks should cover:
 

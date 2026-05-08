@@ -41,6 +41,7 @@ Implemented:
 - unsupported traversal request-shape fixtures for future bounded traversal validation
 - explicit desktop accessibility-tree request validation
 - explicit focused desktop inspection request validation
+- explicit CLI validation for desktop inspection flags
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -53,24 +54,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Tighten CLI validation for desktop inspection flags before request-shape expansion continues.
+Document and test current desktop CLI/API request contract as a stable pre-traversal baseline.
 
 Target:
 
 ```text
-desktop inspect/focus CLI flags
-  -> explicit client-side validation
-  -> no silently omitted invalid values
-  -> server validation remains authoritative
+desktop tree + focus request contract
+  -> operator-facing docs
+  -> test coverage map
+  -> pre-traversal baseline
 ```
 
 Expected work:
 
-- validate `soma desktop inspect --mode`
-- validate `--max-apps` and `--max-children` before sending requests
-- keep `soma desktop focus --include-text` visibly routed to the server-side refusal
-- add CLI tests for invalid desktop flag handling
-- keep server request validation as the authoritative boundary
+- summarize accepted tree and focus request fields in one doc section
+- map server, CLI, and provider-overreach tests to the contract
+- identify any remaining request-shape ambiguity before recursive traversal
+- keep current runtime behavior unchanged
 
 Constraints:
 

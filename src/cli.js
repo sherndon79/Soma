@@ -216,10 +216,11 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "desktop" && subcommand === "inspect") {
+    const inspectRequest = desktopInspectRequestFromFlags(flags);
     const response = await request(baseUrl, "POST", "/desktop/inspect/accessibility-tree", {
-      mode: flags.mode,
-      max_apps: numberFlag(flags["max-apps"]),
-      max_children: numberFlag(flags["max-children"]),
+      mode: inspectRequest.mode,
+      max_apps: inspectRequest.max_apps,
+      max_children: inspectRequest.max_children,
     });
     writeOutput(stdout, response, jsonOutput, desktopInspectionSummary(response));
     return 0;
@@ -311,6 +312,28 @@ function numberFlag(value) {
   }
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+function desktopInspectRequestFromFlags(flags) {
+  if (flags.mode !== undefined && !["environment", "atspi"].includes(flags.mode)) {
+    throw usageError("desktop inspect --mode must be environment or atspi.");
+  }
+  return {
+    mode: flags.mode,
+    max_apps: integerFlagInRange(flags["max-apps"], "--max-apps", 1, 64),
+    max_children: integerFlagInRange(flags["max-children"], "--max-children", 0, 8),
+  };
+}
+
+function integerFlagInRange(value, flagName, minimum, maximum) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < minimum || number > maximum) {
+    throw usageError(`desktop inspect ${flagName} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return number;
 }
 
 function stripUndefined(value) {

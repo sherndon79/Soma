@@ -75,6 +75,7 @@ Focused object probe, when `desktop.inspect.focus` is explicitly allowed:
 
 ```bash
 npm run cli -- desktop focus
+npm run cli -- desktop focus --include-text
 ```
 
 Narrow returned output:
@@ -93,10 +94,16 @@ The current AT-SPI probe is read-only. It returns bounded participant, applicati
 shallow child role/count metadata. It does not read child names, descriptions, text content, states,
 actions, screenshots, pointer position, keyboard input, or camera/microphone data.
 
+The CLI validates desktop inspection `--mode`, `--max-apps`, and `--max-children` values before
+sending the request, so malformed inspect flags are not silently omitted. The service still owns
+the authoritative request and provider-output validation boundary.
+
 Focused inspection is also read-only and non-textual. It is behind the disabled
 `desktop.inspect.focus` capability and returns only focus availability, focused object role, child
 count, service/path references, and withheld-field markers. It does not return names,
 descriptions, text, state lists, actions, screenshots, pointer position, or keyboard input.
+`desktop focus --include-text` is sent to the service and rejected until a separate text-capable
+focus contract exists.
 
 ## Inspect Provenance
 

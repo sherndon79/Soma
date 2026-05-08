@@ -566,6 +566,32 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
   assert.match(writes.join(""), /provenance: prov-1/);
 });
 
+test("runCli desktop inspect rejects invalid flags before request", async () => {
+  for (const [name, argv] of Object.entries({
+    invalid_mode: ["node", "soma", "desktop", "inspect", "--mode", "focus"],
+    invalid_max_apps: ["node", "soma", "desktop", "inspect", "--max-apps", "0"],
+    invalid_max_children: ["node", "soma", "desktop", "inspect", "--max-children", "9"],
+    non_integer_max_apps: ["node", "soma", "desktop", "inspect", "--max-apps", "1.5"],
+    non_numeric_max_children: ["node", "soma", "desktop", "inspect", "--max-children", "many"],
+  })) {
+    let called = false;
+
+    await assert.rejects(
+      () => runCli(parseCli(argv), {
+        stdout: { write: () => {} },
+        request: async () => {
+          called = true;
+          return {};
+        },
+      }),
+      { code: "usage_error", statusCode: 2 },
+      name,
+    );
+
+    assert.equal(called, false, name);
+  }
+});
+
 test("runCli desktop focus calls focused inspection endpoint", async () => {
   let captured;
   const writes = [];
@@ -601,4 +627,31 @@ test("runCli desktop focus calls focused inspection endpoint", async () => {
   assert.match(writes.join(""), /child count: 2/);
   assert.match(writes.join(""), /text content included: no/);
   assert.match(writes.join(""), /provenance: prov-focus/);
+});
+
+test("runCli desktop focus sends include-text to server refusal path", async () => {
+  let captured;
+
+  await runCli(parseCli(["node", "soma", "desktop", "focus", "--include-text"]), {
+    stdout: { write: () => {} },
+    request: async (_baseUrl, method, requestPath, body) => {
+      captured = { method, requestPath, body };
+      return {
+        provenance_id: "prov-focus",
+        inspection: {
+          mode: "read_only_focused_object_probe",
+          broker_source: "rust_helper",
+          desktop_session: "GNOME",
+          session_type: "wayland",
+          focus_available: false,
+          focused_object: null,
+          text_content_included: false,
+        },
+      };
+    },
+  });
+
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.requestPath, "/desktop/inspect/focus");
+  assert.deepEqual(captured.body, { include_text: true });
 });

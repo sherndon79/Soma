@@ -305,6 +305,10 @@ Current scaffold:
 - `soma desktop inspect --mode atspi` prints a concise operator summary instead of the full tree
 - `soma desktop inspect --mode atspi --max-apps n --max-children n` narrows returned output after
   validation
+- the CLI validates desktop inspection mode and limit flags before sending the request, while the
+  service remains the authoritative validation boundary
+- `soma desktop focus --include-text` sends the text request to the service so the current
+  text-capable focus refusal remains visible
 - `soma.module.no-desktop-inspection` revokes the capability
 - provenance records `desktop.inspect.accessibility_tree`
 - provenance records requested mode and requested output limits separately from returned counts

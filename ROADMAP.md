@@ -16,6 +16,7 @@ Implemented:
 - opt-in local-model capability evaluation harness
 - unsupported remote-planning capability posture and model eval guardrail
 - opt-in local escalation trigger assessment on chat with metadata-only provenance
+- direct escalation-trigger heuristic tests, including validation-failure metadata
 - ephemeral in-process session memory
 - bounded in-process provenance log with filters and summary
 - text-only cognitive-load stewardship
@@ -43,40 +44,37 @@ Current authority boundary:
 
 ## Next Slice
 
-Make local escalation trigger assessment more explicit and testable.
+Add provider-overreach tests for broader desktop inspection before expanding AT-SPI traversal.
 
 Target:
 
 ```text
-trigger family
-  -> documented heuristic
-  -> deterministic unit coverage
-  -> metadata-only response/provenance fields
+desktop broker helper output
+  -> schema validation
+  -> reject over-disclosure
+  -> no provenance payload write
+  -> safe error response
 ```
 
 Expected work:
 
-- add direct unit tests for `src/escalationTriggers.js`
-- document the current heuristic limits and likely false positives/false negatives
-- add a trigger family for capability-validation failures before any tool-planning activation
-  (implemented as input metadata only)
-- keep `model.remote.plan` unsupported until a provider contract, minimizer, validator, and threat
-  model update exist
+- add AT-SPI tree overreach tests for child names, descriptions, text, states, and actions
+- verify rejected helper payloads are not echoed back to the caller
+- verify provenance is not written for rejected helper output
+- keep current shallow role/count metadata path valid
+- keep focused-inspection overreach tests in place
 
 Constraints:
 
-- no remote routing
-- no remote-planner provider registration
-- no automatic escalation
-- no durable memory export
-- no model-defined capability keys for activation
-- no activation from an escalation trigger
+- no broader AT-SPI traversal yet
+- no child names, descriptions, text, states, or actions
+- no screenshots
+- no pointer or keyboard actuation
+- no generic desktop provider expansion
 
 ## Near-Term
 
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
-- Add provider-overreach tests for broader desktop tree inspection before expanding AT-SPI
-  traversal.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only

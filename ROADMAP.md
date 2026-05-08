@@ -42,6 +42,7 @@ Implemented:
 - explicit desktop accessibility-tree request validation
 - explicit focused desktop inspection request validation
 - explicit CLI validation for desktop inspection flags
+- documented desktop request contract baseline and coverage map
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -54,23 +55,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Document and test current desktop CLI/API request contract as a stable pre-traversal baseline.
+Design helper-side limit passing for AT-SPI inspection without weakening response validation.
 
 Target:
 
 ```text
-desktop tree + focus request contract
-  -> operator-facing docs
-  -> test coverage map
-  -> pre-traversal baseline
+current post-validation narrowing
+  -> helper invocation limit contract
+  -> same response schema
+  -> no traversal
 ```
 
 Expected work:
 
-- summarize accepted tree and focus request fields in one doc section
-- map server, CLI, and provider-overreach tests to the contract
-- identify any remaining request-shape ambiguity before recursive traversal
-- keep current runtime behavior unchanged
+- decide whether `max_apps` and `max_children` should be passed to the Rust helper
+- document helper argument shape and Node fallback behavior
+- preserve Node-side output validation before narrowing
+- keep current response schema unchanged
+- add tests only if a helper invocation contract is introduced
 
 Constraints:
 

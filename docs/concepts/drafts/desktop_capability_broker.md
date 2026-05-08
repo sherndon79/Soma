@@ -346,7 +346,9 @@ Likely next implementation shape:
 
 See [Focused Desktop Inspection](./focused_desktop_inspection.md) for the draft focused-object
 boundary. See [Bounded Recursive AT-SPI Traversal](./bounded_recursive_atspi_traversal.md) for the
-draft traversal contract.
+draft traversal contract. See
+[Desktop Request Contract Baseline](./desktop_request_contract_baseline.md) for the current
+pre-traversal CLI/API request contract and test coverage map.
 
 ## Research Findings
 

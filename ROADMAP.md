@@ -24,6 +24,8 @@ Implemented:
 - read-only desktop broker environment inspection
 - Rust `soma-desktop-broker` helper scaffold
 - bounded AT-SPI bus participant and root-object metadata inspection
+- desktop inspection provider-overreach tests for child metadata, windows, and rejected-provenance
+  behavior
 - focused-object inspection endpoint and CLI, disabled by default
 - bounded AT-SPI active-descendant focus lookup with fail-closed unavailable reasons
 - self-scoped narrowing modules for revocation
@@ -44,39 +46,36 @@ Current authority boundary:
 
 ## Next Slice
 
-Add provider-overreach tests for broader desktop inspection before expanding AT-SPI traversal.
+Decide whether the desktop inspection validator should move from hand-rolled checks to JSON
+Schema-backed validation before broader output shapes are added.
 
 Target:
 
 ```text
-desktop broker helper output
-  -> schema validation
-  -> reject over-disclosure
-  -> no provenance payload write
-  -> safe error response
+current schema document
+  -> runtime validator comparison
+  -> migration recommendation
+  -> no behavioral broadening
 ```
 
 Expected work:
 
-- add AT-SPI tree overreach tests for child names, descriptions, text, states, and actions
-- verify rejected helper payloads are not echoed back to the caller
-- verify provenance is not written for rejected helper output
-- keep current shallow role/count metadata path valid
-- keep focused-inspection overreach tests in place
+- review current hand-rolled validator against `docs/schemas/desktop-inspection-result.schema.json`
+- identify gaps between documented schema and runtime checks
+- decide whether to add a JSON Schema dependency now or defer until traversal expands
+- document the decision and migration trigger
+- keep existing validator behavior and tests unchanged unless a safe replacement is implemented
 
 Constraints:
 
-- no broader AT-SPI traversal yet
-- no child names, descriptions, text, states, or actions
-- no screenshots
-- no pointer or keyboard actuation
-- no generic desktop provider expansion
+- no schema broadening
+- no new desktop fields
+- no traversal expansion
+- no dependency addition unless the benefit is clear and tests stay equivalent
 
 ## Near-Term
 
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
-- Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
-  the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only
   after focused inspection boundaries are validated.
 - Preserve operator narrowing controls as traversal expands.

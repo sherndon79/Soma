@@ -353,7 +353,9 @@ draft traversal contract. See
 pre-traversal CLI/API request contract and test coverage map. See
 [Desktop Helper Limit Contract](./desktop_helper_limit_contract.md) for the helper-side limit hint
 contract. See [Desktop Helper Transport](./desktop_helper_transport.md) for the decision to keep
-one-shot stdio until a long-lived helper transport is justified.
+one-shot stdio until a long-lived helper transport is justified. See
+[Desktop Disclosure Registry](./desktop_disclosure_registry.md) for the future in-process root
+authorization registry that should precede recursive traversal.
 
 ## Research Findings
 

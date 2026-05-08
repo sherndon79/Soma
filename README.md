@@ -60,6 +60,9 @@ names, text content, capture screenshots, or perform desktop actions.
 
 The current desktop inspection output contract is documented in
 [docs/schemas/desktop-inspection-result.schema.json](./docs/schemas/desktop-inspection-result.schema.json).
+Future recursive traversal is expected to depend on an in-process
+[desktop disclosure registry](./docs/concepts/drafts/desktop_disclosure_registry.md) before any
+helper receives a traversal root.
 
 ## CLI
 

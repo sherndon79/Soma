@@ -49,6 +49,7 @@ Implemented:
 - Rust helper parses and enforces AT-SPI limit hints
 - documented one-shot stdio helper transport decision
 - documented traversal root authorization model
+- documented in-process desktop disclosure registry design
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -61,22 +62,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the in-process desktop disclosure registry before implementing traversal roots.
+Add the desktop disclosure registry module scaffold and unit tests without exposing traversal.
 
 Target:
 
 ```text
 root authorization model
-  -> registry data shape
-  -> expiry/revocation behavior
+  -> metadata-only registry implementation
+  -> expiration/revocation tests
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define the registry API and storage module boundary
-- identify which current inspection responses populate references
-- define tests for expiration, revocation, rejected helper output, and focus separation
+- implement a Node-owned registry module with injectable time
+- test recording, deduplication, expiration, and revocation
+- test accessibility-tree and focused-inspection extraction helpers with fixture payloads
+- prove sensitive fields are not stored
 - keep registry entries metadata-only
 - keep current runtime behavior unchanged
 
@@ -85,6 +87,7 @@ Constraints:
 - no desktop capability expansion
 - no new desktop fields in runtime responses
 - no text, names, descriptions, states, actions, screenshots, or actuation
+- no endpoint wiring yet unless separately reviewed
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 

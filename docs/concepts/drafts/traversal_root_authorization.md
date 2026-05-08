@@ -30,6 +30,9 @@ Node should own an in-process desktop disclosure registry. The registry is not d
 exists only to prove that a future traversal root came from a bounded disclosure the current Soma
 process already made.
 
+See [Desktop Disclosure Registry](./desktop_disclosure_registry.md) for the proposed module
+boundary, record shape, expiration behavior, and implementation test plan.
+
 Suggested record:
 
 ```json

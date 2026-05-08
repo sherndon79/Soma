@@ -175,17 +175,30 @@ Risk:
 - private context leaves the machine
 - remote provider stores, trains on, or redistributes content
 - disclosure cannot be fully reversed
+- remote planner influences local execution paths through a generated plan
+- planner proposes steps that require disabled, unsupported, or overly broad capabilities
+- planner receives more context than the task requires
 
 Current controls:
 
 - base harness disables `model.remote.chat`
+- base harness disables `model.remote.plan`
+- provider registry has no `model.remote.plan` provider, so the capability is currently
+  unsupported rather than requestable
 - runtime profile marks remote service use
 - principles require explicit and inspectable bridge decisions
 - disclosure is treated as weakly reversible or irreversible
+- escalation and planning draft requires per-task consent, context minimization, exact capability
+  keys, plan-step validation, and elision of invalid steps before local execution
+- model capability evals cover the current unsupported `model.remote.plan` posture
 
 Residual risk:
 
 - no implemented remote bridge review flow exists yet
+- no remote-planner provider contract, payload minimizer, plan validator, or provenance event set
+  is implemented yet
+- future planner quality may be hard to evaluate, and a valid-looking plan may still be
+  strategically poor or overbroad
 
 ### Accidental User Over-Approval
 
@@ -287,6 +300,7 @@ Update this threat model before:
 - adding durable memory
 - adding durable provenance
 - adding remote model routing
+- registering a `model.remote.plan` provider or implementing remote planning escalation
 - adding third-party providers or MCP adapters
 - adding filesystem writes
 - adding shell execution

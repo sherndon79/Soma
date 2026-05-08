@@ -51,6 +51,7 @@ Implemented:
 - documented traversal root authorization model
 - documented in-process desktop disclosure registry design
 - in-process desktop disclosure registry module and unit tests
+- successful desktop inspections populate the disclosure registry after provenance append
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -63,24 +64,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Wire successful desktop inspection responses into the disclosure registry without exposing
-traversal.
+Connect desktop disclosure registry revocation to narrowing paths before exposing traversal roots.
 
 Target:
 
 ```text
 root authorization model
-  -> registry population after provenance
-  -> no response-field changes
+  -> registry revocation on desktop narrowing
+  -> stale refs rejected internally
   -> no traversal implementation
 ```
 
 Expected work:
 
-- create an injectable registry instance in the app/service process
-- populate it after successful accessibility-tree provenance append
-- populate it after successful focused-inspection provenance append
-- ensure rejected requests and schema failures leave the registry untouched
+- clear or revoke desktop registry entries when desktop inspection is narrowed by module
+- define the equivalent hook point for future writable grant revocation
+- test module adoption does not leave usable desktop refs behind
+- keep module drop from resurrecting old refs
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

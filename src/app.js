@@ -5,6 +5,7 @@ import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
+import { DesktopDisclosureRegistry } from "./desktopDisclosureRegistry.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
@@ -36,6 +37,7 @@ export function createApp({
   capabilityProposals,
   grantStore,
   provenanceLog,
+  desktopDisclosureRegistry,
   logger = console,
 } = {}) {
   return createServer(createRequestHandler({
@@ -49,6 +51,7 @@ export function createApp({
     capabilityProposals,
     grantStore,
     provenanceLog,
+    desktopDisclosureRegistry,
     logger,
   }));
 }
@@ -64,6 +67,7 @@ export function createRequestHandler({
   capabilityProposals = new CapabilityProposalStore(),
   grantStore = { schema_version: 1, grants: [] },
   provenanceLog = new ProvenanceLog(),
+  desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
   logger = console,
 } = {}) {
   if (!harness) {
@@ -356,6 +360,11 @@ export function createRequestHandler({
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
+        desktopDisclosureRegistry.recordFromAccessibilityTree({
+          inspection,
+          provenanceId: event.id,
+          capability: "desktop.inspect.accessibility_tree",
+        });
         writeJson(res, 200, {
           inspection,
           provenance_id: event.id,
@@ -374,6 +383,11 @@ export function createRequestHandler({
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
+        desktopDisclosureRegistry.recordFromFocusedInspection({
+          inspection,
+          provenanceId: event.id,
+          capability: "desktop.inspect.focus",
+        });
         writeJson(res, 200, {
           inspection,
           provenance_id: event.id,

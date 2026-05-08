@@ -998,7 +998,8 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const handler = makeHandler({ harness: allowedHarness });
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/accessibility-tree",
@@ -1011,6 +1012,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
       "result.tree.applications[0].root_object.child_metadata_sample[0].description is not allowed",
     ));
     assert.equal("inspection" in response.body, false);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0);
 
     const provenance = await invokeHandler(handler, {
       method: "GET",
@@ -1140,7 +1142,8 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const handler = makeHandler({ harness: allowedHarness });
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
 
     let response = await invokeHandler(handler, {
       method: "POST",
@@ -1154,6 +1157,11 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.body.inspection.root_object_available_count, 1);
     assert.equal(response.body.inspection.tree.text_content_included, false);
     const provenanceId = response.body.provenance_id;
+    assert.equal("desktop_ref_id" in response.body.inspection.tree.applications[0], false);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 1);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls[0].provenanceId, provenanceId);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls[0].capability, "desktop.inspect.accessibility_tree");
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls[0].inspection.mode, "read_only_atspi_probe");
 
     response = await invokeHandler(handler, {
       method: "GET",
@@ -1246,7 +1254,8 @@ fi
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const handler = makeHandler({ harness: focusedInspectionHarness });
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: focusedInspectionHarness, desktopDisclosureRegistry });
     let response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
@@ -1261,6 +1270,11 @@ fi
     assert.equal(response.body.inspection.text_content_included, false);
     assert.equal("name" in response.body.inspection.focused_object, false);
     const provenanceId = response.body.provenance_id;
+    assert.equal("desktop_ref_id" in response.body.inspection.focused_object, false);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 1);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls[0].provenanceId, provenanceId);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls[0].capability, "desktop.inspect.focus");
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls[0].inspection.focus_available, true);
 
     response = await invokeHandler(handler, {
       method: "GET",
@@ -1386,10 +1400,11 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const response = await invoke({
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: focusedInspectionHarness, desktopDisclosureRegistry });
+    const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
-      harness: focusedInspectionHarness,
       body: {},
     });
 
@@ -1397,6 +1412,7 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
     assert.equal(response.body.error, "focused_desktop_inspection_schema_invalid");
     assert.ok(response.body.validation_errors.includes("result.focused_object.name is not allowed"));
     assert.equal("inspection" in response.body, false);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;
@@ -1867,6 +1883,7 @@ function makeHandler({
     },
   },
   grantStore: grants,
+  desktopDisclosureRegistry,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -1876,8 +1893,24 @@ function makeHandler({
     runtimeProfiles: profiles,
     modelClient,
     grantStore: grants,
+    desktopDisclosureRegistry,
     logger: { info() {} },
   });
+}
+
+function createDesktopDisclosureRegistrySpy() {
+  return {
+    accessibilityTreeCalls: [],
+    focusedInspectionCalls: [],
+    recordFromAccessibilityTree(args) {
+      this.accessibilityTreeCalls.push(args);
+      return [];
+    },
+    recordFromFocusedInspection(args) {
+      this.focusedInspectionCalls.push(args);
+      return [];
+    },
+  };
 }
 
 async function invokeHandler(handler, { method, url, body }) {

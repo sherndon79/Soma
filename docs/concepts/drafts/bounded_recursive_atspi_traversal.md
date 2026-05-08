@@ -79,6 +79,9 @@ Traversal roots should be self-scoped:
 Soma should not accept an arbitrary service/path pair from a model without first tying it to a
 previously disclosed object in the same session or to an explicit user selection.
 
+See [Traversal Root Authorization](./traversal_root_authorization.md) for the draft mechanism:
+an in-process disclosure registry and future explicit user-selection path.
+
 ## Response Shape
 
 The later schema should add a distinct traversal block rather than silently changing the existing

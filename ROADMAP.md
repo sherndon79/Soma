@@ -48,6 +48,7 @@ Implemented:
 - Node helper invocation uses derived AT-SPI limit arguments
 - Rust helper parses and enforces AT-SPI limit hints
 - documented one-shot stdio helper transport decision
+- documented traversal root authorization model
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -60,23 +61,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design traversal root authorization before recursive traversal can open.
+Design the in-process desktop disclosure registry before implementing traversal roots.
 
 Target:
 
 ```text
-previously disclosed objects
-  -> user-selected roots
-  -> request validation model
+root authorization model
+  -> registry data shape
+  -> expiry/revocation behavior
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define how a traversal root proves prior disclosure in the current session
-- define how explicit user selection could authorize a root
-- identify where root references should be stored, expired, and scoped
-- keep focused inspection separate from traversal fallback
+- define the registry API and storage module boundary
+- identify which current inspection responses populate references
+- define tests for expiration, revocation, rejected helper output, and focus separation
+- keep registry entries metadata-only
 - keep current runtime behavior unchanged
 
 Constraints:

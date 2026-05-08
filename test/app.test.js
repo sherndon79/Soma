@@ -993,12 +993,9 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
-test("desktop accessibility inspection rejects traversal requests until traversal is implemented", async () => {
-  const handler = makeHandler({ harness: allowedHarness });
-  const response = await invokeHandler(handler, {
-    method: "POST",
-    url: "/desktop/inspect/accessibility-tree",
-    body: {
+test("desktop accessibility inspection rejects traversal request shapes until traversal is implemented", async () => {
+  for (const [name, body] of Object.entries({
+    bounded_atspi_traversal: {
       mode: "atspi",
       traversal: {
         enabled: true,
@@ -1008,17 +1005,65 @@ test("desktop accessibility inspection rejects traversal requests until traversa
         max_children_per_node: 4,
       },
     },
-  });
+    non_atspi_mode: {
+      mode: "environment",
+      traversal: {
+        enabled: true,
+        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+        max_depth: 1,
+        max_nodes: 16,
+        max_children_per_node: 4,
+      },
+    },
+    unknown_traversal_field: {
+      mode: "atspi",
+      traversal: {
+        enabled: true,
+        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+        max_depth: 1,
+        max_nodes: 16,
+        max_children_per_node: 4,
+        include_text: true,
+      },
+    },
+    invalid_root_shape: {
+      mode: "atspi",
+      traversal: {
+        enabled: true,
+        root: { service: ":1.42" },
+        max_depth: 1,
+        max_nodes: 16,
+        max_children_per_node: 4,
+      },
+    },
+    excessive_limits: {
+      mode: "atspi",
+      traversal: {
+        enabled: true,
+        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+        max_depth: 99,
+        max_nodes: 10000,
+        max_children_per_node: 1000,
+      },
+    },
+  })) {
+    const handler = makeHandler({ harness: allowedHarness });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body,
+    });
 
-  assert.equal(response.statusCode, 403);
-  assert.equal(response.body.error, "desktop_traversal_not_implemented");
+    assert.equal(response.statusCode, 403, name);
+    assert.equal(response.body.error, "desktop_traversal_not_implemented", name);
 
-  const provenance = await invokeHandler(handler, {
-    method: "GET",
-    url: "/provenance?event_type=desktop.inspect.accessibility_tree",
-  });
-  assert.equal(provenance.statusCode, 200);
-  assert.equal(provenance.body.entries.length, 0);
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200, name);
+    assert.equal(provenance.body.entries.length, 0, name);
+  }
 });
 
 test("desktop accessibility inspection can request bounded AT-SPI metadata", async () => {

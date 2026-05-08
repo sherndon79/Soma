@@ -38,6 +38,7 @@ Implemented:
 - documented bounded recursive AT-SPI traversal contract
 - traversal privacy-boundary tests and explicit unsupported traversal request rejection
 - documented schema and validator update path for bounded traversal
+- unsupported traversal request-shape fixtures for future bounded traversal validation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -50,24 +51,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add request-schema tests for unsupported traversal and future bounded traversal validation.
+Tighten existing desktop inspection request validation before traversal expands the request shape.
 
 Target:
 
 ```text
-schema/validator update path
-  -> request validation fixtures
-  -> future accepted/rejected traversal fixtures
-  -> no traversal implementation
+current mode/max limit request fields
+  -> explicit validation errors
+  -> provenance stays summary-only
+  -> traversal remains closed
 ```
 
 Expected work:
 
-- add tests that pin current unsupported traversal request rejection
-- add pending or design-level fixtures for future bounded traversal request validation
-- cover unknown request fields, invalid roots, excessive limits, and non-AT-SPI modes
-- avoid accepting traversal output until the schema and validator are actually extended
-- keep current runtime responses closed
+- define accepted request fields for `POST /desktop/inspect/accessibility-tree`
+- reject unknown request fields before helper invocation
+- validate `mode`, `max_apps`, and `max_children` explicitly
+- ensure invalid requests do not record desktop inspection provenance
+- keep traversal rejection unchanged
 
 Constraints:
 

@@ -61,7 +61,9 @@ limits before invoking the helper.
 Current implementation status: any `traversal` field on
 `POST /desktop/inspect/accessibility-tree` is rejected with
 `desktop_traversal_not_implemented`. This keeps the future request shape from being silently
-ignored or mistaken for active traversal support.
+ignored or mistaken for active traversal support. Tests cover valid-looking traversal,
+non-AT-SPI traversal, unknown traversal fields, invalid roots, and excessive traversal limits; all
+remain rejected until traversal request validation is implemented.
 
 Traversal roots should be self-scoped:
 

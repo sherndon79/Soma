@@ -587,8 +587,9 @@ docker compose -f docker-compose.gpu.yml up gemma4-llm
 
 After MVP:
 
-- Rust `soma-desktop-broker` helper scaffold
-- bounded AT-SPI accessibility-tree inspection
+- local-only escalation trigger surfacing without remote routing
+- remote-planning provider contract design without provider registration
+- provider-overreach tests for broader desktop inspection
 - clearer module/provenance UI surface
 - durable memory design with explicit write boundaries
 - remote model bridge with disclosure and explicit consent

@@ -14,6 +14,7 @@ Implemented:
 - file-backed read-only grant store shape
 - grouped read-only capability view endpoint and CLI summary
 - opt-in local-model capability evaluation harness
+- unsupported remote-planning capability posture and model eval guardrail
 - ephemeral in-process session memory
 - bounded in-process provenance log with filters and summary
 - text-only cognitive-load stewardship
@@ -27,6 +28,8 @@ Implemented:
 - proposal show/review endpoint and CLI surface
 - proposal notification endpoint and CLI surface
 - documented modular harness invariant and extension boundary
+- documented provider invocation contract and remote-planning escalation concept
+- threat-model and failure-mode coverage for unsupported remote planning
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -39,37 +42,42 @@ Current authority boundary:
 
 ## Next Slice
 
-Make the provider/broker boundary more concrete so Soma stays modular as capabilities grow.
+Surface local escalation triggers without adding remote routing.
 
 Target:
 
 ```text
-capability contract
-  -> provider manifest
-  -> policy-checked invocation
-  -> schema-checked broker result
-  -> provenance record
+local model response + Soma-side heuristics
+  -> escalation triggers identified
+  -> user-facing "continue locally or consider future escalation" summary
+  -> provenance metadata
+  -> no remote send
 ```
 
 Expected work:
 
-- define the first provider invocation contract in docs
-- ensure desktop broker calls remain behind capability-specific adapters
-- add tests that reject provider overreach for focused inspection and tree inspection
-- keep helper output schema-checked before provenance records are written
-- preserve the distinction between provider support and user-granted authority
+- define a local-only escalation trigger result shape
+- record `model.local.escalation_proposed` provenance metadata without raw task payloads
+- expose whether triggers fired in chat responses or a small review endpoint
+- include uncertainty, capability gaps, complexity flags, and validation failures as trigger
+  families
+- keep `model.remote.plan` unsupported until a provider contract, minimizer, validator, and threat
+  model update exist
 
 Constraints:
 
-- no generic all-powerful desktop provider
-- no plugin installation as permission
+- no remote routing
+- no remote-planner provider registration
+- no automatic escalation
+- no durable memory export
 - no model-defined capability keys for activation
-- no bypass around the catalog/provider/grant path
-- no merging desktop, memory, audio, filesystem, and model behavior into a single broker
+- no activation from an escalation trigger
 
 ## Near-Term
 
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
+- Add provider-overreach tests for broader desktop tree inspection before expanding AT-SPI
+  traversal.
 - Consider replacing the hand-rolled desktop inspection validator with a JSON Schema validator if
   the schema becomes broader or externally consumed.
 - Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only
@@ -81,6 +89,8 @@ Constraints:
 - Add a clearer module/provenance operator surface.
 - Decide whether Rust helper communication should remain one-shot stdio or move to JSON-RPC over
   stdio/Unix socket.
+- Design, but do not implement, the remote-planner provider contract, payload minimizer, plan
+  validator, and disclosure preview.
 
 ## Later
 
@@ -89,6 +99,7 @@ These require explicit design review before implementation:
 - durable memory
 - vector retrieval
 - remote model/public utility bridge
+- remote planning provider
 - STT and TTS
 - native multimodal audio
 - visual embodiment

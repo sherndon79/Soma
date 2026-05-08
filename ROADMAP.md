@@ -40,6 +40,7 @@ Implemented:
 - documented schema and validator update path for bounded traversal
 - unsupported traversal request-shape fixtures for future bounded traversal validation
 - explicit desktop accessibility-tree request validation
+- explicit focused desktop inspection request validation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -52,28 +53,28 @@ Current authority boundary:
 
 ## Next Slice
 
-Tighten focused desktop inspection request validation before text-capable focus modes exist.
+Tighten CLI validation for desktop inspection flags before request-shape expansion continues.
 
 Target:
 
 ```text
-current include_text request field
-  -> explicit validation errors
-  -> provenance stays summary-only
-  -> text remains closed
+desktop inspect/focus CLI flags
+  -> explicit client-side validation
+  -> no silently omitted invalid values
+  -> server validation remains authoritative
 ```
 
 Expected work:
 
-- define accepted request fields for `POST /desktop/inspect/focus`
-- reject unknown request fields before helper invocation
-- keep `include_text=true` rejected with the current focused text error
-- reject non-boolean `include_text` values explicitly
-- ensure invalid requests do not record focused inspection provenance
+- validate `soma desktop inspect --mode`
+- validate `--max-apps` and `--max-children` before sending requests
+- keep `soma desktop focus --include-text` visibly routed to the server-side refusal
+- add CLI tests for invalid desktop flag handling
+- keep server request validation as the authoritative boundary
 
 Constraints:
 
-- no focused text implementation
+- no desktop capability expansion
 - no new desktop fields in runtime responses
 - no text, names, descriptions, states, actions, screenshots, or actuation
 - no loss of operator narrowing controls

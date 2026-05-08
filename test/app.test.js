@@ -1296,15 +1296,50 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
 });
 
 test("focused desktop inspection rejects text inclusion", async () => {
-  const response = await invoke({
+  const handler = makeHandler({ harness: focusedInspectionHarness });
+  const response = await invokeHandler(handler, {
     method: "POST",
     url: "/desktop/inspect/focus",
-    harness: focusedInspectionHarness,
     body: { include_text: true },
   });
 
   assert.equal(response.statusCode, 403);
   assert.equal(response.body.error, "focused_desktop_text_not_allowed");
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.inspect.focus",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 0);
+});
+
+test("focused desktop inspection rejects invalid request fields before provenance", async () => {
+  for (const [name, body] of Object.entries({
+    unknown_field: { include_text: false, mode: "atspi" },
+    string_include_text: { include_text: "false" },
+    null_include_text: { include_text: null },
+    object_include_text: { include_text: {} },
+  })) {
+    const handler = makeHandler({ harness: focusedInspectionHarness });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      body,
+    });
+
+    assert.equal(response.statusCode, 400, name);
+    assert.equal(response.body.error, "focused_desktop_inspection_request_invalid", name);
+    assert.equal("inspection" in response.body, false, name);
+    assert.ok(Array.isArray(response.body.validation_errors), name);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.focus",
+    });
+    assert.equal(provenance.statusCode, 200, name);
+    assert.equal(provenance.body.entries.length, 0, name);
+  }
 });
 
 test("focused desktop inspection rejects helper over-disclosure", async () => {

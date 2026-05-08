@@ -366,16 +366,11 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/desktop/inspect/focus") {
         requireCapability(effectiveHarness, "desktop.inspect.focus");
         const body = await readJson(req);
-        if (body.include_text === true) {
-          const error = new Error("Focused desktop inspection does not include text content.");
-          error.statusCode = 403;
-          error.code = "focused_desktop_text_not_allowed";
-          throw error;
-        }
+        const focusRequest = validateFocusedDesktopInspectionRequest(body);
         const inspection = await inspectFocusedDesktopObject();
         const event = provenanceLog.append(createFocusedDesktopInspectionEvent({
           inspection,
-          request: body,
+          request: focusRequest,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -585,6 +580,43 @@ function validateOptionalIntegerLimit(value, path, minimum, maximum, errors) {
   if (!Number.isInteger(value) || value < minimum || value > maximum) {
     errors.push(`${path} must be an integer from ${minimum} to ${maximum}`);
   }
+}
+
+function validateFocusedDesktopInspectionRequest(body) {
+  const allowedKeys = new Set(["include_text"]);
+  const errors = [];
+
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+
+    if (body.include_text === true) {
+      const error = new Error("Focused desktop inspection does not include text content.");
+      error.statusCode = 403;
+      error.code = "focused_desktop_text_not_allowed";
+      throw error;
+    }
+    if (body.include_text !== undefined && body.include_text !== false) {
+      errors.push("request.include_text must be false when provided");
+    }
+  }
+
+  if (errors.length > 0) {
+    const error = new Error(`Focused desktop inspection request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "focused_desktop_inspection_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+
+  return {
+    include_text: body.include_text === true,
+  };
 }
 
 function parseProvenanceFilters(searchParams) {

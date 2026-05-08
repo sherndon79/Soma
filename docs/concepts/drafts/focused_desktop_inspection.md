@@ -112,6 +112,10 @@ Request body:
 ```
 
 For MVP, `include_text` is rejected and the endpoint always returns `text_content_included: false`.
+The request body accepts only `include_text`. Unknown fields and non-boolean `include_text` values
+fail with `focused_desktop_inspection_request_invalid` before helper invocation or provenance
+recording. `include_text=true` fails with `focused_desktop_text_not_allowed` until a separate
+text-capable focus contract exists.
 
 ## Provenance
 
@@ -193,5 +197,7 @@ returns `focus_available=false` with `unavailable_reason=active_descendant_unava
   desktop tree.
 - Helper output is schema-checked to reject names, descriptions, text, states, actions, or other
   over-disclosing fields.
+- Request bodies are validated before helper invocation; invalid focus requests do not record
+  provenance.
 - Provenance records focus availability, role, child count, requested text inclusion, broker
   source, mode, and session metadata without storing focused text or names.

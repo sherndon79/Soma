@@ -26,3 +26,16 @@ test("capability view exposes provider contract metadata from registry claims", 
   assert.equal(tree.providers[0].output_schema, "docs/schemas/desktop-inspection-result.schema.json");
 });
 
+test("capability view keeps remote planning unsupported until a provider is registered", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const remotePlan = view.capabilities.find((capability) => capability.key === "model.remote.plan");
+  assert.equal(remotePlan.provider_contract, "soma.model.remote.plan.v1");
+  assert.equal(remotePlan.harness_status, "disabled");
+  assert.equal(remotePlan.status, "unsupported");
+  assert.equal(remotePlan.support_status, "unsupported");
+  assert.deepEqual(remotePlan.providers, []);
+  assert.equal(remotePlan.activation_policy, "explicit_grant");
+});

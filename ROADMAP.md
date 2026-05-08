@@ -39,6 +39,7 @@ Implemented:
 - traversal privacy-boundary tests and explicit unsupported traversal request rejection
 - documented schema and validator update path for bounded traversal
 - unsupported traversal request-shape fixtures for future bounded traversal validation
+- explicit desktop accessibility-tree request validation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -51,28 +52,28 @@ Current authority boundary:
 
 ## Next Slice
 
-Tighten existing desktop inspection request validation before traversal expands the request shape.
+Tighten focused desktop inspection request validation before text-capable focus modes exist.
 
 Target:
 
 ```text
-current mode/max limit request fields
+current include_text request field
   -> explicit validation errors
   -> provenance stays summary-only
-  -> traversal remains closed
+  -> text remains closed
 ```
 
 Expected work:
 
-- define accepted request fields for `POST /desktop/inspect/accessibility-tree`
+- define accepted request fields for `POST /desktop/inspect/focus`
 - reject unknown request fields before helper invocation
-- validate `mode`, `max_apps`, and `max_children` explicitly
-- ensure invalid requests do not record desktop inspection provenance
-- keep traversal rejection unchanged
+- keep `include_text=true` rejected with the current focused text error
+- reject non-boolean `include_text` values explicitly
+- ensure invalid requests do not record focused inspection provenance
 
 Constraints:
 
-- no traversal implementation
+- no focused text implementation
 - no new desktop fields in runtime responses
 - no text, names, descriptions, states, actions, screenshots, or actuation
 - no loss of operator narrowing controls

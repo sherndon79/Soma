@@ -295,6 +295,10 @@ Current scaffold:
 - `POST /desktop/inspect/accessibility-tree` returns environment metadata by default
 - `POST /desktop/inspect/accessibility-tree` accepts `{ "mode": "atspi" }` for bounded
   read-only AT-SPI bus participant, root-object, and shallow child role/count metadata
+- `POST /desktop/inspect/accessibility-tree` accepts only `mode`, `max_apps`, `max_children`, and
+  the currently rejected `traversal` placeholder in the request body
+- invalid tree-inspection request fields fail with `desktop_inspection_request_invalid` before
+  helper invocation or provenance recording
 - `soma desktop inspect --json` calls the endpoint
 - `soma desktop inspect --mode atspi --json` asks for AT-SPI participant, application-root, and
   shallow child role/count metadata

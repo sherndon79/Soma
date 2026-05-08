@@ -344,14 +344,15 @@ export function createRequestHandler({
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
         const body = await readJson(req);
         rejectUnsupportedDesktopTraversal(body);
+        const desktopRequest = validateDesktopInspectionRequest(body);
         const inspection = await inspectDesktopBrokerEnvironment({
-          mode: body.mode,
-          maxApps: body.max_apps,
-          maxChildren: body.max_children,
+          mode: desktopRequest.mode,
+          maxApps: desktopRequest.max_apps,
+          maxChildren: desktopRequest.max_children,
         });
         const event = provenanceLog.append(createDesktopInspectionEvent({
           inspection,
-          request: body,
+          request: desktopRequest,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -539,6 +540,50 @@ function rejectUnsupportedDesktopTraversal(body) {
     error.statusCode = 403;
     error.code = "desktop_traversal_not_implemented";
     throw error;
+  }
+}
+
+function validateDesktopInspectionRequest(body) {
+  const allowedKeys = new Set(["mode", "max_apps", "max_children"]);
+  const errors = [];
+
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+
+    if (body.mode !== undefined && !["environment", "atspi"].includes(body.mode)) {
+      errors.push("request.mode must be environment or atspi");
+    }
+    validateOptionalIntegerLimit(body.max_apps, "request.max_apps", 1, 64, errors);
+    validateOptionalIntegerLimit(body.max_children, "request.max_children", 0, 8, errors);
+  }
+
+  if (errors.length > 0) {
+    const error = new Error(`Desktop inspection request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "desktop_inspection_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+
+  return {
+    mode: body.mode === "atspi" ? "atspi" : "environment",
+    max_apps: body.max_apps,
+    max_children: body.max_children,
+  };
+}
+
+function validateOptionalIntegerLimit(value, path, minimum, maximum, errors) {
+  if (value === undefined || value === null || value === "") {
+    return;
+  }
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    errors.push(`${path} must be an integer from ${minimum} to ${maximum}`);
   }
 }
 
@@ -799,6 +844,10 @@ function normalizeMessages(messages) {
     }
     return { role, content };
   });
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function numberOrDefault(value, fallback) {

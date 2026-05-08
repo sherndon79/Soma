@@ -1066,6 +1066,36 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
   }
 });
 
+test("desktop accessibility inspection rejects invalid request fields before provenance", async () => {
+  for (const [name, body] of Object.entries({
+    unknown_field: { mode: "atspi", include_text: true },
+    invalid_mode: { mode: "focused" },
+    invalid_max_apps: { mode: "atspi", max_apps: 65 },
+    invalid_max_children: { mode: "atspi", max_children: 9 },
+    non_integer_limit: { mode: "atspi", max_apps: 1.5 },
+    string_limit: { mode: "atspi", max_children: "1" },
+  })) {
+    const handler = makeHandler({ harness: allowedHarness });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body,
+    });
+
+    assert.equal(response.statusCode, 400, name);
+    assert.equal(response.body.error, "desktop_inspection_request_invalid", name);
+    assert.equal("inspection" in response.body, false, name);
+    assert.ok(Array.isArray(response.body.validation_errors), name);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200, name);
+    assert.equal(provenance.body.entries.length, 0, name);
+  }
+});
+
 test("desktop accessibility inspection can request bounded AT-SPI metadata", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-atspi-endpoint-"));
   const helperPath = path.join(root, "soma-desktop-broker");

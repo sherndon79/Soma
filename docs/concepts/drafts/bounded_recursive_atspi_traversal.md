@@ -65,6 +65,10 @@ ignored or mistaken for active traversal support. Tests cover valid-looking trav
 non-AT-SPI traversal, unknown traversal fields, invalid roots, and excessive traversal limits; all
 remain rejected until traversal request validation is implemented.
 
+The current non-traversal request surface is explicitly validated. `mode` must be omitted,
+`environment`, or `atspi`; `max_apps` must be an integer from 1 to 64; `max_children` must be an
+integer from 0 to 8; unknown request fields fail before helper invocation or provenance recording.
+
 Traversal roots should be self-scoped:
 
 - an application root object returned by the existing tree inspection

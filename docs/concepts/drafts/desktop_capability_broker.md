@@ -69,6 +69,12 @@ helper returns text, names, descriptions, actions, states, screenshots, or input
 the active capability contract, Soma should reject the helper result as provider overreach rather
 than trim and continue silently.
 
+The current runtime check remains a small hand-rolled validator, with the JSON schema serving as
+the documented contract. See
+[Desktop Inspection Schema Validation](./desktop_inspection_schema_validation.md) for the decision
+to defer a JSON Schema runtime dependency until traversal, provider, or integration complexity
+justifies it.
+
 ## Layered Desktop Stack
 
 ```text
@@ -311,6 +317,8 @@ Current scaffold:
   `docs/schemas/desktop-inspection-result.schema.json`
 - Node validates desktop broker output against the current contract before returning it or
   recording provenance
+- the current runtime validator is intentionally kept hand-rolled until the desktop output surface
+  expands enough to justify JSON Schema-backed validation
 - helper contract failures return `desktop_inspection_schema_invalid` with HTTP 502 and validation
   paths, without returning the rejected helper payload
 - no recursive AT-SPI child-object traversal has been implemented yet

@@ -34,6 +34,7 @@ Implemented:
 - documented modular harness invariant and extension boundary
 - documented provider invocation contract and remote-planning escalation concept
 - threat-model and failure-mode coverage for unsupported remote planning
+- documented desktop inspection schema-validation decision
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -46,32 +47,32 @@ Current authority boundary:
 
 ## Next Slice
 
-Decide whether the desktop inspection validator should move from hand-rolled checks to JSON
-Schema-backed validation before broader output shapes are added.
+Design the bounded recursive AT-SPI traversal contract before implementing traversal.
 
 Target:
 
 ```text
-current schema document
-  -> runtime validator comparison
-  -> migration recommendation
-  -> no behavioral broadening
+current root-and-child sample
+  -> bounded traversal contract
+  -> request limits and response shape
+  -> no implementation yet
 ```
 
 Expected work:
 
-- review current hand-rolled validator against `docs/schemas/desktop-inspection-result.schema.json`
-- identify gaps between documented schema and runtime checks
-- decide whether to add a JSON Schema dependency now or defer until traversal expands
-- document the decision and migration trigger
-- keep existing validator behavior and tests unchanged unless a safe replacement is implemented
+- define request controls such as depth, node count, and application/window scope
+- decide how traversal results compose with focused-object inspection
+- identify schema fields that would be added later without adding them now
+- preserve the current child metadata privacy boundary by default
+- document failure modes for truncated, unavailable, or over-broad traversal
 
 Constraints:
 
-- no schema broadening
-- no new desktop fields
-- no traversal expansion
-- no dependency addition unless the benefit is clear and tests stay equivalent
+- no traversal implementation
+- no new desktop fields in runtime responses
+- no text, names, descriptions, states, actions, screenshots, or actuation
+- no loss of operator narrowing controls
+- no change to the current runtime validator behavior
 
 ## Near-Term
 

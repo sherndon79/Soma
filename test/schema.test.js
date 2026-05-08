@@ -68,8 +68,76 @@ test("desktop inspection runtime validator accepts the current AT-SPI shape", ()
   assert.deepEqual(result.errors, []);
 });
 
-test("desktop inspection runtime validator rejects child text over-disclosure", () => {
+test("desktop inspection runtime validator rejects child metadata over-disclosure", () => {
+  for (const [field, value] of Object.entries({
+    name: "private tab title",
+    description: "private child description",
+    text: "private text",
+    states: ["focused"],
+    actions: ["click"],
+  })) {
+    const result = validateDesktopInspectionResult(atspiResultWithChildField(field, value));
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.includes(`result.tree.applications[0].root_object.child_metadata_sample[0].${field} is not allowed`));
+  }
+});
+
+test("desktop inspection runtime validator rejects windows until window inspection is implemented", () => {
   const result = validateDesktopInspectionResult({
+    mode: "read_only_atspi_probe",
+    broker_source: "rust_helper",
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+    dbus_session_bus_available: true,
+    atspi_likely_available: true,
+    atspi_bus_address_available: true,
+    application_count: 1,
+    root_object_available_count: 1,
+    window_count: 0,
+    tree: {
+      applications: [
+        {
+          service: ":1.42",
+          pid: 123,
+          process: "test-app",
+          registry: false,
+          root_object: {
+            path: "/org/a11y/atspi/accessible/root",
+            name: "test-app",
+            role: "application",
+            child_count: 1,
+            children_sample: [],
+            child_metadata_sample: [],
+          },
+          root_object_error: null,
+        },
+      ],
+      windows: [{ title: "private window title" }],
+      bounded: true,
+      text_content_included: false,
+    },
+    tree_available: true,
+  });
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes("result.tree.windows must be empty until desktop.inspect.windows is implemented"));
+});
+
+test("desktop inspection runtime assertion uses stable broker contract error semantics", () => {
+  assert.throws(
+    () => assertDesktopInspectionResult({}),
+    {
+      code: "desktop_inspection_schema_invalid",
+      statusCode: 502,
+    },
+  );
+});
+
+function atspiResultWithChildField(field, value) {
+  return {
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",
     platform: "linux",
@@ -101,7 +169,7 @@ test("desktop inspection runtime validator rejects child text over-disclosure", 
                 path: "/child",
                 role: "frame",
                 child_count: 0,
-                name: "private tab title",
+                [field]: value,
               },
             ],
           },
@@ -113,18 +181,5 @@ test("desktop inspection runtime validator rejects child text over-disclosure", 
       text_content_included: false,
     },
     tree_available: true,
-  });
-
-  assert.equal(result.valid, false);
-  assert.ok(result.errors.includes("result.tree.applications[0].root_object.child_metadata_sample[0].name is not allowed"));
-});
-
-test("desktop inspection runtime assertion uses stable broker contract error semantics", () => {
-  assert.throws(
-    () => assertDesktopInspectionResult({}),
-    {
-      code: "desktop_inspection_schema_invalid",
-      statusCode: 502,
-    },
-  );
-});
+  };
+}

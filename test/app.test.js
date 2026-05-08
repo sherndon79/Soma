@@ -977,6 +977,13 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
       "result.tree.applications[0].root_object.child_metadata_sample[0].description is not allowed",
     ));
     assert.equal("inspection" in response.body, false);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 0);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;

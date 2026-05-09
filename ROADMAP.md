@@ -77,6 +77,7 @@ Implemented:
 - pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - pure Rust in-memory breadth-first traversal tests while helper command remains disabled
 - internal Rust traversal query boundary helper while helper command remains disabled
+- documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
 Current authority boundary:

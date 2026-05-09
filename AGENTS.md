@@ -29,6 +29,8 @@ Before writing or reviewing code, read the relevant documents below.
 | [Soma Principles](docs/principles.md) | Consent, disclosure, refusal, non-extraction, local sovereignty, habitability | When evaluating whether an implementation fits the project |
 | [Architecture Overview](docs/architecture/overview.md) | Service-plane shape and Brain/Memory/Nervous-System/Body framing | When touching architecture, runtime routing, tools, desktop bridges, or embodiment |
 | [MVP Slice](docs/architecture/mvp_slice.md) | Current implemented policy-gated scaffold | When changing API behavior or capability boundaries |
+| [Implementation Guide](docs/implementation_guide.md) | Practice patterns for disabled-first capability work, validation, provenance, and docs parity | When implementing features or changing sensitive behavior |
+| [Component Review Scope](docs/component_review_scope.md) | Subsystem-specific review paths, supporting docs, and review focus checklists | When reviewing changes without doing a full-repo review |
 | [First Run and Onboarding](docs/onboarding.md) | First-run posture and participant-facing capability review | When shaping onboarding, first-run UX, capability-view surfaces, or new-user CLI output |
 | [Operator Guide](docs/operators.md) | Current runbook commands and operator expectations | When changing CLI, endpoints, startup, inspection, or revocation paths |
 | [Glossary](docs/glossary.md) | Stable definitions for load-bearing terms | When naming concepts, capabilities, grants, proposals, or modules |

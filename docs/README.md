@@ -14,6 +14,10 @@ near each other without reducing either side to extraction.
   design.
 - [Architecture Overview](./architecture/overview.md) — the first shape of Soma's service plane.
 - [MVP Slice](./architecture/mvp_slice.md) — the current policy-gated local service scaffold.
+- [Implementation Guide](./implementation_guide.md) — practice patterns for implementing Soma
+  without drifting from its policy, consent, validation, and provenance boundaries.
+- [Component Review Scope](./component_review_scope.md) — subsystem-specific paths and focus
+  checklists for targeted reviews.
 - [First Run and Onboarding](./onboarding.md) — what a new participant should see first.
 - [Operator Guide](./operators.md) — current runbook-style commands for running, inspecting, and
   revoking Soma capabilities.

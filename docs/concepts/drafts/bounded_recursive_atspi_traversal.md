@@ -339,6 +339,11 @@ and tests are ready. It should check:
 - `text_content_included` is `false`
 - `withheld_fields` is present and does not claim protected fields were included
 
+A pure future validator scaffold exists in `src/desktopTraversalOutput.js` with tests in
+`test/desktopTraversalOutput.test.js`. It is not wired into
+`validateDesktopInspectionResult`; the current runtime validator still rejects traversal output at
+`root_object.traversal`.
+
 The validator should keep the current fail-closed semantics:
 
 - helper contract failures return `desktop_inspection_schema_invalid`

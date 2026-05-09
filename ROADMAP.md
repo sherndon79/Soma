@@ -102,6 +102,8 @@ Implemented:
   reviews cross-reference each other
 - traversal refusal integration tests prove request-shaped traversal fails before helper invocation,
   registry authorization, disclosure registry writes, or provenance append
+- request-enablement readiness review completed; public traversal activation remains blocked on an
+  internal Node orchestration seam
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -115,23 +117,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Run a request-enablement readiness review before replacing the endpoint traversal refusal.
+Prepare an internal traversal request pipeline while keeping the endpoint traversal refusal.
 
 Target:
 
 ```text
-traversal request enablement readiness
-  -> confirm request/root authorization/helper/provenance gates are covered
-  -> identify any missing tests before endpoint behavior changes
+internal traversal request pipeline
+  -> compose root_ref validation, registry authorization, helper invocation, output attachment, and provenance summary
+  -> test successful and rejected paths with fake helpers/disclosures
   -> preserve runtime default traversal rejection
-  -> keep Node endpoint traversal refusal until review disposition is accepted
+  -> keep Node endpoint traversal refusal active
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- review the traversal enablement sequence against implemented tests and current scaffolds
-- list any missing request-enablement tests before replacing `desktop_traversal_not_implemented`
+- add an internal Node orchestration function or adapter for traversal requests
+- test authorization failure before helper invocation and provenance append
+- test helper-output validation failure before provenance append
+- test successful traversal summary creation without changing the public endpoint
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented

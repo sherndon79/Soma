@@ -64,6 +64,7 @@ Implemented:
 - fixture documents future traversal output schema while current schema rejects traversal
 - fixture documents future traversal output validator cases while current validator rejects them
 - pure future traversal output validator scaffold remains disconnected from current schema
+- documented future traversal provenance summary fields
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -76,25 +77,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design traversal provenance summary fields before enabling traversal output.
+Add disabled traversal provenance summary builder fixtures.
 
 Target:
 
 ```text
 traversal response
-  -> provenance summary only
+  -> pure summary builder
   -> no full traversal tree in provenance
   -> no traversal implementation
 ```
 
 Expected work:
 
-- keep `ROOT_OBJECT_KEYS` excluding `traversal`
-- keep `validateDesktopInspectionResult` rejecting traversal output
-- do not allow helper traversal payloads through endpoint validation
-- define future provenance fields for authorized root source, limits, returned node count, depth,
-  and truncation
 - keep current provenance behavior unchanged
+- add a pure future traversal provenance summary builder
+- test it emits counts, limits, root source metadata, and truncation only
+- test it omits traversal nodes, service/path lists, roles, child edges, and protected fields
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

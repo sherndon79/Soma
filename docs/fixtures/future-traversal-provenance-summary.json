@@ -1,0 +1,37 @@
+{
+  "status": "future_fixture_not_current_provenance",
+  "purpose": "Document candidate summary-only provenance fields for future traversal without storing traversal trees.",
+  "event_fields": {
+    "event_type": "desktop.inspect.accessibility_tree",
+    "capability": "desktop.inspect.accessibility_tree",
+    "traversal_requested": true,
+    "traversal_root_authorization": "prior_disclosure",
+    "traversal_root_source_event_id": "provenance-uuid",
+    "traversal_root_source_type": "application_root",
+    "requested_traversal_max_depth": 2,
+    "requested_traversal_max_nodes": 64,
+    "requested_traversal_max_children_per_node": 8,
+    "traversal_node_count": 12,
+    "traversal_max_returned_depth": 2,
+    "traversal_truncated": false,
+    "traversal_unavailable_reason": "",
+    "text_content_included": false
+  },
+  "must_not_include": [
+    "traversal",
+    "traversal_nodes",
+    "traversal_tree",
+    "node_service_paths",
+    "node_roles",
+    "child_edges",
+    "desktop_ref_id",
+    "name",
+    "description",
+    "text",
+    "states",
+    "actions",
+    "screenshot",
+    "pointer_state",
+    "keyboard_state"
+  ]
+}

@@ -1235,6 +1235,10 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.body.entries[0].root_object_available_count, 1);
     assert.equal(response.body.entries[0].window_count, 0);
     assert.equal(response.body.entries[0].tree_available, true);
+    assert.equal("traversal_requested" in response.body.entries[0], false);
+    assert.equal("traversal" in response.body.entries[0], false);
+    assert.equal("traversal_tree" in response.body.entries[0], false);
+    assert.equal("traversal_nodes" in response.body.entries[0], false);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;

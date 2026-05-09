@@ -180,6 +180,9 @@ failed queries, not raw error payloads from applications.
 
 Soma should not store the full traversal tree in provenance by default.
 
+See [Desktop Traversal Provenance](./desktop_traversal_provenance.md) for the summary-only
+provenance contract.
+
 Traversal provenance should record:
 
 - capability: `desktop.inspect.accessibility_tree`

@@ -158,7 +158,8 @@ multiple related calls with one live D-Bus connection.
 
 Before helper traversal is implemented:
 
-- add Node argument derivation tests for authorized traversal helper args
+- add Node argument derivation tests for authorized traversal helper args - covered by
+  `test/desktopBroker.test.js`
 - add Rust argument parser tests for valid traversal flags
 - add Rust parser rejection tests for missing, unknown, malformed, and out-of-range flags
 - add schema tests for accepted traversal output only after Node schema expands
@@ -173,4 +174,3 @@ Before helper traversal is implemented:
 - no `desktop_ref_id` helper output
 - no text/name/action/screenshot exposure
 - no desktop actuation
-

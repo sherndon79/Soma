@@ -59,6 +59,7 @@ Implemented:
 - disabled pure traversal request validator scaffold and tests
 - endpoint traversal guard rejects root_ref traversal before helper invocation or provenance
 - documented future traversal helper command and output contract
+- disabled traversal helper argument derivation fixtures
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -71,22 +72,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add disabled traversal helper argument derivation fixtures.
+Add Rust parser scaffolding for traversal helper args without implementing traversal.
 
 Target:
 
 ```text
 authorized traversal request
-  -> helper args from authorized root
-  -> helper not invoked by endpoint
+  -> Rust arg parser tests
+  -> command still not reachable from Node
   -> no traversal implementation
 ```
 
 Expected work:
 
-- add a pure helper-argument derivation function for future traversal
-- test root service/path and traversal limits map to helper args
-- keep current `desktopBrokerHelperArgs` behavior unchanged
+- add Rust parser function for future `inspect-atspi-traversal` flags
+- reject malformed, missing, unknown, and out-of-range traversal flags
+- keep command unimplemented or fail-closed
 - keep endpoint traversal guard unchanged
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged

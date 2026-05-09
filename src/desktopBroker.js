@@ -13,6 +13,11 @@ const DEFAULT_HELPER_PATH = fileURLToPath(
   new URL("../target/debug/soma-desktop-broker", import.meta.url),
 );
 const MAX_ROOT_CHILD_METADATA_LIMIT = 4;
+const TRAVERSAL_HELPER_LIMITS = {
+  maxDepth: [1, 4],
+  maxNodes: [1, 256],
+  maxChildrenPerNode: [1, 32],
+};
 
 export function desktopBrokerHelperArgs({ mode = "environment", maxApps, maxChildren } = {}) {
   const normalizedMode = normalizeInspectionMode(mode);
@@ -35,6 +40,46 @@ export function desktopBrokerHelperArgs({ mode = "environment", maxApps, maxChil
     );
   }
   return args;
+}
+
+export function desktopTraversalHelperArgs({
+  authorizedRoot,
+  maxDepth,
+  maxNodes,
+  maxChildrenPerNode,
+} = {}) {
+  if (
+    typeof authorizedRoot?.service !== "string" ||
+    typeof authorizedRoot?.path !== "string" ||
+    authorizedRoot.service.length === 0 ||
+    authorizedRoot.path.length === 0
+  ) {
+    throw new TypeError("authorizedRoot.service and authorizedRoot.path are required");
+  }
+  assertTraversalHelperLimit(maxDepth, "maxDepth");
+  assertTraversalHelperLimit(maxNodes, "maxNodes");
+  assertTraversalHelperLimit(maxChildrenPerNode, "maxChildrenPerNode");
+
+  return [
+    "inspect-atspi-traversal",
+    "--root-service",
+    authorizedRoot.service,
+    "--root-path",
+    authorizedRoot.path,
+    "--max-depth",
+    String(maxDepth),
+    "--max-nodes",
+    String(maxNodes),
+    "--max-children-per-node",
+    String(maxChildrenPerNode),
+  ];
+}
+
+function assertTraversalHelperLimit(value, name) {
+  const [minimum, maximum] = TRAVERSAL_HELPER_LIMITS[name];
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new TypeError(`${name} must be an integer from ${minimum} to ${maximum}`);
+  }
 }
 
 export async function inspectDesktopBrokerEnvironment({

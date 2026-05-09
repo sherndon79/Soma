@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { desktopBrokerHelperArgs } from "../src/desktopBroker.js";
+import { desktopBrokerHelperArgs, desktopTraversalHelperArgs } from "../src/desktopBroker.js";
 
 test("desktopBrokerHelperArgs preserves current invocation when limits are omitted", () => {
   assert.deepEqual(desktopBrokerHelperArgs(), ["inspect-environment"]);
@@ -55,4 +55,65 @@ test("desktopBrokerHelperArgs combines application and child helper hints", () =
       "4",
     ],
   );
+});
+
+test("desktopTraversalHelperArgs maps authorized root and traversal limits", () => {
+  assert.deepEqual(
+    desktopTraversalHelperArgs({
+      authorizedRoot: {
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/root",
+      },
+      maxDepth: 2,
+      maxNodes: 64,
+      maxChildrenPerNode: 8,
+    }),
+    [
+      "inspect-atspi-traversal",
+      "--root-service",
+      ":1.42",
+      "--root-path",
+      "/org/a11y/atspi/accessible/root",
+      "--max-depth",
+      "2",
+      "--max-nodes",
+      "64",
+      "--max-children-per-node",
+      "8",
+    ],
+  );
+});
+
+test("desktopTraversalHelperArgs requires an authorized concrete root", () => {
+  assert.throws(
+    () => desktopTraversalHelperArgs({
+      authorizedRoot: { service: ":1.42" },
+      maxDepth: 2,
+      maxNodes: 64,
+      maxChildrenPerNode: 8,
+    }),
+    /authorizedRoot\.service and authorizedRoot\.path are required/,
+  );
+});
+
+test("desktopTraversalHelperArgs validates traversal helper limits", () => {
+  for (const [field, value] of Object.entries({
+    maxDepth: 0,
+    maxNodes: 257,
+    maxChildrenPerNode: "8",
+  })) {
+    assert.throws(
+      () => desktopTraversalHelperArgs({
+        authorizedRoot: {
+          service: ":1.42",
+          path: "/org/a11y/atspi/accessible/root",
+        },
+        maxDepth: 2,
+        maxNodes: 64,
+        maxChildrenPerNode: 8,
+        [field]: value,
+      }),
+      new RegExp(`${field} must be an integer`),
+    );
+  }
 });

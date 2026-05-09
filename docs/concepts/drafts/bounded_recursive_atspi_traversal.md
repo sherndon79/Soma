@@ -343,6 +343,9 @@ Schema and runtime validator changes should land before helper traversal impleme
 keeps the trust boundary stable: helpers can only return traversal after Node has already learned
 how to reject malformed or over-broad traversal output.
 
+See [Desktop Traversal Helper Contract](./desktop_traversal_helper_contract.md) for the future
+Rust helper command and helper-side limit contract.
+
 Do not switch to a JSON Schema runtime dependency solely for traversal unless the hand-written
 checks become harder to audit than the dependency boundary. Traversal adds complexity, but it is
 still narrow enough for one more hand-rolled validator pass if tests cover the invariants above.

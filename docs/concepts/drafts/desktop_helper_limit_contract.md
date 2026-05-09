@@ -53,6 +53,9 @@ The public API exposes one `max_children` value. Node should derive helper argum
 If `max_children` is omitted, Node should omit both child-related helper flags and let the helper
 use its hard defaults. If `max_apps` is omitted, Node should omit `--max-applications`.
 
+Recursive traversal should use a distinct future helper command with distinct traversal limits.
+See [Desktop Traversal Helper Contract](./desktop_traversal_helper_contract.md).
+
 ## Why Split Child Limits
 
 The current schema allows up to:

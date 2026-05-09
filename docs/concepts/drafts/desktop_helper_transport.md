@@ -14,6 +14,10 @@ soma-desktop-broker inspect-atspi [limit flags]
 soma-desktop-broker inspect-focus
 ```
 
+Future recursive traversal should use a separate command contract rather than widening
+`inspect-atspi` implicitly. See
+[Desktop Traversal Helper Contract](./desktop_traversal_helper_contract.md).
+
 ## Decision
 
 Keep one-shot stdio for the current desktop inspection surface.

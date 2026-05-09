@@ -58,6 +58,7 @@ Implemented:
 - documented future traversal request validation against disclosed root refs
 - disabled pure traversal request validator scaffold and tests
 - endpoint traversal guard rejects root_ref traversal before helper invocation or provenance
+- documented future traversal helper command and output contract
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -70,23 +71,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design traversal helper contract before adding recursive helper behavior.
+Add disabled traversal helper argument derivation fixtures.
 
 Target:
 
 ```text
 authorized traversal request
-  -> helper input/output contract
-  -> Node validation still owns trust
+  -> helper args from authorized root
+  -> helper not invoked by endpoint
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define future Rust helper command and args for authorized traversal
-- define helper output fields and omission rules
-- keep helper authorization out of Rust
-- define helper-side limit enforcement and error behavior
+- add a pure helper-argument derivation function for future traversal
+- test root service/path and traversal limits map to helper args
+- keep current `desktopBrokerHelperArgs` behavior unchanged
+- keep endpoint traversal guard unchanged
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

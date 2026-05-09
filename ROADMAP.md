@@ -77,6 +77,8 @@ Implemented:
 - pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - pure Rust in-memory breadth-first traversal tests while helper command remains disabled
 - internal Rust traversal query boundary helper while helper command remains disabled
+- command-level Rust traversal execution test proving `inspect-atspi-traversal` remains disabled
+  with valid-looking args and emits no traversal JSON
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -90,27 +92,27 @@ Current authority boundary:
 
 ## Next Slice
 
-Add disabled command-level traversal execution tests before activation.
+Tighten traversal output gate readiness tests before activation.
 
 Target:
 
 ```text
-traversal readiness
-  -> command remains fail-closed despite internal helpers
-  -> default runtime and active schema still closed
-  -> endpoint still refuses traversal
-  -> helper command still refuses traversal
+traversal output readiness
+  -> future validator accepts only bounded traversal output
+  -> active schema and default runtime still reject traversal
+  -> endpoint and helper command still refuse traversal
+  -> output gate is tested before helper execution opens
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- add tests that valid `inspect-atspi-traversal` args still return not implemented
-- ensure disabled command emits no traversal JSON
-- keep parser validation failures unchanged
-- keep `inspect-atspi-traversal` returning not implemented
-- keep endpoint `desktop_traversal_not_implemented`
-- preserve current response bodies and schemas
+- add explicit future-validator tests for node count and children-per-node limits
+- add explicit future-validator tests for `text_content_included=true`
+- ensure duplicate ids, missing child refs, depth limits, protected fields, and withheld fields remain
+  pinned either by fixtures or direct assertions
+- preserve current active schema and default runtime rejection of traversal output
+- keep endpoint `desktop_traversal_not_implemented` and helper command not implemented
 - keep current runtime behavior unchanged
 
 Constraints:

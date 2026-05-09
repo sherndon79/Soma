@@ -25,6 +25,8 @@ Existing pieces that are present but not active:
 - internal Rust traversal output structs and JSON builder tests
 - internal Rust in-memory traversal builder and fake-observation limit tests
 - internal Rust traversal query boundary helper for role, child count, and bounded child refs
+- command-level Rust integration test proving `inspect-atspi-traversal` still returns not implemented
+  with valid-looking traversal args and emits no traversal JSON
 - future fixtures in `docs/fixtures/`
 
 Current active guards that must remain until the activation sequence reaches them:

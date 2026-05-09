@@ -65,6 +65,7 @@ Implemented:
 - fixture documents future traversal output validator cases while current validator rejects them
 - pure future traversal output validator scaffold remains disconnected from current schema
 - documented future traversal provenance summary fields
+- pure future traversal provenance summary builder remains disconnected from current provenance
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -77,23 +78,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add disabled traversal provenance summary builder fixtures.
+Define the traversal enablement sequence and remaining gates.
 
 Target:
 
 ```text
-traversal response
-  -> pure summary builder
-  -> no full traversal tree in provenance
+traversal readiness
+  -> ordered gates
+  -> implementation sequence
   -> no traversal implementation
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- add a pure future traversal provenance summary builder
-- test it emits counts, limits, root source metadata, and truncation only
-- test it omits traversal nodes, service/path lists, roles, child edges, and protected fields
+- document the remaining order for enabling traversal safely
+- identify which disabled scaffolds become active in which commit order
+- identify tests required before replacing the hard endpoint rejection
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

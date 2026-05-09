@@ -106,9 +106,12 @@ Before traversal opens:
 
 - prove current traversal requests append no provenance
 - prove current helper traversal output is rejected before provenance
-- add a pure summary builder test for future traversal provenance fields
-- prove the summary builder does not copy traversal nodes or node refs
-- prove unavailable traversal stores only summary code and counts
+- add a pure summary builder test for future traversal provenance fields - covered by
+  `test/desktopTraversalProvenance.test.js`
+- prove the summary builder does not copy traversal nodes or node refs - covered by
+  `test/desktopTraversalProvenance.test.js`
+- prove unavailable traversal stores only summary code and counts - covered by
+  `test/desktopTraversalProvenance.test.js`
 
 ## Non-Goals
 
@@ -117,4 +120,3 @@ Before traversal opens:
 - no durable object graph audit retention
 - no new runtime response fields
 - no desktop actuation
-

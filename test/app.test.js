@@ -1030,6 +1030,47 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
+test("desktop inspection endpoint rejects traversal-shaped helper output before provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-traversal-helper-output-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","name":"test-app","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[],"traversal":{"root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"},"nodes":[{"id":"n0","service":":1.42","path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"depth":0,"children":[]}],"limits":{"max_depth":1,"max_nodes":64,"max_children_per_node":8},"truncated":false,"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: { mode: "atspi" },
+    });
+
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.body.error, "desktop_inspection_schema_invalid");
+    assert.ok(response.body.validation_errors.includes(
+      "result.tree.applications[0].root_object.traversal is not allowed",
+    ));
+    assert.equal("inspection" in response.body, false);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 0);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
 test("desktop accessibility inspection rejects traversal request shapes until traversal is implemented", async () => {
   for (const [name, body] of Object.entries({
     disclosed_root_ref: {

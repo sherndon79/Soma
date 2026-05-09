@@ -68,6 +68,8 @@ Implemented:
   traversal
 - future full desktop inspection schema draft with bounded traversal while active schema remains
   closed
+- app/provider-overreach coverage rejects traversal-shaped helper output before disclosure registry
+  writes or provenance
 - documented future traversal provenance summary fields
 - pure future traversal provenance summary builder remains disconnected from current provenance
 - documented traversal enablement sequence and remaining gates
@@ -83,14 +85,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Add helper-overreach coverage for traversal-shaped helper payloads behind the disabled validator
-gate.
+Begin Rust traversal implementation planning without enabling the helper command.
 
 Target:
 
 ```text
 traversal readiness
-  -> rejected helper traversal output has no provenance
+  -> Rust implementation plan and test matrix
   -> default runtime and active schema still closed
   -> endpoint still refuses traversal
   -> no traversal implementation
@@ -99,11 +100,10 @@ traversal readiness
 Expected work:
 
 - keep current provenance behavior unchanged
-- keep default runtime validation rejecting traversal
-- add an app/provider-overreach test for helper output that includes traversal
-- ensure invalid traversal helper payloads are rejected before provenance
+- identify the smallest Rust units needed for bounded traversal
+- document output assembly, limit enforcement, truncation, and protected-field omission tests
+- keep `inspect-atspi-traversal` returning not implemented
 - keep endpoint `desktop_traversal_not_implemented`
-- keep helper traversal command unimplemented
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

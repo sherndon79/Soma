@@ -41,6 +41,8 @@ Runtime scaffold status:
 - opt-in full inspection validation is available through
   `validateFutureDesktopInspectionResultWithTraversal`
 - a separate future full inspection schema draft documents the bounded traversal response shape
+- endpoint/provider-overreach tests reject traversal-shaped helper output before disclosure registry
+  writes or provenance append
 - default runtime validation remains unchanged and still rejects `root_object.traversal`
 - the active JSON schema remains unchanged and still excludes traversal
 

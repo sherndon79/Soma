@@ -164,13 +164,13 @@ text/disclosure grant.
 Traversal should be explicit when the result is incomplete:
 
 - `truncated: true` when `max_depth`, `max_nodes`, or `max_children_per_node` stops traversal
-- `unavailable_reason: "atspi_unavailable"` when the AT-SPI bus is unavailable
-- `unavailable_reason: "root_not_disclosed"` when the requested root was not previously exposed or
-  user-selected
-- `unavailable_reason: "root_unavailable"` when the root cannot be queried
-- `unavailable_reason: "node_query_failed"` when one or more descendants cannot be read
-- `unavailable_reason: "output_limit_exceeded"` when helper output exceeds Node's accepted size
-  before schema validation
+- `desktop_traversal_root_not_disclosed` or related root-authorization errors before helper invocation
+  when the requested root was not previously exposed, user-selected, or still active
+- `unavailable_reason: "atspi_bus_address_unavailable"` when the helper cannot locate the AT-SPI bus
+- `unavailable_reason: "atspi_root_query_unavailable"` when the authorized root cannot be queried
+- `truncated: true` when one or more descendant queries fail after bounded traversal has started
+- helper-output schema rejection, not traversal provenance, when helper output exceeds Node's accepted
+  shape before validation
 
 Partial traversal can be useful, but partial results should not hide failures. If some nodes fail,
 the response should include only bounded metadata for successful nodes and a summary count of

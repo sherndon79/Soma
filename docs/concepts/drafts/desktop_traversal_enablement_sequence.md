@@ -15,8 +15,10 @@ Existing pieces that are present but not active:
 - `src/desktopTraversalOutput.js`: future traversal output validator
 - `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
   disabled traversal-aware full inspection validator gate
+- `docs/schemas/desktop-inspection-result-with-traversal.schema.json`: traversal-specific schema
+  artifact for authorized traversal output; not the default broker output contract
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`: future full
-  inspection schema draft
+  inspection schema draft retained as historical migration context
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
   and validated summary adapter
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
@@ -57,6 +59,8 @@ Runtime scaffold status:
 - opt-in full inspection validation is available through
   `validateFutureDesktopInspectionResultWithTraversal`
 - a separate future full inspection schema draft documents the bounded traversal response shape
+- a traversal-specific schema artifact exists under a non-future name while the default schema still
+  excludes traversal output
 - endpoint/provider-overreach tests reject traversal-shaped helper output before disclosure registry
   writes or provenance append
 - default runtime validation remains unchanged and still rejects `root_object.traversal`
@@ -68,8 +72,7 @@ Runtime scaffold status:
 
 Remaining changes before activation:
 
-- promote the future traversal schema to an active traversal-specific schema when request
-  authorization, helper execution, output validation, and provenance are ready
+- keep the traversal-specific schema aligned with the traversal-authorized runtime validator
 - keep `validateDesktopInspectionResult` closed by default; allow traversal output only on the
   traversal-authorized runtime path
 - keep protected fields rejected

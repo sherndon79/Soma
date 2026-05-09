@@ -19,18 +19,20 @@ The current default desktop inspection result remains the non-traversal contract
 
 The traversal-aware contract remains separate until activation:
 
+- `docs/schemas/desktop-inspection-result-with-traversal.schema.json`
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`
 - `validateFutureDesktopInspectionResultWithTraversal`
 - `validateFutureDesktopTraversalOutput`
 
-When traversal activates, promote the future schema to an active traversal-specific schema name
-rather than replacing the baseline schema outright. The likely active name is:
+Traversal output uses an active traversal-specific schema name rather than replacing the baseline
+schema outright:
 
 ```text
 docs/schemas/desktop-inspection-result-with-traversal.schema.json
 ```
 
-The future-prefixed draft can then be retired or left as historical migration context.
+The future-prefixed draft can be retired or left as historical migration context once the
+traversal-authorized runtime path is active.
 
 ## Rationale
 
@@ -83,4 +85,3 @@ Until those conditions are met, `validateDesktopInspectionResult` remains closed
 - no traversal provenance activation
 - no text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or
   desktop actuation
-

@@ -63,6 +63,9 @@ Implemented:
 - Rust traversal helper argument parser scaffold and tests
 - fixture documents future traversal output schema while current schema rejects traversal
 - fixture documents future traversal output validator cases while current validator rejects them
+- traversal-specific schema artifact exists under
+  `docs/schemas/desktop-inspection-result-with-traversal.schema.json` while the default schema
+  remains unchanged
 - pure future traversal output validator scaffold remains disconnected from current schema
 - explicit future traversal output validator tests for node count, children-per-node limits, and
   `text_content_included=false`
@@ -104,14 +107,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Promote traversal-specific schema artifact while keeping public traversal disabled.
+Name traversal-authorized runtime validator while keeping the default validator closed.
 
 Target:
 
 ```text
-traversal schema artifact
-  -> active traversal-specific schema exists under a non-future name
-  -> default desktop inspection schema remains unchanged
+traversal runtime adapter
+  -> traversal-authorized assertion/validator has a stable name
+  -> default desktop inspection assertion still rejects traversal
   -> runtime default still rejects traversal
   -> Node endpoint still refuses traversal
 ```
@@ -119,9 +122,9 @@ traversal schema artifact
 Expected work:
 
 - keep current provenance behavior unchanged
-- create `docs/schemas/desktop-inspection-result-with-traversal.schema.json` from the future draft
-- update schema tests to prove the default schema excludes traversal and the traversal-specific schema
-  accepts only bounded traversal
+- add an explicitly named traversal-authorized runtime validator/assertion wrapper
+- keep the current default validator/assertion behavior unchanged
+- update tests to prove traversal output is accepted only through the traversal-authorized path
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output

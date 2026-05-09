@@ -9,6 +9,10 @@ import {
 } from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
+const traversalSchemaPath = new URL(
+  "../docs/schemas/desktop-inspection-result-with-traversal.schema.json",
+  import.meta.url,
+);
 const futureTraversalSchemaPath = new URL(
   "../docs/schemas/future-desktop-inspection-result-with-traversal.schema.json",
   import.meta.url,
@@ -99,6 +103,66 @@ test("future traversal schema draft documents bounded traversal without replacin
   assert.equal(futureSchema.title, "Soma Future Desktop Inspection Result With Bounded Traversal");
   assert.equal("traversal" in schema.$defs.root_object.properties, false);
   assert.equal("traversal" in rootObject.properties, true);
+  assert.deepEqual(traversal.required, [
+    "root",
+    "nodes",
+    "limits",
+    "truncated",
+    "text_content_included",
+    "withheld_fields",
+  ]);
+  assert.equal(traversal.properties.text_content_included.const, false);
+  assert.equal(traversal.properties.nodes.maxItems, 256);
+  assert.equal(traversalNode.additionalProperties, false);
+  assert.deepEqual(Object.keys(traversalNode.properties), [
+    "id",
+    "service",
+    "path",
+    "role",
+    "child_count",
+    "depth",
+    "children",
+  ]);
+  assert.equal("name" in traversalNode.properties, false);
+  assert.equal("description" in traversalNode.properties, false);
+  assert.equal("text" in traversalNode.properties, false);
+  assert.equal("states" in traversalNode.properties, false);
+  assert.equal("actions" in traversalNode.properties, false);
+  assert.equal(traversalNode.properties.children.maxItems, 32);
+  assert.equal(traversalLimits.properties.max_depth.maximum, 4);
+  assert.equal(traversalLimits.properties.max_nodes.maximum, 256);
+  assert.equal(traversalLimits.properties.max_children_per_node.maximum, 32);
+});
+
+test("traversal-specific schema is promoted without changing the default schema", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const traversalSchema = JSON.parse(await readFile(traversalSchemaPath, "utf8"));
+  const futureSchema = JSON.parse(await readFile(futureTraversalSchemaPath, "utf8"));
+
+  assert.equal(traversalSchema.title, "Soma Desktop Inspection Result With Bounded Traversal");
+  assert.equal(
+    traversalSchema.$id,
+    "https://soma.local/schemas/desktop-inspection-result-with-traversal.schema.json",
+  );
+  assert.equal("traversal" in schema.$defs.root_object.properties, false);
+  assert.equal("traversal" in schema.$defs, false);
+  assert.equal("traversal" in traversalSchema.$defs.root_object.properties, true);
+  assert.equal("traversal" in traversalSchema.$defs, true);
+
+  assert.deepEqual(
+    withoutSchemaIdentity(traversalSchema),
+    withoutSchemaIdentity(futureSchema),
+  );
+});
+
+test("traversal-specific schema keeps bounded traversal fields separate from default schema", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const traversalSchema = JSON.parse(await readFile(traversalSchemaPath, "utf8"));
+  const traversal = traversalSchema.$defs.traversal;
+  const traversalNode = traversalSchema.$defs.traversal_node;
+  const traversalLimits = traversalSchema.$defs.traversal_limits;
+
+  assert.equal("traversal" in schema.$defs.root_object.properties, false);
   assert.deepEqual(traversal.required, [
     "root",
     "nodes",
@@ -361,6 +425,16 @@ function atspiResultWithTraversalNodeField(field, value) {
     truncated: false,
     text_content_included: false,
   });
+}
+
+function withoutSchemaIdentity(schema) {
+  const {
+    $id: _id,
+    title: _title,
+    $comment: _comment,
+    ...rest
+  } = schema;
+  return rest;
 }
 
 function baseAtspiResult(rootObjectOverrides = {}) {

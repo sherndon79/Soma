@@ -42,6 +42,9 @@ code-review template exists.
 
 - [Desktop Inspection Result](./schemas/desktop-inspection-result.schema.json) — current bounded
   read-only desktop broker output contract.
+- [Desktop Inspection Result With Traversal](./schemas/desktop-inspection-result-with-traversal.schema.json)
+  — traversal-specific contract for future authorized traversal output; not the default broker
+  output contract.
 
 ## Draft Concepts
 

@@ -5,6 +5,9 @@ use std::process::{Command, ExitCode};
 const MAX_APPLICATIONS: usize = 64;
 const MAX_ROOT_CHILD_REFS: usize = 8;
 const MAX_ROOT_CHILD_METADATA: usize = 4;
+const MAX_TRAVERSAL_DEPTH: usize = 4;
+const MAX_TRAVERSAL_NODES: usize = 256;
+const MAX_TRAVERSAL_CHILDREN_PER_NODE: usize = 32;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -27,14 +30,79 @@ fn main() -> ExitCode {
             println!("{}", inspect_focus_json());
             ExitCode::SUCCESS
         }
+        Some("inspect-atspi-traversal") => match TraversalArgs::parse(args) {
+            Ok(_) => {
+                eprintln!("inspect-atspi-traversal is not implemented");
+                ExitCode::from(2)
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(2)
+            }
+        },
         Some("help") | Some("--help") | None => {
-            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi|inspect-focus");
+            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi|inspect-focus|inspect-atspi-traversal");
             ExitCode::SUCCESS
         }
         Some(command) => {
             eprintln!("unknown command: {command}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TraversalArgs {
+    root_service: String,
+    root_path: String,
+    max_depth: usize,
+    max_nodes: usize,
+    max_children_per_node: usize,
+}
+
+impl TraversalArgs {
+    fn parse<I>(args: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut root_service = None;
+        let mut root_path = None;
+        let mut max_depth = None;
+        let mut max_nodes = None;
+        let mut max_children_per_node = None;
+        let mut args = args.into_iter();
+        while let Some(flag) = args.next() {
+            let value = args
+                .next()
+                .ok_or_else(|| format!("{flag} requires a value"))?;
+            match flag.as_str() {
+                "--root-service" => root_service = Some(parse_non_empty_string(&flag, &value)?),
+                "--root-path" => root_path = Some(parse_non_empty_string(&flag, &value)?),
+                "--max-depth" => {
+                    max_depth = Some(parse_limit(&flag, &value, 1, MAX_TRAVERSAL_DEPTH)?);
+                }
+                "--max-nodes" => {
+                    max_nodes = Some(parse_limit(&flag, &value, 1, MAX_TRAVERSAL_NODES)?);
+                }
+                "--max-children-per-node" => {
+                    max_children_per_node = Some(parse_limit(
+                        &flag,
+                        &value,
+                        1,
+                        MAX_TRAVERSAL_CHILDREN_PER_NODE,
+                    )?);
+                }
+                _ => return Err(format!("unknown inspect-atspi-traversal option: {flag}")),
+            }
+        }
+        Ok(Self {
+            root_service: root_service.ok_or("--root-service is required")?,
+            root_path: root_path.ok_or("--root-path is required")?,
+            max_depth: max_depth.ok_or("--max-depth is required")?,
+            max_nodes: max_nodes.ok_or("--max-nodes is required")?,
+            max_children_per_node: max_children_per_node
+                .ok_or("--max-children-per-node is required")?,
+        })
     }
 }
 
@@ -95,6 +163,13 @@ fn parse_limit(flag: &str, value: &str, minimum: usize, maximum: usize) -> Resul
         ));
     }
     Ok(parsed)
+}
+
+fn parse_non_empty_string(flag: &str, value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Err(format!("{flag} must be a non-empty string"));
+    }
+    Ok(value.to_string())
 }
 
 fn inspect_focus_json() -> String {
@@ -1022,6 +1097,116 @@ mod tests {
             error,
             "--max-root-child-refs must be an integer from 0 to 8"
         );
+    }
+
+    #[test]
+    fn traversal_args_parse_authorized_root_and_limits() {
+        let args = TraversalArgs::parse([
+            "--root-service".to_string(),
+            ":1.42".to_string(),
+            "--root-path".to_string(),
+            "/org/a11y/atspi/accessible/root".to_string(),
+            "--max-depth".to_string(),
+            "2".to_string(),
+            "--max-nodes".to_string(),
+            "64".to_string(),
+            "--max-children-per-node".to_string(),
+            "8".to_string(),
+        ])
+        .expect("traversal args");
+
+        assert_eq!(
+            args,
+            TraversalArgs {
+                root_service: ":1.42".to_string(),
+                root_path: "/org/a11y/atspi/accessible/root".to_string(),
+                max_depth: 2,
+                max_nodes: 64,
+                max_children_per_node: 8,
+            }
+        );
+    }
+
+    #[test]
+    fn traversal_args_reject_missing_required_flags() {
+        let error = TraversalArgs::parse([
+            "--root-service".to_string(),
+            ":1.42".to_string(),
+            "--max-depth".to_string(),
+            "2".to_string(),
+            "--max-nodes".to_string(),
+            "64".to_string(),
+            "--max-children-per-node".to_string(),
+            "8".to_string(),
+        ])
+        .expect_err("error");
+
+        assert_eq!(error, "--root-path is required");
+    }
+
+    #[test]
+    fn traversal_args_reject_unknown_flags() {
+        let error = TraversalArgs::parse(["--root-ref".to_string(), "desktop-ref-1".to_string()])
+            .expect_err("error");
+
+        assert_eq!(error, "unknown inspect-atspi-traversal option: --root-ref");
+    }
+
+    #[test]
+    fn traversal_args_reject_out_of_range_limits() {
+        let error = TraversalArgs::parse([
+            "--root-service".to_string(),
+            ":1.42".to_string(),
+            "--root-path".to_string(),
+            "/root".to_string(),
+            "--max-depth".to_string(),
+            "5".to_string(),
+            "--max-nodes".to_string(),
+            "64".to_string(),
+            "--max-children-per-node".to_string(),
+            "8".to_string(),
+        ])
+        .expect_err("error");
+
+        assert_eq!(error, "--max-depth must be an integer from 1 to 4");
+    }
+
+    #[test]
+    fn traversal_args_reject_non_integer_limits() {
+        let error = TraversalArgs::parse([
+            "--root-service".to_string(),
+            ":1.42".to_string(),
+            "--root-path".to_string(),
+            "/root".to_string(),
+            "--max-depth".to_string(),
+            "2".to_string(),
+            "--max-nodes".to_string(),
+            "many".to_string(),
+            "--max-children-per-node".to_string(),
+            "8".to_string(),
+        ])
+        .expect_err("error");
+
+        assert_eq!(error, "--max-nodes must be an integer from 1 to 256");
+    }
+
+    #[test]
+    fn traversal_args_reject_empty_root_values() {
+        let error = TraversalArgs::parse([
+            "--root-service".to_string(),
+            "".to_string(),
+            "--root-path".to_string(),
+            "/root".to_string(),
+            "--max-depth".to_string(),
+            "2".to_string(),
+            "--max-nodes".to_string(),
+            "64".to_string(),
+            "--max-children-per-node".to_string(),
+            "8".to_string(),
+        ])
+        .expect_err("error");
+
+        assert_eq!(error, "--root-service must be a non-empty string");
     }
 }
 

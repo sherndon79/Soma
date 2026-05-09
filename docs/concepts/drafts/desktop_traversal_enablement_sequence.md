@@ -30,6 +30,10 @@ Existing pieces that are present but not active:
 - `attachTraversalToDesktopInspectionResult` in `src/desktopBroker.js`: internal adapter that attaches
   validated traversal output to a matching root object through the traversal-authorized runtime
   assertion
+- `runInternalDesktopTraversalRequest` in `src/desktopTraversalPipeline.js`: internal orchestration
+  seam that composes root-ref validation, disclosure-registry authorization, helper invocation,
+  traversal attachment, and validated summary provenance while remaining disconnected from the public
+  endpoint
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
 - `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
   schema/runtime activation decision
@@ -151,6 +155,8 @@ Required tests:
 - helper output is validated before response/provenance - covered by `test/desktopBroker.test.js`
 - traversal-bearing desktop inspection output uses the traversal-authorized runtime assertion while
   the default assertion remains closed - covered by `test/desktopBroker.test.js`
+- internal traversal request pipeline composes authorization and helper invocation while the public
+  endpoint remains refused - covered by `test/desktopTraversalPipeline.test.js`
 
 ### 4. Provenance Gate
 
@@ -166,13 +172,16 @@ Changes:
 Required tests:
 
 - successful traversal provenance includes root source, limits, counts, depth, truncation, and
-  `text_content_included=false`
+  `text_content_included=false` - covered by `test/desktopTraversalPipeline.test.js` and
+  `test/desktopTraversalProvenance.test.js`
 - provenance omits traversal tree, node ids, service/path lists, roles, child edges, and protected
   fields
 - unavailable traversal stores only a stable unavailable reason and zero counts
 - rejected traversal request writes no provenance
 - schema-rejected traversal helper output writes no provenance - covered by current endpoint
   no-provenance tests and future adapter validation tests
+- helper-output validation failure writes no internal traversal provenance - covered by
+  `test/desktopTraversalPipeline.test.js`
 
 ## Activation Checklist
 

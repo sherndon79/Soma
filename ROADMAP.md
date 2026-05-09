@@ -104,6 +104,9 @@ Implemented:
   registry authorization, disclosure registry writes, or provenance append
 - request-enablement readiness review completed; public traversal activation remains blocked on an
   internal Node orchestration seam
+- internal traversal request pipeline composes root-ref validation, disclosure-registry authorization,
+  helper invocation, traversal attachment, and summary provenance while the public endpoint remains
+  refused
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -117,14 +120,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare an internal traversal request pipeline while keeping the endpoint traversal refusal.
+Review internal traversal pipeline readiness before activating the public Rust command or endpoint.
 
 Target:
 
 ```text
-internal traversal request pipeline
-  -> compose root_ref validation, registry authorization, helper invocation, output attachment, and provenance summary
-  -> test successful and rejected paths with fake helpers/disclosures
+traversal pipeline activation review
+  -> confirm internal orchestration test coverage
+  -> identify any missing Rust-command activation gates
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
 ```
@@ -132,10 +135,9 @@ internal traversal request pipeline
 Expected work:
 
 - keep current provenance behavior unchanged
-- add an internal Node orchestration function or adapter for traversal requests
-- test authorization failure before helper invocation and provenance append
-- test helper-output validation failure before provenance append
-- test successful traversal summary creation without changing the public endpoint
+- review the internal traversal pipeline against the activation checklist
+- decide whether the next safe slice is public Rust command activation or additional pipeline tests
+- list any missing tests before changing `inspect-atspi-traversal` behavior
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented

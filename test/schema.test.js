@@ -4,8 +4,10 @@ import test from "node:test";
 
 import {
   assertDesktopInspectionResult,
+  assertTraversalAuthorizedDesktopInspectionResult,
   validateDesktopInspectionResult,
   validateFutureDesktopInspectionResultWithTraversal,
+  validateTraversalAuthorizedDesktopInspectionResult,
 } from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
@@ -307,25 +309,27 @@ test("future traversal output cases remain rejected by current runtime validator
 
 test("future traversal-aware desktop validator accepts bounded traversal output behind an explicit gate", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
-  const result = validateFutureDesktopInspectionResultWithTraversal(
-    atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal),
-  );
+  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal);
+  const result = validateFutureDesktopInspectionResultWithTraversal(traversalResult);
+  const namedResult = validateTraversalAuthorizedDesktopInspectionResult(traversalResult);
 
   assert.equal(result.valid, true);
   assert.deepEqual(result.errors, []);
+  assert.deepEqual(namedResult, result);
+  assert.equal(assertTraversalAuthorizedDesktopInspectionResult(traversalResult), traversalResult);
 
   const currentResult = validateDesktopInspectionResult(
-    atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal),
+    traversalResult,
   );
   assert.equal(currentResult.valid, false);
   assert.ok(currentResult.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
 });
 
-test("future traversal-aware desktop validator rejects invalid traversal output before provenance", async () => {
+test("traversal-authorized desktop validator rejects invalid traversal output before provenance", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
 
   for (const invalidCase of fixture.invalid_cases) {
-    const result = validateFutureDesktopInspectionResultWithTraversal(
+    const result = validateTraversalAuthorizedDesktopInspectionResult(
       atspiResultWithRootObjectField("traversal", invalidCase.traversal),
     );
 
@@ -335,6 +339,27 @@ test("future traversal-aware desktop validator rejects invalid traversal output 
       invalidCase.name,
     );
   }
+});
+
+test("traversal-authorized desktop assertion uses stable error semantics", async () => {
+  const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
+
+  assert.throws(
+    () => assertTraversalAuthorizedDesktopInspectionResult(
+      atspiResultWithRootObjectField("traversal", {
+        ...fixture.valid_case.traversal,
+        text_content_included: true,
+      }),
+    ),
+    (error) => {
+      assert.equal(error.code, "desktop_traversal_authorized_inspection_schema_invalid");
+      assert.equal(error.statusCode, 502);
+      assert.ok(error.validation_errors.includes(
+        "result.tree.applications[0].root_object.traversal.text_content_included must be false",
+      ));
+      return true;
+    },
+  );
 });
 
 test("desktop inspection runtime validator rejects desktop_ref_id until exposure is implemented", () => {

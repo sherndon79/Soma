@@ -66,9 +66,25 @@ export function validateDesktopInspectionResult(value, options = {}) {
 }
 
 export function validateFutureDesktopInspectionResultWithTraversal(value) {
+  return validateTraversalAuthorizedDesktopInspectionResult(value);
+}
+
+export function validateTraversalAuthorizedDesktopInspectionResult(value) {
   return validateDesktopInspectionResult(value, {
     allowTraversalOutput: true,
   });
+}
+
+export function assertTraversalAuthorizedDesktopInspectionResult(value) {
+  const result = validateTraversalAuthorizedDesktopInspectionResult(value);
+  if (!result.valid) {
+    const error = new Error(`Traversal-authorized desktop inspection result failed schema validation: ${result.errors.join("; ")}`);
+    error.statusCode = 502;
+    error.code = "desktop_traversal_authorized_inspection_schema_invalid";
+    error.validation_errors = result.errors;
+    throw error;
+  }
+  return value;
 }
 
 export function assertDesktopInspectionResult(value) {

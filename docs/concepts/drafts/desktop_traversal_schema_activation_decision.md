@@ -21,6 +21,8 @@ The traversal-aware contract remains separate until activation:
 
 - `docs/schemas/desktop-inspection-result-with-traversal.schema.json`
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`
+- `validateTraversalAuthorizedDesktopInspectionResult`
+- `assertTraversalAuthorizedDesktopInspectionResult`
 - `validateFutureDesktopInspectionResultWithTraversal`
 - `validateFutureDesktopTraversalOutput`
 

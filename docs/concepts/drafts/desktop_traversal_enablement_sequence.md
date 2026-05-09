@@ -15,6 +15,9 @@ Existing pieces that are present but not active:
 - `src/desktopTraversalOutput.js`: future traversal output validator
 - `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
   disabled traversal-aware full inspection validator gate
+- `validateTraversalAuthorizedDesktopInspectionResult` and
+  `assertTraversalAuthorizedDesktopInspectionResult` in `src/desktopInspectionSchema.js`: stable
+  traversal-authorized runtime validation path
 - `docs/schemas/desktop-inspection-result-with-traversal.schema.json`: traversal-specific schema
   artifact for authorized traversal output; not the default broker output contract
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`: future full
@@ -58,6 +61,9 @@ Runtime scaffold status:
 
 - opt-in full inspection validation is available through
   `validateFutureDesktopInspectionResultWithTraversal`
+- stable traversal-authorized validation is available through
+  `validateTraversalAuthorizedDesktopInspectionResult` and
+  `assertTraversalAuthorizedDesktopInspectionResult`
 - a separate future full inspection schema draft documents the bounded traversal response shape
 - a traversal-specific schema artifact exists under a non-future name while the default schema still
   excludes traversal output

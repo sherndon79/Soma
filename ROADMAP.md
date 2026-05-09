@@ -71,6 +71,8 @@ Implemented:
   `text_content_included=false`
 - disabled traversal-aware full inspection validator gate while default runtime validation rejects
   traversal
+- named traversal-authorized runtime validator/assertion while the default desktop inspection
+  validator/assertion remains traversal-closed
 - future full desktop inspection schema draft with bounded traversal while active schema remains
   closed
 - app/provider-overreach coverage rejects traversal-shaped helper output before disclosure registry
@@ -107,14 +109,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Name traversal-authorized runtime validator while keeping the default validator closed.
+Route internal traversal helper output through the traversal-authorized runtime assertion.
 
 Target:
 
 ```text
-traversal runtime adapter
-  -> traversal-authorized assertion/validator has a stable name
-  -> default desktop inspection assertion still rejects traversal
+traversal helper runtime validation
+  -> internal helper path validates traversal-bearing inspection output through named assertion
+  -> default desktop inspection assertion remains traversal-closed
   -> runtime default still rejects traversal
   -> Node endpoint still refuses traversal
 ```
@@ -122,7 +124,8 @@ traversal runtime adapter
 Expected work:
 
 - keep current provenance behavior unchanged
-- add an explicitly named traversal-authorized runtime validator/assertion wrapper
+- adapt internal traversal helper preparation to use the named traversal-authorized runtime assertion
+  where full desktop inspection output is assembled or validated
 - keep the current default validator/assertion behavior unchanged
 - update tests to prove traversal output is accepted only through the traversal-authorized path
 - keep `validateDesktopInspectionResult` closed by default

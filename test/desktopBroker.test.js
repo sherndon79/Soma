@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { desktopBrokerHelperArgs, desktopTraversalHelperArgs } from "../src/desktopBroker.js";
+import {
+  assertFutureDesktopTraversalHelperOutput,
+  desktopBrokerHelperArgs,
+  desktopTraversalHelperArgs,
+  inspectDesktopTraversalWithRustHelper,
+} from "../src/desktopBroker.js";
 
 test("desktopBrokerHelperArgs preserves current invocation when limits are omitted", () => {
   assert.deepEqual(desktopBrokerHelperArgs(), ["inspect-environment"]);
@@ -117,3 +125,96 @@ test("desktopTraversalHelperArgs validates traversal helper limits", () => {
     );
   }
 });
+
+test("assertFutureDesktopTraversalHelperOutput validates traversal helper output", () => {
+  const traversal = validTraversalOutput();
+
+  assert.equal(assertFutureDesktopTraversalHelperOutput(traversal), traversal);
+  assert.throws(
+    () => assertFutureDesktopTraversalHelperOutput({
+      ...traversal,
+      nodes: [
+        {
+          ...traversal.nodes[0],
+          name: "private window title",
+        },
+      ],
+    }),
+    (error) => {
+      assert.equal(error.code, "desktop_traversal_helper_output_invalid");
+      assert.deepEqual(error.validation_errors, ["traversal.nodes[0].name is not allowed"]);
+      return true;
+    },
+  );
+});
+
+test("inspectDesktopTraversalWithRustHelper invokes helper and validates traversal output", async () => {
+  const helperPath = await executableScript("traversal-helper", `#!/bin/sh
+printf '%s\\n' '${JSON.stringify(validTraversalOutput())}'
+`);
+
+  const traversal = await inspectDesktopTraversalWithRustHelper({
+    helperPath,
+    authorizedRoot: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+    maxDepth: 2,
+    maxNodes: 64,
+    maxChildrenPerNode: 8,
+  });
+
+  assert.deepEqual(traversal, validTraversalOutput());
+});
+
+test("inspectDesktopTraversalWithRustHelper rejects schema-invalid traversal output", async () => {
+  const traversal = validTraversalOutput();
+  const helperPath = await executableScript("bad-traversal-helper", `#!/bin/sh
+printf '%s\\n' '${JSON.stringify({ ...traversal, text_content_included: true })}'
+`);
+
+  await assert.rejects(
+    inspectDesktopTraversalWithRustHelper({
+      helperPath,
+      authorizedRoot: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+      maxDepth: 2,
+      maxNodes: 64,
+      maxChildrenPerNode: 8,
+    }),
+    (error) => {
+      assert.equal(error.code, "desktop_traversal_helper_output_invalid");
+      assert.ok(error.validation_errors.includes("traversal.text_content_included must be false"));
+      return true;
+    },
+  );
+});
+
+function validTraversalOutput() {
+  return {
+    root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+    nodes: [
+      {
+        id: "n0",
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/root",
+        role: "application",
+        child_count: 0,
+        depth: 0,
+        children: [],
+      },
+    ],
+    limits: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    truncated: false,
+    text_content_included: false,
+    withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+async function executableScript(prefix, contents) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), `soma-${prefix}-`));
+  const scriptPath = path.join(directory, "helper.sh");
+  await writeFile(scriptPath, contents, "utf8");
+  await chmod(scriptPath, 0o755);
+  return scriptPath;
+}

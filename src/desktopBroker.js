@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { assertDesktopInspectionResult } from "./desktopInspectionSchema.js";
+import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_HELPER_PATH = fileURLToPath(
@@ -166,6 +167,39 @@ export async function inspectFocusedDesktopObject({
   }));
 }
 
+export async function inspectDesktopTraversalWithRustHelper({
+  authorizedRoot,
+  maxDepth,
+  maxNodes,
+  maxChildrenPerNode,
+  env = process.env,
+  helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
+} = {}) {
+  const helperArgs = desktopTraversalHelperArgs({
+    authorizedRoot,
+    maxDepth,
+    maxNodes,
+    maxChildrenPerNode,
+  });
+  const helperTraversal = await inspectTraversalWithRustHelper(helperPath, helperArgs);
+  if (helperTraversal === null) {
+    return null;
+  }
+  return assertFutureDesktopTraversalHelperOutput(helperTraversal);
+}
+
+export function assertFutureDesktopTraversalHelperOutput(value) {
+  const result = validateFutureDesktopTraversalOutput(value);
+  if (!result.valid) {
+    const error = new Error(`Desktop traversal helper output failed validation: ${result.errors.join("; ")}`);
+    error.statusCode = 502;
+    error.code = "desktop_traversal_helper_output_invalid";
+    error.validation_errors = result.errors;
+    throw error;
+  }
+  return value;
+}
+
 async function inspectWithRustHelper(helperPath, args) {
   if (!helperPath || !(await isExecutable(helperPath))) {
     return null;
@@ -201,6 +235,22 @@ async function inspectFocusWithRustHelper(helperPath) {
       ...payload,
       broker_source: payload.broker_source ?? "rust_helper",
     };
+  } catch {
+    return null;
+  }
+}
+
+async function inspectTraversalWithRustHelper(helperPath, args) {
+  if (!helperPath || !(await isExecutable(helperPath))) {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync(helperPath, args, {
+      timeout: 2000,
+      maxBuffer: 512_000,
+    });
+    return JSON.parse(stdout);
   } catch {
     return null;
   }

@@ -168,6 +168,8 @@ Before helper traversal is implemented:
 - add Rust parser rejection tests for missing, unknown, malformed, and out-of-range flags - covered
   by `crates/soma-desktop-broker/src/main.rs`
 - add schema tests for accepted traversal output only after Node schema expands
+- add internal Node helper-output validation tests for the traversal block before endpoint activation -
+  covered by `test/desktopBroker.test.js`
 - add provider-overreach tests for traversal nodes containing names, text, states, actions,
   screenshots, pointer state, or keyboard state
 - keep endpoint tests proving traversal requests do not invoke helpers until traversal is enabled

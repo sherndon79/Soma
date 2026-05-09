@@ -19,6 +19,8 @@ Existing pieces that are present but not active:
   inspection schema draft
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
+- `inspectDesktopTraversalWithRustHelper` in `src/desktopBroker.js`: internal helper invocation and
+  future traversal-output validation path, not called by the public endpoint
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
 - `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
   schema/runtime activation decision
@@ -131,7 +133,7 @@ Required tests:
 - Node derives traversal helper args from authorized root and limits
 - no raw `root_ref` is passed to Rust
 - no helper invocation happens for unauthorized roots
-- helper output is validated before response/provenance
+- helper output is validated before response/provenance - covered by `test/desktopBroker.test.js`
 
 ### 4. Provenance Gate
 

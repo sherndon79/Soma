@@ -83,6 +83,8 @@ Implemented:
 - internal Rust traversal query boundary helper while helper command remains disabled
 - private Rust traversal bridge connects validated args, bounded traversal assembly, and the live
   AT-SPI query boundary while the public helper command remains disabled
+- internal Node traversal helper invocation path derives args and validates traversal helper output
+  through the future traversal-output validator while the endpoint remains disabled
 - command-level Rust traversal execution test proving `inspect-atspi-traversal` remains disabled
   with valid-looking args and emits no traversal JSON
 - documented implementation guide and component review scope
@@ -98,14 +100,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare Node traversal helper invocation behind the existing endpoint refusal.
+Prepare summary-only traversal provenance wiring behind disabled traversal.
 
 Target:
 
 ```text
-node traversal helper invocation
-  -> Node can derive and validate traversal helper args from an authorized root
-  -> helper invocation remains unreachable from public endpoint
+traversal provenance prep
+  -> future provenance builder is shaped for validated traversal output
+  -> helper/schema rejection still writes no provenance
   -> Node endpoint still refuses traversal
   -> active schema/runtime behavior still rejects traversal by default
 ```
@@ -113,9 +115,9 @@ node traversal helper invocation
 Expected work:
 
 - keep current provenance behavior unchanged
-- add internal Node coverage for traversal helper invocation shape and output validation path where
-  possible without opening the endpoint
-- keep helper output flowing through explicit traversal-aware validation only on the future path
+- add internal coverage or small adapter surface for future traversal provenance wiring after output
+  validation
+- keep rejected helper output and rejected traversal requests provenance-free
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented

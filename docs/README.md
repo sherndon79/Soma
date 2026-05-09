@@ -59,6 +59,7 @@ should inform implementation.
 - [Desktop Helper Transport](./concepts/drafts/desktop_helper_transport.md)
 - [Desktop Inspection Schema Validation](./concepts/drafts/desktop_inspection_schema_validation.md)
 - [Desktop Request Contract Baseline](./concepts/drafts/desktop_request_contract_baseline.md)
+- [Desktop Traversal Schema Activation Decision](./concepts/drafts/desktop_traversal_schema_activation_decision.md)
 - [Escalation and Planning](./concepts/drafts/escalation_and_planning.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
 - [Grant Lifecycle](./concepts/drafts/grant_lifecycle.md)

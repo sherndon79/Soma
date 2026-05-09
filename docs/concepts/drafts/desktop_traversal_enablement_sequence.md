@@ -20,6 +20,8 @@ Existing pieces that are present but not active:
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
+- `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
+  schema/runtime activation decision
 - `docs/concepts/drafts/desktop_traversal_rust_implementation_plan.md`: Rust internal unit and
   test-matrix plan
 - internal Rust traversal output structs and JSON builder tests
@@ -54,13 +56,15 @@ Runtime scaffold status:
 - the active JSON schema remains unchanged and still excludes traversal
 - focused future-validator tests pin node count, depth, child refs, children-per-node limits,
   protected fields, withheld fields, and `text_content_included=false`
+- schema activation decision keeps traversal on a traversal-authorized validation path rather than
+  making the default desktop inspection validator accept traversal output
 
 Remaining changes before activation:
 
-- decide when to replace or version the active `docs/schemas/desktop-inspection-result.schema.json`
-  with the future traversal-aware draft
-- switch the active runtime path to allow `traversal` only when the endpoint is ready to consume
-  validated traversal helper output
+- promote the future traversal schema to an active traversal-specific schema when request
+  authorization, helper execution, output validation, and provenance are ready
+- keep `validateDesktopInspectionResult` closed by default; allow traversal output only on the
+  traversal-authorized runtime path
 - keep protected fields rejected
 
 Required tests:

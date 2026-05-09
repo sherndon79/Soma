@@ -76,6 +76,8 @@ Implemented:
 - pure future traversal provenance summary builder remains disconnected from current provenance
 - documented traversal enablement sequence and remaining gates
 - documented Rust traversal implementation plan and test matrix
+- documented traversal schema activation decision: traversal output uses a traversal-authorized
+  schema/runtime path, while default desktop inspection validation remains closed
 - pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - pure Rust in-memory breadth-first traversal tests while helper command remains disabled
 - internal Rust traversal query boundary helper while helper command remains disabled
@@ -94,25 +96,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Document the traversal output activation decision before switching active schema/runtime behavior.
+Implement disabled Rust traversal helper execution behind the existing command guard.
 
 Target:
 
 ```text
-traversal output activation decision
-  -> active schema replacement or versioning path is explicit
-  -> runtime validator switch point is named
-  -> helper execution remains disabled
-  -> endpoint still refuses traversal
+rust traversal helper internals
+  -> helper can build bounded traversal from live AT-SPI query boundary
+  -> public inspect-atspi-traversal command still returns not implemented
+  -> Node endpoint still refuses traversal
+  -> active schema/runtime behavior still rejects traversal by default
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- decide whether traversal output enters by replacing the active desktop inspection schema or by
-  versioning the schema/validator surface
-- document the exact gate that changes `validateDesktopInspectionResult` behavior
-- preserve current active schema and default runtime rejection of traversal output in this slice
+- connect the internal Rust traversal query boundary to bounded traversal assembly behind a private
+  helper function
+- keep `inspect-atspi-traversal` returning not implemented
+- preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented
 - keep current runtime behavior unchanged
 

@@ -13,11 +13,10 @@ implementation posture.
 Primary paths:
 
 - `src/app.js`
-- `src/policy.js`
+- `src/harness.js`
 - `src/harnessModules.js`
-- `src/harnessModuleStore.js`
-- `config/harness.base.json`
-- `config/harness.modules.json`
+- `config/base-harness.json`
+- `config/harness-modules.json`
 
 Supporting docs:
 
@@ -38,11 +37,10 @@ Review focus:
 Primary paths:
 
 - `src/capabilityCatalog.js`
-- `src/providerRegistry.js`
-- `src/grantStore.js`
-- `config/capabilities.json`
-- `config/providers.json`
-- `config/grants.readonly.json`
+- `src/grants.js`
+- `config/capability-catalog.json`
+- `config/provider-registry.json`
+- `config/grants.json`
 
 Supporting docs:
 
@@ -85,12 +83,12 @@ Review focus:
 
 Primary paths:
 
-- `src/localModelClient.js`
+- `src/modelClient.js`
 - `src/escalationTriggers.js`
 - `src/capabilityEval.js`
 - `src/app.js`
 - `src/cli.js`
-- `config/runtime.profiles.json`
+- `config/runtime-profiles.json`
 
 Supporting docs:
 
@@ -129,13 +127,35 @@ Review focus:
 - memory does not become authority
 - future durable memory changes include review, allowed uses, forbidden uses, and deletion paths
 
+## Cognitive Load Stewardship
+
+Primary paths:
+
+- `src/cognitiveLoad.js`
+- `src/app.js`
+- `docs/concepts/drafts/cognitive_load_stewardship.md`
+
+Supporting docs:
+
+- `docs/principles.md`
+- `docs/failure_modes.md`
+- `docs/operators.md`
+
+Review focus:
+
+- stewardship remains advisory and non-diagnostic
+- overwhelm signals do not become surveillance or coercive intervention
+- reminders are phrased as optional care, not commands
+- cognitive-load observations are not persisted beyond their authorized scope
+- no visual, biometric, or durable inference behavior is implied by text-only heuristics
+
 ## File Access
 
 Primary paths:
 
 - `src/fileAccess.js`
 - `src/app.js`
-- `config/harness.base.json`
+- `config/base-harness.json`
 
 Supporting docs:
 

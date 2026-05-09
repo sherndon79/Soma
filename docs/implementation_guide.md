@@ -88,6 +88,10 @@ Update docs in the same change when a patch alters:
 Reviews and roadmap entries can record the moment, but they are not the final source of truth.
 Canonical docs and current implementation references must carry the resolved posture.
 
+Drafts need an explicit promotion, split, or retirement decision when implementation stabilizes.
+Do not treat a draft as canonical only because code now exists; move the resolved posture into the
+current architecture, operator, security, migration, or component reference that owns it.
+
 ## Validation Before Execution
 
 Validate before work happens, then validate again before results cross back to the caller.

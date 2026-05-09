@@ -66,6 +66,7 @@ Implemented:
 - pure future traversal output validator scaffold remains disconnected from current schema
 - documented future traversal provenance summary fields
 - pure future traversal provenance summary builder remains disconnected from current provenance
+- documented traversal enablement sequence and remaining gates
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -78,23 +79,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Define the traversal enablement sequence and remaining gates.
+Begin traversal output schema activation behind endpoint refusal.
 
 Target:
 
 ```text
 traversal readiness
-  -> ordered gates
-  -> implementation sequence
+  -> schema/runtime output gate
+  -> endpoint still refuses traversal
   -> no traversal implementation
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- document the remaining order for enabling traversal safely
-- identify which disabled scaffolds become active in which commit order
-- identify tests required before replacing the hard endpoint rejection
+- extend schema/runtime validator to accept the bounded traversal output shape
+- keep endpoint `desktop_traversal_not_implemented`
+- keep helper traversal command unimplemented
+- ensure invalid traversal helper payloads are rejected before provenance
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

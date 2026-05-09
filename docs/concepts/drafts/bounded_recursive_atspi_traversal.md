@@ -359,6 +359,9 @@ Schema and runtime validator changes should land before helper traversal impleme
 keeps the trust boundary stable: helpers can only return traversal after Node has already learned
 how to reject malformed or over-broad traversal output.
 
+See [Desktop Traversal Enablement Sequence](./desktop_traversal_enablement_sequence.md) for the
+ordered gates that must land before replacing `desktop_traversal_not_implemented`.
+
 See [Desktop Traversal Helper Contract](./desktop_traversal_helper_contract.md) for the future
 Rust helper command and helper-side limit contract.
 

@@ -68,6 +68,8 @@ request validation is documented in
 [desktop traversal request validation](./docs/concepts/drafts/desktop_traversal_request_validation.md).
 Future traversal provenance is expected to remain summary-only by default, as documented in
 [desktop traversal provenance](./docs/concepts/drafts/desktop_traversal_provenance.md).
+The remaining gates before traversal can be enabled are ordered in
+[desktop traversal enablement sequence](./docs/concepts/drafts/desktop_traversal_enablement_sequence.md).
 
 ## CLI
 

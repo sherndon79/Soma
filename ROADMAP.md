@@ -64,6 +64,8 @@ Implemented:
 - fixture documents future traversal output schema while current schema rejects traversal
 - fixture documents future traversal output validator cases while current validator rejects them
 - pure future traversal output validator scaffold remains disconnected from current schema
+- explicit future traversal output validator tests for node count, children-per-node limits, and
+  `text_content_included=false`
 - disabled traversal-aware full inspection validator gate while default runtime validation rejects
   traversal
 - future full desktop inspection schema draft with bounded traversal while active schema remains
@@ -92,26 +94,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Tighten traversal output gate readiness tests before activation.
+Document the traversal output activation decision before switching active schema/runtime behavior.
 
 Target:
 
 ```text
-traversal output readiness
-  -> future validator accepts only bounded traversal output
-  -> active schema and default runtime still reject traversal
-  -> endpoint and helper command still refuse traversal
-  -> output gate is tested before helper execution opens
+traversal output activation decision
+  -> active schema replacement or versioning path is explicit
+  -> runtime validator switch point is named
+  -> helper execution remains disabled
+  -> endpoint still refuses traversal
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- add explicit future-validator tests for node count and children-per-node limits
-- add explicit future-validator tests for `text_content_included=true`
-- ensure duplicate ids, missing child refs, depth limits, protected fields, and withheld fields remain
-  pinned either by fixtures or direct assertions
-- preserve current active schema and default runtime rejection of traversal output
+- decide whether traversal output enters by replacing the active desktop inspection schema or by
+  versioning the schema/validator surface
+- document the exact gate that changes `validateDesktopInspectionResult` behavior
+- preserve current active schema and default runtime rejection of traversal output in this slice
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented
 - keep current runtime behavior unchanged
 

@@ -52,6 +52,8 @@ Runtime scaffold status:
   writes or provenance append
 - default runtime validation remains unchanged and still rejects `root_object.traversal`
 - the active JSON schema remains unchanged and still excludes traversal
+- focused future-validator tests pin node count, depth, child refs, children-per-node limits,
+  protected fields, withheld fields, and `text_content_included=false`
 
 Remaining changes before activation:
 
@@ -68,10 +70,10 @@ Required tests:
 - duplicate node ids are rejected
 - child refs to missing nodes are rejected
 - returned depth beyond limit is rejected
-- node count beyond limit is rejected
-- children per node beyond limit is rejected
+- node count beyond limit is rejected - covered by `test/desktopTraversalOutput.test.js`
+- children per node beyond limit is rejected - covered by `test/desktopTraversalOutput.test.js`
 - protected fields are rejected
-- `text_content_included=true` is rejected
+- `text_content_included=true` is rejected - covered by `test/desktopTraversalOutput.test.js`
 - helper overreach still returns `desktop_inspection_schema_invalid`
 - rejected helper traversal output still writes no provenance
 

@@ -107,6 +107,8 @@ Implemented:
 - internal traversal request pipeline composes root-ref validation, disclosure-registry authorization,
   helper invocation, traversal attachment, and summary provenance while the public endpoint remains
   refused
+- internal traversal pipeline readiness review completed; public Rust command activation remains blocked
+  on a stable unavailable traversal output contract
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -120,24 +122,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Review internal traversal pipeline readiness before activating the public Rust command or endpoint.
+Define traversal unavailable output before activating the public Rust command or endpoint.
 
 Target:
 
 ```text
-traversal pipeline activation review
-  -> confirm internal orchestration test coverage
-  -> identify any missing Rust-command activation gates
+traversal unavailable output contract
+  -> define validator/schema shape for stable unavailable traversal
+  -> prove provenance stores summary-only unavailable fields
   -> preserve runtime default traversal rejection
-  -> keep Node endpoint traversal refusal active
+  -> keep Rust command and Node endpoint traversal refusal active
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- review the internal traversal pipeline against the activation checklist
-- decide whether the next safe slice is public Rust command activation or additional pipeline tests
-- list any missing tests before changing `inspect-atspi-traversal` behavior
+- update traversal output validator tests for unavailable traversal
+- update traversal-specific schema artifacts to match the validator
+- test summary-only unavailable traversal provenance without service/path/node details
+- document the unavailable output contract before changing `inspect-atspi-traversal` behavior
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented

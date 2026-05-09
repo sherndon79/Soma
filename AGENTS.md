@@ -35,6 +35,7 @@ Before writing or reviewing code, read the relevant documents below.
 | [Threat Model](docs/security/threat_model.md) | Assets, adversaries, implemented controls, and non-defenses | When adding capabilities, host access, memory, providers, or remote routing |
 | [Failure Modes](docs/failure_modes.md) | How Soma should fail, recover, and communicate degraded operation | When adding error paths, policy checks, stores, helpers, or model-facing behavior |
 | [Migration and Versioning](docs/migration.md) | Compatibility and consent-preserving migration rules | When changing schemas, catalogs, providers, grants, memory, or provenance |
+| [Review Notes](docs/reviews/README.md) | Naming, structure, addendum convention, and template for dated reviews | When writing or responding to a documentation, architecture, or commit-range review |
 | [Roadmap](ROADMAP.md) | Current scaffold, next slice, and deferred areas | When choosing scope or sequencing work |
 
 Draft concepts in `docs/concepts/drafts/` are directionally important but not automatically

@@ -26,6 +26,14 @@ near each other without reducing either side to extraction.
   non-defenses.
 - [Roadmap](../ROADMAP.md) — current scaffold, next slice, and later capability areas.
 
+## Reviews
+
+Dated documentation, architecture, and direction reviews live under
+[`docs/reviews/`](./reviews/README.md). The folder README documents the naming convention,
+recommended structure, addendum convention, and template. The template is optimized for
+doc/architecture reviews; code reviews should follow finding-first review style until a dedicated
+code-review template exists.
+
 ## Schemas
 
 - [Desktop Inspection Result](./schemas/desktop-inspection-result.schema.json) — current bounded

@@ -16,6 +16,7 @@ Already present:
 - `inspect-atspi-traversal` command dispatch
 - `TraversalArgs` parser for authorized root and limits
 - typed traversal output structs and JSON assembly
+- in-memory breadth-first traversal builder with fake-observation tests
 - helper-side hard ceilings:
   - `MAX_TRAVERSAL_DEPTH = 4`
   - `MAX_TRAVERSAL_NODES = 256`
@@ -23,6 +24,8 @@ Already present:
 - parser tests for valid, missing, malformed, out-of-range, and unknown traversal arguments
 - output-builder tests for required shape, escaping, protected-field omission, withheld fields, and
   deriving limits from validated args
+- traversal algorithm tests for breadth-first ordering, depth limit, node limit, child limit,
+  truncation, and child ids referencing only included nodes
 
 Current required behavior:
 
@@ -88,7 +91,8 @@ Rules:
 
 ### Queue Traversal
 
-Implementation status: not implemented.
+Implementation status: present as an internal in-memory builder, not wired to command execution or
+live AT-SPI queries.
 
 Use breadth-first traversal from the authorized root.
 
@@ -121,6 +125,8 @@ Output must be accepted by the future Node traversal validator and rejected by t
 Node validator until activation.
 
 ## AT-SPI Query Boundary
+
+Implementation status: not implemented.
 
 Keep D-Bus interaction isolated behind a small query function:
 

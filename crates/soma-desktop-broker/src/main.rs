@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -592,6 +593,7 @@ impl AtspiRootObject {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct AtspiObjectRef {
     service: String,
     path: String,
@@ -651,6 +653,89 @@ impl AtspiTraversalResult {
             self.limits.max_children_per_node,
             self.truncated,
         )
+    }
+}
+
+#[derive(Clone)]
+struct AtspiTraversalObservation {
+    object_ref: AtspiObjectRef,
+    role: String,
+    child_count: i32,
+    children: Vec<AtspiObjectRef>,
+}
+
+fn build_bounded_traversal<F>(
+    root: AtspiObjectRef,
+    limits: AtspiTraversalLimits,
+    mut query: F,
+) -> AtspiTraversalResult
+where
+    F: FnMut(&AtspiObjectRef) -> Result<AtspiTraversalObservation, String>,
+{
+    let mut truncated = false;
+    let mut nodes = Vec::new();
+    let mut queue = VecDeque::from([(root.clone(), 0usize, "n0".to_string())]);
+    let mut reserved_nodes = 1usize;
+    let mut next_id = 1usize;
+
+    while let Some((object_ref, depth, id)) = queue.pop_front() {
+        let observation = match query(&object_ref) {
+            Ok(observation) => observation,
+            Err(_) => {
+                truncated = true;
+                continue;
+            }
+        };
+
+        let mut child_ids = Vec::new();
+        if depth >= limits.max_depth {
+            if !observation.children.is_empty() {
+                truncated = true;
+            }
+        } else {
+            if observation.children.len() > limits.max_children_per_node {
+                truncated = true;
+            }
+            for child in observation
+                .children
+                .iter()
+                .take(limits.max_children_per_node)
+            {
+                if reserved_nodes >= limits.max_nodes {
+                    truncated = true;
+                    break;
+                }
+                let child_id = format!("n{next_id}");
+                next_id += 1;
+                reserved_nodes += 1;
+                child_ids.push(child_id.clone());
+                queue.push_back((child.clone(), depth + 1, child_id));
+            }
+        }
+
+        nodes.push(AtspiTraversalNode {
+            id,
+            object_ref: observation.object_ref,
+            role: observation.role,
+            child_count: observation.child_count,
+            depth,
+            children: child_ids,
+        });
+    }
+
+    let included_ids = nodes
+        .iter()
+        .map(|node| node.id.clone())
+        .collect::<HashSet<_>>();
+    for node in &mut nodes {
+        node.children.retain(|child| included_ids.contains(child));
+    }
+
+    AtspiTraversalResult {
+        root,
+        nodes,
+        limits,
+        truncated,
     }
 }
 
@@ -1086,6 +1171,7 @@ fn command_error(output: &std::process::Output) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn parses_active_descendant_object_ref() {
@@ -1281,6 +1367,151 @@ mod tests {
     }
 
     #[test]
+    fn bounded_traversal_visits_nodes_breadth_first() {
+        let observations = fake_traversal_observations([
+            ("/root", "application", 2, vec!["/a", "/b"]),
+            ("/a", "frame", 1, vec!["/c"]),
+            ("/b", "frame", 1, vec!["/d"]),
+            ("/c", "button", 0, vec![]),
+            ("/d", "entry", 0, vec![]),
+        ]);
+
+        let result = build_bounded_traversal(
+            fake_ref("/root"),
+            traversal_limits(2, 16, 8),
+            fake_query(&observations, []),
+        );
+
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/root", "/a", "/b", "/c", "/d"]
+        );
+        assert_eq!(result.nodes[0].children, vec!["n1", "n2"]);
+        assert_eq!(result.nodes[1].children, vec!["n3"]);
+        assert_eq!(result.nodes[2].children, vec!["n4"]);
+        assert_eq!(result.truncated, false);
+    }
+
+    #[test]
+    fn bounded_traversal_depth_limit_truncates_descendants() {
+        let observations = fake_traversal_observations([
+            ("/root", "application", 1, vec!["/a"]),
+            ("/a", "frame", 1, vec!["/c"]),
+            ("/c", "button", 0, vec![]),
+        ]);
+
+        let result = build_bounded_traversal(
+            fake_ref("/root"),
+            traversal_limits(1, 16, 8),
+            fake_query(&observations, []),
+        );
+
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/root", "/a"]
+        );
+        assert_eq!(result.nodes[1].children, Vec::<String>::new());
+        assert_eq!(result.truncated, true);
+    }
+
+    #[test]
+    fn bounded_traversal_node_limit_truncates_queue() {
+        let observations = fake_traversal_observations([
+            ("/root", "application", 3, vec!["/a", "/b", "/c"]),
+            ("/a", "frame", 0, vec![]),
+            ("/b", "frame", 0, vec![]),
+            ("/c", "frame", 0, vec![]),
+        ]);
+
+        let result = build_bounded_traversal(
+            fake_ref("/root"),
+            traversal_limits(2, 2, 8),
+            fake_query(&observations, []),
+        );
+
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/root", "/a"]
+        );
+        assert_eq!(result.nodes[0].children, vec!["n1"]);
+        assert_eq!(result.truncated, true);
+    }
+
+    #[test]
+    fn bounded_traversal_child_limit_truncates_siblings() {
+        let observations = fake_traversal_observations([
+            ("/root", "application", 3, vec!["/a", "/b", "/c"]),
+            ("/a", "frame", 0, vec![]),
+            ("/b", "frame", 0, vec![]),
+            ("/c", "frame", 0, vec![]),
+        ]);
+
+        let result = build_bounded_traversal(
+            fake_ref("/root"),
+            traversal_limits(2, 16, 2),
+            fake_query(&observations, []),
+        );
+
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/root", "/a", "/b"]
+        );
+        assert_eq!(result.nodes[0].children, vec!["n1", "n2"]);
+        assert_eq!(result.truncated, true);
+    }
+
+    #[test]
+    fn bounded_traversal_failed_child_query_does_not_leave_dangling_child_ids() {
+        let observations = fake_traversal_observations([
+            ("/root", "application", 2, vec!["/a", "/b"]),
+            ("/b", "frame", 0, vec![]),
+        ]);
+
+        let result = build_bounded_traversal(
+            fake_ref("/root"),
+            traversal_limits(2, 16, 8),
+            fake_query(&observations, ["/a"]),
+        );
+
+        let included_ids = result
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/root", "/b"]
+        );
+        assert!(result
+            .nodes
+            .iter()
+            .flat_map(|node| node.children.iter())
+            .all(|child| included_ids.contains(child.as_str())));
+        assert_eq!(result.nodes[0].children, vec!["n2"]);
+        assert_eq!(result.truncated, true);
+    }
+
+    #[test]
     fn atspi_limits_default_to_schema_caps() {
         assert_eq!(
             AtspiLimits::parse(Vec::<String>::new()).expect("limits"),
@@ -1459,6 +1690,59 @@ mod tests {
         .expect_err("error");
 
         assert_eq!(error, "--root-service must be a non-empty string");
+    }
+
+    fn traversal_limits(
+        max_depth: usize,
+        max_nodes: usize,
+        max_children_per_node: usize,
+    ) -> AtspiTraversalLimits {
+        AtspiTraversalLimits {
+            max_depth,
+            max_nodes,
+            max_children_per_node,
+        }
+    }
+
+    fn fake_ref(path: &str) -> AtspiObjectRef {
+        AtspiObjectRef {
+            service: ":1.42".to_string(),
+            path: path.to_string(),
+        }
+    }
+
+    fn fake_traversal_observations<const N: usize>(
+        entries: [(&str, &str, i32, Vec<&str>); N],
+    ) -> HashMap<String, AtspiTraversalObservation> {
+        entries
+            .into_iter()
+            .map(|(path, role, child_count, children)| {
+                (
+                    path.to_string(),
+                    AtspiTraversalObservation {
+                        object_ref: fake_ref(path),
+                        role: role.to_string(),
+                        child_count,
+                        children: children.into_iter().map(fake_ref).collect(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn fake_query<'a, const N: usize>(
+        observations: &'a HashMap<String, AtspiTraversalObservation>,
+        failures: [&'a str; N],
+    ) -> impl FnMut(&AtspiObjectRef) -> Result<AtspiTraversalObservation, String> + 'a {
+        move |object_ref| {
+            if failures.contains(&object_ref.path.as_str()) {
+                return Err("fake_query_failed".to_string());
+            }
+            observations
+                .get(&object_ref.path)
+                .cloned()
+                .ok_or_else(|| "fake_missing_observation".to_string())
+        }
     }
 }
 

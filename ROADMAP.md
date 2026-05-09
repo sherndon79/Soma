@@ -77,6 +77,8 @@ Implemented:
 - validated future traversal provenance adapter checks traversal output before producing summary-only
   fields while active provenance behavior remains unchanged
 - documented traversal enablement sequence and remaining gates
+- reviewed traversal activation gates and identified schema artifact promotion as the next safe
+  pre-activation slice
 - documented Rust traversal implementation plan and test matrix
 - documented traversal schema activation decision: traversal output uses a traversal-authorized
   schema/runtime path, while default desktop inspection validation remains closed
@@ -102,23 +104,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Review traversal activation gates before replacing any public refusal.
+Promote traversal-specific schema artifact while keeping public traversal disabled.
 
 Target:
 
 ```text
-traversal activation review
-  -> confirm request authorization, schema/runtime, helper, and provenance gates are aligned
-  -> identify any remaining missing tests before public behavior changes
+traversal schema artifact
+  -> active traversal-specific schema exists under a non-future name
+  -> default desktop inspection schema remains unchanged
+  -> runtime default still rejects traversal
   -> Node endpoint still refuses traversal
-  -> active schema/runtime behavior still rejects traversal by default
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- review the completed traversal scaffolds against the activation sequence
-- document any remaining blockers before replacing `desktop_traversal_not_implemented`
+- create `docs/schemas/desktop-inspection-result-with-traversal.schema.json` from the future draft
+- update schema tests to prove the default schema excludes traversal and the traversal-specific schema
+  accepts only bounded traversal
+- keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented

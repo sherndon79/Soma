@@ -25,6 +25,8 @@ Existing pieces that are present but not active:
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
 - `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
   schema/runtime activation decision
+- `docs/reviews/2026-05-09_traversal_activation_gates_review.md`: activation-gate review before
+  replacing `desktop_traversal_not_implemented`
 - `docs/concepts/drafts/desktop_traversal_rust_implementation_plan.md`: Rust internal unit and
   test-matrix plan
 - internal Rust traversal output structs and JSON builder tests

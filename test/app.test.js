@@ -1032,6 +1032,16 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
 
 test("desktop accessibility inspection rejects traversal request shapes until traversal is implemented", async () => {
   for (const [name, body] of Object.entries({
+    disclosed_root_ref: {
+      mode: "atspi",
+      traversal: {
+        enabled: true,
+        root_ref: "desktop-ref-1",
+        max_depth: 1,
+        max_nodes: 16,
+        max_children_per_node: 4,
+      },
+    },
     bounded_atspi_traversal: {
       mode: "atspi",
       traversal: {
@@ -1100,6 +1110,53 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
     });
     assert.equal(provenance.statusCode, 200, name);
     assert.equal(provenance.body.entries.length, 0, name);
+  }
+});
+
+test("desktop traversal rejection happens before helper invocation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-traversal-no-helper-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  const markerPath = path.join(root, "helper-invoked.txt");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf 'invoked\\n' > "${markerPath}"
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":0,"root_object_available_count":0,"window_count":0,"tree":{"applications":[],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const handler = makeHandler({ harness: allowedHarness });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root_ref: "desktop-ref-1",
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
+      },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "desktop_traversal_not_implemented");
+    await assert.rejects(() => readFile(markerPath, "utf8"), { code: "ENOENT" });
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 0);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
   }
 });
 

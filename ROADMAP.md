@@ -57,6 +57,7 @@ Implemented:
 - fixture and tests document future `desktop_ref_id` locations while current schema rejects them
 - documented future traversal request validation against disclosed root refs
 - disabled pure traversal request validator scaffold and tests
+- endpoint traversal guard rejects root_ref traversal before helper invocation or provenance
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -69,23 +70,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Wire traversal request validation into the endpoint while traversal remains disabled.
+Design traversal helper contract before adding recursive helper behavior.
 
 Target:
 
 ```text
-root authorization model
-  -> endpoint-level validator fixture
-  -> endpoint still rejects traversal
+authorized traversal request
+  -> helper input/output contract
+  -> Node validation still owns trust
   -> no traversal implementation
 ```
 
 Expected work:
 
-- prove endpoint rejection remains `desktop_traversal_not_implemented`
-- add comments/docs showing where the pure validator will replace the current hard rejection
-- ensure no helper invocation or provenance happens for traversal requests
-- keep helper invocation and provenance unchanged
+- define future Rust helper command and args for authorized traversal
+- define helper output fields and omission rules
+- keep helper authorization out of Rust
+- define helper-side limit enforcement and error behavior
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

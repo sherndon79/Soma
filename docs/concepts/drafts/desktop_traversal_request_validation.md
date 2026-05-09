@@ -78,6 +78,10 @@ Potential errors:
 Until traversal opens, the existing `desktop_traversal_not_implemented` rejection remains correct
 for any request that includes `traversal`.
 
+The current endpoint guard intentionally runs before the normal accessibility-tree request
+validator and before helper invocation. When traversal is enabled, that guard should be replaced
+by the pure request validator scaffold rather than bypassed with a second route.
+
 ## Future Validator Contract
 
 The eventual validator should return a normalized request:
@@ -124,4 +128,3 @@ Before traversal execution is implemented, add tests that prove:
 - no schema acceptance of traversal output in this slice
 - no `desktop_ref_id` response fields in this slice
 - no durable desktop refs
-

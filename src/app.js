@@ -551,6 +551,10 @@ function normalizeMemoryEntry(entry) {
 
 function rejectUnsupportedDesktopTraversal(body) {
   if (body?.traversal !== undefined) {
+    // Future traversal enablement should replace this hard refusal with
+    // validateFutureDesktopTraversalRequest from desktopTraversalRequest.js.
+    // Until then, every traversal-shaped request fails before request validation,
+    // helper invocation, registry authorization, or provenance append.
     const error = new Error("Recursive desktop traversal is not implemented.");
     error.statusCode = 403;
     error.code = "desktop_traversal_not_implemented";

@@ -62,6 +62,7 @@ Implemented:
 - disabled traversal helper argument derivation fixtures
 - Rust traversal helper argument parser scaffold and tests
 - fixture documents future traversal output schema while current schema rejects traversal
+- fixture documents future traversal output validator cases while current validator rejects them
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -74,23 +75,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add disabled traversal output runtime validator fixtures.
+Implement traversal output runtime validator behind disabled schema gate.
 
 Target:
 
 ```text
 helper traversal output
-  -> future validator fixtures
-  -> current validator still rejects traversal
+  -> pure validator function
+  -> not wired into current schema
   -> no traversal implementation
 ```
 
 Expected work:
 
-- add future valid and invalid traversal-output payload fixtures
-- prove current validator rejects all traversal output today
-- document future validator failures for duplicate ids, bad child refs, over-limit depth, and
-  protected fields
+- add a pure traversal output validator helper using fixture cases
+- keep `ROOT_OBJECT_KEYS` excluding `traversal`
+- keep `validateDesktopInspectionResult` rejecting traversal output
+- do not allow helper traversal payloads through endpoint validation
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

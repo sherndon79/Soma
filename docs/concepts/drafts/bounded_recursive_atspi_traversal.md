@@ -259,6 +259,10 @@ The candidate field set is also captured as a non-runtime fixture in
 `docs/fixtures/future-traversal-output-schema.json`. That fixture documents the future output
 without enabling traversal in the current schema.
 
+Future valid and invalid validator cases are captured in
+`docs/fixtures/future-traversal-output-validation-cases.json`. Today those cases must still fail
+with `root_object.traversal is not allowed`.
+
 ```json
 {
   "$defs": {

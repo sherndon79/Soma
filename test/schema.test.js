@@ -16,6 +16,10 @@ const futureTraversalOutputFixturePath = new URL(
   "../docs/fixtures/future-traversal-output-schema.json",
   import.meta.url,
 );
+const futureTraversalOutputCasesPath = new URL(
+  "../docs/fixtures/future-traversal-output-validation-cases.json",
+  import.meta.url,
+);
 
 test("desktop inspection schema documents the current safe child metadata boundary", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
@@ -168,6 +172,26 @@ test("desktop inspection runtime validator rejects traversal output until traver
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+});
+
+test("future traversal output cases remain rejected by current runtime validator", async () => {
+  const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
+  assert.equal(fixture.status, "future_fixture_not_current_schema");
+
+  const validFutureResult = validateDesktopInspectionResult(
+    atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal),
+  );
+  assert.equal(validFutureResult.valid, false);
+  assert.ok(validFutureResult.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+
+  for (const invalidCase of fixture.invalid_cases) {
+    const result = validateDesktopInspectionResult(
+      atspiResultWithRootObjectField("traversal", invalidCase.traversal),
+    );
+    assert.equal(result.valid, false, invalidCase.name);
+    assert.equal(typeof invalidCase.future_error, "string", invalidCase.name);
+    assert.ok(result.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+  }
 });
 
 test("desktop inspection runtime validator rejects desktop_ref_id until exposure is implemented", () => {

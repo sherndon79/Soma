@@ -1,0 +1,169 @@
+{
+  "status": "future_fixture_not_current_schema",
+  "purpose": "Define future traversal-output validator cases while the current runtime validator still rejects traversal output.",
+  "valid_case": {
+    "description": "Minimal bounded traversal with unique node ids and local child references.",
+    "traversal": {
+      "root": {
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/root"
+      },
+      "nodes": [
+        {
+          "id": "n0",
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root",
+          "role": "application",
+          "child_count": 1,
+          "depth": 0,
+          "children": ["n1"]
+        },
+        {
+          "id": "n1",
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/1",
+          "role": "frame",
+          "child_count": 0,
+          "depth": 1,
+          "children": []
+        }
+      ],
+      "limits": {
+        "max_depth": 2,
+        "max_nodes": 64,
+        "max_children_per_node": 8
+      },
+      "truncated": false,
+      "text_content_included": false,
+      "withheld_fields": ["name", "description", "text", "states", "actions"]
+    }
+  },
+  "invalid_cases": [
+    {
+      "name": "duplicate_node_ids",
+      "future_error": "traversal node ids must be unique",
+      "traversal": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 1,
+            "depth": 0,
+            "children": ["n0"]
+          },
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/1",
+            "role": "frame",
+            "child_count": 0,
+            "depth": 1,
+            "children": []
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      }
+    },
+    {
+      "name": "bad_child_ref",
+      "future_error": "traversal children must reference included node ids",
+      "traversal": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 1,
+            "depth": 0,
+            "children": ["missing"]
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      }
+    },
+    {
+      "name": "over_limit_depth",
+      "future_error": "traversal node depth must not exceed limits.max_depth",
+      "traversal": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 0,
+            "depth": 3,
+            "children": []
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      }
+    },
+    {
+      "name": "protected_text_field",
+      "future_error": "traversal nodes must not include protected text fields",
+      "traversal": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 0,
+            "depth": 0,
+            "children": [],
+            "name": "private window title"
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      }
+    }
+  ]
+}

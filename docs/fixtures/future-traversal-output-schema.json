@@ -1,0 +1,91 @@
+{
+  "status": "future_fixture_not_current_schema",
+  "purpose": "Document candidate traversal output fields without enabling traversal in the current runtime schema.",
+  "location": "tree.applications[].root_object.traversal",
+  "required_fields": [
+    "root",
+    "nodes",
+    "limits",
+    "truncated",
+    "text_content_included",
+    "withheld_fields"
+  ],
+  "root_fields": [
+    "service",
+    "path"
+  ],
+  "node_fields": [
+    "id",
+    "service",
+    "path",
+    "role",
+    "child_count",
+    "depth",
+    "children"
+  ],
+  "limits_fields": [
+    "max_depth",
+    "max_nodes",
+    "max_children_per_node"
+  ],
+  "must_not_include": [
+    "name",
+    "description",
+    "text",
+    "value",
+    "states",
+    "actions",
+    "screenshot",
+    "image",
+    "ocr",
+    "pointer_state",
+    "keyboard_state",
+    "desktop_ref_id"
+  ],
+  "validator_invariants": [
+    "root has only service and path",
+    "nodes length is less than or equal to limits.max_nodes",
+    "node ids are unique",
+    "node children reference only included node ids",
+    "node depth is non-negative and less than or equal to limits.max_depth",
+    "node child_count is non-negative",
+    "node children length is less than or equal to limits.max_children_per_node",
+    "truncated is boolean",
+    "text_content_included is false",
+    "withheld_fields includes name, description, text, states, and actions"
+  ],
+  "example_future_traversal": {
+    "root": {
+      "service": ":1.42",
+      "path": "/org/a11y/atspi/accessible/root"
+    },
+    "nodes": [
+      {
+        "id": "n0",
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/root",
+        "role": "application",
+        "child_count": 1,
+        "depth": 0,
+        "children": ["n1"]
+      },
+      {
+        "id": "n1",
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/1",
+        "role": "frame",
+        "child_count": 0,
+        "depth": 1,
+        "children": []
+      }
+    ],
+    "limits": {
+      "max_depth": 2,
+      "max_nodes": 64,
+      "max_children_per_node": 8
+    },
+    "truncated": false,
+    "text_content_included": false,
+    "withheld_fields": ["name", "description", "text", "states", "actions"]
+  }
+}

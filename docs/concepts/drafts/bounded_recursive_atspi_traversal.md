@@ -255,6 +255,10 @@ traversal is implemented, rejected requests should still produce a clear error s
 
 The later schema should add definitions equivalent to:
 
+The candidate field set is also captured as a non-runtime fixture in
+`docs/fixtures/future-traversal-output-schema.json`. That fixture documents the future output
+without enabling traversal in the current schema.
+
 ```json
 {
   "$defs": {

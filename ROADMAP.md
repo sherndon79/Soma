@@ -61,6 +61,7 @@ Implemented:
 - documented future traversal helper command and output contract
 - disabled traversal helper argument derivation fixtures
 - Rust traversal helper argument parser scaffold and tests
+- fixture documents future traversal output schema while current schema rejects traversal
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -73,23 +74,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design traversal output schema additions before accepting helper traversal output.
+Add disabled traversal output runtime validator fixtures.
 
 Target:
 
 ```text
 helper traversal output
-  -> schema additions
-  -> runtime validator plan
+  -> future validator fixtures
+  -> current validator still rejects traversal
   -> no traversal implementation
 ```
 
 Expected work:
 
-- define exact schema fields for traversal output
-- define runtime validator invariants for node ids, depth, limits, truncation, and withheld fields
-- keep current runtime schema rejecting traversal output
-- add fixtures or tests only if they do not enable traversal output
+- add future valid and invalid traversal-output payload fixtures
+- prove current validator rejects all traversal output today
+- document future validator failures for duplicate ids, bad child refs, over-limit depth, and
+  protected fields
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged
 

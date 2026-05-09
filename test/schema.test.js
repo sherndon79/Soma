@@ -12,6 +12,10 @@ const futureDesktopRefFixturePath = new URL(
   "../docs/fixtures/future-desktop-ref-id-locations.json",
   import.meta.url,
 );
+const futureTraversalOutputFixturePath = new URL(
+  "../docs/fixtures/future-traversal-output-schema.json",
+  import.meta.url,
+);
 
 test("desktop inspection schema documents the current safe child metadata boundary", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
@@ -43,6 +47,36 @@ test("future desktop_ref_id fixture documents locations without enabling the cur
   assert.equal("desktop_ref_id" in schema.$defs.root_object.properties, false);
   assert.equal("desktop_ref_id" in schema.$defs.object_ref.properties, false);
   assert.equal("desktop_ref_id" in schema.$defs.child_metadata.properties, false);
+});
+
+test("future traversal output fixture documents schema without enabling current traversal output", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const fixture = JSON.parse(await readFile(futureTraversalOutputFixturePath, "utf8"));
+
+  assert.equal(fixture.status, "future_fixture_not_current_schema");
+  assert.equal(fixture.location, "tree.applications[].root_object.traversal");
+  assert.deepEqual(fixture.required_fields, [
+    "root",
+    "nodes",
+    "limits",
+    "truncated",
+    "text_content_included",
+    "withheld_fields",
+  ]);
+  assert.deepEqual(fixture.node_fields, [
+    "id",
+    "service",
+    "path",
+    "role",
+    "child_count",
+    "depth",
+    "children",
+  ]);
+  assert.ok(fixture.must_not_include.includes("desktop_ref_id"));
+  assert.equal("traversal" in schema.$defs.root_object.properties, false);
+  assert.equal("traversal" in schema.$defs, false);
+  assert.equal("traversal_node" in schema.$defs, false);
+  assert.equal("traversal_limits" in schema.$defs, false);
 });
 
 test("desktop inspection runtime validator accepts the current AT-SPI shape", () => {

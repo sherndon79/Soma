@@ -5,6 +5,9 @@ Status: design draft, not implemented
 This draft defines the future Rust helper command shape for recursive AT-SPI traversal. It does
 not implement traversal, change runtime responses, or enable traversal requests.
 
+See [Desktop Traversal Rust Implementation Plan](./desktop_traversal_rust_implementation_plan.md)
+for the internal helper units and test matrix that should land before command activation.
+
 Node remains the trust boundary. The helper receives only an already-authorized root object
 reference and bounded limits. The helper does not decide whether traversal is allowed.
 
@@ -168,6 +171,10 @@ Before helper traversal is implemented:
 - add provider-overreach tests for traversal nodes containing names, text, states, actions,
   screenshots, pointer state, or keyboard state
 - keep endpoint tests proving traversal requests do not invoke helpers until traversal is enabled
+
+Implementation should start with in-memory traversal and output-builder units described in
+[Desktop Traversal Rust Implementation Plan](./desktop_traversal_rust_implementation_plan.md), not
+with live AT-SPI recursion or command activation.
 
 ## Non-Goals
 

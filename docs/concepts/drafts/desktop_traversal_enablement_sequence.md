@@ -20,6 +20,8 @@ Existing pieces that are present but not active:
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
+- `docs/concepts/drafts/desktop_traversal_rust_implementation_plan.md`: Rust internal unit and
+  test-matrix plan
 - future fixtures in `docs/fixtures/`
 
 Current active guards that must remain until the activation sequence reaches them:
@@ -82,6 +84,10 @@ Changes:
 - emit only the accepted traversal output shape
 - omit names, descriptions, text, states, actions, screenshots, pointer state, and keyboard state
 - return stable unavailable/truncated summaries instead of raw application errors
+
+Implementation should first land pure Rust traversal/output units with fake in-memory observations.
+The public `inspect-atspi-traversal` command should keep returning not implemented until Node is
+ready to authorize requests and validate output on the active path.
 
 Required tests:
 

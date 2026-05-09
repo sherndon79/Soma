@@ -6,7 +6,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { assertDesktopInspectionResult } from "./desktopInspectionSchema.js";
+import {
+  assertDesktopInspectionResult,
+  assertTraversalAuthorizedDesktopInspectionResult,
+} from "./desktopInspectionSchema.js";
 import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
 const execFileAsync = promisify(execFile);
@@ -198,6 +201,48 @@ export function assertFutureDesktopTraversalHelperOutput(value) {
     throw error;
   }
   return value;
+}
+
+export function attachTraversalToDesktopInspectionResult({ inspection, traversal } = {}) {
+  const validatedTraversal = assertFutureDesktopTraversalHelperOutput(traversal);
+  if (!inspection?.tree || !Array.isArray(inspection.tree.applications)) {
+    throw new TypeError("inspection.tree.applications is required");
+  }
+
+  let attached = false;
+  const applications = inspection.tree.applications.map((application) => {
+    const rootObject = application.root_object;
+    if (
+      !attached &&
+      rootObject &&
+      application.service === validatedTraversal.root.service &&
+      rootObject.path === validatedTraversal.root.path
+    ) {
+      attached = true;
+      return {
+        ...application,
+        root_object: {
+          ...rootObject,
+          traversal: validatedTraversal,
+        },
+      };
+    }
+    return application;
+  });
+
+  if (!attached) {
+    const error = new Error("Traversal root was not present in desktop inspection result.");
+    error.code = "desktop_traversal_root_not_in_inspection";
+    throw error;
+  }
+
+  return assertTraversalAuthorizedDesktopInspectionResult({
+    ...inspection,
+    tree: {
+      ...inspection.tree,
+      applications,
+    },
+  });
 }
 
 async function inspectWithRustHelper(helperPath, args) {

@@ -94,6 +94,8 @@ Implemented:
   AT-SPI query boundary while the public helper command remains disabled
 - internal Node traversal helper invocation path derives args and validates traversal helper output
   through the future traversal-output validator while the endpoint remains disabled
+- internal traversal-bearing desktop inspection adapter routes helper traversal output through the
+  traversal-authorized runtime assertion while the default assertion remains traversal-closed
 - command-level Rust traversal execution test proving `inspect-atspi-traversal` remains disabled
   with valid-looking args and emits no traversal JSON
 - documented implementation guide and component review scope
@@ -109,14 +111,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Route internal traversal helper output through the traversal-authorized runtime assertion.
+Prepare request enablement integration tests while keeping traversal refused.
 
 Target:
 
 ```text
-traversal helper runtime validation
-  -> internal helper path validates traversal-bearing inspection output through named assertion
-  -> default desktop inspection assertion remains traversal-closed
+traversal enablement integration tests
+  -> tests describe the future root_ref-to-helper-to-provenance path
+  -> current endpoint still rejects traversal before helper invocation
   -> runtime default still rejects traversal
   -> Node endpoint still refuses traversal
 ```
@@ -124,10 +126,10 @@ traversal helper runtime validation
 Expected work:
 
 - keep current provenance behavior unchanged
-- adapt internal traversal helper preparation to use the named traversal-authorized runtime assertion
-  where full desktop inspection output is assembled or validated
+- add or refine disabled-path tests around future request enablement boundaries
+- prove current endpoint rejection still happens before helper invocation, registry mutation, or
+  provenance append
 - keep the current default validator/assertion behavior unchanged
-- update tests to prove traversal output is accepted only through the traversal-authorized path
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output

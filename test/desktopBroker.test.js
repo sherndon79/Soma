@@ -6,10 +6,12 @@ import test from "node:test";
 
 import {
   assertFutureDesktopTraversalHelperOutput,
+  attachTraversalToDesktopInspectionResult,
   desktopBrokerHelperArgs,
   desktopTraversalHelperArgs,
   inspectDesktopTraversalWithRustHelper,
 } from "../src/desktopBroker.js";
+import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 
 test("desktopBrokerHelperArgs preserves current invocation when limits are omitted", () => {
   assert.deepEqual(desktopBrokerHelperArgs(), ["inspect-environment"]);
@@ -186,6 +188,36 @@ printf '%s\\n' '${JSON.stringify({ ...traversal, text_content_included: true })}
   );
 });
 
+test("attachTraversalToDesktopInspectionResult uses traversal-authorized runtime assertion", () => {
+  const inspection = baseAtspiInspection();
+  const traversal = validTraversalOutput();
+  const withTraversal = attachTraversalToDesktopInspectionResult({ inspection, traversal });
+
+  assert.deepEqual(withTraversal.tree.applications[0].root_object.traversal, traversal);
+  assert.throws(
+    () => assertDesktopInspectionResult(withTraversal),
+    {
+      code: "desktop_inspection_schema_invalid",
+      statusCode: 502,
+    },
+  );
+});
+
+test("attachTraversalToDesktopInspectionResult rejects roots not present in inspection", () => {
+  assert.throws(
+    () => attachTraversalToDesktopInspectionResult({
+      inspection: baseAtspiInspection(),
+      traversal: {
+        ...validTraversalOutput(),
+        root: { service: ":1.404", path: "/org/a11y/atspi/accessible/root" },
+      },
+    }),
+    {
+      code: "desktop_traversal_root_not_in_inspection",
+    },
+  );
+});
+
 function validTraversalOutput() {
   return {
     root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
@@ -208,6 +240,46 @@ function validTraversalOutput() {
     truncated: false,
     text_content_included: false,
     withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+function baseAtspiInspection() {
+  return {
+    mode: "read_only_atspi_probe",
+    broker_source: "rust_helper",
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+    dbus_session_bus_available: true,
+    atspi_likely_available: true,
+    atspi_bus_address_available: true,
+    application_count: 1,
+    root_object_available_count: 1,
+    window_count: 0,
+    tree: {
+      applications: [
+        {
+          service: ":1.42",
+          pid: 123,
+          process: "test-app",
+          registry: false,
+          root_object: {
+            path: "/org/a11y/atspi/accessible/root",
+            name: "test-app",
+            role: "application",
+            child_count: 1,
+            children_sample: [],
+            child_metadata_sample: [],
+          },
+          root_object_error: null,
+        },
+      ],
+      windows: [],
+      bounded: true,
+      text_content_included: false,
+    },
+    tree_available: true,
   };
 }
 

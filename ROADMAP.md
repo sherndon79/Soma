@@ -109,6 +109,8 @@ Implemented:
   refused
 - internal traversal pipeline readiness review completed; public Rust command activation remains blocked
   on a stable unavailable traversal output contract
+- stable unavailable traversal output contract added to traversal validator, traversal-specific schemas,
+  fixtures, helper contract docs, and summary-only provenance tests while public traversal remains refused
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -122,14 +124,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Define traversal unavailable output before activating the public Rust command or endpoint.
+Review unavailable traversal output contract before public Rust command activation.
 
 Target:
 
 ```text
-traversal unavailable output contract
-  -> define validator/schema shape for stable unavailable traversal
-  -> prove provenance stores summary-only unavailable fields
+traversal unavailable output review
+  -> confirm validator/schema/provenance alignment for unavailable traversal
+  -> identify remaining command-level tests before Rust activation
   -> preserve runtime default traversal rejection
   -> keep Rust command and Node endpoint traversal refusal active
 ```
@@ -137,10 +139,10 @@ traversal unavailable output contract
 Expected work:
 
 - keep current provenance behavior unchanged
-- update traversal output validator tests for unavailable traversal
-- update traversal-specific schema artifacts to match the validator
-- test summary-only unavailable traversal provenance without service/path/node details
-- document the unavailable output contract before changing `inspect-atspi-traversal` behavior
+- review unavailable traversal output contract against helper activation requirements
+- decide whether the next safe slice is command-level Rust activation tests or additional unavailable
+  shape tightening
+- keep `inspect-atspi-traversal` returning not implemented until the review disposition is accepted
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented

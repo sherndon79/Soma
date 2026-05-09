@@ -85,6 +85,30 @@ Candidate traversal block:
 }
 ```
 
+Stable unavailable traversal block:
+
+```json
+{
+  "root": {
+    "service": ":1.42",
+    "path": "/org/a11y/atspi/accessible/root"
+  },
+  "nodes": [],
+  "limits": {
+    "max_depth": 2,
+    "max_nodes": 64,
+    "max_children_per_node": 8
+  },
+  "truncated": false,
+  "unavailable_reason": "atspi_bus_address_unavailable",
+  "text_content_included": false,
+  "withheld_fields": ["name", "description", "text", "states", "actions"]
+}
+```
+
+When `unavailable_reason` is present, `nodes` must be empty. Node may use the echoed root only to
+correlate the authorized helper call and must not copy the service/path into summary provenance.
+
 Node should be responsible for deciding where this block appears in the public response. The
 helper should not add `desktop_ref_id` fields; those are Node-owned registry ids.
 

@@ -108,6 +108,34 @@ test("internal traversal pipeline rejects helper output before provenance append
   assert.equal(provenanceLog.list().length, 0);
 });
 
+test("internal traversal pipeline records summary-only unavailable traversal provenance", async () => {
+  const provenanceLog = new ProvenanceLog();
+  const result = await runInternalDesktopTraversalRequest({
+    body: traversalRequest(),
+    inspection: baseAtspiInspection(),
+    desktopDisclosureRegistry: {
+      authorizeRootRef() {
+        return authorizedRoot();
+      },
+    },
+    provenanceLog,
+    async inspectTraversal() {
+      return unavailableTraversalOutput();
+    },
+  });
+
+  assert.deepEqual(result.inspection.tree.applications[0].root_object.traversal, unavailableTraversalOutput());
+  assert.equal(result.traversal_summary.traversal_node_count, 0);
+  assert.equal(result.traversal_summary.traversal_unavailable_reason, "atspi_bus_address_unavailable");
+  const [event] = provenanceLog.query({ eventType: "desktop.inspect.accessibility_tree" });
+  assert.equal(event.traversal_node_count, 0);
+  assert.equal(event.traversal_unavailable_reason, "atspi_bus_address_unavailable");
+  const serialized = JSON.stringify(event);
+  assert.equal(serialized.includes(":1.42"), false);
+  assert.equal(serialized.includes("/org/a11y/atspi/accessible/root"), false);
+  assert.equal(serialized.includes("n0"), false);
+});
+
 function traversalRequest() {
   return {
     mode: "atspi",
@@ -151,6 +179,22 @@ function validTraversalOutput() {
       max_children_per_node: 8,
     },
     truncated: false,
+    text_content_included: false,
+    withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+function unavailableTraversalOutput() {
+  return {
+    root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+    nodes: [],
+    limits: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    truncated: false,
+    unavailable_reason: "atspi_bus_address_unavailable",
     text_content_included: false,
     withheld_fields: ["name", "description", "text", "states", "actions"],
   };

@@ -38,6 +38,10 @@ test("future traversal output validator accepts the valid fixture case", async (
     validateFutureDesktopTraversalOutput(fixture.valid_case.traversal),
     { valid: true, errors: [] },
   );
+  assert.deepEqual(
+    validateFutureDesktopTraversalOutput(fixture.unavailable_case.traversal),
+    { valid: true, errors: [] },
+  );
 });
 
 test("future traversal output validator rejects fixture invalid cases", async () => {
@@ -156,4 +160,23 @@ test("future traversal output validator rejects text content inclusion", () => {
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.includes("traversal.text_content_included must be false"));
+});
+
+test("future traversal output validator accepts zero-node unavailable traversal", () => {
+  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+    nodes: [],
+    truncated: false,
+    unavailable_reason: "atspi_bus_address_unavailable",
+  }));
+
+  assert.deepEqual(result, { valid: true, errors: [] });
+});
+
+test("future traversal output validator rejects unavailable traversal with nodes", () => {
+  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+    unavailable_reason: "atspi_root_query_unavailable",
+  }));
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes("traversal.nodes must be empty when unavailable_reason is present"));
 });

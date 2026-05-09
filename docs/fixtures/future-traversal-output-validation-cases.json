@@ -38,6 +38,25 @@
       "withheld_fields": ["name", "description", "text", "states", "actions"]
     }
   },
+  "unavailable_case": {
+    "description": "Stable unavailable traversal with no returned nodes and no text content.",
+    "traversal": {
+      "root": {
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/root"
+      },
+      "nodes": [],
+      "limits": {
+        "max_depth": 2,
+        "max_nodes": 64,
+        "max_children_per_node": 8
+      },
+      "truncated": false,
+      "unavailable_reason": "atspi_bus_address_unavailable",
+      "text_content_included": false,
+      "withheld_fields": ["name", "description", "text", "states", "actions"]
+    }
+  },
   "invalid_cases": [
     {
       "name": "duplicate_node_ids",
@@ -161,6 +180,36 @@
           "max_children_per_node": 8
         },
         "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      }
+    },
+    {
+      "name": "unavailable_with_nodes",
+      "future_error": "nodes must be empty when unavailable_reason is present",
+      "traversal": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 0,
+            "depth": 0,
+            "children": []
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "unavailable_reason": "atspi_root_query_unavailable",
         "text_content_included": false,
         "withheld_fields": ["name", "description", "text", "states", "actions"]
       }

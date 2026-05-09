@@ -325,6 +325,19 @@ test("future traversal-aware desktop validator accepts bounded traversal output 
   assert.ok(currentResult.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
 });
 
+test("traversal-authorized desktop validator accepts unavailable traversal output behind an explicit gate", async () => {
+  const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
+  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.unavailable_case.traversal);
+  const result = validateTraversalAuthorizedDesktopInspectionResult(traversalResult);
+
+  assert.deepEqual(result, { valid: true, errors: [] });
+  assert.equal(assertTraversalAuthorizedDesktopInspectionResult(traversalResult), traversalResult);
+
+  const currentResult = validateDesktopInspectionResult(traversalResult);
+  assert.equal(currentResult.valid, false);
+  assert.ok(currentResult.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+});
+
 test("traversal-authorized desktop validator rejects invalid traversal output before provenance", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
 

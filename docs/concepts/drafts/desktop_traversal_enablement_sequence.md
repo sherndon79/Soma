@@ -80,6 +80,8 @@ Runtime scaffold status:
 - the active JSON schema remains unchanged and still excludes traversal
 - focused future-validator tests pin node count, depth, child refs, children-per-node limits,
   protected fields, withheld fields, and `text_content_included=false`
+- unavailable traversal output has a stable zero-node shape with `unavailable_reason` and summary-only
+  provenance coverage
 - schema activation decision keeps traversal on a traversal-authorized validation path rather than
   making the default desktop inspection validator accept traversal output
 
@@ -176,7 +178,8 @@ Required tests:
   `test/desktopTraversalProvenance.test.js`
 - provenance omits traversal tree, node ids, service/path lists, roles, child edges, and protected
   fields
-- unavailable traversal stores only a stable unavailable reason and zero counts
+- unavailable traversal stores only a stable unavailable reason and zero counts - covered by
+  `test/desktopTraversalPipeline.test.js` and `test/desktopTraversalProvenance.test.js`
 - rejected traversal request writes no provenance
 - schema-rejected traversal helper output writes no provenance - covered by current endpoint
   no-provenance tests and future adapter validation tests

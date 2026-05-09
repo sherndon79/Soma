@@ -3,6 +3,7 @@ const TRAVERSAL_KEYS = new Set([
   "nodes",
   "limits",
   "truncated",
+  "unavailable_reason",
   "text_content_included",
   "withheld_fields",
 ]);
@@ -31,6 +32,12 @@ function validateTraversal(value, path, errors) {
   validateTraversalNodes(value.nodes, value.limits, `${path}.nodes`, errors);
   if (typeof value.truncated !== "boolean") {
     errors.push(`${path}.truncated must be boolean`);
+  }
+  if (value.unavailable_reason !== undefined) {
+    requireString(value.unavailable_reason, `${path}.unavailable_reason`, errors);
+    if (Array.isArray(value.nodes) && value.nodes.length !== 0) {
+      errors.push(`${path}.nodes must be empty when unavailable_reason is present`);
+    }
   }
   if (value.text_content_included !== false) {
     errors.push(`${path}.text_content_included must be false`);
@@ -166,4 +173,3 @@ function requireNonNegativeInteger(value, path, errors) {
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-

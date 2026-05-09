@@ -111,6 +111,30 @@ test("future traversal provenance summary stores unavailable traversal as summar
   assert.equal(summary.traversal_unavailable_reason, "atspi_traversal_unavailable");
 });
 
+test("future traversal provenance summary stores validator-approved unavailable traversal without details", async () => {
+  const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
+  const summary = createValidatedFutureTraversalProvenanceSummary({
+    rootAuthorization: {
+      source_event_id: "provenance-uuid",
+      source_type: "application_root",
+    },
+    request: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    traversal: traversalCases.unavailable_case.traversal,
+  });
+
+  assert.equal(summary.traversal_node_count, 0);
+  assert.equal(summary.traversal_max_returned_depth, 0);
+  assert.equal(summary.traversal_truncated, false);
+  assert.equal(summary.traversal_unavailable_reason, "atspi_bus_address_unavailable");
+  const serialized = JSON.stringify(summary);
+  assert.equal(serialized.includes(":1.42"), false);
+  assert.equal(serialized.includes("/org/a11y/atspi/accessible/root"), false);
+});
+
 test("future traversal provenance adapter validates output before summary creation", async () => {
   const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
   const summary = createValidatedFutureTraversalProvenanceSummary({

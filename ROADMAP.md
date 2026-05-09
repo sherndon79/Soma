@@ -98,6 +98,8 @@ Implemented:
   traversal-authorized runtime assertion while the default assertion remains traversal-closed
 - command-level Rust traversal execution test proving `inspect-atspi-traversal` remains disabled
   with valid-looking args and emits no traversal JSON
+- traversal activation checklist migrated into canonical enablement sequence; same-day traversal
+  reviews cross-reference each other
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 

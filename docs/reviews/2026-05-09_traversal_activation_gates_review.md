@@ -5,6 +5,9 @@
 `desktop_traversal_not_implemented`
 **Reviewer:** Codex
 
+Related review: `docs/reviews/2026-05-09_traversal_activation_progress_review.md` surveys the
+11-commit range after this activation-gate review was acted on.
+
 ---
 
 ## Sources Reviewed
@@ -141,4 +144,3 @@ traversal-specific name while leaving every public refusal and default validator
 
 Run another activation-gate review after the traversal-specific active schema and runtime adapter
 exist, or immediately before replacing `desktop_traversal_not_implemented`.
-

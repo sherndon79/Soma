@@ -174,6 +174,22 @@ Required tests:
 - schema-rejected traversal helper output writes no provenance - covered by current endpoint
   no-provenance tests and future adapter validation tests
 
+## Activation Checklist
+
+Before replacing `desktop_traversal_not_implemented`, all of these must be true:
+
+- active traversal-specific schema exists and is tested
+- default schema and default runtime validator still reject traversal
+- traversal-authorized runtime validator is named and tested
+- request validation rejects raw service/path roots
+- root authorization resolves through the disclosure registry before helper invocation
+- Node helper invocation receives only authorized service/path plus bounded limits
+- Rust command activation keeps protected fields omitted at query and output boundaries
+- helper output validation runs before response and provenance
+- traversal provenance stores summary fields only
+- rejected traversal requests and rejected helper output append no provenance
+- module narrowing still revokes roots and blocks traversal
+
 ### 5. Request Enablement Gate
 
 Only after the previous gates pass should the endpoint hard refusal be replaced.

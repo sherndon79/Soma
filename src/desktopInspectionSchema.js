@@ -1,3 +1,5 @@
+import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
+
 const TOP_LEVEL_KEYS = new Set([
   "mode",
   "broker_source",
@@ -47,16 +49,26 @@ const ROOT_OBJECT_KEYS = new Set([
   "children_sample",
   "child_metadata_sample",
 ]);
+const FUTURE_TRAVERSAL_ROOT_OBJECT_KEYS = new Set([
+  ...ROOT_OBJECT_KEYS,
+  "traversal",
+]);
 const OBJECT_REF_KEYS = new Set(["service", "path"]);
 const CHILD_METADATA_KEYS = new Set(["service", "path", "role", "child_count"]);
 
-export function validateDesktopInspectionResult(value) {
+export function validateDesktopInspectionResult(value, options = {}) {
   const errors = [];
-  validateTopLevel(value, errors);
+  validateTopLevel(value, errors, options);
   return {
     valid: errors.length === 0,
     errors,
   };
+}
+
+export function validateFutureDesktopInspectionResultWithTraversal(value) {
+  return validateDesktopInspectionResult(value, {
+    allowTraversalOutput: true,
+  });
 }
 
 export function assertDesktopInspectionResult(value) {
@@ -71,7 +83,7 @@ export function assertDesktopInspectionResult(value) {
   return value;
 }
 
-function validateTopLevel(value, errors) {
+function validateTopLevel(value, errors, options) {
   if (!isPlainObject(value)) {
     errors.push("result must be an object");
     return;
@@ -103,11 +115,11 @@ function validateTopLevel(value, errors) {
     validateBooleanMap(value.commands, COMMAND_KEYS, "result.commands", errors);
   }
   if (value.tree !== null) {
-    validateTree(value.tree, errors);
+    validateTree(value.tree, errors, options);
   }
 }
 
-function validateTree(value, errors) {
+function validateTree(value, errors, options) {
   if (!isPlainObject(value)) {
     errors.push("result.tree must be null or an object");
     return;
@@ -120,7 +132,7 @@ function validateTree(value, errors) {
       errors.push("result.tree.applications must have at most 64 items");
     }
     value.applications.forEach((application, index) => {
-      validateApplication(application, `result.tree.applications[${index}]`, errors);
+      validateApplication(application, `result.tree.applications[${index}]`, errors, options);
     });
   }
   if (!Array.isArray(value.windows)) {
@@ -136,7 +148,7 @@ function validateTree(value, errors) {
   }
 }
 
-function validateApplication(value, path, errors) {
+function validateApplication(value, path, errors, options) {
   if (!isPlainObject(value)) {
     errors.push(`${path} must be an object`);
     return;
@@ -147,17 +159,18 @@ function validateApplication(value, path, errors) {
   requireString(value.process, `${path}.process`, errors);
   requireBoolean(value.registry, `${path}.registry`, errors);
   if (value.root_object !== null) {
-    validateRootObject(value.root_object, `${path}.root_object`, errors);
+    validateRootObject(value.root_object, `${path}.root_object`, errors, options);
   }
   requireNullableString(value.root_object_error, `${path}.root_object_error`, errors);
 }
 
-function validateRootObject(value, path, errors) {
+function validateRootObject(value, path, errors, options) {
   if (!isPlainObject(value)) {
     errors.push(`${path} must be null or an object`);
     return;
   }
-  rejectUnexpectedKeys(value, ROOT_OBJECT_KEYS, path, errors);
+  const rootKeys = options.allowTraversalOutput ? FUTURE_TRAVERSAL_ROOT_OBJECT_KEYS : ROOT_OBJECT_KEYS;
+  rejectUnexpectedKeys(value, rootKeys, path, errors);
   if (value.path !== "/org/a11y/atspi/accessible/root") {
     errors.push(`${path}.path must be /org/a11y/atspi/accessible/root`);
   }
@@ -166,6 +179,12 @@ function validateRootObject(value, path, errors) {
   requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
   validateObjectRefArray(value.children_sample, 8, `${path}.children_sample`, errors);
   validateChildMetadataArray(value.child_metadata_sample, 4, `${path}.child_metadata_sample`, errors);
+  if (options.allowTraversalOutput && value.traversal !== undefined) {
+    const traversalResult = validateFutureDesktopTraversalOutput(value.traversal);
+    for (const error of traversalResult.errors) {
+      errors.push(`${path}.${error}`);
+    }
+  }
 }
 
 function validateObjectRefArray(value, maxItems, path, errors) {

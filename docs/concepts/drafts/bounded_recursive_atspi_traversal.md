@@ -263,8 +263,9 @@ The candidate field set is also captured as a non-runtime fixture in
 without enabling traversal in the current schema.
 
 Future valid and invalid validator cases are captured in
-`docs/fixtures/future-traversal-output-validation-cases.json`. Today those cases must still fail
-with `root_object.traversal is not allowed`.
+`docs/fixtures/future-traversal-output-validation-cases.json`. The default runtime validator still
+fails those cases with `root_object.traversal is not allowed`; the disabled traversal-aware
+validator gate accepts the valid case and rejects the malformed cases.
 
 ```json
 {
@@ -343,9 +344,10 @@ and tests are ready. It should check:
 - `withheld_fields` is present and does not claim protected fields were included
 
 A pure future validator scaffold exists in `src/desktopTraversalOutput.js` with tests in
-`test/desktopTraversalOutput.test.js`. It is not wired into
-`validateDesktopInspectionResult`; the current runtime validator still rejects traversal output at
-`root_object.traversal`.
+`test/desktopTraversalOutput.test.js`. A disabled full-inspection gate is available through
+`validateFutureDesktopInspectionResultWithTraversal`; it wires that traversal validator into the
+desktop inspection result shape for tests only. The current runtime validator still rejects
+traversal output at `root_object.traversal` unless that explicit future gate is used.
 
 The validator should keep the current fail-closed semantics:
 

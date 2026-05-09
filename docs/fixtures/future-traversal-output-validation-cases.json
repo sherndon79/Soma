@@ -41,7 +41,7 @@
   "invalid_cases": [
     {
       "name": "duplicate_node_ids",
-      "future_error": "traversal node ids must be unique",
+      "future_error": "id must be unique",
       "traversal": {
         "root": {
           "service": ":1.42",
@@ -79,7 +79,7 @@
     },
     {
       "name": "bad_child_ref",
-      "future_error": "traversal children must reference included node ids",
+      "future_error": "children must reference included node ids",
       "traversal": {
         "root": {
           "service": ":1.42",
@@ -108,7 +108,7 @@
     },
     {
       "name": "over_limit_depth",
-      "future_error": "traversal node depth must not exceed limits.max_depth",
+      "future_error": "depth must be less than or equal to limits.max_depth",
       "traversal": {
         "root": {
           "service": ":1.42",
@@ -137,7 +137,7 @@
     },
     {
       "name": "protected_text_field",
-      "future_error": "traversal nodes must not include protected text fields",
+      "future_error": "name is not allowed",
       "traversal": {
         "root": {
           "service": ":1.42",

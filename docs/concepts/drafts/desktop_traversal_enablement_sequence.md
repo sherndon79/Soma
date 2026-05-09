@@ -1,6 +1,6 @@
 # Desktop Traversal Enablement Sequence
 
-Status: design draft, not implemented
+Status: design draft, partially scaffolded
 
 This document orders the remaining work required before recursive AT-SPI traversal can replace
 the current `desktop_traversal_not_implemented` guard.
@@ -13,6 +13,8 @@ Existing pieces that are present but not active:
 
 - `src/desktopTraversalRequest.js`: future request-shape and `root_ref` authorization validator
 - `src/desktopTraversalOutput.js`: future traversal output validator
+- `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
+  disabled traversal-aware full inspection validator gate
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
@@ -23,6 +25,7 @@ Current active guards that must remain until the activation sequence reaches the
 - `rejectUnsupportedDesktopTraversal` rejects any `traversal` request before helper invocation
 - `ROOT_OBJECT_KEYS` excludes `traversal`
 - current schema excludes traversal output
+- `validateDesktopInspectionResult` still rejects traversal output by default
 - current provenance does not include traversal fields
 
 ## Activation Order
@@ -31,11 +34,18 @@ Current active guards that must remain until the activation sequence reaches the
 
 Activate traversal output validation before any helper can return traversal successfully.
 
-Changes:
+Runtime scaffold status:
+
+- opt-in full inspection validation is available through
+  `validateFutureDesktopInspectionResultWithTraversal`
+- default runtime validation remains unchanged and still rejects `root_object.traversal`
+- the active JSON schema remains unchanged and still excludes traversal
+
+Remaining changes before activation:
 
 - extend `docs/schemas/desktop-inspection-result.schema.json`
-- extend `ROOT_OBJECT_KEYS` to allow `traversal`
-- wire `validateFutureDesktopTraversalOutput` into `validateRootObject`
+- switch the active runtime path to allow `traversal` only when the endpoint is ready to consume
+  validated traversal helper output
 - keep protected fields rejected
 
 Required tests:
@@ -147,4 +157,3 @@ Required tests:
 - no helper traversal execution in this slice
 - no text/name/action/screenshot exposure
 - no desktop actuation
-

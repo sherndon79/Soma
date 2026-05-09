@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   assertDesktopInspectionResult,
   validateDesktopInspectionResult,
+  validateFutureDesktopInspectionResultWithTraversal,
 } from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
@@ -191,6 +192,38 @@ test("future traversal output cases remain rejected by current runtime validator
     assert.equal(result.valid, false, invalidCase.name);
     assert.equal(typeof invalidCase.future_error, "string", invalidCase.name);
     assert.ok(result.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+  }
+});
+
+test("future traversal-aware desktop validator accepts bounded traversal output behind an explicit gate", async () => {
+  const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
+  const result = validateFutureDesktopInspectionResultWithTraversal(
+    atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal),
+  );
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+
+  const currentResult = validateDesktopInspectionResult(
+    atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal),
+  );
+  assert.equal(currentResult.valid, false);
+  assert.ok(currentResult.errors.includes("result.tree.applications[0].root_object.traversal is not allowed"));
+});
+
+test("future traversal-aware desktop validator rejects invalid traversal output before provenance", async () => {
+  const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
+
+  for (const invalidCase of fixture.invalid_cases) {
+    const result = validateFutureDesktopInspectionResultWithTraversal(
+      atspiResultWithRootObjectField("traversal", invalidCase.traversal),
+    );
+
+    assert.equal(result.valid, false, invalidCase.name);
+    assert.ok(
+      result.errors.some((error) => error.includes(invalidCase.future_error)),
+      invalidCase.name,
+    );
   }
 });
 

@@ -740,6 +740,30 @@ where
 }
 
 #[allow(dead_code)]
+fn inspect_atspi_traversal_json(args: &TraversalArgs) -> Result<String, String> {
+    let address =
+        get_atspi_bus_address().ok_or_else(|| "atspi_bus_address_unavailable".to_string())?;
+    let result = build_traversal_from_args(args, |object_ref, max_children| {
+        inspect_traversal_observation(&address, object_ref, max_children)
+    });
+    Ok(result.to_json())
+}
+
+fn build_traversal_from_args<F>(args: &TraversalArgs, mut query: F) -> AtspiTraversalResult
+where
+    F: FnMut(&AtspiObjectRef, usize) -> Result<AtspiTraversalObservation, String>,
+{
+    let root = AtspiObjectRef {
+        service: args.root_service.clone(),
+        path: args.root_path.clone(),
+    };
+    let limits = AtspiTraversalLimits::from(args);
+    build_bounded_traversal(root, limits, |object_ref| {
+        query(object_ref, limits.max_children_per_node)
+    })
+}
+
+#[allow(dead_code)]
 fn inspect_traversal_observation(
     address: &str,
     object_ref: &AtspiObjectRef,
@@ -1424,6 +1448,53 @@ mod tests {
                 max_children_per_node: 16,
             }
         );
+    }
+
+    #[test]
+    fn traversal_from_args_uses_authorized_root_limits_and_query_boundary() {
+        let args = TraversalArgs {
+            root_service: ":1.42".to_string(),
+            root_path: "/org/a11y/atspi/accessible/root".to_string(),
+            max_depth: 1,
+            max_nodes: 8,
+            max_children_per_node: 2,
+        };
+        let observations = fake_traversal_observations([
+            (
+                "/org/a11y/atspi/accessible/root",
+                "application",
+                3,
+                vec!["/a", "/b", "/c"],
+            ),
+            ("/a", "frame", 0, vec![]),
+            ("/b", "frame", 0, vec![]),
+        ]);
+        let mut queried = Vec::new();
+
+        let result = build_traversal_from_args(&args, |object_ref, max_children| {
+            queried.push((object_ref.clone(), max_children));
+            fake_query(&observations, [])(object_ref)
+        });
+
+        assert_eq!(result.root, fake_ref("/org/a11y/atspi/accessible/root"));
+        assert_eq!(result.limits, AtspiTraversalLimits::from(&args));
+        assert_eq!(
+            result
+                .nodes
+                .iter()
+                .map(|node| node.object_ref.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/org/a11y/atspi/accessible/root", "/a", "/b"]
+        );
+        assert_eq!(
+            queried,
+            vec![
+                (fake_ref("/org/a11y/atspi/accessible/root"), 2),
+                (fake_ref("/a"), 2),
+                (fake_ref("/b"), 2),
+            ]
+        );
+        assert_eq!(result.truncated, true);
     }
 
     #[test]

@@ -27,6 +27,8 @@ Existing pieces that are present but not active:
 - internal Rust traversal output structs and JSON builder tests
 - internal Rust in-memory traversal builder and fake-observation limit tests
 - internal Rust traversal query boundary helper for role, child count, and bounded child refs
+- private Rust traversal bridge from validated args to bounded traversal assembly and the live
+  AT-SPI query boundary
 - command-level Rust integration test proving `inspect-atspi-traversal` still returns not implemented
   with valid-looking traversal args and emits no traversal JSON
 - future fixtures in `docs/fixtures/`
@@ -100,6 +102,9 @@ Implementation should first land pure Rust traversal/output units with fake in-m
 The public `inspect-atspi-traversal` command should keep returning not implemented until Node is
 ready to authorize requests and validate output on the active path.
 
+Current scaffold status: the private Rust bridge can build traversal from validated args and the
+live AT-SPI query boundary, but the public command still returns not implemented.
+
 Required tests:
 
 - Rust parser tests continue to pass
@@ -107,6 +112,7 @@ Required tests:
 - Rust traversal respects depth, node, and child limits
 - Rust traversal marks truncation when limits stop traversal
 - malformed helper args fail before AT-SPI queries
+- public `inspect-atspi-traversal` still returns not implemented and emits no traversal JSON
 
 Do not wire Node endpoint to call it yet.
 

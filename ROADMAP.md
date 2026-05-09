@@ -81,6 +81,8 @@ Implemented:
 - pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - pure Rust in-memory breadth-first traversal tests while helper command remains disabled
 - internal Rust traversal query boundary helper while helper command remains disabled
+- private Rust traversal bridge connects validated args, bounded traversal assembly, and the live
+  AT-SPI query boundary while the public helper command remains disabled
 - command-level Rust traversal execution test proving `inspect-atspi-traversal` remains disabled
   with valid-looking args and emits no traversal JSON
 - documented implementation guide and component review scope
@@ -96,14 +98,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement disabled Rust traversal helper execution behind the existing command guard.
+Prepare Node traversal helper invocation behind the existing endpoint refusal.
 
 Target:
 
 ```text
-rust traversal helper internals
-  -> helper can build bounded traversal from live AT-SPI query boundary
-  -> public inspect-atspi-traversal command still returns not implemented
+node traversal helper invocation
+  -> Node can derive and validate traversal helper args from an authorized root
+  -> helper invocation remains unreachable from public endpoint
   -> Node endpoint still refuses traversal
   -> active schema/runtime behavior still rejects traversal by default
 ```
@@ -111,8 +113,9 @@ rust traversal helper internals
 Expected work:
 
 - keep current provenance behavior unchanged
-- connect the internal Rust traversal query boundary to bounded traversal assembly behind a private
-  helper function
+- add internal Node coverage for traversal helper invocation shape and output validation path where
+  possible without opening the endpoint
+- keep helper output flowing through explicit traversal-aware validation only on the future path
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented

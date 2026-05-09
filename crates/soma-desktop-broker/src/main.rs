@@ -597,6 +597,103 @@ struct AtspiObjectRef {
     path: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AtspiTraversalLimits {
+    max_depth: usize,
+    max_nodes: usize,
+    max_children_per_node: usize,
+}
+
+impl From<&TraversalArgs> for AtspiTraversalLimits {
+    fn from(args: &TraversalArgs) -> Self {
+        Self {
+            max_depth: args.max_depth,
+            max_nodes: args.max_nodes,
+            max_children_per_node: args.max_children_per_node,
+        }
+    }
+}
+
+struct AtspiTraversalResult {
+    root: AtspiObjectRef,
+    nodes: Vec<AtspiTraversalNode>,
+    limits: AtspiTraversalLimits,
+    truncated: bool,
+}
+
+impl AtspiTraversalResult {
+    fn to_json(&self) -> String {
+        let nodes_json = self
+            .nodes
+            .iter()
+            .map(|node| node.to_json())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            concat!(
+                "{{",
+                "\"root\":{},",
+                "\"nodes\":[{}],",
+                "\"limits\":{{",
+                "\"max_depth\":{},",
+                "\"max_nodes\":{},",
+                "\"max_children_per_node\":{}",
+                "}},",
+                "\"truncated\":{},",
+                "\"text_content_included\":false,",
+                "\"withheld_fields\":[\"name\",\"description\",\"text\",\"states\",\"actions\"]",
+                "}}"
+            ),
+            self.root.to_json(),
+            nodes_json,
+            self.limits.max_depth,
+            self.limits.max_nodes,
+            self.limits.max_children_per_node,
+            self.truncated,
+        )
+    }
+}
+
+struct AtspiTraversalNode {
+    id: String,
+    object_ref: AtspiObjectRef,
+    role: String,
+    child_count: i32,
+    depth: usize,
+    children: Vec<String>,
+}
+
+impl AtspiTraversalNode {
+    fn to_json(&self) -> String {
+        let children_json = self
+            .children
+            .iter()
+            .map(|child| format!("\"{}\"", json_escape(child)))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            concat!(
+                "{{",
+                "\"id\":\"{}\",",
+                "\"service\":\"{}\",",
+                "\"path\":\"{}\",",
+                "\"role\":\"{}\",",
+                "\"child_count\":{},",
+                "\"depth\":{},",
+                "\"children\":[{}]",
+                "}}"
+            ),
+            json_escape(&self.id),
+            json_escape(&self.object_ref.service),
+            json_escape(&self.object_ref.path),
+            json_escape(&self.role),
+            self.child_count,
+            self.depth,
+            children_json,
+        )
+    }
+}
+
 struct AtspiFocusedObject {
     object_ref: AtspiObjectRef,
     role: String,
@@ -1026,6 +1123,161 @@ mod tests {
         assert!(!json.contains(r#""text":"#));
         assert!(!json.contains(r#""states":"#));
         assert!(!json.contains(r#""actions":"#));
+    }
+
+    #[test]
+    fn traversal_result_json_emits_bounded_shape() {
+        let traversal = AtspiTraversalResult {
+            root: AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/org/a11y/atspi/accessible/root".to_string(),
+            },
+            nodes: vec![
+                AtspiTraversalNode {
+                    id: "n0".to_string(),
+                    object_ref: AtspiObjectRef {
+                        service: ":1.42".to_string(),
+                        path: "/org/a11y/atspi/accessible/root".to_string(),
+                    },
+                    role: "application".to_string(),
+                    child_count: 1,
+                    depth: 0,
+                    children: vec!["n1".to_string()],
+                },
+                AtspiTraversalNode {
+                    id: "n1".to_string(),
+                    object_ref: AtspiObjectRef {
+                        service: ":1.42".to_string(),
+                        path: "/org/a11y/atspi/accessible/1".to_string(),
+                    },
+                    role: "frame".to_string(),
+                    child_count: 0,
+                    depth: 1,
+                    children: vec![],
+                },
+            ],
+            limits: AtspiTraversalLimits {
+                max_depth: 2,
+                max_nodes: 64,
+                max_children_per_node: 8,
+            },
+            truncated: false,
+        };
+
+        let json = traversal.to_json();
+
+        assert!(
+            json.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
+        );
+        assert!(json.contains(r#""id":"n0""#));
+        assert!(json.contains(r#""role":"application""#));
+        assert!(json.contains(r#""child_count":1"#));
+        assert!(json.contains(r#""depth":0"#));
+        assert!(json.contains(r#""children":["n1"]"#));
+        assert!(
+            json.contains(r#""limits":{"max_depth":2,"max_nodes":64,"max_children_per_node":8}"#)
+        );
+        assert!(json.contains(r#""truncated":false"#));
+        assert!(json.contains(r#""text_content_included":false"#));
+        assert!(
+            json.contains(r#""withheld_fields":["name","description","text","states","actions"]"#)
+        );
+    }
+
+    #[test]
+    fn traversal_result_json_escapes_external_strings() {
+        let traversal = AtspiTraversalResult {
+            root: AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/root".to_string(),
+            },
+            nodes: vec![AtspiTraversalNode {
+                id: "n\"0".to_string(),
+                object_ref: AtspiObjectRef {
+                    service: ":1.42".to_string(),
+                    path: "/org/a11y/atspi/accessible/line\none".to_string(),
+                },
+                role: "frame\\dialog".to_string(),
+                child_count: 0,
+                depth: 0,
+                children: vec!["child\tid".to_string()],
+            }],
+            limits: AtspiTraversalLimits {
+                max_depth: 1,
+                max_nodes: 1,
+                max_children_per_node: 1,
+            },
+            truncated: true,
+        };
+
+        let json = traversal.to_json();
+
+        assert!(json.contains(r#""id":"n\"0""#));
+        assert!(json.contains(r#""path":"/org/a11y/atspi/accessible/line\none""#));
+        assert!(json.contains(r#""role":"frame\\dialog""#));
+        assert!(json.contains(r#""children":["child\tid"]"#));
+        assert!(json.contains(r#""truncated":true"#));
+    }
+
+    #[test]
+    fn traversal_result_json_omits_protected_fields() {
+        let traversal = AtspiTraversalResult {
+            root: AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/root".to_string(),
+            },
+            nodes: vec![AtspiTraversalNode {
+                id: "n0".to_string(),
+                object_ref: AtspiObjectRef {
+                    service: ":1.42".to_string(),
+                    path: "/root".to_string(),
+                },
+                role: "application".to_string(),
+                child_count: 0,
+                depth: 0,
+                children: vec![],
+            }],
+            limits: AtspiTraversalLimits {
+                max_depth: 1,
+                max_nodes: 64,
+                max_children_per_node: 8,
+            },
+            truncated: false,
+        };
+
+        let json = traversal.to_json();
+
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""value":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
+        assert!(!json.contains(r#""screenshot":"#));
+        assert!(!json.contains(r#""image":"#));
+        assert!(!json.contains(r#""pointer_state":"#));
+        assert!(!json.contains(r#""keyboard_state":"#));
+        assert!(!json.contains(r#""desktop_ref_id":"#));
+    }
+
+    #[test]
+    fn traversal_limits_derive_from_validated_args() {
+        let args = TraversalArgs {
+            root_service: ":1.42".to_string(),
+            root_path: "/org/a11y/atspi/accessible/root".to_string(),
+            max_depth: 3,
+            max_nodes: 128,
+            max_children_per_node: 16,
+        };
+
+        assert_eq!(
+            AtspiTraversalLimits::from(&args),
+            AtspiTraversalLimits {
+                max_depth: 3,
+                max_nodes: 128,
+                max_children_per_node: 16,
+            }
+        );
     }
 
     #[test]

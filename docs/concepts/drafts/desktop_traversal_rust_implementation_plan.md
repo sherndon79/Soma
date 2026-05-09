@@ -15,11 +15,14 @@ Already present:
 
 - `inspect-atspi-traversal` command dispatch
 - `TraversalArgs` parser for authorized root and limits
+- typed traversal output structs and JSON assembly
 - helper-side hard ceilings:
   - `MAX_TRAVERSAL_DEPTH = 4`
   - `MAX_TRAVERSAL_NODES = 256`
   - `MAX_TRAVERSAL_CHILDREN_PER_NODE = 32`
 - parser tests for valid, missing, malformed, out-of-range, and unknown traversal arguments
+- output-builder tests for required shape, escaping, protected-field omission, withheld fields, and
+  deriving limits from validated args
 
 Current required behavior:
 
@@ -33,6 +36,8 @@ Current required behavior:
 Implement traversal in testable internal pieces before wiring the command to AT-SPI.
 
 ### Traversal Node Model
+
+Implementation status: present as internal helper structs, not wired to command execution.
 
 Internal struct:
 
@@ -58,6 +63,8 @@ Rules:
 
 ### Traversal Result Model
 
+Implementation status: present as internal helper structs, not wired to command execution.
+
 Internal result:
 
 ```text
@@ -81,6 +88,8 @@ Rules:
 
 ### Queue Traversal
 
+Implementation status: not implemented.
+
 Use breadth-first traversal from the authorized root.
 
 Reasons:
@@ -100,6 +109,9 @@ Required behavior:
 - set `truncated=true` if a node query fails after traversal has started
 
 ### Output Assembly
+
+Implementation status: present for typed traversal output. It remains disconnected from
+`inspect-atspi-traversal`.
 
 Build JSON from typed values rather than string concatenation where practical. If the helper stays
 dependency-free, keep one small JSON assembly function and test escaping on every string field that

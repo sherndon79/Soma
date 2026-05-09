@@ -22,6 +22,7 @@ Existing pieces that are present but not active:
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
 - `docs/concepts/drafts/desktop_traversal_rust_implementation_plan.md`: Rust internal unit and
   test-matrix plan
+- internal Rust traversal output structs and JSON builder tests
 - future fixtures in `docs/fixtures/`
 
 Current active guards that must remain until the activation sequence reaches them:

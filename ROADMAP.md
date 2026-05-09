@@ -74,6 +74,7 @@ Implemented:
 - pure future traversal provenance summary builder remains disconnected from current provenance
 - documented traversal enablement sequence and remaining gates
 - documented Rust traversal implementation plan and test matrix
+- pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -86,13 +87,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Add pure Rust traversal output-builder units while keeping the helper command disabled.
+Add pure Rust in-memory breadth-first traversal units while keeping the helper command disabled.
 
 Target:
 
 ```text
 traversal readiness
-  -> typed traversal output assembly
+  -> bounded traversal algorithm with fake observations
   -> default runtime and active schema still closed
   -> endpoint still refuses traversal
   -> helper command still refuses traversal
@@ -101,8 +102,9 @@ traversal readiness
 Expected work:
 
 - keep current provenance behavior unchanged
-- add internal Rust structs/builders for traversal root, nodes, limits, and result JSON
-- test JSON shape, escaping, protected-field omission, and withheld fields
+- add fake-observation traversal tests for breadth-first ordering
+- enforce max depth, max nodes, and max children per node in the algorithm
+- test truncation flags and child ids referencing only included nodes
 - keep `inspect-atspi-traversal` returning not implemented
 - keep endpoint `desktop_traversal_not_implemented`
 - preserve current response bodies and schemas

@@ -173,3 +173,82 @@ Run another review after any of:
 - `desktop.inspect.text` design starts
 - the disclosure registry policy needs revision based on real traversal use
 - the documentation surface reaches a point where consolidation becomes necessary
+
+---
+
+## Addendum: Action Disposition — 2026-05-09
+
+Follow-up review by Codex identified two findings that should be narrowed rather than accepted as
+written, and several findings that are directly actionable.
+
+### Actionable Items
+
+1. **Draft consolidation and retirement policy**
+
+   Accept. The desktop draft surface is intentionally granular while traversal is being designed,
+   but the project needs a rule for what happens when a draft becomes implemented behavior. Add a
+   migration or documentation-lifecycle policy before promoting traversal or escalation docs to
+   canonical status.
+
+   Rationale: without a retirement policy, future contributors and agents may treat superseded
+   scaffolding as active contract.
+
+2. **Future fixture/schema cleanup policy**
+
+   Accept. `future-*` fixtures and schemas are useful while a capability is disabled, but they need
+   an explicit transition path once that capability opens.
+
+   Rationale: future artifacts should either become active contract fixtures, remain historical
+   design records, or be removed. Leaving the status implicit creates avoidable ambiguity.
+
+3. **General capability enablement sequence**
+
+   Accept. The traversal sequence captures a reusable pattern:
+
+   ```text
+   design contract -> validators -> overreach rejection -> provenance shape -> implementation -> activation
+   ```
+
+   Rationale: remote planning, desktop text inspection, and eventual actuation should not
+   rediscover this sequence independently.
+
+4. **Canonical promotion candidate for escalation Phase 1**
+
+   Accept with sequencing. Phase 1 has implementation, tests, provenance, and threat/failure-mode
+   coverage, so it is a reasonable first candidate for draft-to-canonical promotion after a
+   migration policy exists.
+
+   Rationale: promotion should not precede the policy that explains how draft material is split,
+   retired, or preserved.
+
+### Findings To Refine
+
+1. **Escalation trigger user-facing surface**
+
+   Refine, do not accept as written. The review says there is no user-facing path, but `POST /chat`
+   returns `escalation_assessment` when `assess_escalation=true`, and the CLI exposes
+   `--assess-escalation`. Tests cover this path.
+
+   The actionable version is narrower: escalation assessment is opt-in and not yet part of the
+   default participant-facing flow. Before Phase 2, decide whether and when local chat should
+   surface escalation triggers without requiring a separate operator-style flag.
+
+   Rationale: the current implementation does surface the information, but the default interaction
+   design is unresolved.
+
+2. **Disclosure registry TTL**
+
+   Refine, do not accept as written. The review says the 10-minute TTL is unjustified. The
+   rationale class is documented in `desktop_disclosure_registry.md`: AT-SPI references can become
+   stale as applications change. What remains unjustified is the exact 10-minute value.
+
+   The actionable version is: keep 10 minutes as an MVP default for now, but document it as a
+   tunable policy and revisit after the first real traversal use.
+
+   Rationale: the current value is defensible as a conservative starting point, but not yet
+   evidence-based.
+
+### Findings To Disregard
+
+None of the review findings should be fully disregarded. Two should be narrowed as above; the
+remaining findings are valid follow-up work.

@@ -66,6 +66,8 @@ Implemented:
 - pure future traversal output validator scaffold remains disconnected from current schema
 - disabled traversal-aware full inspection validator gate while default runtime validation rejects
   traversal
+- future full desktop inspection schema draft with bounded traversal while active schema remains
+  closed
 - documented future traversal provenance summary fields
 - pure future traversal provenance summary builder remains disconnected from current provenance
 - documented traversal enablement sequence and remaining gates
@@ -81,13 +83,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a separate future traversal JSON schema draft without replacing the active schema.
+Add helper-overreach coverage for traversal-shaped helper payloads behind the disabled validator
+gate.
 
 Target:
 
 ```text
 traversal readiness
-  -> future JSON schema draft
+  -> rejected helper traversal output has no provenance
   -> default runtime and active schema still closed
   -> endpoint still refuses traversal
   -> no traversal implementation
@@ -96,9 +99,9 @@ traversal readiness
 Expected work:
 
 - keep current provenance behavior unchanged
-- preserve the active `desktop-inspection-result.schema.json`
-- add or document a future full inspection schema that includes bounded traversal
 - keep default runtime validation rejecting traversal
+- add an app/provider-overreach test for helper output that includes traversal
+- ensure invalid traversal helper payloads are rejected before provenance
 - keep endpoint `desktop_traversal_not_implemented`
 - keep helper traversal command unimplemented
 - preserve current response bodies and schemas

@@ -15,6 +15,8 @@ Existing pieces that are present but not active:
 - `src/desktopTraversalOutput.js`: future traversal output validator
 - `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
   disabled traversal-aware full inspection validator gate
+- `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`: future full
+  inspection schema draft
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
 - `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
@@ -38,12 +40,14 @@ Runtime scaffold status:
 
 - opt-in full inspection validation is available through
   `validateFutureDesktopInspectionResultWithTraversal`
+- a separate future full inspection schema draft documents the bounded traversal response shape
 - default runtime validation remains unchanged and still rejects `root_object.traversal`
 - the active JSON schema remains unchanged and still excludes traversal
 
 Remaining changes before activation:
 
-- extend `docs/schemas/desktop-inspection-result.schema.json`
+- decide when to replace or version the active `docs/schemas/desktop-inspection-result.schema.json`
+  with the future traversal-aware draft
 - switch the active runtime path to allow `traversal` only when the endpoint is ready to consume
   validated traversal helper output
 - keep protected fields rejected

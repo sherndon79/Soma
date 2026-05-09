@@ -262,6 +262,11 @@ The candidate field set is also captured as a non-runtime fixture in
 `docs/fixtures/future-traversal-output-schema.json`. That fixture documents the future output
 without enabling traversal in the current schema.
 
+The future full inspection schema draft is captured in
+`docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`. It is not referenced by
+the active capability catalog and does not replace
+`docs/schemas/desktop-inspection-result.schema.json`.
+
 Future valid and invalid validator cases are captured in
 `docs/fixtures/future-traversal-output-validation-cases.json`. The default runtime validator still
 fails those cases with `root_object.traversal is not allowed`; the disabled traversal-aware
@@ -318,6 +323,11 @@ The actual schema should also enforce:
 - every node `children` list contains only local node ids
 - no traversal node fields for names, descriptions, text, values, states, actions, screenshots, or
   input state
+
+The future schema draft enforces the field shape, protected-field omission, text-content constant,
+and hard public ceilings. Runtime validation must still enforce graph-level invariants that JSON
+Schema cannot express cleanly, including unique node ids, child references to included nodes, and
+returned limits against the authorized request.
 
 Schema extension should not remove the existing root-object `children_sample` and
 `child_metadata_sample` fields. Traversal is a new optional block, not a reinterpretation of the

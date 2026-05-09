@@ -9,6 +9,10 @@ import {
 } from "../src/desktopInspectionSchema.js";
 
 const schemaPath = new URL("../docs/schemas/desktop-inspection-result.schema.json", import.meta.url);
+const futureTraversalSchemaPath = new URL(
+  "../docs/schemas/future-desktop-inspection-result-with-traversal.schema.json",
+  import.meta.url,
+);
 const futureDesktopRefFixturePath = new URL(
   "../docs/fixtures/future-desktop-ref-id-locations.json",
   import.meta.url,
@@ -82,6 +86,48 @@ test("future traversal output fixture documents schema without enabling current 
   assert.equal("traversal" in schema.$defs, false);
   assert.equal("traversal_node" in schema.$defs, false);
   assert.equal("traversal_limits" in schema.$defs, false);
+});
+
+test("future traversal schema draft documents bounded traversal without replacing the active schema", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const futureSchema = JSON.parse(await readFile(futureTraversalSchemaPath, "utf8"));
+  const rootObject = futureSchema.$defs.root_object;
+  const traversal = futureSchema.$defs.traversal;
+  const traversalNode = futureSchema.$defs.traversal_node;
+  const traversalLimits = futureSchema.$defs.traversal_limits;
+
+  assert.equal(futureSchema.title, "Soma Future Desktop Inspection Result With Bounded Traversal");
+  assert.equal("traversal" in schema.$defs.root_object.properties, false);
+  assert.equal("traversal" in rootObject.properties, true);
+  assert.deepEqual(traversal.required, [
+    "root",
+    "nodes",
+    "limits",
+    "truncated",
+    "text_content_included",
+    "withheld_fields",
+  ]);
+  assert.equal(traversal.properties.text_content_included.const, false);
+  assert.equal(traversal.properties.nodes.maxItems, 256);
+  assert.equal(traversalNode.additionalProperties, false);
+  assert.deepEqual(Object.keys(traversalNode.properties), [
+    "id",
+    "service",
+    "path",
+    "role",
+    "child_count",
+    "depth",
+    "children",
+  ]);
+  assert.equal("name" in traversalNode.properties, false);
+  assert.equal("description" in traversalNode.properties, false);
+  assert.equal("text" in traversalNode.properties, false);
+  assert.equal("states" in traversalNode.properties, false);
+  assert.equal("actions" in traversalNode.properties, false);
+  assert.equal(traversalNode.properties.children.maxItems, 32);
+  assert.equal(traversalLimits.properties.max_depth.maximum, 4);
+  assert.equal(traversalLimits.properties.max_nodes.maximum, 256);
+  assert.equal(traversalLimits.properties.max_children_per_node.maximum, 32);
 });
 
 test("desktop inspection runtime validator accepts the current AT-SPI shape", () => {

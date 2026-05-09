@@ -56,6 +56,7 @@ Implemented:
 - documented future desktop root-ref exposure path
 - fixture and tests document future `desktop_ref_id` locations while current schema rejects them
 - documented future traversal request validation against disclosed root refs
+- disabled pure traversal request validator scaffold and tests
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -68,23 +69,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a disabled traversal request validator scaffold behind current rejection.
+Wire traversal request validation into the endpoint while traversal remains disabled.
 
 Target:
 
 ```text
 root authorization model
-  -> unit-tested validator function
+  -> endpoint-level validator fixture
   -> endpoint still rejects traversal
   -> no traversal implementation
 ```
 
 Expected work:
 
-- add a pure validator module for future traversal request shapes
-- keep `/desktop/inspect/accessibility-tree` returning `desktop_traversal_not_implemented`
-- test root_ref-only acceptance at the pure validator layer
-- test raw service/path roots are rejected by the pure validator
+- prove endpoint rejection remains `desktop_traversal_not_implemented`
+- add comments/docs showing where the pure validator will replace the current hard rejection
+- ensure no helper invocation or provenance happens for traversal requests
 - keep helper invocation and provenance unchanged
 - preserve current response bodies and schemas
 - keep current runtime behavior unchanged

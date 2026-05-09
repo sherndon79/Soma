@@ -17,6 +17,7 @@ Already present:
 - `TraversalArgs` parser for authorized root and limits
 - typed traversal output structs and JSON assembly
 - in-memory breadth-first traversal builder with fake-observation tests
+- internal AT-SPI traversal query boundary helper for role, child count, and bounded child refs
 - helper-side hard ceilings:
   - `MAX_TRAVERSAL_DEPTH = 4`
   - `MAX_TRAVERSAL_NODES = 256`
@@ -26,6 +27,8 @@ Already present:
   deriving limits from validated args
 - traversal algorithm tests for breadth-first ordering, depth limit, node limit, child limit,
   truncation, and child ids referencing only included nodes
+- traversal observation tests for parsing role, child count, bounded child refs, and protected-field
+  omission through the JSON path
 
 Current required behavior:
 
@@ -126,7 +129,7 @@ Node validator until activation.
 
 ## AT-SPI Query Boundary
 
-Implementation status: not implemented.
+Implementation status: present as an internal helper, not wired to command execution.
 
 Keep D-Bus interaction isolated behind a small query function:
 
@@ -151,6 +154,10 @@ The query function must not read:
 - input state
 
 This makes protected-field omission a query-level invariant, not just an output-filtering step.
+
+The live wrapper is intentionally marked unused until activation because `inspect-atspi-traversal`
+must continue returning not implemented. Tests exercise the parser/assembly path with fake command
+output and keep protected fields out of the traversal JSON path.
 
 ## Failure Behavior
 

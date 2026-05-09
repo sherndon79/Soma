@@ -739,6 +739,66 @@ where
     }
 }
 
+#[allow(dead_code)]
+fn inspect_traversal_observation(
+    address: &str,
+    object_ref: &AtspiObjectRef,
+    max_children: usize,
+) -> Result<AtspiTraversalObservation, String> {
+    const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
+
+    let role_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &object_ref.service,
+        &object_ref.path,
+        ACCESSIBLE_INTERFACE,
+        "GetRoleName",
+    ])?;
+    let child_count_output = busctl_output(&[
+        "--address",
+        address,
+        "get-property",
+        &object_ref.service,
+        &object_ref.path,
+        ACCESSIBLE_INTERFACE,
+        "ChildCount",
+    ])?;
+    let children_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &object_ref.service,
+        &object_ref.path,
+        ACCESSIBLE_INTERFACE,
+        "GetChildren",
+    ])?;
+
+    Ok(traversal_observation_from_outputs(
+        object_ref,
+        &role_output,
+        &child_count_output,
+        &children_output,
+        max_children,
+    ))
+}
+
+fn traversal_observation_from_outputs(
+    object_ref: &AtspiObjectRef,
+    role_output: &str,
+    child_count_output: &str,
+    children_output: &str,
+    max_children: usize,
+) -> AtspiTraversalObservation {
+    AtspiTraversalObservation {
+        object_ref: object_ref.clone(),
+        role: parse_busctl_string(role_output).unwrap_or_default(),
+        child_count: parse_busctl_int(child_count_output).unwrap_or(0),
+        children: parse_atspi_object_refs(children_output, max_children),
+    }
+}
+
 struct AtspiTraversalNode {
     id: String,
     object_ref: AtspiObjectRef,
@@ -1509,6 +1569,45 @@ mod tests {
             .all(|child| included_ids.contains(child.as_str())));
         assert_eq!(result.nodes[0].children, vec!["n2"]);
         assert_eq!(result.truncated, true);
+    }
+
+    #[test]
+    fn traversal_observation_parser_reads_only_bounded_metadata() {
+        let observation = traversal_observation_from_outputs(
+            &fake_ref("/root"),
+            r#"s "application""#,
+            "i 3",
+            r#"a(so) 3 ":1.42" "/a" ":1.42" "/b" ":1.42" "/c""#,
+            2,
+        );
+
+        assert_eq!(observation.object_ref, fake_ref("/root"));
+        assert_eq!(observation.role, "application");
+        assert_eq!(observation.child_count, 3);
+        assert_eq!(observation.children, vec![fake_ref("/a"), fake_ref("/b")]);
+    }
+
+    #[test]
+    fn traversal_observation_json_path_omits_protected_fields() {
+        let observation = traversal_observation_from_outputs(
+            &fake_ref("/root"),
+            r#"s "application""#,
+            "i 1",
+            r#"a(so) 1 ":1.42" "/a""#,
+            8,
+        );
+        let result = build_bounded_traversal(fake_ref("/root"), traversal_limits(1, 8, 8), |_| {
+            Ok(observation.clone())
+        });
+        let json = result.to_json();
+
+        assert!(json.contains(r#""role":"application""#));
+        assert!(json.contains(r#""child_count":1"#));
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
     }
 
     #[test]

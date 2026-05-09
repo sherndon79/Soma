@@ -76,6 +76,7 @@ Implemented:
 - documented Rust traversal implementation plan and test matrix
 - pure Rust traversal output structs and JSON builder tests while helper command remains disabled
 - pure Rust in-memory breadth-first traversal tests while helper command remains disabled
+- internal Rust traversal query boundary helper while helper command remains disabled
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -88,13 +89,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Add Rust AT-SPI traversal query boundary helpers while keeping the helper command disabled.
+Add disabled command-level traversal execution tests before activation.
 
 Target:
 
 ```text
 traversal readiness
-  -> bounded query function shape
+  -> command remains fail-closed despite internal helpers
   -> default runtime and active schema still closed
   -> endpoint still refuses traversal
   -> helper command still refuses traversal
@@ -103,9 +104,9 @@ traversal readiness
 Expected work:
 
 - keep current provenance behavior unchanged
-- add internal function shape for reading role, child count, and child refs only
-- keep protected fields out of the query boundary
-- test parsing/assembly with fake command output where possible
+- add tests that valid `inspect-atspi-traversal` args still return not implemented
+- ensure disabled command emits no traversal JSON
+- keep parser validation failures unchanged
 - keep `inspect-atspi-traversal` returning not implemented
 - keep endpoint `desktop_traversal_not_implemented`
 - preserve current response bodies and schemas

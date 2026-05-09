@@ -16,6 +16,7 @@ Already present:
 - `inspect-atspi-traversal` command dispatch
 - `TraversalArgs` parser for authorized root and limits
 - typed traversal output structs and JSON assembly
+- typed unavailable traversal output builder for the stable zero-node unavailable shape
 - in-memory breadth-first traversal builder with fake-observation tests
 - internal AT-SPI traversal query boundary helper for role, child count, and bounded child refs
 - helper-side hard ceilings:
@@ -117,8 +118,8 @@ Required behavior:
 
 ### Output Assembly
 
-Implementation status: present for typed traversal output. It remains disconnected from
-`inspect-atspi-traversal`.
+Implementation status: present for typed traversal output and unavailable traversal output. It remains
+disconnected from `inspect-atspi-traversal`.
 
 Build JSON from typed values rather than string concatenation where practical. If the helper stays
 dependency-free, keep one small JSON assembly function and test escaping on every string field that
@@ -190,6 +191,8 @@ Add tests before command activation:
 - output builder emits `text_content_included=false`
 - output builder emits required `withheld_fields`
 - output builder omits protected fields
+- unavailable output builder emits zero nodes and a stable unavailable reason
+- unavailable output builder omits protected fields
 - breadth-first traversal respects `max_depth`
 - traversal stops at `max_nodes`
 - traversal limits children per node to `max_children_per_node`

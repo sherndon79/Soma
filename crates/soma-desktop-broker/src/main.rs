@@ -621,9 +621,25 @@ struct AtspiTraversalResult {
     nodes: Vec<AtspiTraversalNode>,
     limits: AtspiTraversalLimits,
     truncated: bool,
+    unavailable_reason: Option<String>,
 }
 
 impl AtspiTraversalResult {
+    #[allow(dead_code)]
+    fn unavailable(
+        root: AtspiObjectRef,
+        limits: AtspiTraversalLimits,
+        unavailable_reason: &str,
+    ) -> Self {
+        Self {
+            root,
+            nodes: Vec::new(),
+            limits,
+            truncated: false,
+            unavailable_reason: Some(unavailable_reason.to_string()),
+        }
+    }
+
     fn to_json(&self) -> String {
         let nodes_json = self
             .nodes
@@ -631,6 +647,11 @@ impl AtspiTraversalResult {
             .map(|node| node.to_json())
             .collect::<Vec<_>>()
             .join(",");
+        let unavailable_reason_json = self
+            .unavailable_reason
+            .as_ref()
+            .map(|reason| format!("\"unavailable_reason\":\"{}\",", json_escape(reason)))
+            .unwrap_or_default();
         format!(
             concat!(
                 "{{",
@@ -642,6 +663,7 @@ impl AtspiTraversalResult {
                 "\"max_children_per_node\":{}",
                 "}},",
                 "\"truncated\":{},",
+                "{}",
                 "\"text_content_included\":false,",
                 "\"withheld_fields\":[\"name\",\"description\",\"text\",\"states\",\"actions\"]",
                 "}}"
@@ -652,6 +674,7 @@ impl AtspiTraversalResult {
             self.limits.max_nodes,
             self.limits.max_children_per_node,
             self.truncated,
+            unavailable_reason_json,
         )
     }
 }
@@ -736,6 +759,7 @@ where
         nodes,
         limits,
         truncated,
+        unavailable_reason: None,
     }
 }
 
@@ -1332,6 +1356,7 @@ mod tests {
                 max_children_per_node: 8,
             },
             truncated: false,
+            unavailable_reason: None,
         };
 
         let json = traversal.to_json();
@@ -1378,6 +1403,7 @@ mod tests {
                 max_children_per_node: 1,
             },
             truncated: true,
+            unavailable_reason: None,
         };
 
         let json = traversal.to_json();
@@ -1413,6 +1439,7 @@ mod tests {
                 max_children_per_node: 8,
             },
             truncated: false,
+            unavailable_reason: None,
         };
 
         let json = traversal.to_json();
@@ -1428,6 +1455,65 @@ mod tests {
         assert!(!json.contains(r#""pointer_state":"#));
         assert!(!json.contains(r#""keyboard_state":"#));
         assert!(!json.contains(r#""desktop_ref_id":"#));
+    }
+
+    #[test]
+    fn traversal_unavailable_result_json_emits_zero_node_shape() {
+        let traversal = AtspiTraversalResult::unavailable(
+            AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/org/a11y/atspi/accessible/root".to_string(),
+            },
+            AtspiTraversalLimits {
+                max_depth: 2,
+                max_nodes: 64,
+                max_children_per_node: 8,
+            },
+            "atspi_bus_address_unavailable",
+        );
+
+        let json = traversal.to_json();
+
+        assert!(
+            json.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
+        );
+        assert!(json.contains(r#""nodes":[]"#));
+        assert!(
+            json.contains(r#""limits":{"max_depth":2,"max_nodes":64,"max_children_per_node":8}"#)
+        );
+        assert!(json.contains(r#""truncated":false"#));
+        assert!(json.contains(r#""unavailable_reason":"atspi_bus_address_unavailable""#));
+        assert!(json.contains(r#""text_content_included":false"#));
+        assert!(
+            json.contains(r#""withheld_fields":["name","description","text","states","actions"]"#)
+        );
+    }
+
+    #[test]
+    fn traversal_unavailable_result_json_omits_protected_fields() {
+        let traversal = AtspiTraversalResult::unavailable(
+            AtspiObjectRef {
+                service: ":1.42".to_string(),
+                path: "/root".to_string(),
+            },
+            traversal_limits(1, 64, 8),
+            "atspi_root_query_unavailable",
+        );
+
+        let json = traversal.to_json();
+
+        assert!(!json.contains(r#""id":"#));
+        assert!(!json.contains(r#""role":"#));
+        assert!(!json.contains(r#""child_count":"#));
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""value":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
+        assert!(!json.contains(r#""screenshot":"#));
+        assert!(!json.contains(r#""pointer_state":"#));
+        assert!(!json.contains(r#""keyboard_state":"#));
     }
 
     #[test]

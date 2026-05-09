@@ -26,4 +26,3 @@ fn traversal_command_remains_disabled_with_valid_args() {
         "inspect-atspi-traversal is not implemented",
     );
 }
-

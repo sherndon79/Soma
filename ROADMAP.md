@@ -113,6 +113,8 @@ Implemented:
   fixtures, helper contract docs, and summary-only provenance tests while public traversal remains refused
 - unavailable traversal output contract review completed; public Rust command activation remains blocked
   on Rust-side unavailable output modeling and command-level tests
+- internal Rust unavailable traversal output builder emits the stable zero-node unavailable shape while
+  the public `inspect-atspi-traversal` command remains disabled
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -126,14 +128,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare Rust unavailable traversal output while keeping the public command disabled.
+Review Rust unavailable traversal output before command-level activation tests.
 
 Target:
 
 ```text
-rust unavailable traversal output
-  -> add internal Rust zero-node unavailable traversal JSON builder
-  -> test unavailable output matches Node validator/schema expectations
+rust unavailable traversal output review
+  -> confirm Rust unavailable output matches the Node contract
+  -> identify command-level tests needed before activation
   -> preserve runtime default traversal rejection
   -> keep Rust command and Node endpoint traversal refusal active
 ```
@@ -141,8 +143,8 @@ rust unavailable traversal output
 Expected work:
 
 - keep current provenance behavior unchanged
-- add Rust internal unavailable traversal output model/tests
-- keep successful traversal output behavior unchanged
+- review Rust unavailable output against helper activation requirements
+- decide whether next safe slice is command-level activation tests or more Rust shaping
 - keep `inspect-atspi-traversal` returning not implemented
 - keep command-level activation tests for a later slice
 - keep the current default validator/assertion behavior unchanged

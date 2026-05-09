@@ -46,6 +46,7 @@ Existing pieces that are present but not active:
 - internal Rust traversal query boundary helper for role, child count, and bounded child refs
 - private Rust traversal bridge from validated args to bounded traversal assembly and the live
   AT-SPI query boundary
+- internal Rust unavailable traversal output builder for the stable zero-node unavailable shape
 - command-level Rust integration test proving `inspect-atspi-traversal` still returns not implemented
   with valid-looking traversal args and emits no traversal JSON
 - future fixtures in `docs/fixtures/`
@@ -134,6 +135,8 @@ Required tests:
 - Rust traversal output omits protected fields
 - Rust traversal respects depth, node, and child limits
 - Rust traversal marks truncation when limits stop traversal
+- Rust unavailable traversal output emits zero nodes, a stable unavailable reason, and no protected
+  fields
 - malformed helper args fail before AT-SPI queries
 - public `inspect-atspi-traversal` still returns not implemented and emits no traversal JSON
 

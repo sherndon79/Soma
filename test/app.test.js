@@ -1135,7 +1135,8 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
       },
     },
   })) {
-    const handler = makeHandler({ harness: allowedHarness });
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/accessibility-tree",
@@ -1144,6 +1145,9 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
 
     assert.equal(response.statusCode, 403, name);
     assert.equal(response.body.error, "desktop_traversal_not_implemented", name);
+    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, name);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0, name);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0, name);
 
     const provenance = await invokeHandler(handler, {
       method: "GET",
@@ -1166,7 +1170,8 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const handler = makeHandler({ harness: allowedHarness });
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/accessibility-tree",
@@ -1185,6 +1190,9 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.statusCode, 403);
     assert.equal(response.body.error, "desktop_traversal_not_implemented");
     await assert.rejects(() => readFile(markerPath, "utf8"), { code: "ENOENT" });
+    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0);
 
     const provenance = await invokeHandler(handler, {
       method: "GET",
@@ -2065,6 +2073,7 @@ function createDesktopDisclosureRegistrySpy() {
   return {
     accessibilityTreeCalls: [],
     focusedInspectionCalls: [],
+    authorizeRootRefCalls: [],
     recordFromAccessibilityTree(args) {
       this.accessibilityTreeCalls.push(args);
       return [];
@@ -2072,6 +2081,10 @@ function createDesktopDisclosureRegistrySpy() {
     recordFromFocusedInspection(args) {
       this.focusedInspectionCalls.push(args);
       return [];
+    },
+    authorizeRootRef(args) {
+      this.authorizeRootRefCalls.push(args);
+      return { ok: false, error: "desktop_traversal_root_not_disclosed" };
     },
     revokeByCapability() {},
   };

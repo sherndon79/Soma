@@ -100,6 +100,8 @@ Implemented:
   with valid-looking args and emits no traversal JSON
 - traversal activation checklist migrated into canonical enablement sequence; same-day traversal
   reviews cross-reference each other
+- traversal refusal integration tests prove request-shaped traversal fails before helper invocation,
+  registry authorization, disclosure registry writes, or provenance append
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -113,24 +115,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare request enablement integration tests while keeping traversal refused.
+Run a request-enablement readiness review before replacing the endpoint traversal refusal.
 
 Target:
 
 ```text
-traversal enablement integration tests
-  -> tests describe the future root_ref-to-helper-to-provenance path
-  -> current endpoint still rejects traversal before helper invocation
-  -> runtime default still rejects traversal
-  -> Node endpoint still refuses traversal
+traversal request enablement readiness
+  -> confirm request/root authorization/helper/provenance gates are covered
+  -> identify any missing tests before endpoint behavior changes
+  -> preserve runtime default traversal rejection
+  -> keep Node endpoint traversal refusal until review disposition is accepted
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- add or refine disabled-path tests around future request enablement boundaries
-- prove current endpoint rejection still happens before helper invocation, registry mutation, or
-  provenance append
+- review the traversal enablement sequence against implemented tests and current scaffolds
+- list any missing request-enablement tests before replacing `desktop_traversal_not_implemented`
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - keep `inspect-atspi-traversal` returning not implemented

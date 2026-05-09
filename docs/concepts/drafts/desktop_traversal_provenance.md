@@ -108,6 +108,8 @@ Before traversal opens:
 - prove current helper traversal output is rejected before provenance
 - add a pure summary builder test for future traversal provenance fields - covered by
   `test/desktopTraversalProvenance.test.js`
+- add a validated adapter test proving traversal output validation happens before summary creation -
+  covered by `test/desktopTraversalProvenance.test.js`
 - prove the summary builder does not copy traversal nodes or node refs - covered by
   `test/desktopTraversalProvenance.test.js`
 - prove unavailable traversal stores only summary code and counts - covered by

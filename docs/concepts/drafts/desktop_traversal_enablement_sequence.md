@@ -18,6 +18,7 @@ Existing pieces that are present but not active:
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`: future full
   inspection schema draft
 - `src/desktopTraversalProvenance.js`: future summary-only provenance builder
+  and validated summary adapter
 - `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
 - `inspectDesktopTraversalWithRustHelper` in `src/desktopBroker.js`: internal helper invocation and
   future traversal-output validation path, not called by the public endpoint
@@ -142,6 +143,7 @@ Wire summary-only traversal provenance after output validation succeeds.
 Changes:
 
 - use `createFutureTraversalProvenanceSummary`
+- use `createValidatedFutureTraversalProvenanceSummary` or equivalent after helper output validation
 - append only summary fields
 - do not store traversal nodes, service/path lists, roles, or child edges
 
@@ -153,7 +155,8 @@ Required tests:
   fields
 - unavailable traversal stores only a stable unavailable reason and zero counts
 - rejected traversal request writes no provenance
-- schema-rejected traversal helper output writes no provenance
+- schema-rejected traversal helper output writes no provenance - covered by current endpoint
+  no-provenance tests and future adapter validation tests
 
 ### 5. Request Enablement Gate
 

@@ -74,6 +74,8 @@ Implemented:
   writes or provenance
 - documented future traversal provenance summary fields
 - pure future traversal provenance summary builder remains disconnected from current provenance
+- validated future traversal provenance adapter checks traversal output before producing summary-only
+  fields while active provenance behavior remains unchanged
 - documented traversal enablement sequence and remaining gates
 - documented Rust traversal implementation plan and test matrix
 - documented traversal schema activation decision: traversal output uses a traversal-authorized
@@ -100,14 +102,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare summary-only traversal provenance wiring behind disabled traversal.
+Review traversal activation gates before replacing any public refusal.
 
 Target:
 
 ```text
-traversal provenance prep
-  -> future provenance builder is shaped for validated traversal output
-  -> helper/schema rejection still writes no provenance
+traversal activation review
+  -> confirm request authorization, schema/runtime, helper, and provenance gates are aligned
+  -> identify any remaining missing tests before public behavior changes
   -> Node endpoint still refuses traversal
   -> active schema/runtime behavior still rejects traversal by default
 ```
@@ -115,9 +117,8 @@ traversal provenance prep
 Expected work:
 
 - keep current provenance behavior unchanged
-- add internal coverage or small adapter surface for future traversal provenance wiring after output
-  validation
-- keep rejected helper output and rejected traversal requests provenance-free
+- review the completed traversal scaffolds against the activation sequence
+- document any remaining blockers before replacing `desktop_traversal_not_implemented`
 - keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented

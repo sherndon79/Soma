@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createFutureTraversalProvenanceSummary } from "../src/desktopTraversalProvenance.js";
+import {
+  createFutureTraversalProvenanceSummary,
+  createValidatedFutureTraversalProvenanceSummary,
+} from "../src/desktopTraversalProvenance.js";
 
 const traversalCasesPath = new URL(
   "../docs/fixtures/future-traversal-output-validation-cases.json",
@@ -106,6 +109,53 @@ test("future traversal provenance summary stores unavailable traversal as summar
   assert.equal(summary.traversal_max_returned_depth, 0);
   assert.equal(summary.traversal_truncated, false);
   assert.equal(summary.traversal_unavailable_reason, "atspi_traversal_unavailable");
+});
+
+test("future traversal provenance adapter validates output before summary creation", async () => {
+  const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
+  const summary = createValidatedFutureTraversalProvenanceSummary({
+    rootAuthorization: {
+      source_event_id: "provenance-uuid",
+      source_type: "application_root",
+    },
+    request: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    traversal: traversalCases.valid_case.traversal,
+  });
+
+  assert.equal(summary.traversal_node_count, 2);
+  assert.equal(summary.traversal_max_returned_depth, 1);
+  assert.equal(summary.text_content_included, false);
+});
+
+test("future traversal provenance adapter rejects invalid output before summary creation", async () => {
+  const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
+
+  assert.throws(
+    () => createValidatedFutureTraversalProvenanceSummary({
+      rootAuthorization: {
+        source_event_id: "provenance-uuid",
+        source_type: "application_root",
+      },
+      request: {
+        max_depth: 2,
+        max_nodes: 64,
+        max_children_per_node: 8,
+      },
+      traversal: {
+        ...traversalCases.valid_case.traversal,
+        text_content_included: true,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, "desktop_traversal_provenance_output_invalid");
+      assert.ok(error.validation_errors.includes("traversal.text_content_included must be false"));
+      return true;
+    },
+  );
 });
 
 function stripStaticEventFields(eventFields) {

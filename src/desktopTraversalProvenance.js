@@ -1,3 +1,28 @@
+import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
+
+export function createValidatedFutureTraversalProvenanceSummary({
+  rootAuthorization,
+  request,
+  traversal,
+  unavailableReason = "",
+} = {}) {
+  if (traversal !== null && traversal !== undefined) {
+    const result = validateFutureDesktopTraversalOutput(traversal);
+    if (!result.valid) {
+      const error = new Error(`Desktop traversal output failed provenance validation: ${result.errors.join("; ")}`);
+      error.code = "desktop_traversal_provenance_output_invalid";
+      error.validation_errors = result.errors;
+      throw error;
+    }
+  }
+  return createFutureTraversalProvenanceSummary({
+    rootAuthorization,
+    request,
+    traversal,
+    unavailableReason,
+  });
+}
+
 export function createFutureTraversalProvenanceSummary({
   rootAuthorization,
   request,
@@ -37,4 +62,3 @@ function numberOrNull(value) {
 function stringOrEmpty(value) {
   return typeof value === "string" ? value : "";
 }
-

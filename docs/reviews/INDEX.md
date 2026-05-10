@@ -16,9 +16,9 @@ carry the resulting project posture.
 
 ## Desktop Traversal Activation Thread
 
-This thread tracks disabled-first recursive AT-SPI traversal activation. The public Node endpoint
-remains refused until the endpoint activation slice converts hard-refusal fixture assertions into
-active endpoint assertions.
+This thread tracks disabled-first recursive AT-SPI traversal activation. The public Node endpoint is
+now active behind disclosure-registry authorization, traversal-authorized response validation, and
+summary-only provenance.
 
 - [Traversal Activation Gates Review](./2026-05-09_traversal_activation_gates_review.md)
   - pre-promotion gate review for traversal activation conditions
@@ -48,10 +48,13 @@ active endpoint assertions.
   - final review before attempting public Node endpoint activation
 - [Traversal Activation Thread Review, Pass 2](./2026-05-09_traversal_activation_thread_review.md)
   - broad thread review with addendum noting later fixture and final-review commits
+- [Traversal Endpoint Activation Review](./2026-05-10_traversal_endpoint_activation_review.md)
+  - post-activation review accepting the endpoint activation
+- [Traversal Artifact Lifecycle Disposition Review](./2026-05-10_traversal_artifact_lifecycle_disposition_review.md)
+  - per-artifact disposition for Future-prefixed traversal APIs, fixtures, and schemas
 
 ## Current Review Triggers
 
-- Run a focused review after the public Node traversal endpoint activation slice.
-- Revisit Future-prefixed artifact disposition after activation or when the draft-lifecycle policy
-  is formalized.
+- Run a focused review after the next traversal behavior change.
+- Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

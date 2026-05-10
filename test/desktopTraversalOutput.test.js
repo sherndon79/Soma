@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { validateFutureDesktopTraversalOutput } from "../src/desktopTraversalOutput.js";
+import {
+  validateDesktopTraversalOutput,
+  validateFutureDesktopTraversalOutput,
+} from "../src/desktopTraversalOutput.js";
 
 const futureTraversalOutputCasesPath = new URL(
   "../docs/fixtures/future-traversal-output-validation-cases.json",
@@ -35,45 +38,54 @@ function minimalTraversal(overrides = {}) {
   };
 }
 
-test("future traversal output validator accepts the valid fixture case", async () => {
+test("desktop traversal output validator accepts the valid fixture case", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
 
   assert.deepEqual(
-    validateFutureDesktopTraversalOutput(fixture.valid_case.traversal),
+    validateDesktopTraversalOutput(fixture.valid_case.traversal),
     { valid: true, errors: [] },
   );
   assert.deepEqual(
-    validateFutureDesktopTraversalOutput(fixture.unavailable_case.traversal),
+    validateDesktopTraversalOutput(fixture.unavailable_case.traversal),
     { valid: true, errors: [] },
   );
 });
 
-test("future traversal output validator accepts Rust-shaped helper output fixtures", async () => {
+test("desktop traversal output validator accepts Rust-shaped helper output fixtures", async () => {
   const fixture = JSON.parse(await readFile(rustShapedTraversalOutputPath, "utf8"));
 
   assert.deepEqual(
-    validateFutureDesktopTraversalOutput(fixture.successful_traversal),
+    validateDesktopTraversalOutput(fixture.successful_traversal),
     { valid: true, errors: [] },
   );
   assert.deepEqual(
-    validateFutureDesktopTraversalOutput(fixture.unavailable_traversal),
+    validateDesktopTraversalOutput(fixture.unavailable_traversal),
     { valid: true, errors: [] },
   );
 });
 
-test("future traversal output validator rejects fixture invalid cases", async () => {
+test("future traversal output validator remains as compatibility delegate", () => {
+  const traversal = minimalTraversal();
+
+  assert.deepEqual(
+    validateFutureDesktopTraversalOutput(traversal),
+    validateDesktopTraversalOutput(traversal),
+  );
+});
+
+test("desktop traversal output validator rejects fixture invalid cases", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
 
   for (const invalidCase of fixture.invalid_cases) {
-    const result = validateFutureDesktopTraversalOutput(invalidCase.traversal);
+    const result = validateDesktopTraversalOutput(invalidCase.traversal);
 
     assert.equal(result.valid, false, invalidCase.name);
     assert.ok(result.errors.length > 0, invalidCase.name);
   }
 });
 
-test("future traversal output validator rejects protected traversal node fields", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator rejects protected traversal node fields", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     nodes: [
       {
         id: "n0",
@@ -92,8 +104,8 @@ test("future traversal output validator rejects protected traversal node fields"
   assert.ok(result.errors.includes("traversal.nodes[0].actions is not allowed"));
 });
 
-test("future traversal output validator requires protected fields to remain withheld", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator requires protected fields to remain withheld", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     withheld_fields: ["name", "description"],
   }));
 
@@ -103,8 +115,8 @@ test("future traversal output validator requires protected fields to remain with
   assert.ok(result.errors.includes("traversal.withheld_fields must include actions"));
 });
 
-test("future traversal output validator rejects node counts beyond declared limit", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator rejects node counts beyond declared limit", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     nodes: [
       {
         id: "n0",
@@ -132,8 +144,8 @@ test("future traversal output validator rejects node counts beyond declared limi
   assert.ok(result.errors.includes("traversal.nodes must have at most limits.max_nodes items"));
 });
 
-test("future traversal output validator rejects children beyond declared per-node limit", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator rejects children beyond declared per-node limit", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     nodes: [
       {
         id: "n0",
@@ -170,8 +182,8 @@ test("future traversal output validator rejects children beyond declared per-nod
   assert.ok(result.errors.includes("traversal.nodes[0].children must have at most limits.max_children_per_node items"));
 });
 
-test("future traversal output validator rejects text content inclusion", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator rejects text content inclusion", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     text_content_included: true,
   }));
 
@@ -179,8 +191,8 @@ test("future traversal output validator rejects text content inclusion", () => {
   assert.ok(result.errors.includes("traversal.text_content_included must be false"));
 });
 
-test("future traversal output validator accepts zero-node unavailable traversal", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator accepts zero-node unavailable traversal", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     nodes: [],
     truncated: false,
     unavailable_reason: "atspi_bus_address_unavailable",
@@ -189,8 +201,8 @@ test("future traversal output validator accepts zero-node unavailable traversal"
   assert.deepEqual(result, { valid: true, errors: [] });
 });
 
-test("future traversal output validator rejects unavailable traversal with nodes", () => {
-  const result = validateFutureDesktopTraversalOutput(minimalTraversal({
+test("desktop traversal output validator rejects unavailable traversal with nodes", () => {
+  const result = validateDesktopTraversalOutput(minimalTraversal({
     unavailable_reason: "atspi_root_query_unavailable",
   }));
 

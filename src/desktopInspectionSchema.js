@@ -1,4 +1,4 @@
-import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
+import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
 const TOP_LEVEL_KEYS = new Set([
   "mode",
@@ -49,7 +49,7 @@ const ROOT_OBJECT_KEYS = new Set([
   "children_sample",
   "child_metadata_sample",
 ]);
-const FUTURE_TRAVERSAL_ROOT_OBJECT_KEYS = new Set([
+const TRAVERSAL_AUTHORIZED_ROOT_OBJECT_KEYS = new Set([
   ...ROOT_OBJECT_KEYS,
   "traversal",
 ]);
@@ -185,7 +185,7 @@ function validateRootObject(value, path, errors, options) {
     errors.push(`${path} must be null or an object`);
     return;
   }
-  const rootKeys = options.allowTraversalOutput ? FUTURE_TRAVERSAL_ROOT_OBJECT_KEYS : ROOT_OBJECT_KEYS;
+  const rootKeys = options.allowTraversalOutput ? TRAVERSAL_AUTHORIZED_ROOT_OBJECT_KEYS : ROOT_OBJECT_KEYS;
   rejectUnexpectedKeys(value, rootKeys, path, errors);
   if (value.path !== "/org/a11y/atspi/accessible/root") {
     errors.push(`${path}.path must be /org/a11y/atspi/accessible/root`);
@@ -196,7 +196,7 @@ function validateRootObject(value, path, errors, options) {
   validateObjectRefArray(value.children_sample, 8, `${path}.children_sample`, errors);
   validateChildMetadataArray(value.child_metadata_sample, 4, `${path}.child_metadata_sample`, errors);
   if (options.allowTraversalOutput && value.traversal !== undefined) {
-    const traversalResult = validateFutureDesktopTraversalOutput(value.traversal);
+    const traversalResult = validateDesktopTraversalOutput(value.traversal);
     for (const error of traversalResult.errors) {
       errors.push(`${path}.${error}`);
     }

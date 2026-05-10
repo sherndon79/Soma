@@ -1,13 +1,13 @@
-import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
+import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
-export function createValidatedFutureTraversalProvenanceSummary({
+export function createValidatedTraversalProvenanceSummary({
   rootAuthorization,
   request,
   traversal,
   unavailableReason = "",
 } = {}) {
   if (traversal !== null && traversal !== undefined) {
-    const result = validateFutureDesktopTraversalOutput(traversal);
+    const result = validateDesktopTraversalOutput(traversal);
     if (!result.valid) {
       const error = new Error(`Desktop traversal output failed provenance validation: ${result.errors.join("; ")}`);
       error.code = "desktop_traversal_provenance_output_invalid";
@@ -15,7 +15,7 @@ export function createValidatedFutureTraversalProvenanceSummary({
       throw error;
     }
   }
-  return createFutureTraversalProvenanceSummary({
+  return createTraversalProvenanceSummary({
     rootAuthorization,
     request,
     traversal,
@@ -23,7 +23,11 @@ export function createValidatedFutureTraversalProvenanceSummary({
   });
 }
 
-export function createFutureTraversalProvenanceSummary({
+export function createValidatedFutureTraversalProvenanceSummary(args = {}) {
+  return createValidatedTraversalProvenanceSummary(args);
+}
+
+export function createTraversalProvenanceSummary({
   rootAuthorization,
   request,
   traversal,
@@ -44,6 +48,10 @@ export function createFutureTraversalProvenanceSummary({
     traversal_unavailable_reason: stringOrEmpty(unavailableReason || traversal?.unavailable_reason),
     text_content_included: false,
   };
+}
+
+export function createFutureTraversalProvenanceSummary(args = {}) {
+  return createTraversalProvenanceSummary(args);
 }
 
 function maxReturnedDepth(nodes) {

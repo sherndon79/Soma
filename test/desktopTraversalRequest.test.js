@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateFutureDesktopTraversalRequest } from "../src/desktopTraversalRequest.js";
+import {
+  validateDesktopTraversalRequest,
+  validateFutureDesktopTraversalRequest,
+} from "../src/desktopTraversalRequest.js";
 
-test("future traversal validator accepts root_ref-only requests", () => {
-  const result = validateFutureDesktopTraversalRequest({
+test("desktop traversal validator accepts root_ref-only requests", () => {
+  const result = validateDesktopTraversalRequest({
     mode: "atspi",
     traversal: {
       enabled: true,
@@ -46,9 +49,9 @@ test("future traversal validator accepts root_ref-only requests", () => {
   });
 });
 
-test("future traversal validator rejects raw service path roots", () => {
+test("desktop traversal validator rejects raw service path roots", () => {
   assert.throws(
-    () => validateFutureDesktopTraversalRequest({
+    () => validateDesktopTraversalRequest({
       mode: "atspi",
       traversal: {
         enabled: true,
@@ -63,9 +66,9 @@ test("future traversal validator rejects raw service path roots", () => {
   );
 });
 
-test("future traversal validator rejects unexpected top-level fields", () => {
+test("desktop traversal validator rejects unexpected top-level fields", () => {
   assert.throws(
-    () => validateFutureDesktopTraversalRequest({
+    () => validateDesktopTraversalRequest({
       mode: "atspi",
       include_text: true,
       traversal: {
@@ -80,9 +83,9 @@ test("future traversal validator rejects unexpected top-level fields", () => {
   );
 });
 
-test("future traversal validator rejects invalid mode, root, fields, and limits", () => {
+test("desktop traversal validator rejects invalid mode, root, fields, and limits", () => {
   assert.throws(
-    () => validateFutureDesktopTraversalRequest({
+    () => validateDesktopTraversalRequest({
       mode: "environment",
       traversal: {
         enabled: false,
@@ -109,7 +112,7 @@ test("future traversal validator rejects invalid mode, root, fields, and limits"
   );
 });
 
-test("future traversal validator maps registry authorization failures to stable errors", () => {
+test("desktop traversal validator maps registry authorization failures to stable errors", () => {
   for (const code of [
     "desktop_traversal_root_not_disclosed",
     "desktop_traversal_root_expired",
@@ -117,7 +120,7 @@ test("future traversal validator maps registry authorization failures to stable 
     "desktop_traversal_root_capability_inactive",
   ]) {
     assert.throws(
-      () => validateFutureDesktopTraversalRequest({
+      () => validateDesktopTraversalRequest({
         mode: "atspi",
         traversal: {
           enabled: true,
@@ -134,4 +137,30 @@ test("future traversal validator maps registry authorization failures to stable 
       },
     );
   }
+});
+
+test("future traversal request validator remains as compatibility delegate", () => {
+  const body = {
+    mode: "atspi",
+    traversal: {
+      enabled: true,
+      root_ref: "desktop-ref-1",
+    },
+  };
+  const options = {
+    authorizeRootRef() {
+      return {
+        ok: true,
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/root",
+        source_event_id: "prov-1",
+        source_type: "application_root",
+      };
+    },
+  };
+
+  assert.deepEqual(
+    validateFutureDesktopTraversalRequest(body, options),
+    validateDesktopTraversalRequest(body, options),
+  );
 });

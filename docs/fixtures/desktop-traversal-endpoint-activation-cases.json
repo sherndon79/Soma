@@ -3,8 +3,8 @@
   "purpose": "Public endpoint traversal activation cases asserted by test/app.test.js.",
   "cases": [
     {
-      "name": "future_success_authorized_root",
-      "future_expected_path": "success",
+      "name": "success_authorized_root",
+      "expected_path": "success",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -17,8 +17,8 @@
       }
     },
     {
-      "name": "future_unavailable_authorized_root",
-      "future_expected_path": "unavailable",
+      "name": "unavailable_authorized_root",
+      "expected_path": "unavailable",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -31,9 +31,9 @@
       }
     },
     {
-      "name": "future_root_not_disclosed",
-      "future_expected_path": "authorization_failure",
-      "future_expected_error": "desktop_traversal_root_not_disclosed",
+      "name": "root_not_disclosed",
+      "expected_path": "authorization_failure",
+      "expected_error": "desktop_traversal_root_not_disclosed",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -46,9 +46,9 @@
       }
     },
     {
-      "name": "future_root_expired",
-      "future_expected_path": "authorization_failure",
-      "future_expected_error": "desktop_traversal_root_expired",
+      "name": "root_expired",
+      "expected_path": "authorization_failure",
+      "expected_error": "desktop_traversal_root_expired",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -61,9 +61,9 @@
       }
     },
     {
-      "name": "future_root_revoked",
-      "future_expected_path": "authorization_failure",
-      "future_expected_error": "desktop_traversal_root_revoked",
+      "name": "root_revoked",
+      "expected_path": "authorization_failure",
+      "expected_error": "desktop_traversal_root_revoked",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -76,9 +76,9 @@
       }
     },
     {
-      "name": "future_root_capability_inactive",
-      "future_expected_path": "authorization_failure",
-      "future_expected_error": "desktop_traversal_root_capability_inactive",
+      "name": "root_capability_inactive",
+      "expected_path": "authorization_failure",
+      "expected_error": "desktop_traversal_root_capability_inactive",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -91,9 +91,9 @@
       }
     },
     {
-      "name": "future_raw_root_rejected",
-      "future_expected_path": "request_validation_failure",
-      "future_expected_error": "desktop_traversal_request_invalid",
+      "name": "raw_root_rejected",
+      "expected_path": "request_validation_failure",
+      "expected_error": "desktop_traversal_request_invalid",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -110,10 +110,10 @@
       }
     },
     {
-      "name": "future_helper_output_rejected_before_provenance",
-      "future_expected_path": "helper_output_failure",
-      "future_expected_error": "desktop_traversal_helper_output_invalid",
-      "future_helper_output": {
+      "name": "helper_output_rejected_before_provenance",
+      "expected_path": "helper_output_failure",
+      "expected_error": "desktop_traversal_helper_output_invalid",
+      "helper_output": {
         "root": {
           "service": ":1.42",
           "path": "/org/a11y/atspi/accessible/root"
@@ -151,10 +151,10 @@
       }
     },
     {
-      "name": "future_module_narrowed_root_revoked",
-      "future_expected_path": "narrowing_revocation_failure",
-      "future_expected_error": "desktop_traversal_root_revoked",
-      "future_setup": "root disclosed by previous AT-SPI inspection, then revoked by desktop.inspect.accessibility_tree narrowing",
+      "name": "module_narrowed_root_revoked",
+      "expected_path": "narrowing_revocation_failure",
+      "expected_error": "desktop_traversal_root_revoked",
+      "setup": "root disclosed by previous AT-SPI inspection, then revoked by desktop.inspect.accessibility_tree narrowing",
       "body": {
         "mode": "atspi",
         "traversal": {

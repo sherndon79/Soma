@@ -19,7 +19,7 @@ const LIMIT_RANGES = {
   max_children_per_node: [1, 32],
 };
 
-export function validateFutureDesktopTraversalRequest(body, {
+export function validateDesktopTraversalRequest(body, {
   authorizeRootRef,
   capability = "desktop.inspect.accessibility_tree",
 } = {}) {
@@ -67,6 +67,10 @@ export function validateFutureDesktopTraversalRequest(body, {
       max_children_per_node: traversal.max_children_per_node ?? DEFAULT_LIMITS.max_children_per_node,
     },
   };
+}
+
+export function validateFutureDesktopTraversalRequest(body, options = {}) {
+  return validateDesktopTraversalRequest(body, options);
 }
 
 function validateTraversalObject(traversal, errors) {

@@ -10,7 +10,7 @@ import {
   assertDesktopInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
 } from "./desktopInspectionSchema.js";
-import { validateFutureDesktopTraversalOutput } from "./desktopTraversalOutput.js";
+import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_HELPER_PATH = fileURLToPath(
@@ -188,11 +188,11 @@ export async function inspectDesktopTraversalWithRustHelper({
   if (helperTraversal === null) {
     return null;
   }
-  return assertFutureDesktopTraversalHelperOutput(helperTraversal);
+  return assertDesktopTraversalHelperOutput(helperTraversal);
 }
 
-export function assertFutureDesktopTraversalHelperOutput(value) {
-  const result = validateFutureDesktopTraversalOutput(value);
+export function assertDesktopTraversalHelperOutput(value) {
+  const result = validateDesktopTraversalOutput(value);
   if (!result.valid) {
     const error = new Error(`Desktop traversal helper output failed validation: ${result.errors.join("; ")}`);
     error.statusCode = 502;
@@ -203,8 +203,12 @@ export function assertFutureDesktopTraversalHelperOutput(value) {
   return value;
 }
 
+export function assertFutureDesktopTraversalHelperOutput(value) {
+  return assertDesktopTraversalHelperOutput(value);
+}
+
 export function attachTraversalToDesktopInspectionResult({ inspection, traversal } = {}) {
-  const validatedTraversal = assertFutureDesktopTraversalHelperOutput(traversal);
+  const validatedTraversal = assertDesktopTraversalHelperOutput(traversal);
   if (!inspection?.tree || !Array.isArray(inspection.tree.applications)) {
     throw new TypeError("inspection.tree.applications is required");
   }

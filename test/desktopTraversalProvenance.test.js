@@ -4,7 +4,9 @@ import test from "node:test";
 
 import {
   createFutureTraversalProvenanceSummary,
+  createTraversalProvenanceSummary,
   createValidatedFutureTraversalProvenanceSummary,
+  createValidatedTraversalProvenanceSummary,
 } from "../src/desktopTraversalProvenance.js";
 
 const traversalCasesPath = new URL(
@@ -16,11 +18,11 @@ const provenanceSummaryPath = new URL(
   import.meta.url,
 );
 
-test("future traversal provenance summary emits counts limits root source and truncation only", async () => {
+test("desktop traversal provenance summary emits counts limits root source and truncation only", async () => {
   const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
   const expected = JSON.parse(await readFile(provenanceSummaryPath, "utf8"));
 
-  const summary = createFutureTraversalProvenanceSummary({
+  const summary = createTraversalProvenanceSummary({
     rootAuthorization: {
       authorization: "prior_disclosure",
       source_event_id: "provenance-uuid",
@@ -48,8 +50,8 @@ test("future traversal provenance summary emits counts limits root source and tr
   assert.deepEqual(summary, stripStaticEventFields(expected.event_fields));
 });
 
-test("future traversal provenance summary does not copy traversal tree details", () => {
-  const summary = createFutureTraversalProvenanceSummary({
+test("desktop traversal provenance summary does not copy traversal tree details", () => {
+  const summary = createTraversalProvenanceSummary({
     rootAuthorization: {
       source_event_id: "provenance-uuid",
       source_type: "focused_object",
@@ -90,8 +92,40 @@ test("future traversal provenance summary does not copy traversal tree details",
   assert.equal(summary.traversal_truncated, true);
 });
 
-test("future traversal provenance summary stores unavailable traversal as summary only", () => {
-  const summary = createFutureTraversalProvenanceSummary({
+test("future traversal provenance builders remain as compatibility delegates", () => {
+  const args = {
+    rootAuthorization: {
+      authorization: "prior_disclosure",
+      source_event_id: "provenance-uuid",
+      source_type: "application_root",
+    },
+    request: {
+      max_depth: 1,
+      max_nodes: 1,
+      max_children_per_node: 1,
+    },
+    traversal: {
+      root: { service: ":1.42", path: "/root" },
+      nodes: [],
+      limits: { max_depth: 1, max_nodes: 1, max_children_per_node: 1 },
+      truncated: false,
+      text_content_included: false,
+      withheld_fields: ["name", "description", "text", "states", "actions"],
+    },
+  };
+
+  assert.deepEqual(
+    createFutureTraversalProvenanceSummary(args),
+    createTraversalProvenanceSummary(args),
+  );
+  assert.deepEqual(
+    createValidatedFutureTraversalProvenanceSummary(args),
+    createValidatedTraversalProvenanceSummary(args),
+  );
+});
+
+test("desktop traversal provenance summary stores unavailable traversal as summary only", () => {
+  const summary = createTraversalProvenanceSummary({
     rootAuthorization: {
       source_event_id: "provenance-uuid",
       source_type: "application_root",
@@ -111,9 +145,9 @@ test("future traversal provenance summary stores unavailable traversal as summar
   assert.equal(summary.traversal_unavailable_reason, "atspi_traversal_unavailable");
 });
 
-test("future traversal provenance summary stores validator-approved unavailable traversal without details", async () => {
+test("desktop traversal provenance summary stores validator-approved unavailable traversal without details", async () => {
   const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
-  const summary = createValidatedFutureTraversalProvenanceSummary({
+  const summary = createValidatedTraversalProvenanceSummary({
     rootAuthorization: {
       source_event_id: "provenance-uuid",
       source_type: "application_root",
@@ -135,9 +169,9 @@ test("future traversal provenance summary stores validator-approved unavailable 
   assert.equal(serialized.includes("/org/a11y/atspi/accessible/root"), false);
 });
 
-test("future traversal provenance adapter validates output before summary creation", async () => {
+test("desktop traversal provenance adapter validates output before summary creation", async () => {
   const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
-  const summary = createValidatedFutureTraversalProvenanceSummary({
+  const summary = createValidatedTraversalProvenanceSummary({
     rootAuthorization: {
       source_event_id: "provenance-uuid",
       source_type: "application_root",
@@ -155,11 +189,11 @@ test("future traversal provenance adapter validates output before summary creati
   assert.equal(summary.text_content_included, false);
 });
 
-test("future traversal provenance adapter rejects invalid output before summary creation", async () => {
+test("desktop traversal provenance adapter rejects invalid output before summary creation", async () => {
   const traversalCases = JSON.parse(await readFile(traversalCasesPath, "utf8"));
 
   assert.throws(
-    () => createValidatedFutureTraversalProvenanceSummary({
+    () => createValidatedTraversalProvenanceSummary({
       rootAuthorization: {
         source_event_id: "provenance-uuid",
         source_type: "application_root",

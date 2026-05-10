@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  assertDesktopTraversalHelperOutput,
   assertFutureDesktopTraversalHelperOutput,
   attachTraversalToDesktopInspectionResult,
   desktopBrokerHelperArgs,
@@ -128,12 +129,12 @@ test("desktopTraversalHelperArgs validates traversal helper limits", () => {
   }
 });
 
-test("assertFutureDesktopTraversalHelperOutput validates traversal helper output", () => {
+test("assertDesktopTraversalHelperOutput validates traversal helper output", () => {
   const traversal = validTraversalOutput();
 
-  assert.equal(assertFutureDesktopTraversalHelperOutput(traversal), traversal);
+  assert.equal(assertDesktopTraversalHelperOutput(traversal), traversal);
   assert.throws(
-    () => assertFutureDesktopTraversalHelperOutput({
+    () => assertDesktopTraversalHelperOutput({
       ...traversal,
       nodes: [
         {
@@ -148,6 +149,12 @@ test("assertFutureDesktopTraversalHelperOutput validates traversal helper output
       return true;
     },
   );
+});
+
+test("assertFutureDesktopTraversalHelperOutput remains as compatibility delegate", () => {
+  const traversal = validTraversalOutput();
+
+  assert.equal(assertFutureDesktopTraversalHelperOutput(traversal), assertDesktopTraversalHelperOutput(traversal));
 });
 
 test("inspectDesktopTraversalWithRustHelper invokes helper and validates traversal output", async () => {

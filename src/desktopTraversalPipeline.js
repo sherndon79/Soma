@@ -4,8 +4,8 @@ import {
   attachTraversalToDesktopInspectionResult,
   inspectDesktopTraversalWithRustHelper,
 } from "./desktopBroker.js";
-import { validateFutureDesktopTraversalRequest } from "./desktopTraversalRequest.js";
-import { createValidatedFutureTraversalProvenanceSummary } from "./desktopTraversalProvenance.js";
+import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
+import { createValidatedTraversalProvenanceSummary } from "./desktopTraversalProvenance.js";
 
 const CAPABILITY = "desktop.inspect.accessibility_tree";
 
@@ -19,7 +19,7 @@ export async function runInternalDesktopTraversalRequest({
   helperPath,
   inspectTraversal = inspectDesktopTraversalWithRustHelper,
 } = {}) {
-  const request = traversalRequest ?? validateFutureDesktopTraversalRequest(body, {
+  const request = traversalRequest ?? validateDesktopTraversalRequest(body, {
     authorizeRootRef: (args) => desktopDisclosureRegistry?.authorizeRootRef(args),
     capability: CAPABILITY,
   });
@@ -31,7 +31,7 @@ export async function runInternalDesktopTraversalRequest({
     maxChildrenPerNode: request.traversal.max_children_per_node,
   });
   const inspectionWithTraversal = attachTraversalToDesktopInspectionResult({ inspection, traversal });
-  const traversalSummary = createValidatedFutureTraversalProvenanceSummary({
+  const traversalSummary = createValidatedTraversalProvenanceSummary({
     rootAuthorization: request.traversal.authorized_root,
     request: request.traversal,
     traversal,

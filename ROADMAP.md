@@ -153,6 +153,9 @@ Implemented:
   helper-output validation, traversal-authorized response validation, and summary-only provenance
 - public Node traversal endpoint activation review completed; activation accepted with no rollback
   or immediate code cleanup required
+- traversal artifact lifecycle disposition completed with stable active API names, compatibility
+  delegates for Future-prefixed exports, active endpoint fixture metadata, and historical
+  Future-prefixed schemas/fixtures retained where they preserve migration context
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -166,14 +169,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Resolve Future-prefix and draft-lifecycle disposition for traversal artifacts.
+Design writable grant and revocation mutation prerequisites.
 
 Target:
 
 ```text
-traversal artifact lifecycle disposition
-  -> decide which Future-prefixed traversal artifacts stay as compatibility or history
-  -> rename or retire only artifacts with stable replacements and no load-bearing callers
+grant mutation prerequisite design
+  -> define the smallest safe writable grant mutation path
+  -> preserve explicit user approval and revocation auditability
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep traversal limited to authorized root refs and summary-only provenance
@@ -182,15 +185,15 @@ traversal artifact lifecycle disposition
 Expected work:
 
 - keep current provenance behavior unchanged
-- review Future-prefixed schemas, validators, fixtures, and helper names per artifact
+- review existing grant lifecycle docs and read-only grant API behavior
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- preserve compatibility delegates where callers still rely on them
-- keep historical schemas/fixtures when they explain migration context
-- avoid category-level naming sweeps
+- do not add runtime grant writes until prerequisites are explicit
+- identify required tests for approve/revoke/supersede/audit behavior
+- keep traversal authority unchanged
 
 Constraints:
 

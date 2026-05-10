@@ -1240,7 +1240,7 @@ test("desktop traversal endpoint activation cases exercise active endpoint paths
       const helperCommands = await readHelperCommands(commandsPath);
       const traversalHelperCommands = helperCommands.filter((command) => command === "inspect-atspi-traversal");
 
-      if (scenario.future_expected_path === "success") {
+      if (scenario.expected_path === "success") {
         assert.equal(response.statusCode, 200, scenario.name);
         assert.deepEqual(
           response.body.inspection.tree.applications[0].root_object.traversal,
@@ -1250,7 +1250,7 @@ test("desktop traversal endpoint activation cases exercise active endpoint paths
         assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1, scenario.name);
         assert.deepEqual(helperCommands, ["inspect-atspi", "inspect-atspi-traversal"], scenario.name);
         assert.equal(traversalHelperCommands.length, 1, scenario.name);
-      } else if (scenario.future_expected_path === "unavailable") {
+      } else if (scenario.expected_path === "unavailable") {
         assert.equal(response.statusCode, 200, scenario.name);
         assert.deepEqual(
           response.body.inspection.tree.applications[0].root_object.traversal,
@@ -1261,24 +1261,24 @@ test("desktop traversal endpoint activation cases exercise active endpoint paths
         assert.deepEqual(helperCommands, ["inspect-atspi", "inspect-atspi-traversal"], scenario.name);
         assert.equal(traversalHelperCommands.length, 1, scenario.name);
       } else {
-        const expectedStatus = scenario.future_expected_path === "helper_output_failure"
+        const expectedStatus = scenario.expected_path === "helper_output_failure"
           ? 502
-          : scenario.future_expected_path === "request_validation_failure"
+          : scenario.expected_path === "request_validation_failure"
             ? 400
             : 403;
-        const expectedTraversalCommands = scenario.future_expected_path === "helper_output_failure" ? 1 : 0;
+        const expectedTraversalCommands = scenario.expected_path === "helper_output_failure" ? 1 : 0;
         assert.equal(response.statusCode, expectedStatus, scenario.name);
-        assert.equal(response.body.error, scenario.future_expected_error, scenario.name);
+        assert.equal(response.body.error, scenario.expected_error, scenario.name);
         assert.equal("inspection" in response.body, false, scenario.name);
         assert.deepEqual(
           helperCommands,
-          scenario.future_expected_path === "helper_output_failure"
+          scenario.expected_path === "helper_output_failure"
             ? ["inspect-atspi", "inspect-atspi-traversal"]
             : [],
           scenario.name,
         );
         assert.equal(traversalHelperCommands.length, expectedTraversalCommands, scenario.name);
-        if (scenario.future_expected_path === "request_validation_failure") {
+        if (scenario.expected_path === "request_validation_failure") {
           assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, scenario.name);
         } else {
           assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1, scenario.name);
@@ -1293,7 +1293,7 @@ test("desktop traversal endpoint activation cases exercise active endpoint paths
         url: "/provenance?event_type=desktop.inspect.accessibility_tree",
       });
       assert.equal(provenance.statusCode, 200, scenario.name);
-      if (["success", "unavailable"].includes(scenario.future_expected_path)) {
+      if (["success", "unavailable"].includes(scenario.expected_path)) {
         assert.equal(provenance.body.entries.length, 1, scenario.name);
         assert.equal(provenance.body.entries[0].id, response.body.provenance_id, scenario.name);
         assert.equal(provenance.body.entries[0].traversal_requested, true, scenario.name);
@@ -2276,7 +2276,7 @@ function createTraversalActivationRegistrySpy(scenario) {
         service: ":1.42",
         path: "/org/a11y/atspi/accessible/root",
         source_event_id: "prov-tree",
-        source_type: scenario.future_expected_path === "unavailable"
+        source_type: scenario.expected_path === "unavailable"
           ? "root_child_sample"
           : "application_root",
       };
@@ -2310,10 +2310,10 @@ async function readHelperCommands(commandsPath) {
 }
 
 function traversalOutputForActivationScenario(scenario) {
-  if (scenario.future_helper_output) {
-    return scenario.future_helper_output;
+  if (scenario.helper_output) {
+    return scenario.helper_output;
   }
-  if (scenario.future_expected_path === "unavailable") {
+  if (scenario.expected_path === "unavailable") {
     return unavailableEndpointTraversalOutput();
   }
   return successfulEndpointTraversalOutput();

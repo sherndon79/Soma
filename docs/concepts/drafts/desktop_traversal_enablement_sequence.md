@@ -15,7 +15,7 @@ Existing pieces that are active or retained as historical migration context:
 - `src/desktopTraversalRequest.js`: request-shape and `root_ref` authorization validator
 - `src/desktopTraversalOutput.js`: traversal output validator
 - `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
-  disabled traversal-aware full inspection validator gate
+  compatibility delegate to the traversal-authorized validator
 - `validateTraversalAuthorizedDesktopInspectionResult` and
   `assertTraversalAuthorizedDesktopInspectionResult` in `src/desktopInspectionSchema.js`: stable
   traversal-authorized runtime validation path
@@ -69,7 +69,7 @@ Activate traversal output validation before any helper can return traversal succ
 Runtime scaffold status:
 
 - opt-in full inspection validation is available through
-  `validateFutureDesktopInspectionResultWithTraversal`
+  `validateFutureDesktopInspectionResultWithTraversal` as a compatibility delegate
 - stable traversal-authorized validation is available through
   `validateTraversalAuthorizedDesktopInspectionResult` and
   `assertTraversalAuthorizedDesktopInspectionResult`
@@ -96,7 +96,7 @@ Remaining changes before activation:
 
 Required tests:
 
-- valid future traversal fixture passes the traversal validator and full desktop inspection
+- historical future traversal fixture passes the traversal validator and full desktop inspection
   validator
 - duplicate node ids are rejected
 - child refs to missing nodes are rejected
@@ -188,8 +188,8 @@ Wire summary-only traversal provenance after output validation succeeds.
 
 Changes:
 
-- use `createFutureTraversalProvenanceSummary`
-- use `createValidatedFutureTraversalProvenanceSummary` or equivalent after helper output validation
+- use `createTraversalProvenanceSummary`
+- use `createValidatedTraversalProvenanceSummary` or equivalent after helper output validation
 - append only summary fields
 - do not store traversal nodes, service/path lists, roles, or child edges
 
@@ -233,7 +233,7 @@ The endpoint hard refusal has been replaced after the previous gates landed.
 
 Changes:
 
-- replace `rejectUnsupportedDesktopTraversal` with `validateFutureDesktopTraversalRequest`
+- replace `rejectUnsupportedDesktopTraversal` with `validateDesktopTraversalRequest`
 - accept `root_ref` only
 - resolve root through disclosure registry or explicit user-selection store
 - reject raw service/path traversal roots

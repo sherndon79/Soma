@@ -12,13 +12,17 @@ const NODE_KEYS = new Set(["id", "service", "path", "role", "child_count", "dept
 const LIMIT_KEYS = new Set(["max_depth", "max_nodes", "max_children_per_node"]);
 const REQUIRED_WITHHELD_FIELDS = ["name", "description", "text", "states", "actions"];
 
-export function validateFutureDesktopTraversalOutput(value) {
+export function validateDesktopTraversalOutput(value) {
   const errors = [];
   validateTraversal(value, "traversal", errors);
   return {
     valid: errors.length === 0,
     errors,
   };
+}
+
+export function validateFutureDesktopTraversalOutput(value) {
+  return validateDesktopTraversalOutput(value);
 }
 
 function validateTraversal(value, path, errors) {

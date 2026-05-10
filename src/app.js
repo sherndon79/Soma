@@ -7,7 +7,7 @@ import { CapabilityProposalStore, summarizeNotifications } from "./capabilityPro
 import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
 import { DesktopDisclosureRegistry } from "./desktopDisclosureRegistry.js";
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
-import { validateFutureDesktopTraversalRequest } from "./desktopTraversalRequest.js";
+import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
@@ -356,7 +356,7 @@ export function createRequestHandler({
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
         const body = await readJson(req);
         if (body?.traversal !== undefined) {
-          const traversalRequest = validateFutureDesktopTraversalRequest(body, {
+          const traversalRequest = validateDesktopTraversalRequest(body, {
             authorizeRootRef: (args) => desktopDisclosureRegistry.authorizeRootRef(args),
             capability: "desktop.inspect.accessibility_tree",
           });

@@ -149,6 +149,8 @@ Implemented:
   invariants
 - final Node traversal endpoint enablement review completed; endpoint activation is ready for a
   guarded implementation slice that replaces hard refusal only with converted active assertions
+- public Node traversal endpoint activated behind disclosure-registry authorization, traversal
+  helper-output validation, traversal-authorized response validation, and summary-only provenance
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -162,14 +164,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Activate the public Node traversal endpoint behind the existing disclosure and validation gates.
+Review public Node traversal endpoint activation and tighten any activation fallout.
 
 Target:
 
 ```text
-Node traversal endpoint activation
-  -> replace hard refusal with traversal request validation and internal traversal pipeline
-  -> convert endpoint activation fixture from hard-refusal assertions to active path assertions
+post-activation traversal endpoint review
+  -> verify active endpoint behavior matches the final enablement review
+  -> identify any narrow cleanup after replacing the hard refusal
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep traversal limited to authorized root refs and summary-only provenance
@@ -178,20 +180,21 @@ Node traversal endpoint activation
 Expected work:
 
 - keep current provenance behavior unchanged
-- replace `desktop_traversal_not_implemented` only in the same slice that converts endpoint tests
+- review activated endpoint behavior and converted endpoint tests
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- route traversal responses through the traversal-authorized schema only after root authorization
-- assert success, unavailable, authorization-failure, request-validation, helper-output-failure, and
-  narrowing/revocation endpoint paths
+- confirm traversal responses route through the traversal-authorized schema only after root
+  authorization
+- confirm success, unavailable, authorization-failure, request-validation, helper-output-failure, and
+  narrowing/revocation endpoint paths remain covered
 
 Constraints:
 
 - no desktop capability expansion
-- no new desktop fields in runtime responses
+- no additional desktop fields beyond the activated traversal envelope
 - no text, names, descriptions, states, actions, screenshots, or actuation
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior

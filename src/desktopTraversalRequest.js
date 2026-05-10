@@ -5,6 +5,7 @@ const TRAVERSAL_KEYS = new Set([
   "max_nodes",
   "max_children_per_node",
 ]);
+const REQUEST_KEYS = new Set(["mode", "traversal"]);
 
 const DEFAULT_LIMITS = {
   max_depth: 2,
@@ -27,6 +28,11 @@ export function validateFutureDesktopTraversalRequest(body, {
   if (!isPlainObject(body)) {
     errors.push("request must be an object");
   } else {
+    for (const key of Object.keys(body)) {
+      if (!REQUEST_KEYS.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
     if (body.mode !== "atspi") {
       errors.push("request.mode must be atspi when traversal is enabled");
     }
@@ -104,4 +110,3 @@ function throwTraversalRequestError(errors) {
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-

@@ -11,6 +11,7 @@ const CAPABILITY = "desktop.inspect.accessibility_tree";
 
 export async function runInternalDesktopTraversalRequest({
   body,
+  traversalRequest,
   inspection,
   desktopDisclosureRegistry,
   provenanceLog,
@@ -18,7 +19,7 @@ export async function runInternalDesktopTraversalRequest({
   helperPath,
   inspectTraversal = inspectDesktopTraversalWithRustHelper,
 } = {}) {
-  const request = validateFutureDesktopTraversalRequest(body, {
+  const request = traversalRequest ?? validateFutureDesktopTraversalRequest(body, {
     authorizeRootRef: (args) => desktopDisclosureRegistry?.authorizeRootRef(args),
     capability: CAPABILITY,
   });

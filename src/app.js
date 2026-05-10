@@ -6,6 +6,8 @@ import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
 import { DesktopDisclosureRegistry } from "./desktopDisclosureRegistry.js";
+import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
+import { validateFutureDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { listGrants, summarizeGrants } from "./grants.js";
@@ -353,7 +355,27 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/desktop/inspect/accessibility-tree") {
         requireCapability(effectiveHarness, "desktop.inspect.accessibility_tree");
         const body = await readJson(req);
-        rejectUnsupportedDesktopTraversal(body);
+        if (body?.traversal !== undefined) {
+          const traversalRequest = validateFutureDesktopTraversalRequest(body, {
+            authorizeRootRef: (args) => desktopDisclosureRegistry.authorizeRootRef(args),
+            capability: "desktop.inspect.accessibility_tree",
+          });
+          const inspection = await inspectDesktopBrokerEnvironment({ mode: "atspi" });
+          const traversalResult = await runInternalDesktopTraversalRequest({
+            body,
+            traversalRequest,
+            inspection,
+            desktopDisclosureRegistry,
+            provenanceLog,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          logger.info?.("soma.provenance", traversalResult.provenance);
+          writeJson(res, 200, {
+            inspection: traversalResult.inspection,
+            provenance_id: traversalResult.provenance?.id ?? null,
+          });
+          return;
+        }
         const desktopRequest = validateDesktopInspectionRequest(body);
         const inspection = await inspectDesktopBrokerEnvironment({
           mode: desktopRequest.mode,
@@ -547,19 +569,6 @@ function normalizeMemoryEntry(entry) {
     throw error;
   }
   return { role, content, source };
-}
-
-function rejectUnsupportedDesktopTraversal(body) {
-  if (body?.traversal !== undefined) {
-    // Future traversal enablement should replace this hard refusal with
-    // validateFutureDesktopTraversalRequest from desktopTraversalRequest.js.
-    // Until then, every traversal-shaped request fails before request validation,
-    // helper invocation, registry authorization, or provenance append.
-    const error = new Error("Recursive desktop traversal is not implemented.");
-    error.statusCode = 403;
-    error.code = "desktop_traversal_not_implemented";
-    throw error;
-  }
 }
 
 function validateDesktopInspectionRequest(body) {

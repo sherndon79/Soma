@@ -1,18 +1,19 @@
 # Desktop Traversal Enablement Sequence
 
-Status: design draft, partially scaffolded
+Status: design draft, endpoint activated
 
-This document orders the remaining work required before recursive AT-SPI traversal can replace
-the current `desktop_traversal_not_implemented` guard.
+This document records the ordered gates used to activate recursive AT-SPI traversal at the public
+Node endpoint.
 
-The current runtime must remain closed until these gates land in order.
+The default runtime remains traversal-closed; traversal output is accepted only on the explicit
+traversal-authorized endpoint path.
 
-## Current Disabled Scaffolds
+## Current Traversal Components
 
-Existing pieces that are present but not active:
+Existing pieces that are active or retained as historical migration context:
 
-- `src/desktopTraversalRequest.js`: future request-shape and `root_ref` authorization validator
-- `src/desktopTraversalOutput.js`: future traversal output validator
+- `src/desktopTraversalRequest.js`: request-shape and `root_ref` authorization validator
+- `src/desktopTraversalOutput.js`: traversal output validator
 - `validateFutureDesktopInspectionResultWithTraversal` in `src/desktopInspectionSchema.js`:
   disabled traversal-aware full inspection validator gate
 - `validateTraversalAuthorizedDesktopInspectionResult` and
@@ -22,18 +23,17 @@ Existing pieces that are present but not active:
   artifact for authorized traversal output; not the default broker output contract
 - `docs/schemas/future-desktop-inspection-result-with-traversal.schema.json`: future full
   inspection schema draft retained as historical migration context
-- `src/desktopTraversalProvenance.js`: future summary-only provenance builder
+- `src/desktopTraversalProvenance.js`: summary-only provenance builder
   and validated summary adapter
-- `desktopTraversalHelperArgs` in `src/desktopBroker.js`: future helper argument derivation
+- `desktopTraversalHelperArgs` in `src/desktopBroker.js`: helper argument derivation
 - `inspectDesktopTraversalWithRustHelper` in `src/desktopBroker.js`: internal helper invocation and
-  future traversal-output validation path, not called by the public endpoint
+  traversal-output validation path
 - `attachTraversalToDesktopInspectionResult` in `src/desktopBroker.js`: internal adapter that attaches
   validated traversal output to a matching root object through the traversal-authorized runtime
   assertion
 - `runInternalDesktopTraversalRequest` in `src/desktopTraversalPipeline.js`: internal orchestration
   seam that composes root-ref validation, disclosure-registry authorization, helper invocation,
-  traversal attachment, and validated summary provenance while remaining disconnected from the public
-  endpoint
+  traversal attachment, and validated summary provenance for the public endpoint traversal path
 - `inspect-atspi-traversal` Rust parser and bounded helper command
 - `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
   schema/runtime activation decision
@@ -49,16 +49,16 @@ Existing pieces that are present but not active:
 - internal Rust unavailable traversal output builder for the stable zero-node unavailable shape
 - command-level Rust integration tests proving `inspect-atspi-traversal` emits bounded success and
   unavailable output while malformed args still emit no stdout
-- future fixtures in `docs/fixtures/`
+- endpoint activation fixtures in `docs/fixtures/`
 - Rust-shaped traversal helper output contract fixtures in `docs/fixtures/`
 
-Current active guards that must remain until the activation sequence reaches them:
+Current active guards:
 
-- `rejectUnsupportedDesktopTraversal` rejects any `traversal` request before helper invocation
 - `ROOT_OBJECT_KEYS` excludes `traversal`
 - current schema excludes traversal output
 - `validateDesktopInspectionResult` still rejects traversal output by default
-- current provenance does not include traversal fields
+- traversal responses use the traversal-authorized schema path
+- traversal provenance stores summary fields only
 
 ## Activation Order
 
@@ -166,7 +166,8 @@ Changes:
 
 - use `desktopTraversalHelperArgs` with authorized root service/path
 - keep helper output flowing through schema/runtime validation
-- keep endpoint refusal in place or place invocation behind an internal test-only path
+- route public endpoint traversal through the internal pipeline only after request validation and
+  disclosure-registry authorization
 
 Required tests:
 
@@ -178,8 +179,8 @@ Required tests:
   validation - covered by `test/desktopTraversalOutput.test.js`
 - traversal-bearing desktop inspection output uses the traversal-authorized runtime assertion while
   the default assertion remains closed - covered by `test/desktopBroker.test.js`
-- internal traversal request pipeline composes authorization and helper invocation while the public
-  endpoint remains refused - covered by `test/desktopTraversalPipeline.test.js`
+- internal traversal request pipeline composes authorization and helper invocation - covered by
+  `test/desktopTraversalPipeline.test.js`
 
 ### 4. Provenance Gate
 
@@ -209,7 +210,7 @@ Required tests:
 
 ## Activation Checklist
 
-Before replacing `desktop_traversal_not_implemented`, all of these must be true:
+The endpoint activation keeps all of these true:
 
 - active traversal-specific schema exists and is tested
 - default schema and default runtime validator still reject traversal
@@ -224,11 +225,11 @@ Before replacing `desktop_traversal_not_implemented`, all of these must be true:
 - module narrowing still revokes roots and blocks traversal
 
 See [Desktop Traversal Endpoint Enablement Readiness](./desktop_traversal_endpoint_enablement_readiness.md)
-for the endpoint-level coverage map that must be closed before replacing the hard refusal.
+for the endpoint-level coverage map.
 
 ### 5. Request Enablement Gate
 
-Only after the previous gates pass should the endpoint hard refusal be replaced.
+The endpoint hard refusal has been replaced after the previous gates landed.
 
 Changes:
 

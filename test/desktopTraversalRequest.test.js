@@ -63,6 +63,23 @@ test("future traversal validator rejects raw service path roots", () => {
   );
 });
 
+test("future traversal validator rejects unexpected top-level fields", () => {
+  assert.throws(
+    () => validateFutureDesktopTraversalRequest({
+      mode: "atspi",
+      include_text: true,
+      traversal: {
+        enabled: true,
+        root_ref: "desktop-ref-1",
+      },
+    }),
+    {
+      code: "desktop_traversal_request_invalid",
+      validation_errors: ["request.include_text is not allowed"],
+    },
+  );
+});
+
 test("future traversal validator rejects invalid mode, root, fields, and limits", () => {
   assert.throws(
     () => validateFutureDesktopTraversalRequest({
@@ -118,4 +135,3 @@ test("future traversal validator maps registry authorization failures to stable 
     );
   }
 });
-

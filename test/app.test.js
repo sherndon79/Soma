@@ -1076,67 +1076,113 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
-test("desktop accessibility inspection rejects traversal request shapes until traversal is implemented", async () => {
-  for (const [name, body] of Object.entries({
+test("desktop accessibility inspection rejects invalid traversal request shapes", async () => {
+  for (const [name, scenario] of Object.entries({
     disclosed_root_ref: {
-      mode: "atspi",
-      traversal: {
-        enabled: true,
-        root_ref: "desktop-ref-1",
-        max_depth: 1,
-        max_nodes: 16,
-        max_children_per_node: 4,
+      expectedStatus: 403,
+      expectedError: "desktop_traversal_root_not_disclosed",
+      expectedAuthorizationCalls: 1,
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root_ref: "desktop-ref-1",
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
       },
     },
     bounded_atspi_traversal: {
-      mode: "atspi",
-      traversal: {
-        enabled: true,
-        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
-        max_depth: 1,
-        max_nodes: 16,
-        max_children_per_node: 4,
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
       },
     },
     non_atspi_mode: {
-      mode: "environment",
-      traversal: {
-        enabled: true,
-        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
-        max_depth: 1,
-        max_nodes: 16,
-        max_children_per_node: 4,
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "environment",
+        traversal: {
+          enabled: true,
+          root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
       },
     },
     unknown_traversal_field: {
-      mode: "atspi",
-      traversal: {
-        enabled: true,
-        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
-        max_depth: 1,
-        max_nodes: 16,
-        max_children_per_node: 4,
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+          include_text: true,
+        },
+      },
+    },
+    unknown_top_level_field: {
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "atspi",
         include_text: true,
+        traversal: {
+          enabled: true,
+          root_ref: "desktop-ref-1",
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
       },
     },
     invalid_root_shape: {
-      mode: "atspi",
-      traversal: {
-        enabled: true,
-        root: { service: ":1.42" },
-        max_depth: 1,
-        max_nodes: 16,
-        max_children_per_node: 4,
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root: { service: ":1.42" },
+          max_depth: 1,
+          max_nodes: 16,
+          max_children_per_node: 4,
+        },
       },
     },
     excessive_limits: {
-      mode: "atspi",
-      traversal: {
-        enabled: true,
-        root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
-        max_depth: 99,
-        max_nodes: 10000,
-        max_children_per_node: 1000,
+      expectedStatus: 400,
+      expectedError: "desktop_traversal_request_invalid",
+      expectedAuthorizationCalls: 0,
+      body: {
+        mode: "atspi",
+        traversal: {
+          enabled: true,
+          root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+          max_depth: 99,
+          max_nodes: 10000,
+          max_children_per_node: 1000,
+        },
       },
     },
   })) {
@@ -1145,12 +1191,12 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/accessibility-tree",
-      body,
+      body: scenario.body,
     });
 
-    assert.equal(response.statusCode, 403, name);
-    assert.equal(response.body.error, "desktop_traversal_not_implemented", name);
-    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, name);
+    assert.equal(response.statusCode, scenario.expectedStatus, name);
+    assert.equal(response.body.error, scenario.expectedError, name);
+    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, scenario.expectedAuthorizationCalls, name);
     assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0, name);
     assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0, name);
 
@@ -1163,41 +1209,127 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
   }
 });
 
-test("desktop traversal endpoint activation cases remain hard-refused before enablement", async () => {
+test("desktop traversal endpoint activation cases exercise active endpoint paths", async () => {
   const fixture = JSON.parse(await readFile(traversalEndpointActivationCasesPath, "utf8"));
 
   for (const scenario of fixture.cases) {
-    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const root = await mkdtemp(path.join(os.tmpdir(), `soma-desktop-traversal-${scenario.name}-`));
+    const helperPath = path.join(root, "soma-desktop-broker");
+    const commandsPath = path.join(root, "helper-commands.txt");
+    await writeFile(
+      helperPath,
+      desktopTraversalActivationHelperScript({
+        commandsPath,
+        baseInspection: traversalBaseInspection(),
+        traversal: traversalOutputForActivationScenario(scenario),
+      }),
+      "utf8",
+    );
+    await chmod(helperPath, 0o755);
+    const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+    process.env.SOMA_DESKTOP_BROKER = helperPath;
+    const desktopDisclosureRegistry = createTraversalActivationRegistrySpy(scenario);
     const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
-    const response = await invokeHandler(handler, {
-      method: "POST",
-      url: "/desktop/inspect/accessibility-tree",
-      body: scenario.body,
-    });
 
-    assert.equal(response.statusCode, 403, scenario.name);
-    assert.equal(response.body.error, "desktop_traversal_not_implemented", scenario.name);
-    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, scenario.name);
-    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0, scenario.name);
-    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0, scenario.name);
+    try {
+      const response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/desktop/inspect/accessibility-tree",
+        body: scenario.body,
+      });
+      const helperCommands = await readHelperCommands(commandsPath);
+      const traversalHelperCommands = helperCommands.filter((command) => command === "inspect-atspi-traversal");
 
-    const provenance = await invokeHandler(handler, {
-      method: "GET",
-      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
-    });
-    assert.equal(provenance.statusCode, 200, scenario.name);
-    assert.equal(provenance.body.entries.length, 0, scenario.name);
+      if (scenario.future_expected_path === "success") {
+        assert.equal(response.statusCode, 200, scenario.name);
+        assert.deepEqual(
+          response.body.inspection.tree.applications[0].root_object.traversal,
+          successfulEndpointTraversalOutput(),
+          scenario.name,
+        );
+        assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1, scenario.name);
+        assert.deepEqual(helperCommands, ["inspect-atspi", "inspect-atspi-traversal"], scenario.name);
+        assert.equal(traversalHelperCommands.length, 1, scenario.name);
+      } else if (scenario.future_expected_path === "unavailable") {
+        assert.equal(response.statusCode, 200, scenario.name);
+        assert.deepEqual(
+          response.body.inspection.tree.applications[0].root_object.traversal,
+          unavailableEndpointTraversalOutput(),
+          scenario.name,
+        );
+        assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1, scenario.name);
+        assert.deepEqual(helperCommands, ["inspect-atspi", "inspect-atspi-traversal"], scenario.name);
+        assert.equal(traversalHelperCommands.length, 1, scenario.name);
+      } else {
+        const expectedStatus = scenario.future_expected_path === "helper_output_failure"
+          ? 502
+          : scenario.future_expected_path === "request_validation_failure"
+            ? 400
+            : 403;
+        const expectedTraversalCommands = scenario.future_expected_path === "helper_output_failure" ? 1 : 0;
+        assert.equal(response.statusCode, expectedStatus, scenario.name);
+        assert.equal(response.body.error, scenario.future_expected_error, scenario.name);
+        assert.equal("inspection" in response.body, false, scenario.name);
+        assert.deepEqual(
+          helperCommands,
+          scenario.future_expected_path === "helper_output_failure"
+            ? ["inspect-atspi", "inspect-atspi-traversal"]
+            : [],
+          scenario.name,
+        );
+        assert.equal(traversalHelperCommands.length, expectedTraversalCommands, scenario.name);
+        if (scenario.future_expected_path === "request_validation_failure") {
+          assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, scenario.name);
+        } else {
+          assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1, scenario.name);
+        }
+      }
+
+      assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0, scenario.name);
+      assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0, scenario.name);
+
+      const provenance = await invokeHandler(handler, {
+        method: "GET",
+        url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+      });
+      assert.equal(provenance.statusCode, 200, scenario.name);
+      if (["success", "unavailable"].includes(scenario.future_expected_path)) {
+        assert.equal(provenance.body.entries.length, 1, scenario.name);
+        assert.equal(provenance.body.entries[0].id, response.body.provenance_id, scenario.name);
+        assert.equal(provenance.body.entries[0].traversal_requested, true, scenario.name);
+        assert.equal(provenance.body.entries[0].traversal_root_source_event_id, "prov-tree", scenario.name);
+        assert.equal(JSON.stringify(provenance.body.entries[0]).includes(":1.42"), false, scenario.name);
+        assert.equal(
+          JSON.stringify(provenance.body.entries[0]).includes("/org/a11y/atspi/accessible/root"),
+          false,
+          scenario.name,
+        );
+      } else {
+        assert.equal(provenance.body.entries.length, 0, scenario.name);
+      }
+    } finally {
+      if (previousBroker === undefined) {
+        delete process.env.SOMA_DESKTOP_BROKER;
+      } else {
+        process.env.SOMA_DESKTOP_BROKER = previousBroker;
+      }
+    }
   }
 });
 
-test("desktop traversal rejection happens before helper invocation", async () => {
+test("desktop traversal authorization failure happens before traversal helper invocation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-traversal-no-helper-"));
   const helperPath = path.join(root, "soma-desktop-broker");
-  const markerPath = path.join(root, "helper-invoked.txt");
-  await writeFile(helperPath, `#!/usr/bin/env sh
-printf 'invoked\\n' > "${markerPath}"
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":0,"root_object_available_count":0,"window_count":0,"tree":{"applications":[],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
-`, "utf8");
+  const commandsPath = path.join(root, "helper-commands.txt");
+  await writeFile(
+    helperPath,
+    desktopTraversalActivationHelperScript({
+      commandsPath,
+      baseInspection: traversalBaseInspection(),
+      traversal: successfulEndpointTraversalOutput(),
+    }),
+    "utf8",
+  );
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
@@ -1220,9 +1352,9 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     });
 
     assert.equal(response.statusCode, 403);
-    assert.equal(response.body.error, "desktop_traversal_not_implemented");
-    await assert.rejects(() => readFile(markerPath, "utf8"), { code: "ENOENT" });
-    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0);
+    assert.equal(response.body.error, "desktop_traversal_root_not_disclosed");
+    assert.deepEqual(await readHelperCommands(commandsPath), []);
+    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 1);
     assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0);
     assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0);
 
@@ -2119,6 +2251,152 @@ function createDesktopDisclosureRegistrySpy() {
       return { ok: false, error: "desktop_traversal_root_not_disclosed" };
     },
     revokeByCapability() {},
+  };
+}
+
+function createTraversalActivationRegistrySpy(scenario) {
+  const base = createDesktopDisclosureRegistrySpy();
+  return {
+    ...base,
+    authorizeRootRef(args) {
+      this.authorizeRootRefCalls.push(args);
+      const rootRef = args.rootRef;
+      const errors = {
+        "desktop-ref-unknown": "desktop_traversal_root_not_disclosed",
+        "desktop-ref-expired": "desktop_traversal_root_expired",
+        "desktop-ref-revoked": "desktop_traversal_root_revoked",
+        "desktop-ref-inactive": "desktop_traversal_root_capability_inactive",
+        "desktop-ref-module-revoked": "desktop_traversal_root_revoked",
+      };
+      if (errors[rootRef]) {
+        return { ok: false, error: errors[rootRef] };
+      }
+      return {
+        ok: true,
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/root",
+        source_event_id: "prov-tree",
+        source_type: scenario.future_expected_path === "unavailable"
+          ? "root_child_sample"
+          : "application_root",
+      };
+    },
+  };
+}
+
+function desktopTraversalActivationHelperScript({ commandsPath, baseInspection, traversal }) {
+  return `#!/usr/bin/env sh
+printf '%s\\n' "$1" >> "${commandsPath}"
+if [ "$1" = "inspect-atspi" ]; then
+  printf '%s\\n' '${JSON.stringify(baseInspection)}'
+elif [ "$1" = "inspect-atspi-traversal" ]; then
+  printf '%s\\n' '${JSON.stringify(traversal)}'
+else
+  exit 2
+fi
+`;
+}
+
+async function readHelperCommands(commandsPath) {
+  try {
+    const commands = await readFile(commandsPath, "utf8");
+    return commands.trim().length === 0 ? [] : commands.trim().split("\n");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function traversalOutputForActivationScenario(scenario) {
+  if (scenario.future_helper_output) {
+    return scenario.future_helper_output;
+  }
+  if (scenario.future_expected_path === "unavailable") {
+    return unavailableEndpointTraversalOutput();
+  }
+  return successfulEndpointTraversalOutput();
+}
+
+function traversalBaseInspection() {
+  return {
+    mode: "read_only_atspi_probe",
+    broker_source: "rust_helper",
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+    dbus_session_bus_available: true,
+    atspi_likely_available: true,
+    atspi_bus_address_available: true,
+    application_count: 1,
+    root_object_available_count: 1,
+    window_count: 0,
+    tree: {
+      applications: [
+        {
+          service: ":1.42",
+          pid: 123,
+          process: "test-app",
+          registry: false,
+          root_object: {
+            path: "/org/a11y/atspi/accessible/root",
+            name: "test-app",
+            role: "application",
+            child_count: 1,
+            children_sample: [],
+            child_metadata_sample: [],
+          },
+          root_object_error: null,
+        },
+      ],
+      windows: [],
+      bounded: true,
+      text_content_included: false,
+    },
+    tree_available: true,
+  };
+}
+
+function successfulEndpointTraversalOutput() {
+  return {
+    root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+    nodes: [
+      {
+        id: "n0",
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/root",
+        role: "application",
+        child_count: 0,
+        depth: 0,
+        children: [],
+      },
+    ],
+    limits: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    truncated: false,
+    text_content_included: false,
+    withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+function unavailableEndpointTraversalOutput() {
+  return {
+    root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
+    nodes: [],
+    limits: {
+      max_depth: 2,
+      max_nodes: 64,
+      max_children_per_node: 8,
+    },
+    truncated: false,
+    unavailable_reason: "atspi_bus_address_unavailable",
+    text_content_included: false,
+    withheld_fields: ["name", "description", "text", "states", "actions"],
   };
 }
 

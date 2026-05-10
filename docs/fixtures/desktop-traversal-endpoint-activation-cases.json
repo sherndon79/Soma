@@ -1,6 +1,6 @@
 {
-  "status": "endpoint_activation_cases_hard_refused",
-  "purpose": "Future public endpoint traversal activation cases that must remain hard-refused until desktop_traversal_not_implemented is replaced.",
+  "status": "endpoint_activation_cases_active",
+  "purpose": "Public endpoint traversal activation cases asserted by test/app.test.js.",
   "cases": [
     {
       "name": "future_success_authorized_root",

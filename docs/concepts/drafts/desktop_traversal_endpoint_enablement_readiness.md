@@ -1,11 +1,11 @@
 # Desktop Traversal Endpoint Enablement Readiness
 
-Status: design draft, endpoint still refused
+Status: design draft, endpoint active
 
 This checklist defines what must be true before `/desktop/inspect/accessibility-tree` replaces
 `desktop_traversal_not_implemented` with the active traversal path. The Rust
-`inspect-atspi-traversal` helper command is active, but the public Node endpoint must remain refused
-until endpoint-level authorization, validation, provenance, and narrowing behavior are tested.
+`inspect-atspi-traversal` helper command is active, and the public Node endpoint now routes
+traversal requests through endpoint-level authorization, validation, provenance, and narrowing tests.
 
 This is the endpoint-level expansion of the higher-level activation checklist in
 [Desktop Traversal Enablement Sequence](./desktop_traversal_enablement_sequence.md).
@@ -29,16 +29,17 @@ Implemented and tested internally:
 - endpoint activation case fixture exists for future success, unavailable, authorization failure,
   request-validation failure, helper-output failure, and narrowing/revocation paths
 
-Still active at the public endpoint:
+Active at the public endpoint:
 
-- any request with `body.traversal` returns `desktop_traversal_not_implemented`
-- traversal requests fail before helper invocation
-- traversal requests fail before root authorization
-- traversal requests fail before disclosure registry mutation
-- traversal requests append no provenance
-- endpoint activation case fixture currently verifies hard refusal for every future activation case
+- authorized traversal requests return traversal output through the traversal-authorized schema path
+- unavailable traversal requests return the stable zero-node unavailable shape
+- unauthorized, expired, revoked, inactive, or raw roots fail before traversal helper invocation
+- schema-invalid helper output fails before response attachment and provenance append
+- denied or invalid traversal requests append no traversal provenance
+- endpoint activation case fixture verifies active success, unavailable, authorization-failure,
+  request-validation, helper-output-failure, and narrowing/revocation paths
 
-## Endpoint Tests Required Before Enablement
+## Endpoint Test Requirements
 
 ### Success path
 
@@ -114,31 +115,30 @@ Already covered internally:
   - helper output validation
   - traversal-authorized assertion path
 - `test/app.test.js`
-  - current endpoint hard refusal
-  - no helper invocation while refused
-  - no authorization or registry writes while refused
-  - no provenance while refused
+  - active endpoint success and unavailable traversal paths
+  - endpoint authorization-failure matrix
+  - endpoint request-validation and helper-output failure paths
+  - no traversal helper invocation for denied traversal requests
+  - no provenance for denied or invalid traversal requests
 - `docs/fixtures/desktop-traversal-endpoint-activation-cases.json`
-  - future endpoint success/unavailable/authorization-failure/request-validation/helper-output-failure/
-    narrowing-revocation cases
-  - currently asserted as hard-refused by `test/app.test.js`
+  - active endpoint success/unavailable/authorization-failure/request-validation/helper-output-failure/
+    narrowing-revocation cases asserted by `test/app.test.js`
 
-Still needs public endpoint coverage:
+Public endpoint coverage now active:
 
-- successful traversal response from the endpoint - case scaffold exists, active assertion pending
-- unavailable traversal response from the endpoint - case scaffold exists, active assertion pending
-- endpoint authorization failure matrix - case scaffold exists, active assertion pending
-- endpoint helper-output validation failure - case scaffold exists, active assertion pending
+- successful traversal response from the endpoint
+- unavailable traversal response from the endpoint
+- endpoint authorization failure matrix
+- endpoint helper-output validation failure
 - endpoint summary-only provenance on success/unavailable
 - endpoint no-provenance behavior on denied/invalid traversal
-- endpoint behavior after module narrowing/revocation - case scaffold exists, active assertion pending
+- endpoint behavior after module narrowing/revocation
 
 ## Enablement Order
 
-1. Add endpoint-level tests behind the current hard refusal, or as focused helpers that can become
-   active in the enablement commit.
-2. Replace `rejectUnsupportedDesktopTraversal` with the traversal validator and internal traversal
-   pipeline only after the endpoint tests are ready.
+1. Endpoint-level tests now assert active behavior for all fixture cases.
+2. `rejectUnsupportedDesktopTraversal` has been replaced by the traversal validator and internal
+   traversal pipeline for traversal-shaped requests.
 3. Keep default desktop inspection validation closed.
 4. Keep traversal response validation on the explicit traversal-authorized path only.
-5. Run a final review immediately before removing `desktop_traversal_not_implemented`.
+5. Run a focused review after endpoint activation.

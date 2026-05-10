@@ -136,6 +136,10 @@ The planned public command-dispatch integration harness uses a fake `busctl` exe
 See [Desktop Traversal Command Activation Harness](./desktop_traversal_command_activation_harness.md)
 for the fake-`busctl` contract and activation test sequence.
 
+Current integration scaffold status: the fake-`busctl` helper exists in
+`crates/soma-desktop-broker/tests/traversal_command.rs`, and the disabled-command guard proves the
+public command does not invoke it before activation.
+
 Required tests:
 
 - Rust parser tests continue to pass

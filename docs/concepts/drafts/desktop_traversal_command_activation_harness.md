@@ -1,6 +1,6 @@
 # Desktop Traversal Command Activation Harness
 
-Status: design draft, not implemented
+Status: design draft, scaffold present
 
 This draft defines deterministic integration coverage for the future public
 `inspect-atspi-traversal` command before command activation. It does not activate traversal, change
@@ -25,9 +25,17 @@ Reasons:
 - avoids a live AT-SPI session dependency
 - makes unavailable behavior deterministic by controlling the fake `GetAddress` response
 
-The fake `busctl` must be created in a temporary directory by the Rust integration test and removed
-with the test temp directory. The test should prepend that directory to `PATH` only for the child
-process running `soma-desktop-broker`.
+The fake `busctl` is created in a temporary directory by the Rust integration test and removed with
+the test temp directory. The test prepends that directory to `PATH` only for the child process running
+`soma-desktop-broker`.
+
+Current scaffold:
+
+- `crates/soma-desktop-broker/tests/traversal_command.rs` creates a fake `busctl` script
+- the fake supports `poison`, `success`, and `unavailable` behavior branches for future activation
+  tests
+- the current disabled-command guard runs with fake `busctl` first in `PATH` and proves it is not
+  invoked while `inspect-atspi-traversal` remains closed
 
 ## Fake `busctl` Contract
 
@@ -136,7 +144,7 @@ The integration harness must not:
 
 ## Activation Sequence
 
-1. Add fake-`busctl` test helper while the public command remains disabled.
+1. Add fake-`busctl` test helper while the public command remains disabled. - done
 2. Keep the current disabled-command integration test passing.
 3. Add activated-command tests as pending design notes or in the activation commit.
 4. Change command dispatch from `not implemented` to `inspect_atspi_traversal_json`.

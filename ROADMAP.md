@@ -125,6 +125,8 @@ Implemented:
   with injected success/unavailable providers while public command behavior remains disabled
 - command-level traversal activation scaffold review completed; public command activation remains
   blocked on deterministic command-dispatch integration coverage
+- deterministic public traversal command activation harness design selected: fake `busctl` on `PATH`
+  for real-binary command-dispatch tests without a live AT-SPI session
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -138,13 +140,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Design deterministic public traversal command activation integration coverage.
+Scaffold deterministic public traversal command activation integration harness.
 
 Target:
 
 ```text
-public traversal command activation integration harness
-  -> define deterministic command-dispatch success/unavailable coverage
+fake-busctl traversal command activation harness
+  -> add reusable integration-test fake busctl helper
+  -> keep disabled-command valid-args guard active
   -> keep current disabled command integration test active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -153,9 +156,8 @@ public traversal command activation integration harness
 Expected work:
 
 - keep current provenance behavior unchanged
-- choose a controlled command-dispatch test strategy that does not depend on a live AT-SPI session
-- cover activated-command success, unavailable, malformed-arg, and protected-field behavior in design
-  or scaffold
+- add fake `busctl` integration-test helper that can support success and unavailable activation tests
+- do not route `inspect-atspi-traversal` into traversal output yet
 - keep `inspect-atspi-traversal` returning not implemented
 - keep current disabled-command integration test active
 - keep the current default validator/assertion behavior unchanged

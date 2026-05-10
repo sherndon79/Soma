@@ -130,6 +130,11 @@ ready to authorize requests and validate output on the active path.
 Current scaffold status: the private Rust bridge can build traversal from validated args and the
 live AT-SPI query boundary. A deterministic command-output seam can also emit the future success and
 unavailable stdout shapes from injected providers. The public command still returns not implemented.
+The planned public command-dispatch integration harness uses a fake `busctl` executable earlier in
+`PATH` so the real helper binary can be tested without a live AT-SPI session.
+
+See [Desktop Traversal Command Activation Harness](./desktop_traversal_command_activation_harness.md)
+for the fake-`busctl` contract and activation test sequence.
 
 Required tests:
 

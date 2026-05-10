@@ -1,0 +1,113 @@
+{
+  "status": "endpoint_activation_cases_hard_refused",
+  "purpose": "Future public endpoint traversal activation cases that must remain hard-refused until desktop_traversal_not_implemented is replaced.",
+  "cases": [
+    {
+      "name": "future_success_authorized_root",
+      "future_expected_path": "success",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-1",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_unavailable_authorized_root",
+      "future_expected_path": "unavailable",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-unavailable",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_root_not_disclosed",
+      "future_expected_path": "authorization_failure",
+      "future_expected_error": "desktop_traversal_root_not_disclosed",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-unknown",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_root_expired",
+      "future_expected_path": "authorization_failure",
+      "future_expected_error": "desktop_traversal_root_expired",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-expired",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_root_revoked",
+      "future_expected_path": "authorization_failure",
+      "future_expected_error": "desktop_traversal_root_revoked",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-revoked",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_root_capability_inactive",
+      "future_expected_path": "authorization_failure",
+      "future_expected_error": "desktop_traversal_root_capability_inactive",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-inactive",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_raw_root_rejected",
+      "future_expected_path": "request_validation_failure",
+      "future_expected_error": "desktop_traversal_request_invalid",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-1",
+          "root": {
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root"
+          },
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    }
+  ]
+}

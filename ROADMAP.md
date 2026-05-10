@@ -138,6 +138,8 @@ Implemented:
 - Node traversal endpoint enablement readiness checklist added; public endpoint remains blocked on
   endpoint-level success, unavailable, authorization-failure, helper-output-failure, provenance, and
   narrowing coverage
+- Node traversal endpoint activation case fixture and hard-refusal scaffold test added for future
+  success, unavailable, authorization-failure, and request-validation paths
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -151,14 +153,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Scaffold Node traversal endpoint activation tests while keeping hard refusal active.
+Review Node traversal endpoint activation test scaffold before endpoint enablement.
 
 Target:
 
 ```text
-Node traversal endpoint activation test scaffold
-  -> add endpoint-level success/unavailable test structure without replacing hard refusal
-  -> add endpoint-level denial/no-provenance test structure without replacing hard refusal
+Node traversal endpoint activation test scaffold review
+  -> confirm activation fixture covers success/unavailable/denial shapes
+  -> identify remaining endpoint test gaps before replacing hard refusal
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -167,7 +169,7 @@ Node traversal endpoint activation test scaffold
 Expected work:
 
 - keep current provenance behavior unchanged
-- add or prepare endpoint-level tests for traversal activation without changing runtime behavior
+- review endpoint activation fixture and remaining endpoint enablement gaps
 - keep public endpoint hard refusal active
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout

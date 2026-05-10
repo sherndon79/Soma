@@ -9,6 +9,11 @@ import { createRequestHandler } from "../src/app.js";
 import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 
+const traversalEndpointActivationCasesPath = new URL(
+  "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
+  import.meta.url,
+);
+
 const allowedHarness = {
   capabilities: [
     { key: "model.local.chat", status: "allowed" },
@@ -1155,6 +1160,33 @@ test("desktop accessibility inspection rejects traversal request shapes until tr
     });
     assert.equal(provenance.statusCode, 200, name);
     assert.equal(provenance.body.entries.length, 0, name);
+  }
+});
+
+test("desktop traversal endpoint activation cases remain hard-refused before enablement", async () => {
+  const fixture = JSON.parse(await readFile(traversalEndpointActivationCasesPath, "utf8"));
+
+  for (const scenario of fixture.cases) {
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({ harness: allowedHarness, desktopDisclosureRegistry });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/accessibility-tree",
+      body: scenario.body,
+    });
+
+    assert.equal(response.statusCode, 403, scenario.name);
+    assert.equal(response.body.error, "desktop_traversal_not_implemented", scenario.name);
+    assert.equal(desktopDisclosureRegistry.authorizeRootRefCalls.length, 0, scenario.name);
+    assert.equal(desktopDisclosureRegistry.accessibilityTreeCalls.length, 0, scenario.name);
+    assert.equal(desktopDisclosureRegistry.focusedInspectionCalls.length, 0, scenario.name);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200, scenario.name);
+    assert.equal(provenance.body.entries.length, 0, scenario.name);
   }
 });
 

@@ -23,6 +23,8 @@ Implemented and tested internally:
 - default desktop inspection validator remains closed to traversal-bearing output
 - traversal-authorized validator path exists for the explicit traversal response path
 - Rust helper command emits bounded success/unavailable traversal output
+- endpoint activation case fixture exists for future success, unavailable, authorization failure, and
+  request-validation failure paths
 
 Still active at the public endpoint:
 
@@ -31,6 +33,7 @@ Still active at the public endpoint:
 - traversal requests fail before root authorization
 - traversal requests fail before disclosure registry mutation
 - traversal requests append no provenance
+- endpoint activation case fixture currently verifies hard refusal for every future activation case
 
 ## Endpoint Tests Required Before Enablement
 
@@ -112,11 +115,14 @@ Already covered internally:
   - no helper invocation while refused
   - no authorization or registry writes while refused
   - no provenance while refused
+- `docs/fixtures/desktop-traversal-endpoint-activation-cases.json`
+  - future endpoint success/unavailable/authorization-failure/request-validation cases
+  - currently asserted as hard-refused by `test/app.test.js`
 
 Still needs public endpoint coverage:
 
-- successful traversal response from the endpoint
-- unavailable traversal response from the endpoint
+- successful traversal response from the endpoint - case scaffold exists, active assertion pending
+- unavailable traversal response from the endpoint - case scaffold exists, active assertion pending
 - endpoint authorization failure matrix
 - endpoint helper-output validation failure
 - endpoint summary-only provenance on success/unavailable

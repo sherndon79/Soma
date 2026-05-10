@@ -223,6 +223,9 @@ Before replacing `desktop_traversal_not_implemented`, all of these must be true:
 - rejected traversal requests and rejected helper output append no provenance
 - module narrowing still revokes roots and blocks traversal
 
+See [Desktop Traversal Endpoint Enablement Readiness](./desktop_traversal_endpoint_enablement_readiness.md)
+for the endpoint-level coverage map that must be closed before replacing the hard refusal.
+
 ### 5. Request Enablement Gate
 
 Only after the previous gates pass should the endpoint hard refusal be replaced.

@@ -135,6 +135,9 @@ Implemented:
   integration coverage while the Node endpoint remains refused
 - Rust traversal helper command activation review completed; Node endpoint enablement remains blocked
   on endpoint-level authorization, validation, provenance, and narrowing coverage
+- Node traversal endpoint enablement readiness checklist added; public endpoint remains blocked on
+  endpoint-level success, unavailable, authorization-failure, helper-output-failure, provenance, and
+  narrowing coverage
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -148,14 +151,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Prepare Node traversal endpoint enablement readiness checklist.
+Scaffold Node traversal endpoint activation tests while keeping hard refusal active.
 
 Target:
 
 ```text
-Node traversal endpoint enablement readiness checklist
-  -> inventory endpoint tests needed before replacing desktop_traversal_not_implemented
-  -> map internal pipeline coverage to public endpoint coverage
+Node traversal endpoint activation test scaffold
+  -> add endpoint-level success/unavailable test structure without replacing hard refusal
+  -> add endpoint-level denial/no-provenance test structure without replacing hard refusal
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -164,7 +167,7 @@ Node traversal endpoint enablement readiness checklist
 Expected work:
 
 - keep current provenance behavior unchanged
-- document endpoint-level authorization, helper-output validation, provenance, and narrowing test gaps
+- add or prepare endpoint-level tests for traversal activation without changing runtime behavior
 - keep public endpoint hard refusal active
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout

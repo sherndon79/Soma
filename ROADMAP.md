@@ -117,6 +117,8 @@ Implemented:
   the public `inspect-atspi-traversal` command remains disabled
 - Rust unavailable traversal output review completed; public command activation remains blocked on
   cross-contract Rust-shaped output validation through the Node traversal validator
+- Rust-shaped successful and unavailable traversal helper output fixtures validate through the Node
+  traversal output validator while public traversal remains disabled
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -130,14 +132,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Add cross-contract traversal helper output fixtures before public command activation.
+Review cross-contract traversal helper output fixtures before command activation.
 
 Target:
 
 ```text
-traversal helper output contract fixtures
-  -> validate Rust-shaped successful and unavailable traversal JSON through Node validator
-  -> preserve Rust unit output tests and disabled command behavior
+traversal helper output contract review
+  -> confirm Rust-shaped fixtures validate through Node validator
+  -> identify remaining command activation test requirements
   -> preserve runtime default traversal rejection
   -> keep Rust command and Node endpoint traversal refusal active
 ```
@@ -145,9 +147,8 @@ traversal helper output contract fixtures
 Expected work:
 
 - keep current provenance behavior unchanged
-- add shared or Rust-shaped fixture coverage for successful traversal helper output
-- add shared or Rust-shaped fixture coverage for unavailable traversal helper output
-- validate both through `validateFutureDesktopTraversalOutput`
+- review Rust-shaped fixtures against helper command activation requirements
+- decide whether next safe slice is command-level test scaffolding or command activation
 - keep `inspect-atspi-traversal` returning not implemented
 - keep command-level activation tests for a later slice
 - keep the current default validator/assertion behavior unchanged

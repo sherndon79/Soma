@@ -1,0 +1,54 @@
+{
+  "status": "helper_contract_fixture_not_public_runtime",
+  "purpose": "Rust-shaped traversal helper outputs that must validate through Node before command activation.",
+  "successful_traversal": {
+    "root": {
+      "service": ":1.42",
+      "path": "/org/a11y/atspi/accessible/root"
+    },
+    "nodes": [
+      {
+        "id": "n0",
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/root",
+        "role": "application",
+        "child_count": 1,
+        "depth": 0,
+        "children": ["n1"]
+      },
+      {
+        "id": "n1",
+        "service": ":1.42",
+        "path": "/org/a11y/atspi/accessible/1",
+        "role": "frame",
+        "child_count": 0,
+        "depth": 1,
+        "children": []
+      }
+    ],
+    "limits": {
+      "max_depth": 2,
+      "max_nodes": 64,
+      "max_children_per_node": 8
+    },
+    "truncated": false,
+    "text_content_included": false,
+    "withheld_fields": ["name", "description", "text", "states", "actions"]
+  },
+  "unavailable_traversal": {
+    "root": {
+      "service": ":1.42",
+      "path": "/org/a11y/atspi/accessible/root"
+    },
+    "nodes": [],
+    "limits": {
+      "max_depth": 2,
+      "max_nodes": 64,
+      "max_children_per_node": 8
+    },
+    "truncated": false,
+    "unavailable_reason": "atspi_bus_address_unavailable",
+    "text_content_included": false,
+    "withheld_fields": ["name", "description", "text", "states", "actions"]
+  }
+}

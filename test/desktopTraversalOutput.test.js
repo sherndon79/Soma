@@ -8,6 +8,10 @@ const futureTraversalOutputCasesPath = new URL(
   "../docs/fixtures/future-traversal-output-validation-cases.json",
   import.meta.url,
 );
+const rustShapedTraversalOutputPath = new URL(
+  "../docs/fixtures/rust-shaped-traversal-helper-output.json",
+  import.meta.url,
+);
 
 function minimalTraversal(overrides = {}) {
   return {
@@ -40,6 +44,19 @@ test("future traversal output validator accepts the valid fixture case", async (
   );
   assert.deepEqual(
     validateFutureDesktopTraversalOutput(fixture.unavailable_case.traversal),
+    { valid: true, errors: [] },
+  );
+});
+
+test("future traversal output validator accepts Rust-shaped helper output fixtures", async () => {
+  const fixture = JSON.parse(await readFile(rustShapedTraversalOutputPath, "utf8"));
+
+  assert.deepEqual(
+    validateFutureDesktopTraversalOutput(fixture.successful_traversal),
+    { valid: true, errors: [] },
+  );
+  assert.deepEqual(
+    validateFutureDesktopTraversalOutput(fixture.unavailable_traversal),
     { valid: true, errors: [] },
   );
 });

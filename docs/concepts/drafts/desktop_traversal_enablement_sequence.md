@@ -50,6 +50,7 @@ Existing pieces that are present but not active:
 - command-level Rust integration test proving `inspect-atspi-traversal` still returns not implemented
   with valid-looking traversal args and emits no traversal JSON
 - future fixtures in `docs/fixtures/`
+- Rust-shaped traversal helper output contract fixtures in `docs/fixtures/`
 
 Current active guards that must remain until the activation sequence reaches them:
 
@@ -158,6 +159,8 @@ Required tests:
 - no raw `root_ref` is passed to Rust
 - no helper invocation happens for unauthorized roots
 - helper output is validated before response/provenance - covered by `test/desktopBroker.test.js`
+- Rust-shaped successful and unavailable helper output fixtures validate through Node traversal output
+  validation - covered by `test/desktopTraversalOutput.test.js`
 - traversal-bearing desktop inspection output uses the traversal-authorized runtime assertion while
   the default assertion remains closed - covered by `test/desktopBroker.test.js`
 - internal traversal request pipeline composes authorization and helper invocation while the public

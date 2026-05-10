@@ -147,6 +147,8 @@ Implemented:
 - extended Node traversal endpoint activation fixture review completed; remaining endpoint activation
   work is converting fixture cases into active endpoint assertions while preserving hard-gate
   invariants
+- final Node traversal endpoint enablement review completed; endpoint activation is ready for a
+  guarded implementation slice that replaces hard refusal only with converted active assertions
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -160,31 +162,31 @@ Current authority boundary:
 
 ## Next Slice
 
-Run final Node traversal endpoint enablement review before replacing hard refusal.
+Activate the public Node traversal endpoint behind the existing disclosure and validation gates.
 
 Target:
 
 ```text
-final Node traversal endpoint enablement review
-  -> confirm endpoint activation can convert fixture cases into active assertions
-  -> confirm hard-gate invariants are preserved through activation
+Node traversal endpoint activation
+  -> replace hard refusal with traversal request validation and internal traversal pipeline
+  -> convert endpoint activation fixture from hard-refusal assertions to active path assertions
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
-  -> keep Node endpoint traversal refusal active
+  -> keep traversal limited to authorized root refs and summary-only provenance
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- perform final review before replacing `desktop_traversal_not_implemented`
-- keep public endpoint hard refusal active
+- replace `desktop_traversal_not_implemented` only in the same slice that converts endpoint tests
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- keep endpoint `desktop_traversal_not_implemented`
-- keep current runtime behavior unchanged
+- route traversal responses through the traversal-authorized schema only after root authorization
+- assert success, unavailable, authorization-failure, request-validation, helper-output-failure, and
+  narrowing/revocation endpoint paths
 
 Constraints:
 

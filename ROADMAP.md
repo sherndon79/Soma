@@ -119,6 +119,8 @@ Implemented:
   cross-contract Rust-shaped output validation through the Node traversal validator
 - Rust-shaped successful and unavailable traversal helper output fixtures validate through the Node
   traversal output validator while public traversal remains disabled
+- traversal helper output contract review completed; public command activation remains blocked on
+  command-level activation test scaffolding
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -132,28 +134,27 @@ Current authority boundary:
 
 ## Next Slice
 
-Review cross-contract traversal helper output fixtures before command activation.
+Design command-level traversal activation test scaffolding while keeping the command disabled.
 
 Target:
 
 ```text
-traversal helper output contract review
-  -> confirm Rust-shaped fixtures validate through Node validator
-  -> identify remaining command activation test requirements
+command-level traversal activation test scaffolding
+  -> define controlled success and unavailable command stdout validation path
+  -> keep current disabled command integration test active
   -> preserve runtime default traversal rejection
-  -> keep Rust command and Node endpoint traversal refusal active
+  -> keep Node endpoint traversal refusal active
 ```
 
 Expected work:
 
 - keep current provenance behavior unchanged
-- review Rust-shaped fixtures against helper command activation requirements
-- decide whether next safe slice is command-level test scaffolding or command activation
+- decide controlled fake/query path for command-level tests without a live AT-SPI dependency
+- add docs, test plan, or non-public test harness scaffolding for command stdout validation
 - keep `inspect-atspi-traversal` returning not implemented
-- keep command-level activation tests for a later slice
+- keep current disabled-command integration test active
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
-- keep `inspect-atspi-traversal` returning not implemented
 - preserve current active schema and default runtime rejection of traversal output
 - keep endpoint `desktop_traversal_not_implemented` and helper command not implemented
 - keep current runtime behavior unchanged

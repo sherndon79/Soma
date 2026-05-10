@@ -284,6 +284,11 @@ npm run cli -- grants list --json
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 
+Writable grant mutation remains blocked until the grant lifecycle prerequisites are implemented:
+exact capability and provider validation, explicit user decision provenance, atomic grant-store
+writes, revocation auditability, migration behavior, and tests for create, revoke, supersede,
+expire, and failed-write behavior.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

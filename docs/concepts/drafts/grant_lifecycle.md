@@ -10,6 +10,22 @@ specific provider under explicit scope and constraints.
 The current implementation only supports read-only grant inspection through `GET /grants` and
 `npm run cli -- grants list`.
 
+## Current Runtime Boundary
+
+Writable grant mutation is not active. The current API reports the grant store as file-backed and
+read-only:
+
+- `writable: false`
+- `runtime_writes_enabled: false`
+- `activation_performed: false`
+
+Those fields are part of the safety boundary. A future implementation may only change them after
+the mutation path has explicit user approval, revocation auditability, fail-closed validation,
+durable provenance, and tests for create, revoke, supersede, expire, and migration behavior.
+
+Capability proposals remain intent records. Provider manifests remain implementation claims. The
+grant store remains authority records. None of those records should silently collapse into another.
+
 ## Lifecycle
 
 ### Proposal Approved
@@ -47,6 +63,21 @@ Grant creation must fail closed if:
 - constraints are missing or uninterpretable
 - the participant-facing disclosure cannot be formed
 
+The smallest safe creation path is:
+
+1. validate the requested capability against the active catalog
+2. validate the selected provider against the provider registry
+3. validate scope and constraints against the capability contract
+4. require a user decision record or explicit direct user action
+5. append a durable provenance event
+6. atomically persist the grant record
+7. return the created grant without activating the capability unless a separate activation path
+   explicitly consumes it
+
+Model-authored JSON, provider self-description, or proposal approval alone must not create a grant.
+The mutation caller should identify the acting surface and actor; only an explicit user actor, or a
+trusted user-facing surface carrying a user decision record, may write authority.
+
 ### Grant Inspected
 
 Grant inspection should remain available before and after revocation. A revoked grant is a record,
@@ -82,6 +113,11 @@ Revocation should require:
 Revocation must be allowed even if activation never occurred. It should be possible to revoke an
 unused grant because authority itself is meaningful.
 
+Revocation should be idempotent. Revoking an already revoked, superseded, or expired grant should
+not restore authority, delete history, or create a second contradictory authority record. The
+response may report that no new authority change was needed, but the historical revoked state must
+remain inspectable.
+
 ### Grant Superseded
 
 Supersession replaces one grant with another, usually because the new grant is narrower, clearer,
@@ -95,6 +131,10 @@ Supersession should:
 - require explicit approval for the replacement grant
 - never silently map old authority onto a broader capability
 
+Supersession is two linked authority decisions, not a rename. The replacement grant must pass the
+same validation as a new grant, and the old grant must remain visible with its original scope,
+constraints, reason, approval source, and replacement link.
+
 ### Grant Expired
 
 Expiration removes authority because a scope or time boundary ended.
@@ -107,6 +147,54 @@ Expiration should:
 - avoid prompting for renewal unless the current task materially needs the capability
 
 Expired grants must not authorize capability use.
+
+## Mutation Prerequisites
+
+Before any writable grant endpoint or CLI command is implemented, Soma should have these concrete
+pieces in place:
+
+- a typed mutation validator for create, revoke, supersede, and expire inputs
+- capability-catalog lookup for exact capability keys
+- provider-registry lookup that confirms the provider supports the requested capability
+- constraint validation per capability contract
+- explicit actor and user-decision provenance requirements
+- an atomic write strategy for the grant store, with schema-version checks before write
+- durable provenance append before or with the grant write, with a documented recovery behavior if
+  either step fails
+- idempotent revocation semantics
+- migration behavior for stale, ambiguous, or future grant records
+- a user-facing disclosure surface that explains authority, scope, constraints, duration, and
+  revocation before approval
+- an operator inspection path that can show active, revoked, superseded, expired, and
+  review-required grants without activating them
+
+The first implementation should prefer a narrow grant-store module over adding mutation logic
+directly to the central request handler. Route and CLI handlers should parse requests and delegate
+to the grant module; the grant module should own validation, state transition rules, persistence,
+and provenance event construction.
+
+## Mutation Tests Required
+
+Writable grant mutation is not ready until tests prove:
+
+- grant creation rejects unknown capabilities
+- grant creation rejects unsupported providers
+- grant creation rejects missing, malformed, or broader-than-approved constraints
+- grant creation requires explicit user approval or a direct explicit user action
+- grant creation writes a provenance event and a grant record without activating the capability
+- model-originated requests cannot create grants by themselves
+- revocation records `revoked_at`, `revoked_by`, `revocation_reason`, and a provenance event
+- revocation is idempotent and never restores authority
+- revoked, expired, superseded, and unknown-status grants do not authorize capability use
+- supersession preserves the old grant and links the replacement grant
+- failed validation performs no grant-store write
+- failed writes do not emit misleading success provenance
+- corrupted or ambiguous grant stores fail closed for grant-dependent capability checks
+- `GET /grants` remains inspectable and non-activating
+- malformed CLI/API arguments fail before helper execution and do not emit misleading stdout
+- desktop traversal authority remains limited to authorized root refs with summary-only provenance
+
+These tests should be added before flipping `runtime_writes_enabled` to `true`.
 
 ## Reserved Future API
 
@@ -128,6 +216,9 @@ npm run cli -- grants supersede grant-id --replacement replacement-grant-id --re
 
 Reserved names should not be implemented until the policy, provenance, review, and failure-mode
 requirements in this document are satisfied.
+
+When these names are implemented, they should remain non-activating by default. Creating a grant is
+not the same operation as using the granted capability.
 
 ## Provenance Events
 

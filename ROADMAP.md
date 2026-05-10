@@ -156,6 +156,9 @@ Implemented:
 - traversal artifact lifecycle disposition completed with stable active API names, compatibility
   delegates for Future-prefixed exports, active endpoint fixture metadata, and historical
   Future-prefixed schemas/fixtures retained where they preserve migration context
+- writable grant mutation prerequisites documented with explicit user-decision provenance,
+  fail-closed validation, idempotent revocation, supersession, mutation test requirements, and no
+  runtime write enablement
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -169,14 +172,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Design writable grant and revocation mutation prerequisites.
+Scaffold grant mutation validators and state transitions without enabling writes.
 
 Target:
 
 ```text
-grant mutation prerequisite design
-  -> define the smallest safe writable grant mutation path
-  -> preserve explicit user approval and revocation auditability
+grant mutation validator scaffold
+  -> make grant authority state transitions executable in memory
+  -> preserve explicit user approval and revocation auditability as validation inputs
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep traversal limited to authorized root refs and summary-only provenance
@@ -185,14 +188,18 @@ grant mutation prerequisite design
 Expected work:
 
 - keep current provenance behavior unchanged
-- review existing grant lifecycle docs and read-only grant API behavior
+- add create/revoke/supersede/expire validation helpers without route or CLI mutation
+- add in-memory state-transition helpers without file writes
+- require exact catalog capability keys and supported provider ids in validator tests
+- require explicit user decision or direct explicit user actor in creation tests
+- test idempotent revocation and supersession links
+- keep `GET /grants` reporting `writable: false` and `runtime_writes_enabled: false`
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- do not add runtime grant writes until prerequisites are explicit
-- identify required tests for approve/revoke/supersede/audit behavior
+- do not add runtime grant writes or mutation routes
 - keep traversal authority unchanged
 
 Constraints:

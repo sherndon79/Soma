@@ -140,6 +140,8 @@ Implemented:
   narrowing coverage
 - Node traversal endpoint activation case fixture and hard-refusal scaffold test added for future
   success, unavailable, authorization-failure, and request-validation paths
+- Node traversal endpoint activation scaffold review completed; endpoint enablement remains blocked
+  on helper-output-failure and narrowing/revocation endpoint fixture coverage
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -153,14 +155,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Review Node traversal endpoint activation test scaffold before endpoint enablement.
+Extend Node traversal endpoint activation fixture coverage while keeping hard refusal active.
 
 Target:
 
 ```text
-Node traversal endpoint activation test scaffold review
-  -> confirm activation fixture covers success/unavailable/denial shapes
-  -> identify remaining endpoint test gaps before replacing hard refusal
+Node traversal endpoint activation fixture extension
+  -> add helper-output-failure endpoint activation case
+  -> add narrowing/revoked-root endpoint activation case
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -169,7 +171,7 @@ Node traversal endpoint activation test scaffold review
 Expected work:
 
 - keep current provenance behavior unchanged
-- review endpoint activation fixture and remaining endpoint enablement gaps
+- extend endpoint activation fixture and hard-refusal test coverage for remaining blocked paths
 - keep public endpoint hard refusal active
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout

@@ -7,6 +7,9 @@ This checklist defines what must be true before `/desktop/inspect/accessibility-
 `inspect-atspi-traversal` helper command is active, but the public Node endpoint must remain refused
 until endpoint-level authorization, validation, provenance, and narrowing behavior are tested.
 
+This is the endpoint-level expansion of the higher-level activation checklist in
+[Desktop Traversal Enablement Sequence](./desktop_traversal_enablement_sequence.md).
+
 ## Current State
 
 Implemented and tested internally:

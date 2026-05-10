@@ -7,6 +7,9 @@ When a review surfaces a vocabulary, policy, capability, or boundary change, the
 should be updated as a separate follow-up. The review captures the moment; the canonical doc
 captures the resolution.
 
+Use [INDEX.md](./INDEX.md) when a capability thread has multiple related reviews. The index groups
+review files by thread and gives future reviewers a short path through dense review history.
+
 ## Scope
 
 So far this folder holds documentation, architecture, and direction reviews. The template here is

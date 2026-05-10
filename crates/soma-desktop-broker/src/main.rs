@@ -764,15 +764,41 @@ where
 }
 
 #[allow(dead_code)]
-fn inspect_atspi_traversal_json(args: &TraversalArgs) -> Result<String, String> {
-    let address =
-        get_atspi_bus_address().ok_or_else(|| "atspi_bus_address_unavailable".to_string())?;
-    let result = build_traversal_from_args(args, |object_ref, max_children| {
-        inspect_traversal_observation(&address, object_ref, max_children)
-    });
-    Ok(result.to_json())
+fn inspect_atspi_traversal_json(args: &TraversalArgs) -> String {
+    build_atspi_traversal_command_output(
+        args,
+        get_atspi_bus_address,
+        |address, object_ref, max_children| {
+            inspect_traversal_observation(address, object_ref, max_children)
+        },
+    )
 }
 
+fn build_atspi_traversal_command_output<A, Q>(
+    args: &TraversalArgs,
+    mut get_address: A,
+    mut query: Q,
+) -> String
+where
+    A: FnMut() -> Option<String>,
+    Q: FnMut(&str, &AtspiObjectRef, usize) -> Result<AtspiTraversalObservation, String>,
+{
+    let root = AtspiObjectRef {
+        service: args.root_service.clone(),
+        path: args.root_path.clone(),
+    };
+    let limits = AtspiTraversalLimits::from(args);
+    let Some(address) = get_address() else {
+        return AtspiTraversalResult::unavailable(root, limits, "atspi_bus_address_unavailable")
+            .to_json();
+    };
+    let result = build_bounded_traversal(root, limits, |object_ref| {
+        query(&address, object_ref, limits.max_children_per_node)
+    });
+    result.to_json()
+}
+
+#[allow(dead_code)]
 fn build_traversal_from_args<F>(args: &TraversalArgs, mut query: F) -> AtspiTraversalResult
 where
     F: FnMut(&AtspiObjectRef, usize) -> Result<AtspiTraversalObservation, String>,
@@ -1581,6 +1607,101 @@ mod tests {
             ]
         );
         assert_eq!(result.truncated, true);
+    }
+
+    #[test]
+    fn traversal_command_output_success_uses_injected_query_boundary() {
+        let args = TraversalArgs {
+            root_service: ":1.42".to_string(),
+            root_path: "/org/a11y/atspi/accessible/root".to_string(),
+            max_depth: 1,
+            max_nodes: 8,
+            max_children_per_node: 2,
+        };
+        let observations = fake_traversal_observations([
+            (
+                "/org/a11y/atspi/accessible/root",
+                "application",
+                1,
+                vec!["/a"],
+            ),
+            ("/a", "frame", 0, vec![]),
+        ]);
+        let mut queried = Vec::new();
+
+        let json = build_atspi_traversal_command_output(
+            &args,
+            || Some("unix:path=/tmp/fake-atspi".to_string()),
+            |address, object_ref, max_children| {
+                queried.push((address.to_string(), object_ref.clone(), max_children));
+                fake_query(&observations, [])(object_ref)
+            },
+        );
+
+        assert!(
+            json.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
+        );
+        assert!(json.contains(r#""nodes":["#));
+        assert!(json.contains(r#""role":"application""#));
+        assert!(json.contains(r#""children":["n1"]"#));
+        assert!(
+            json.contains(r#""limits":{"max_depth":1,"max_nodes":8,"max_children_per_node":2}"#)
+        );
+        assert!(json.contains(r#""truncated":false"#));
+        assert_eq!(
+            queried,
+            vec![
+                (
+                    "unix:path=/tmp/fake-atspi".to_string(),
+                    fake_ref("/org/a11y/atspi/accessible/root"),
+                    2
+                ),
+                ("unix:path=/tmp/fake-atspi".to_string(), fake_ref("/a"), 2),
+            ]
+        );
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
+    }
+
+    #[test]
+    fn traversal_command_output_unavailable_without_bus_address_skips_query() {
+        let args = TraversalArgs {
+            root_service: ":1.42".to_string(),
+            root_path: "/org/a11y/atspi/accessible/root".to_string(),
+            max_depth: 2,
+            max_nodes: 64,
+            max_children_per_node: 8,
+        };
+        let mut queried = false;
+
+        let json = build_atspi_traversal_command_output(
+            &args,
+            || None,
+            |_, _, _| {
+                queried = true;
+                Err("should_not_query".to_string())
+            },
+        );
+
+        assert!(!queried);
+        assert!(
+            json.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
+        );
+        assert!(json.contains(r#""nodes":[]"#));
+        assert!(
+            json.contains(r#""limits":{"max_depth":2,"max_nodes":64,"max_children_per_node":8}"#)
+        );
+        assert!(json.contains(r#""truncated":false"#));
+        assert!(json.contains(r#""unavailable_reason":"atspi_bus_address_unavailable""#));
+        assert!(json.contains(r#""text_content_included":false"#));
+        assert!(!json.contains(r#""name":"#));
+        assert!(!json.contains(r#""description":"#));
+        assert!(!json.contains(r#""text":"#));
+        assert!(!json.contains(r#""states":"#));
+        assert!(!json.contains(r#""actions":"#));
     }
 
     #[test]

@@ -121,6 +121,8 @@ Implemented:
   traversal output validator while public traversal remains disabled
 - traversal helper output contract review completed; public command activation remains blocked on
   command-level activation test scaffolding
+- command-level traversal activation test scaffold added through an internal Rust command-output seam
+  with injected success/unavailable providers while public command behavior remains disabled
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -134,13 +136,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Design command-level traversal activation test scaffolding while keeping the command disabled.
+Review command-level traversal activation test scaffold before command activation.
 
 Target:
 
 ```text
-command-level traversal activation test scaffolding
-  -> define controlled success and unavailable command stdout validation path
+command-level traversal activation scaffold review
+  -> confirm deterministic success and unavailable stdout scaffold is sufficient
   -> keep current disabled command integration test active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -149,8 +151,8 @@ command-level traversal activation test scaffolding
 Expected work:
 
 - keep current provenance behavior unchanged
-- decide controlled fake/query path for command-level tests without a live AT-SPI dependency
-- add docs, test plan, or non-public test harness scaffolding for command stdout validation
+- review internal Rust command-output seam and tests before public command activation
+- identify any remaining gaps in malformed-arg, protected-field, unavailable, or Node validator coverage
 - keep `inspect-atspi-traversal` returning not implemented
 - keep current disabled-command integration test active
 - keep the current default validator/assertion behavior unchanged

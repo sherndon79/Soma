@@ -17,6 +17,8 @@ Already present:
 - `TraversalArgs` parser for authorized root and limits
 - typed traversal output structs and JSON assembly
 - typed unavailable traversal output builder for the stable zero-node unavailable shape
+- internal command-output seam that can produce future success and unavailable stdout shapes from
+  injected address/query providers without activating the public command
 - in-memory breadth-first traversal builder with fake-observation tests
 - internal AT-SPI traversal query boundary helper for role, child count, and bounded child refs
 - helper-side hard ceilings:
@@ -130,7 +132,8 @@ Node validator until activation.
 
 ## AT-SPI Query Boundary
 
-Implementation status: present as an internal helper, not wired to command execution.
+Implementation status: present as an internal helper and command-output seam, not wired to public
+command execution.
 
 Keep D-Bus interaction isolated behind a small query function:
 
@@ -156,9 +159,10 @@ The query function must not read:
 
 This makes protected-field omission a query-level invariant, not just an output-filtering step.
 
-The live wrapper is intentionally marked unused until activation because `inspect-atspi-traversal`
-must continue returning not implemented. Tests exercise the parser/assembly path with fake command
-output and keep protected fields out of the traversal JSON path.
+The live wrapper is intentionally unused by command dispatch until activation because
+`inspect-atspi-traversal` must continue returning not implemented. Tests exercise the
+parser/assembly path with injected address/query providers and keep protected fields out of the
+future command stdout JSON path.
 
 ## Failure Behavior
 
@@ -202,6 +206,10 @@ Add tests before command activation:
 - child ids reference only included node ids
 - query failures after root produce truncated bounded output without raw errors
 - valid args still leave command disabled until Node activation gates are ready
+- command-output seam emits successful traversal stdout from injected providers
+- command-output seam emits unavailable traversal stdout when the AT-SPI bus address provider returns
+  unavailable
+- malformed command args still emit no stdout JSON before activation
 
 Use fake in-memory node observations for traversal algorithm tests. Do not require a live AT-SPI
 bus for unit tests.

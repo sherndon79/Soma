@@ -128,7 +128,8 @@ The public `inspect-atspi-traversal` command should keep returning not implement
 ready to authorize requests and validate output on the active path.
 
 Current scaffold status: the private Rust bridge can build traversal from validated args and the
-live AT-SPI query boundary, but the public command still returns not implemented.
+live AT-SPI query boundary. A deterministic command-output seam can also emit the future success and
+unavailable stdout shapes from injected providers. The public command still returns not implemented.
 
 Required tests:
 
@@ -138,6 +139,9 @@ Required tests:
 - Rust traversal marks truncation when limits stop traversal
 - Rust unavailable traversal output emits zero nodes, a stable unavailable reason, and no protected
   fields
+- future command-output seam emits successful traversal stdout from injected providers
+- future command-output seam emits unavailable traversal stdout when AT-SPI bus address lookup is
+  unavailable
 - malformed helper args fail before AT-SPI queries
 - public `inspect-atspi-traversal` still returns not implemented and emits no traversal JSON
 

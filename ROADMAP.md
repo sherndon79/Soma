@@ -123,6 +123,8 @@ Implemented:
   command-level activation test scaffolding
 - command-level traversal activation test scaffold added through an internal Rust command-output seam
   with injected success/unavailable providers while public command behavior remains disabled
+- command-level traversal activation scaffold review completed; public command activation remains
+  blocked on deterministic command-dispatch integration coverage
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -136,13 +138,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Review command-level traversal activation test scaffold before command activation.
+Design deterministic public traversal command activation integration coverage.
 
 Target:
 
 ```text
-command-level traversal activation scaffold review
-  -> confirm deterministic success and unavailable stdout scaffold is sufficient
+public traversal command activation integration harness
+  -> define deterministic command-dispatch success/unavailable coverage
   -> keep current disabled command integration test active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -151,8 +153,9 @@ command-level traversal activation scaffold review
 Expected work:
 
 - keep current provenance behavior unchanged
-- review internal Rust command-output seam and tests before public command activation
-- identify any remaining gaps in malformed-arg, protected-field, unavailable, or Node validator coverage
+- choose a controlled command-dispatch test strategy that does not depend on a live AT-SPI session
+- cover activated-command success, unavailable, malformed-arg, and protected-field behavior in design
+  or scaffold
 - keep `inspect-atspi-traversal` returning not implemented
 - keep current disabled-command integration test active
 - keep the current default validator/assertion behavior unchanged

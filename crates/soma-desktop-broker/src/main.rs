@@ -32,9 +32,9 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("inspect-atspi-traversal") => match TraversalArgs::parse(args) {
-            Ok(_) => {
-                eprintln!("inspect-atspi-traversal is not implemented");
-                ExitCode::from(2)
+            Ok(args) => {
+                println!("{}", inspect_atspi_traversal_json(&args));
+                ExitCode::SUCCESS
             }
             Err(error) => {
                 eprintln!("{error}");
@@ -763,7 +763,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 fn inspect_atspi_traversal_json(args: &TraversalArgs) -> String {
     build_atspi_traversal_command_output(
         args,

@@ -1,10 +1,10 @@
 # Desktop Traversal Rust Implementation Plan
 
-Status: design draft, not implemented
+Status: design draft, Rust helper command activated
 
-This document defines the smallest Rust helper units needed for future bounded AT-SPI traversal.
-It does not enable `inspect-atspi-traversal`, change endpoint behavior, or change the active
-desktop inspection schema.
+This document defines the smallest Rust helper units needed for bounded AT-SPI traversal. The Rust
+`inspect-atspi-traversal` helper command is active. This does not change endpoint behavior or change
+the active desktop inspection schema.
 
 Node remains the authority boundary. Rust receives only an already-authorized root service/path and
 hard limits, then returns bounded host observations for Node to validate.
@@ -35,7 +35,7 @@ Already present:
 
 Current required behavior:
 
-- valid traversal args still return non-zero with `inspect-atspi-traversal is not implemented`
+- valid traversal args emit bounded traversal JSON or the stable unavailable traversal shape
 - malformed args fail before any AT-SPI query
 - Node endpoint still rejects traversal requests before helper invocation
 - active Node schema still rejects `root_object.traversal`
@@ -120,8 +120,8 @@ Required behavior:
 
 ### Output Assembly
 
-Implementation status: present for typed traversal output and unavailable traversal output. It remains
-disconnected from `inspect-atspi-traversal`.
+Implementation status: present for typed traversal output and unavailable traversal output. It is
+connected to `inspect-atspi-traversal`.
 
 Build JSON from typed values rather than string concatenation where practical. If the helper stays
 dependency-free, keep one small JSON assembly function and test escaping on every string field that
@@ -159,10 +159,9 @@ The query function must not read:
 
 This makes protected-field omission a query-level invariant, not just an output-filtering step.
 
-The live wrapper is intentionally unused by command dispatch until activation because
-`inspect-atspi-traversal` must continue returning not implemented. Tests exercise the
-parser/assembly path with injected address/query providers and keep protected fields out of the
-future command stdout JSON path.
+The live wrapper is used by command dispatch after argument validation. Tests exercise the
+parser/assembly path with injected address/query providers and the public command path with fake
+`busctl`, keeping protected fields out of command stdout JSON.
 
 ## Failure Behavior
 
@@ -205,7 +204,8 @@ Add tests before command activation:
 - truncation is true when child limit omits sibling children
 - child ids reference only included node ids
 - query failures after root produce truncated bounded output without raw errors
-- valid args still leave command disabled until Node activation gates are ready
+- valid args emit bounded success or unavailable traversal output while Node endpoint traversal
+  remains refused
 - command-output seam emits successful traversal stdout from injected providers
 - command-output seam emits unavailable traversal stdout when the AT-SPI bus address provider returns
   unavailable
@@ -214,18 +214,15 @@ Add tests before command activation:
 Use fake in-memory node observations for traversal algorithm tests. Do not require a live AT-SPI
 bus for unit tests.
 
-## Activation Rule
+## Endpoint Activation Rule
 
-Do not make `inspect-atspi-traversal` execute traversal until:
+Do not make the Node endpoint call `inspect-atspi-traversal` until:
 
-- active Node schema accepts traversal output
-- active Node runtime validator accepts traversal output
+- active traversal-specific Node schema accepts traversal output
 - endpoint request validation and `root_ref` authorization are wired
 - helper output is validated before response and provenance
 - summary-only traversal provenance is wired
-
-Until those gates are complete, implementation work should stay in internal functions or test-only
-paths that cannot be invoked through the public helper command.
+- default Node runtime validation remains closed unless using the explicit traversal-authorized path
 
 ## Non-Goals
 

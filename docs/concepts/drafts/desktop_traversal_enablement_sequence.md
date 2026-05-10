@@ -34,7 +34,7 @@ Existing pieces that are present but not active:
   seam that composes root-ref validation, disclosure-registry authorization, helper invocation,
   traversal attachment, and validated summary provenance while remaining disconnected from the public
   endpoint
-- `inspect-atspi-traversal` Rust parser: future helper command parser that currently fails closed
+- `inspect-atspi-traversal` Rust parser and bounded helper command
 - `docs/concepts/drafts/desktop_traversal_schema_activation_decision.md`: traversal-specific
   schema/runtime activation decision
 - `docs/reviews/2026-05-09_traversal_activation_gates_review.md`: activation-gate review before
@@ -47,8 +47,8 @@ Existing pieces that are present but not active:
 - private Rust traversal bridge from validated args to bounded traversal assembly and the live
   AT-SPI query boundary
 - internal Rust unavailable traversal output builder for the stable zero-node unavailable shape
-- command-level Rust integration test proving `inspect-atspi-traversal` still returns not implemented
-  with valid-looking traversal args and emits no traversal JSON
+- command-level Rust integration tests proving `inspect-atspi-traversal` emits bounded success and
+  unavailable output while malformed args still emit no stdout
 - future fixtures in `docs/fixtures/`
 - Rust-shaped traversal helper output contract fixtures in `docs/fixtures/`
 
@@ -124,21 +124,22 @@ Changes:
 - return stable unavailable/truncated summaries instead of raw application errors
 
 Implementation should first land pure Rust traversal/output units with fake in-memory observations.
-The public `inspect-atspi-traversal` command should keep returning not implemented until Node is
-ready to authorize requests and validate output on the active path.
+The public `inspect-atspi-traversal` command is active and emits bounded traversal output from
+validated concrete root arguments. Node still owns authorization and must only pass concrete
+service/path values after resolving a disclosed `root_ref`.
 
 Current scaffold status: the private Rust bridge can build traversal from validated args and the
-live AT-SPI query boundary. A deterministic command-output seam can also emit the future success and
-unavailable stdout shapes from injected providers. The public command still returns not implemented.
+live AT-SPI query boundary. The public command has deterministic fake-`busctl` coverage for success
+and unavailable stdout shapes.
 The planned public command-dispatch integration harness uses a fake `busctl` executable earlier in
 `PATH` so the real helper binary can be tested without a live AT-SPI session.
 
 See [Desktop Traversal Command Activation Harness](./desktop_traversal_command_activation_harness.md)
 for the fake-`busctl` contract and activation test sequence.
 
-Current integration scaffold status: the fake-`busctl` helper exists in
-`crates/soma-desktop-broker/tests/traversal_command.rs`, and the disabled-command guard proves the
-public command does not invoke it before activation.
+Current integration status: the fake-`busctl` helper exists in
+`crates/soma-desktop-broker/tests/traversal_command.rs`, and public command tests prove success,
+unavailable, and malformed-argument behavior without a live AT-SPI session.
 
 Required tests:
 
@@ -152,7 +153,8 @@ Required tests:
 - future command-output seam emits unavailable traversal stdout when AT-SPI bus address lookup is
   unavailable
 - malformed helper args fail before AT-SPI queries
-- public `inspect-atspi-traversal` still returns not implemented and emits no traversal JSON
+- public `inspect-atspi-traversal` emits bounded success/unavailable traversal JSON for valid args
+  and emits no stdout for malformed args
 
 Do not wire Node endpoint to call it yet.
 

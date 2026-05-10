@@ -8,21 +8,64 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
-fn traversal_command_remains_disabled_with_valid_args() {
-    let fake_busctl = FakeBusctl::new("poison");
+fn traversal_command_emits_bounded_traversal_with_fake_busctl() {
+    let fake_busctl = FakeBusctl::new("success");
     let mut command = traversal_command_with_valid_args();
     fake_busctl.prepend_to_path(&mut command);
     let output = command
         .output()
         .expect("run soma-desktop-broker traversal command");
 
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr).trim(),
-        "inspect-atspi-traversal is not implemented",
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
     );
-    assert!(!fake_busctl.was_invoked());
+    assert!(stdout.contains(r#""nodes":["#));
+    assert!(stdout.contains(r#""id":"n0""#));
+    assert!(stdout.contains(r#""role":"application""#));
+    assert!(stdout.contains(r#""child_count":1"#));
+    assert!(stdout.contains(r#""children":["n1"]"#));
+    assert!(stdout.contains(r#""id":"n1""#));
+    assert!(stdout.contains(r#""role":"frame""#));
+    assert!(stdout.contains(r#""limits":{"max_depth":2,"max_nodes":64,"max_children_per_node":8}"#));
+    assert!(stdout.contains(r#""truncated":false"#));
+    assert!(stdout.contains(r#""text_content_included":false"#));
+    assert!(!stdout.contains(r#""name":"#));
+    assert!(!stdout.contains(r#""description":"#));
+    assert!(!stdout.contains(r#""text":"#));
+    assert!(!stdout.contains(r#""states":"#));
+    assert!(!stdout.contains(r#""actions":"#));
+    assert!(fake_busctl.was_invoked());
+}
+
+#[test]
+fn traversal_command_emits_unavailable_traversal_with_fake_busctl() {
+    let fake_busctl = FakeBusctl::new("unavailable");
+    let mut command = traversal_command_with_valid_args();
+    fake_busctl.prepend_to_path(&mut command);
+    let output = command
+        .output()
+        .expect("run soma-desktop-broker traversal command");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(r#""root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}"#)
+    );
+    assert!(stdout.contains(r#""nodes":[]"#));
+    assert!(stdout.contains(r#""limits":{"max_depth":2,"max_nodes":64,"max_children_per_node":8}"#));
+    assert!(stdout.contains(r#""truncated":false"#));
+    assert!(stdout.contains(r#""unavailable_reason":"atspi_bus_address_unavailable""#));
+    assert!(stdout.contains(r#""text_content_included":false"#));
+    assert!(!stdout.contains(r#""name":"#));
+    assert!(!stdout.contains(r#""description":"#));
+    assert!(!stdout.contains(r#""text":"#));
+    assert!(!stdout.contains(r#""states":"#));
+    assert!(!stdout.contains(r#""actions":"#));
+    assert!(fake_busctl.was_invoked());
 }
 
 #[test]

@@ -131,6 +131,8 @@ Implemented:
   disabled and proves valid disabled-command args do not invoke the fake helper
 - fake-`busctl` traversal command activation harness review completed; next activation can be scoped
   to the Rust helper command while Node endpoint traversal refusal remains active
+- bounded Rust traversal helper command activated with fake-`busctl` success and unavailable
+  integration coverage while the Node endpoint remains refused
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -144,14 +146,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Activate the bounded Rust traversal helper command while keeping the Node endpoint refused.
+Review bounded Rust traversal helper command activation before Node endpoint enablement.
 
 Target:
 
 ```text
-bounded Rust traversal helper command activation
-  -> route valid inspect-atspi-traversal args to bounded traversal output
-  -> replace disabled valid-args guard with fake-busctl success/unavailable tests
+bounded Rust traversal helper command activation review
+  -> confirm activated command stdout matches Node traversal validator expectations
+  -> confirm Node endpoint traversal refusal remains active
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -160,13 +162,13 @@ bounded Rust traversal helper command activation
 Expected work:
 
 - keep current provenance behavior unchanged
-- route only the public Rust helper command through the existing bounded traversal output path
-- use fake `busctl` integration tests for success and unavailable command stdout
+- review Rust command activation and remaining Node endpoint enablement gaps
+- keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- keep endpoint `desktop_traversal_not_implemented` and helper command not implemented
+- keep endpoint `desktop_traversal_not_implemented`
 - keep current runtime behavior unchanged
 
 Constraints:

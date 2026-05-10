@@ -1,17 +1,16 @@
 # Desktop Traversal Command Activation Harness
 
-Status: design draft, scaffold present
+Status: design draft, activated
 
-This draft defines deterministic integration coverage for the future public
-`inspect-atspi-traversal` command before command activation. It does not activate traversal, change
-endpoint behavior, or expand the active desktop inspection schema.
+This draft defines deterministic integration coverage for the public `inspect-atspi-traversal`
+command. The Rust helper command is active. This does not change endpoint behavior or expand the
+active desktop inspection schema.
 
 ## Purpose
 
 The internal Rust command-output seam proves traversal stdout can be assembled from injected
-providers, but it does not exercise the public command dispatch path. Before `main` routes
-`inspect-atspi-traversal` into traversal output, integration tests need a deterministic way to run the
-real binary without depending on the developer or CI desktop session.
+providers. The fake-`busctl` harness exercises the public command dispatch path with the real binary
+without depending on the developer or CI desktop session.
 
 ## Selected Strategy
 
@@ -29,13 +28,13 @@ The fake `busctl` is created in a temporary directory by the Rust integration te
 the test temp directory. The test prepends that directory to `PATH` only for the child process running
 `soma-desktop-broker`.
 
-Current scaffold:
+Current activation coverage:
 
 - `crates/soma-desktop-broker/tests/traversal_command.rs` creates a fake `busctl` script
-- the fake supports `poison`, `success`, and `unavailable` behavior branches for future activation
-  tests
-- the current disabled-command guard runs with fake `busctl` first in `PATH` and proves it is not
-  invoked while `inspect-atspi-traversal` remains closed
+- the fake supports `success` and `unavailable` behavior branches
+- success coverage proves the public command emits bounded traversal JSON
+- unavailable coverage proves the public command emits the stable zero-node unavailable shape
+- malformed-argument coverage proves parser failures still emit no stdout JSON
 
 ## Fake `busctl` Contract
 
@@ -65,7 +64,7 @@ i 0
 a(so) 0
 ```
 
-## Test Cases Before Activation
+## Test Cases
 
 ### Success
 
@@ -80,7 +79,7 @@ soma-desktop-broker inspect-atspi-traversal \
   --max-children-per-node 8
 ```
 
-Expected once activation lands:
+Expected:
 
 - exit code `0`
 - stdout is valid traversal JSON
@@ -95,7 +94,7 @@ Expected once activation lands:
 
 Run the same command with fake `busctl` configured to fail or return no address for `GetAddress`.
 
-Expected once activation lands:
+Expected:
 
 - exit code `0`
 - stdout is valid unavailable traversal JSON
@@ -120,17 +119,6 @@ Expected before and after activation:
 - stderr contains the parser error
 - fake `busctl` is not invoked
 
-### Disabled Command Guard
-
-Until activation lands, keep the existing integration test proving valid traversal args return:
-
-- exit code `2`
-- empty stdout
-- `inspect-atspi-traversal is not implemented`
-
-The activation slice should replace this test with the success/unavailable public command tests in
-the same commit that changes command dispatch.
-
 ## Safety Invariants
 
 The integration harness must not:
@@ -145,8 +133,8 @@ The integration harness must not:
 ## Activation Sequence
 
 1. Add fake-`busctl` test helper while the public command remains disabled. - done
-2. Keep the current disabled-command integration test passing.
-3. Add activated-command tests as pending design notes or in the activation commit.
-4. Change command dispatch from `not implemented` to `inspect_atspi_traversal_json`.
-5. Replace the disabled-command valid-args assertion with success and unavailable assertions.
-6. Keep Node endpoint traversal refusal active until the later request-enablement gate.
+2. Keep the current disabled-command integration test passing. - done before activation
+3. Add activated-command tests as pending design notes or in the activation commit. - done
+4. Change command dispatch from `not implemented` to `inspect_atspi_traversal_json`. - done
+5. Replace the disabled-command valid-args assertion with success and unavailable assertions. - done
+6. Keep Node endpoint traversal refusal active until the later request-enablement gate. - still active

@@ -23,8 +23,8 @@ Implemented and tested internally:
 - default desktop inspection validator remains closed to traversal-bearing output
 - traversal-authorized validator path exists for the explicit traversal response path
 - Rust helper command emits bounded success/unavailable traversal output
-- endpoint activation case fixture exists for future success, unavailable, authorization failure, and
-  request-validation failure paths
+- endpoint activation case fixture exists for future success, unavailable, authorization failure,
+  request-validation failure, helper-output failure, and narrowing/revocation paths
 
 Still active at the public endpoint:
 
@@ -116,18 +116,19 @@ Already covered internally:
   - no authorization or registry writes while refused
   - no provenance while refused
 - `docs/fixtures/desktop-traversal-endpoint-activation-cases.json`
-  - future endpoint success/unavailable/authorization-failure/request-validation cases
+  - future endpoint success/unavailable/authorization-failure/request-validation/helper-output-failure/
+    narrowing-revocation cases
   - currently asserted as hard-refused by `test/app.test.js`
 
 Still needs public endpoint coverage:
 
 - successful traversal response from the endpoint - case scaffold exists, active assertion pending
 - unavailable traversal response from the endpoint - case scaffold exists, active assertion pending
-- endpoint authorization failure matrix
-- endpoint helper-output validation failure
+- endpoint authorization failure matrix - case scaffold exists, active assertion pending
+- endpoint helper-output validation failure - case scaffold exists, active assertion pending
 - endpoint summary-only provenance on success/unavailable
 - endpoint no-provenance behavior on denied/invalid traversal
-- endpoint behavior after module narrowing/revocation
+- endpoint behavior after module narrowing/revocation - case scaffold exists, active assertion pending
 
 ## Enablement Order
 

@@ -108,6 +108,63 @@
           "max_children_per_node": 8
         }
       }
+    },
+    {
+      "name": "future_helper_output_rejected_before_provenance",
+      "future_expected_path": "helper_output_failure",
+      "future_expected_error": "desktop_traversal_helper_output_invalid",
+      "future_helper_output": {
+        "root": {
+          "service": ":1.42",
+          "path": "/org/a11y/atspi/accessible/root"
+        },
+        "nodes": [
+          {
+            "id": "n0",
+            "service": ":1.42",
+            "path": "/org/a11y/atspi/accessible/root",
+            "role": "application",
+            "child_count": 0,
+            "depth": 0,
+            "children": [],
+            "name": "private window title"
+          }
+        ],
+        "limits": {
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        },
+        "truncated": false,
+        "text_content_included": false,
+        "withheld_fields": ["name", "description", "text", "states", "actions"]
+      },
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-helper-invalid",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
+    },
+    {
+      "name": "future_module_narrowed_root_revoked",
+      "future_expected_path": "narrowing_revocation_failure",
+      "future_expected_error": "desktop_traversal_root_revoked",
+      "future_setup": "root disclosed by previous AT-SPI inspection, then revoked by desktop.inspect.accessibility_tree narrowing",
+      "body": {
+        "mode": "atspi",
+        "traversal": {
+          "enabled": true,
+          "root_ref": "desktop-ref-module-revoked",
+          "max_depth": 2,
+          "max_nodes": 64,
+          "max_children_per_node": 8
+        }
+      }
     }
   ]
 }

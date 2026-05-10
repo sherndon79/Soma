@@ -129,6 +129,8 @@ Implemented:
   for real-binary command-dispatch tests without a live AT-SPI session
 - fake-`busctl` integration-test helper scaffold added while the public traversal command remains
   disabled and proves valid disabled-command args do not invoke the fake helper
+- fake-`busctl` traversal command activation harness review completed; next activation can be scoped
+  to the Rust helper command while Node endpoint traversal refusal remains active
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -142,15 +144,15 @@ Current authority boundary:
 
 ## Next Slice
 
-Review fake-`busctl` traversal command activation harness before command activation.
+Activate the bounded Rust traversal helper command while keeping the Node endpoint refused.
 
 Target:
 
 ```text
-fake-busctl traversal command activation harness review
-  -> confirm fake-busctl helper can support activated success/unavailable command tests
-  -> keep disabled-command valid-args guard active
-  -> keep current disabled command integration test active
+bounded Rust traversal helper command activation
+  -> route valid inspect-atspi-traversal args to bounded traversal output
+  -> replace disabled valid-args guard with fake-busctl success/unavailable tests
+  -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
 ```
@@ -158,10 +160,9 @@ fake-busctl traversal command activation harness review
 Expected work:
 
 - keep current provenance behavior unchanged
-- review fake `busctl` integration-test helper and remaining activation-test gaps
-- do not route `inspect-atspi-traversal` into traversal output yet
-- keep `inspect-atspi-traversal` returning not implemented
-- keep current disabled-command integration test active
+- route only the public Rust helper command through the existing bounded traversal output path
+- use fake `busctl` integration tests for success and unavailable command stdout
+- keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output

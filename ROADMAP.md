@@ -159,6 +159,9 @@ Implemented:
 - writable grant mutation prerequisites documented with explicit user-decision provenance,
   fail-closed validation, idempotent revocation, supersession, mutation test requirements, and no
   runtime write enablement
+- grant mutation validator scaffold added with pure create/revoke/supersede/expire state
+  transitions, exact catalog/provider checks, explicit user-decision requirements, idempotent
+  revocation tests, and no route, CLI, file-write, or activation path
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -172,14 +175,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Scaffold grant mutation validators and state transitions without enabling writes.
+Add grant mutation provenance event constructors without enabling writes.
 
 Target:
 
 ```text
-grant mutation validator scaffold
-  -> make grant authority state transitions executable in memory
-  -> preserve explicit user approval and revocation auditability as validation inputs
+grant mutation provenance scaffold
+  -> make grant authority changes auditable as structured events
+  -> preserve explicit user approval and revocation metadata
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep traversal limited to authorized root refs and summary-only provenance
@@ -188,11 +191,11 @@ grant mutation validator scaffold
 Expected work:
 
 - keep current provenance behavior unchanged
-- add create/revoke/supersede/expire validation helpers without route or CLI mutation
-- add in-memory state-transition helpers without file writes
-- require exact catalog capability keys and supported provider ids in validator tests
-- require explicit user decision or direct explicit user actor in creation tests
-- test idempotent revocation and supersession links
+- add grant.created/grant.revoked/grant.superseded/grant.expired event constructors
+- include grant id, capability, provider, scope, actor, reason, timestamp, and source/replacement
+  ids where relevant
+- avoid storing capability payloads or desktop traversal trees in grant mutation provenance
+- add tests for event shape and non-activation
 - keep `GET /grants` reporting `writable: false` and `runtime_writes_enabled: false`
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout

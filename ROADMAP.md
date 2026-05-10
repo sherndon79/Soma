@@ -151,6 +151,8 @@ Implemented:
   guarded implementation slice that replaces hard refusal only with converted active assertions
 - public Node traversal endpoint activated behind disclosure-registry authorization, traversal
   helper-output validation, traversal-authorized response validation, and summary-only provenance
+- public Node traversal endpoint activation review completed; activation accepted with no rollback
+  or immediate code cleanup required
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -164,14 +166,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Review public Node traversal endpoint activation and tighten any activation fallout.
+Resolve Future-prefix and draft-lifecycle disposition for traversal artifacts.
 
 Target:
 
 ```text
-post-activation traversal endpoint review
-  -> verify active endpoint behavior matches the final enablement review
-  -> identify any narrow cleanup after replacing the hard refusal
+traversal artifact lifecycle disposition
+  -> decide which Future-prefixed traversal artifacts stay as compatibility or history
+  -> rename or retire only artifacts with stable replacements and no load-bearing callers
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep traversal limited to authorized root refs and summary-only provenance
@@ -180,16 +182,15 @@ post-activation traversal endpoint review
 Expected work:
 
 - keep current provenance behavior unchanged
-- review activated endpoint behavior and converted endpoint tests
+- review Future-prefixed schemas, validators, fixtures, and helper names per artifact
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout
 - keep the current default validator/assertion behavior unchanged
 - keep `validateDesktopInspectionResult` closed by default
 - preserve current active schema and default runtime rejection of traversal output
-- confirm traversal responses route through the traversal-authorized schema only after root
-  authorization
-- confirm success, unavailable, authorization-failure, request-validation, helper-output-failure, and
-  narrowing/revocation endpoint paths remain covered
+- preserve compatibility delegates where callers still rely on them
+- keep historical schemas/fixtures when they explain migration context
+- avoid category-level naming sweeps
 
 Constraints:
 

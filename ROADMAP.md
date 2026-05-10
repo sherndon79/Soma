@@ -144,6 +144,9 @@ Implemented:
   on helper-output-failure and narrowing/revocation endpoint fixture coverage
 - Node traversal endpoint activation fixture extended for helper-output-failure and
   narrowing/revocation paths while all activation cases remain hard-refused
+- extended Node traversal endpoint activation fixture review completed; remaining endpoint activation
+  work is converting fixture cases into active endpoint assertions while preserving hard-gate
+  invariants
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -157,14 +160,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Review extended Node traversal endpoint activation fixture before endpoint enablement.
+Run final Node traversal endpoint enablement review before replacing hard refusal.
 
 Target:
 
 ```text
-extended Node traversal endpoint activation fixture review
-  -> confirm helper-output-failure and narrowing/revocation cases are represented
-  -> identify final endpoint activation test gaps before replacing hard refusal
+final Node traversal endpoint enablement review
+  -> confirm endpoint activation can convert fixture cases into active assertions
+  -> confirm hard-gate invariants are preserved through activation
   -> keep malformed-arg no-stdout behavior active
   -> preserve runtime default traversal rejection
   -> keep Node endpoint traversal refusal active
@@ -173,7 +176,7 @@ extended Node traversal endpoint activation fixture review
 Expected work:
 
 - keep current provenance behavior unchanged
-- review extended endpoint activation fixture and remaining endpoint enablement gaps
+- perform final review before replacing `desktop_traversal_not_implemented`
 - keep public endpoint hard refusal active
 - keep Rust helper command active
 - keep malformed command args failing before any helper query and emitting no stdout

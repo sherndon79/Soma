@@ -70,6 +70,7 @@ should inform implementation.
 - [Memory Control Surface](./concepts/drafts/memory_control_surface.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
+- [Sensorium Integration](./concepts/drafts/sensorium_integration.md)
 - [Traversal Root Authorization](./concepts/drafts/traversal_root_authorization.md)
 
 ## Related Projects

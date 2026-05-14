@@ -280,6 +280,71 @@ and publish derived signals on a separate namespace (Soma can decide
 whether that's `perception/<host>/...` for re-broadcast on the fabric,
 or kept in-process for capabilities that consume directly).
 
+## Irreversibility At The Model Boundary
+
+Sensorium subscriptions are reversible at the wire — stop the helper,
+drop the grant, the frame flow stops. But once a frame has been pushed
+into the foundation model's context for a turn, the model has reasoned
+with it; that turn's reasoning cannot be retroactively unframed. This
+is true for any perception-class capability whose output flows into
+the agent's working context.
+
+Soma's reversibility principle reads "prefer reversible actions;
+disclose when an action cannot be fully undone." For perception
+capabilities, the honest disclosure is:
+
+- The *subscription* is reversible: it can be paused, narrowed, or
+  revoked at any time and Sensorium stops being asked for frames.
+- The *consumption* by the model is one-way at the model boundary:
+  frames already incorporated into a turn's reasoning cannot be
+  withdrawn from the model's working context.
+
+Active-mode disclosure for perception capabilities should reflect
+both: "Receiving X" describes the reversible part; the model's
+already-reasoned-on context is the irreversible part. The capability
+catalog entry's `reversible` field should be `false` for camera-class
+perception precisely because of the model-boundary asymmetry, even
+though the subscription mechanism itself is straightforward to stop.
+
+This isn't a Sensorium-side concern (Sensorium doesn't know what its
+consumers do with frames). It's a Soma-side discipline for any
+capability that pipes external signal into the model.
+
+## Location Handling
+
+The location publisher is sensitive in ways that color/depth frames
+are not. A color frame from a room is contextual; a lat/lon/alt with
+a site name is *identifying* — it places the participant geographically
+in a way that crosses several Soma principles simultaneously
+(non-extraction, memory boundaries, remote-routing disclosure).
+
+The discipline for location subscription:
+
+- **Never flows to remote routing without explicit consent.** Even if
+  the participant has approved a remote-model call for the current
+  task, location should not ride along in the request context by
+  default. A separate, explicit grant is required for location to
+  cross the local boundary.
+- **Provenance records the consumption shape, not the coordinates.**
+  Logs should record that a `Location` payload was consumed at a
+  given time under a given grant; they should not re-record the
+  lat/lon/alt itself unless the capability explicitly authorizes that
+  and the operator surface makes the retention clear.
+- **Memory writes need explicit scope.** Soma's memory service may
+  store "the agent knows it is at site X" only under a grant that
+  names location-class data; the implicit memory-of-context path
+  shouldn't pick up coordinates by accident.
+- **Active-mode disclosure names the location class even when the
+  coordinates are absent.** A participant who has approved a `site`-only
+  subscription (no lat/lon) should still see "location: site name"
+  in the disclosure surface so the channel's presence is visible.
+
+The location publisher itself emits identity-only samples when no
+coordinates are configured (Sensorium's deliberate fallback). Soma
+should still treat the *capability* as Sensitive even in identity-only
+mode, because the field shape is the same and the channel can be
+upgraded later without a code change on the consumer side.
+
 ## Disclosure
 
 Active subscription should appear in Soma's active-mode disclosure
@@ -335,12 +400,19 @@ provenance records the shape of consumption, not the consumed content.
   Opus or raw PCM). Gemma 4's native audio path makes this potentially
   the highest-utility addition. Should Soma-side capability work
   anticipate this, or wait until the producer ships?
-- **Trust boundary on a multi-host LAN.** Zenoh peer-mode multicast
-  discovery brings up any Sensorium instance on the same LAN. Soma's
-  policy gateway needs to know which hosts are trusted; an untrusted
-  Sensorium publishing realistic-looking topics shouldn't auto-flow to
-  the agent. Probably handled by pinning provider entries to specific
-  hostnames or device serials, but worth thinking through.
+- **~~Trust boundary on a multi-host LAN.~~ Resolved (substrate auth).**
+  Earlier draft framed this as a Soma-side identity-verification problem
+  to solve. Sensorium's Phase 5d (substrate-level access control on the
+  Zenoh transport: `usrpwd` + TLS + ACLs, each a separate slice)
+  provides the answer: only authenticated peers can join the fabric at
+  all, ACLs restrict each authenticated peer to its declared
+  publish/subscribe rights, TLS prevents passive observers from
+  reading authenticated traffic. Soma's provider registry pins the
+  expected credential (via `credentials_ref`) so a peer claiming to be
+  a known Sensorium without the configured credential is rejected at
+  the Zenoh layer before any Soma-side code sees the traffic. This is
+  the consistent application of the "eye doesn't gate; substrate does;
+  brain discerns" principle from Sensorium's `AGENTS.md`.
 - **Schema-version pinning location.** Better placed in provider manifest
   or in capability definition? Provider manifest is more accurate (the
   provider produces the payload); capability definition is more useful at

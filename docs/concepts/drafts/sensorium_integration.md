@@ -34,6 +34,28 @@ foundation model (Gemma 4 E2B/E4B native vision/audio/video) — does the
 interpretation. Anything in between is either a Soma capability (authored
 by the agent under a grant) or it does not exist.
 
+## Implementation Discipline
+
+Two existing Soma docs are load-bearing for any work that lands from this
+draft and should be re-read before implementation:
+
+- [`implementation_guide.md`](../../implementation_guide.md) —
+  particularly the Disabled-First Capability Pattern. Sensorium
+  subscription is a Restricted-class perception capability; the
+  nine-step disabled-first sequence applies in full. The first concrete
+  slice is *not* a working subscriber — it is contract, validators,
+  fixtures marked non-active, overreach tests, and provenance shape,
+  with the public path fail-closed.
+- [`desktop_helper_transport.md`](./desktop_helper_transport.md) —
+  the existing answer to "when does Soma move past one-shot stdio to
+  a long-lived helper?" One of its explicit migration triggers is
+  *"visual perception streams or portal sessions need a long-lived
+  handle."* Sensorium subscription matches that trigger exactly, so
+  the transport question is pre-decided: JSON-RPC over stdio or a
+  Unix socket, with a Rust helper, Node remaining the policy
+  authority. Sensorium integration should not invent a new transport
+  pattern.
+
 ## Sensorium In Soma's Vocabulary
 
 | Soma concept | Sensorium analogue |
@@ -136,6 +158,18 @@ Two notes on shape:
   below).
 
 ## Subscription Invocation Contract
+
+Subscription is long-lived state — the helper that owns the Zenoh session
+needs to stay running across many delivered frames, expose start/stop
+control, and surface per-subscription health back to Node. This is the
+case the [Desktop Helper Transport
+draft](./desktop_helper_transport.md#migration-triggers) names as a
+trigger for moving past one-shot stdio. Sensorium integration uses the
+long-lived-helper path: a Rust sensor-broker process owns the Zenoh
+client and exposes JSON-RPC-style methods over stdio or a Unix socket
+(`sensorium.subscribe.start`, `sensorium.subscribe.stop`,
+`sensorium.subscribe.status`, etc.); Node remains the policy authority,
+validates requests, schema-checks results, and records provenance.
 
 After policy clears a subscription grant, the actual subscribe call should
 be bounded the same way other invocations are:
@@ -343,6 +377,12 @@ provenance records the shape of consumption, not the consumed content.
   canonical payload type definitions live in `crates/sensorium-core/src/lib.rs`;
   the topic-key constructors in the same file are the authoritative source
   for topic names)
+- [Implementation Guide](../../implementation_guide.md) — Disabled-First
+  Capability Pattern, authority boundary, validation-before-execution,
+  provenance minimization. Load-bearing for the first-slice shape.
+- [Desktop Helper Transport](./desktop_helper_transport.md) — pre-decided
+  transport shape for long-lived helpers; explicit migration trigger for
+  perception streams
 - [Adaptable Harness](./adaptable_harness.md) — risk classes,
   unilateral narrowing / mutual widening, restricted treatment for
   perception-class capabilities
@@ -357,14 +397,40 @@ provenance records the shape of consumption, not the consumed content.
 
 Nothing on the Soma side yet. Sensorium is shipping (Phase 3 publishers
 complete, Phase 5 hardening mostly complete, payload versioning live).
-The first Soma-side slice would likely be:
 
-1. A provider registry entry for the local Sensorium instance
-2. Capability catalog entries for the topics, starting with the lowest-risk
-   (status), camera-class as restricted opt-in
-3. A first thin Soma capability that subscribes to `sensor/<host>/status`,
-   logs the heartbeat, and surfaces the topic-discovery list — proves the
-   Zenoh-subscription substrate works inside Soma without any sensitive
-   data flowing yet
-4. Higher-risk camera/depth capabilities only after the substrate is
-   exercised and the disclosure surfaces are in place
+The first concrete slice on the Soma side follows the disabled-first
+nine-step sequence from the Implementation Guide rather than starting
+with a working subscriber. Approximately, in order:
+
+1. Capability catalog entries for each Sensorium topic with
+   `default_status: "disabled"` and `activation_policy: "explicit_grant"`.
+   Lowest-risk (status) and Restricted (color, depth) all enter the
+   catalog at the same time, all disabled.
+2. Provider registry entry for the local Sensorium instance, declared
+   non-active. Records the hostname-scoped topic namespace and the
+   pinned `schema_versions` block but does not authorize anything.
+3. Request-shape validators in the Node service plane that recognize
+   `perception.sensorium.*.subscribe` capability keys and refuse them
+   (no active grant, no helper) with stable error codes.
+4. Overreach tests proving that requests with broader-than-declared
+   constraints, unknown topic names, or future-shaped payloads are
+   rejected before any helper is reached.
+5. Provenance summary shape designed for subscription lifecycle
+   (start/stop/error, counters, schema_version observed, schema
+   mismatches) without recording frame content.
+6. Disclosure surfaces ready: `GET /capability-view` shows the new
+   capability keys as `requestable` (status) or `unsupported`/`forbidden`
+   (camera) until grants exist; active-subscription disclosure shape
+   sketched even though nothing can yet activate.
+7. Rust sensor-broker scaffold built behind tests — JSON-RPC method
+   stubs for `sensorium.subscribe.start` / `.stop` / `.status`, no
+   actual Zenoh client yet. Helper output schema-validated by Node.
+8. Public capability path remains fail-closed; tests verify denial.
+9. Activation gates align (real helper, real Zenoh client, real
+   subscription start/stop) only after all the above. Status-topic
+   subscribe activates first; camera-class later, separately, with
+   stronger disclosure review.
+
+The point of this ordering: a participant should never accidentally
+receive sensor frames because someone forgot a check. The public path
+stays disabled until *every* path it travels is gated correctly.

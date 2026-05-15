@@ -168,6 +168,9 @@ Implemented:
   subscription seam that remains fail-closed without an active grant and configured subscriber
 - Sensorium runtime opt-in added behind `SOMA_SENSORIUM_ENABLED`, with default-off startup,
   configurable helper path, clear helper startup failure, and shutdown cleanup for the helper
+- Sensorium grant constraint enforcement added for `max_seconds`, `max_fps`, `format_required`,
+  and `downsample_to`, with denials before subscriber invocation and inherited grant bounds for
+  omitted request constraints
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -181,26 +184,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Define Sensorium grant constraint enforcement before durable grants.
+Design durable Sensorium grant review before write enablement.
 
 Target:
 
 ```text
-sensorium grant constraint enforcement
-  -> compare requested Sensorium constraints against active grant constraints
-  -> preserve no-grant denial before helper invocation
-  -> preserve provider host/topic checks for jetsorano
+sensorium durable grant review design
+  -> define the review surface for Sensorium perception grants
+  -> preserve no durable grant writes until the review surface is explicit
   -> keep Sensorium grants out of default config
+  -> keep subscription route bounded by active grant constraints
 ```
 
 Expected work:
 
-- define grant constraint semantics for `max_seconds`, `max_fps`, `format_required`, and
-  `downsample_to`
-- reject requests that exceed the active grant's declared bounds before subscriber invocation
-- preserve requests that are narrower than the active grant
-- keep request-shape validation before grant lookup
-- add focused tests for too-long, too-fast, wrong format, and oversized downsample requests
+- document the user-facing review fields for host/topic, stream type, risk class, duration, frame
+  rate, encoding, downsample bounds, disclosure wording, and revocation
+- decide whether Sensorium grants are session-only first or may become durable later
+- map Sensorium grant creation onto the existing grant lifecycle prerequisites
+- document migration behavior for Sensorium provider host or topic namespace changes
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
 - keep provenance metadata-only; do not record frames or payloads

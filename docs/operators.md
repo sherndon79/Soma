@@ -317,6 +317,11 @@ Starting a subscription still requires an active grant for the exact
 and hostname-scoped topic before the helper is reached. No Sensorium grants ship in
 `config/grants.json`.
 
+Request constraints must stay within the active grant's declared bounds. `max_seconds` and
+`max_fps` cannot exceed the grant maximum, `format_required` must match when pinned, and
+`downsample_to` must fit within the grant dimensions. Omitted bounded values inherit the grant's
+declared value before the subscriber is invoked.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

@@ -520,10 +520,22 @@ The real `SensorBrokerManager` and `SensoriumSubscriber` are wired into
 Sensorium routes configured off. Operators may override the helper path with
 `SOMA_SENSOR_BROKER`.
 
-Next implementation work should define how active grant constraints bound
-subscription requests. The route validates request-shape constraints today, but
-it does not yet compare request values such as `max_seconds`, `max_fps`,
-`format_required`, or `downsample_to` against grant-specific maxima.
+Active grant constraints now bound subscription requests before the subscriber
+is invoked:
+
+- requested `max_seconds` must be no greater than the grant's `max_seconds`
+- requested `max_fps` must be no greater than the grant's `max_fps`
+- requested `format_required` must match the grant's `format_required`
+- requested `downsample_to` must fit within the grant's `[width, height]`
+
+If a request omits one of those bounded values and the grant declares it, Soma
+copies the grant value into the bounded request sent to the subscriber. If a
+request includes a bounded key that the active grant does not declare, Soma
+rejects before helper invocation. This keeps the successful path explicit while
+avoiding accidental unbounded subscriptions.
+
+Next implementation work should define how durable Sensorium grants are created
+and reviewed. No Sensorium grants ship in `config/grants.json`.
 
 The point of this ordering: a participant should never accidentally
 receive sensor frames because someone forgot a check. The public path

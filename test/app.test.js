@@ -2279,6 +2279,12 @@ const SENSORIUM_TEST_GRANT_STORE = {
       capability: "perception.sensorium.color.subscribe",
       provider: "soma.provider.sensorium.jetsorano",
       scope: "session",
+      constraints: {
+        max_seconds: 60,
+        max_fps: 10,
+        format_required: "jpeg",
+        downsample_to: [640, 480],
+      },
       approved_by: "user",
       reason: "test fixture",
       created_at: "2026-05-15T00:00:00.000Z",
@@ -2427,6 +2433,12 @@ test("POST /sensorium/subscriptions succeeds when an active grant exists", async
   assert.equal(subscriber.calls[0].args.capability, "perception.sensorium.color.subscribe");
   assert.equal(subscriber.calls[0].args.provider, "soma.provider.sensorium.jetsorano");
   assert.equal(subscriber.calls[0].args.grantId, "grant-sensorium-color-test");
+  assert.deepEqual(subscriber.calls[0].args.body.constraints, {
+    max_seconds: 60,
+    max_fps: 5,
+    format_required: "jpeg",
+    downsample_to: [640, 480],
+  });
 });
 
 test("POST /sensorium/subscriptions rejects topic mismatch before subscriber invocation", async () => {
@@ -2447,6 +2459,70 @@ test("POST /sensorium/subscriptions rejects topic mismatch before subscriber inv
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "sensorium_subscription_request_invalid");
   assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions rejects constraints beyond grant before subscriber invocation", async () => {
+  const cases = [
+    {
+      name: "too long",
+      constraints: { max_seconds: 61, max_fps: 5, format_required: "jpeg" },
+    },
+    {
+      name: "too fast",
+      constraints: { max_seconds: 60, max_fps: 11, format_required: "jpeg" },
+    },
+    {
+      name: "wrong format",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+      grantConstraints: {
+        max_seconds: 60,
+        max_fps: 10,
+        format_required: "png",
+        downsample_to: [640, 480],
+      },
+    },
+    {
+      name: "oversized downsample",
+      constraints: {
+        max_seconds: 60,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [800, 480],
+      },
+    },
+  ];
+
+  for (const { name, constraints, grantConstraints } of cases) {
+    const subscriber = makeFakeSensoriumSubscriber();
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: grantConstraints
+        ? {
+            schema_version: 1,
+            grants: [
+              {
+                ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+                constraints: grantConstraints,
+              },
+            ],
+          }
+        : SENSORIUM_TEST_GRANT_STORE,
+      sensoriumSubscriber: subscriber,
+    });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/sensorium/subscriptions",
+      body: {
+        capability: "perception.sensorium.color.subscribe",
+        topic: "sensor/jetsorano/realsense/color",
+        constraints,
+      },
+    });
+
+    assert.equal(response.statusCode, 403, name);
+    assert.equal(response.body.error, "sensorium_subscription_grant_constraints_exceeded", name);
+    assert.equal(subscriber.calls.length, 0, name);
+  }
 });
 
 test("POST /sensorium/subscriptions maps subscriber.start errors to HTTP statuses", async () => {

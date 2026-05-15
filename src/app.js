@@ -27,6 +27,7 @@ import {
   publicRuntimeProfiles,
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
+import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import { SessionMemory } from "./sessionMemory.js";
 
@@ -252,6 +253,22 @@ export function createRequestHandler({
             return;
           }
 
+          let boundedRequest;
+          try {
+            boundedRequest = enforceSensoriumGrantConstraints({
+              request: validatedRequest,
+              grant,
+            });
+          } catch (err) {
+            writeError(res, {
+              statusCode: err.statusCode ?? 403,
+              code: err.code ?? "sensorium_subscription_grant_constraints_exceeded",
+              message: err.message ?? "Sensorium subscription request exceeds grant constraints.",
+              validation_errors: err.validation_errors,
+            });
+            return;
+          }
+
           let startResult;
           try {
             startResult = await sensoriumSubscriber.start({
@@ -260,8 +277,8 @@ export function createRequestHandler({
               grantId: grant.id,
               scope,
               body: {
-                topic: validatedRequest.topic,
-                constraints: validatedRequest.constraints,
+                topic: boundedRequest.topic,
+                constraints: boundedRequest.constraints,
               },
             });
           } catch (err) {

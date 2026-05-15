@@ -565,6 +565,74 @@ test("runCli sensorium proposal-template validates required flags before request
   assert.equal(called, false);
 });
 
+test("runCli sensorium propose creates pending proposal without activation", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "propose",
+    "--capability",
+    "perception.sensorium.status.subscribe",
+    "--provider",
+    "soma.provider.sensorium.jetsorano",
+    "--topic",
+    "sensor/jetsorano/status",
+    "--reason",
+    "Need node liveness.",
+    "--max-seconds",
+    "30",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: {
+          id: "proposal-sensorium-status",
+          status: "pending",
+          capability: "perception.sensorium.status.subscribe",
+          requested_scope: "session",
+          review_context: {
+            provider: "soma.provider.sensorium.jetsorano",
+            topic: "sensor/jetsorano/status",
+            stream_type: "status",
+          },
+        },
+        review: {
+          provider: "soma.provider.sensorium.jetsorano",
+          topic: "sensor/jetsorano/status",
+          stream_type: "status",
+        },
+        activation_performed: false,
+        grant_written: false,
+        subscription_activated: false,
+        provenance_id: "prov-sensorium-status",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/sensorium/proposals");
+  assert.deepEqual(captured.body, {
+    capability: "perception.sensorium.status.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    topic: "sensor/jetsorano/status",
+    requested_scope: "session",
+    reason: "Need node liveness.",
+    constraints: {
+      max_seconds: 30,
+    },
+  });
+  assert.match(writes.join(""), /Sensorium proposal created/);
+  assert.match(writes.join(""), /proposal: proposal-sensorium-status/);
+  assert.match(writes.join(""), /activation performed: no/);
+  assert.match(writes.join(""), /grant written: no/);
+  assert.match(writes.join(""), /subscription activated: no/);
+  assert.match(writes.join(""), /show: soma proposals show proposal-sensorium-status/);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

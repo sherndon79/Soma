@@ -176,6 +176,8 @@ Implemented:
 - non-writing Sensorium grant proposal template added for review-ready proposal objects without
   grant writes or subscription activation
 - Sensorium proposal review endpoint and CLI command added for non-activating operator inspection
+- Sensorium proposal creation endpoint and CLI command added to store pending proposals with
+  review context while preserving no grant write and no subscription activation
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -189,28 +191,29 @@ Current authority boundary:
 
 ## Next Slice
 
-Connect Sensorium proposal review to generic proposal creation without grant activation.
+Design explicit Sensorium grant creation prerequisites after proposal approval.
 
 Target:
 
 ```text
-sensorium proposal creation
-  -> use the Sensorium review template as input validation and review context
-  -> create a pending capability proposal only after review-ready validation
-  -> preserve no grant writes
+sensorium grant creation prerequisites
+  -> define how an approved Sensorium proposal can become an active session grant
+  -> preserve explicit user decision and review provenance
+  -> keep grant creation separate from subscription activation
   -> keep Sensorium grants out of default config
   -> keep subscription route bounded by active grant constraints
 ```
 
 Expected work:
 
-- add a proposal creation path that accepts the Sensorium template output or equivalent request
-- store a pending capability proposal with Sensorium review context
-- keep approval non-activating and separate from grant creation
-- record proposal provenance metadata only; no frames, coordinates, or payloads
+- document or implement the smallest safe bridge from approved proposal to session grant
+- require explicit user actor, approval provenance, exact provider, exact topic, exact constraints,
+  revocation affordance, and fail-closed validation
+- ensure approval alone still does not create a grant
+- add tests that no grant is created from proposal approval alone
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
-- do not add grant writes or subscription activation
+- do not activate subscriptions from grant creation
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

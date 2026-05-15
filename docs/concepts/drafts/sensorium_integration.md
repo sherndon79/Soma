@@ -339,6 +339,20 @@ surface:
 - no subscription is activated
 - no frame, coordinate, or sample payload is recorded
 
+`POST /sensorium/proposals` and `soma sensorium propose` create a pending
+capability proposal from the same validated template. This stores
+`review_context` and `grant_intent` metadata on the proposal so the operator
+can inspect the exact Sensorium host, topic, risk class, constraints,
+disclosure, revocation, and provenance posture before deciding.
+
+This proposal path is still non-activating:
+
+- proposal creation records request intent only
+- proposal approval remains non-activating
+- no grant is written
+- no subscription is activated
+- provenance records review metadata only, not sensor payloads
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

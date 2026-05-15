@@ -100,6 +100,17 @@ npm run cli -- sensorium proposal-template \
   --downsample 384x384
 ```
 
+To store the validated review as a pending proposal without grant creation:
+
+```bash
+npm run cli -- sensorium propose \
+  --capability perception.sensorium.status.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/status \
+  --reason "Need node liveness for this task." \
+  --max-seconds 30
+```
+
 ## CLI
 
 The local CLI talks to the running Soma service:

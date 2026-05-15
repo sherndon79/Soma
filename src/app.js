@@ -183,6 +183,47 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/sensorium/proposals") {
+        const body = await readJson(req);
+        const template = buildSensoriumGrantProposalTemplate({
+          catalog: capabilityCatalog,
+          providerRegistry,
+          requested_by: body?.requested_by,
+          capability: body?.capability,
+          provider: body?.provider,
+          topic: body?.topic,
+          constraints: body?.constraints ?? {},
+          requested_scope: body?.requested_scope ?? "session",
+          reason: body?.reason,
+          fallback: body?.fallback,
+        });
+        const proposal = capabilityProposals.create({
+          ...template.proposal,
+          review_context: template.review,
+          grant_intent: template.grant_intent,
+        }, {
+          allowReviewMetadata: true,
+        });
+        const event = provenanceLog.append(createCapabilityProposalEvent({
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        proposal.provenance_id = event.id;
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          proposal,
+          notification: proposal.notification,
+          review: template.review,
+          grant_intent: template.grant_intent,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          grant_written: false,
+          subscription_activated: false,
+        });
+        return;
+      }
+
       // ── Sensorium subscription routes (step 9e activation) ────────
       //
       // The public seam. POST starts a subscription, DELETE stops one,
@@ -925,6 +966,13 @@ function createCapabilityProposalEvent({ proposal, caller }) {
     proposal_fallback: proposal.fallback,
     data_exposed: proposal.data_exposed,
     excluded_data: proposal.excluded_data,
+    review_context_type: proposal.review_context?.capability ? "sensorium_grant_review" : "",
+    review_provider: proposal.review_context?.provider ?? "",
+    review_topic: proposal.review_context?.topic ?? "",
+    review_stream_type: proposal.review_context?.stream_type ?? "",
+    review_risk_class: proposal.review_context?.risk_class ?? "",
+    grant_intent_provider: proposal.grant_intent?.provider ?? "",
+    grant_intent_scope: proposal.grant_intent?.scope ?? "",
     activation_performed: false,
     memory_written: false,
     remote_service_used: false,

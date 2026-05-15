@@ -344,6 +344,22 @@ The underlying endpoint is `POST /sensorium/proposal-template`. It returns `revi
 `grant_written: false`, and `subscription_activated: false`. It does not require the Sensorium
 subscriber to be configured, because no Zenoh subscription is opened.
 
+To store the same validated review object as a pending capability proposal:
+
+```bash
+npm run cli -- sensorium propose \
+  --capability perception.sensorium.status.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/status \
+  --reason "Need node liveness for this task." \
+  --max-seconds 30
+```
+
+This records a normal pending proposal and notification with Sensorium `review_context` and
+`grant_intent` metadata. It still returns `activation_performed: false`,
+`grant_written: false`, and `subscription_activated: false`; approval remains separate from grant
+creation, and grant creation remains separate from subscription activation.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

@@ -1,5 +1,6 @@
 [workspace]
 members = [
-  "crates/soma-desktop-broker"
+  "crates/soma-desktop-broker",
+  "crates/soma-sensor-broker"
 ]
 resolver = "2"

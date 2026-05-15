@@ -1,0 +1,13 @@
+[package]
+name = "soma-sensor-broker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "soma-sensor-broker"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

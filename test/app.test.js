@@ -157,6 +157,28 @@ const capabilityCatalog = {
       default_status: "disabled",
       activation_policy: "explicit_grant",
     },
+    {
+      key: "perception.sensorium.color.subscribe",
+      name: "Sensorium Color Stream Subscription",
+      category: "perception",
+      risk_class: "high",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: [
+        "JPEG-encoded color frames from a remote Sensorium publisher",
+        "scene contents within the camera's field of view",
+      ],
+      excluded_by_default: [
+        "hidden recording",
+        "remote export of frames",
+        "audio",
+        "raw uncompressed frames",
+        "frames outside the subscription window",
+      ],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.perception.sensorium.color.v1",
+    },
   ],
 };
 
@@ -261,16 +283,19 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 3);
+  assert.equal(response.body.summary.total, 4);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 1);
+  assert.equal(response.body.summary.by_status.requestable, 2);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 2);
+  assert.equal(response.body.grouped.perception.total, 1);
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
+  const sensoriumColor = response.body.capabilities.find((capability) => capability.key === "perception.sensorium.color.subscribe");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(text.status, "unsupported");
+  assert.equal(sensoriumColor.status, "requestable");
 });
 
 test("capability proposals can be created and listed without activation", async () => {
@@ -2307,6 +2332,67 @@ test("Sensorium routes return 503 when sensoriumSubscriber is not configured", a
       assert.equal(response.body.error, "sensorium_subscriber_not_configured");
     }
   }
+});
+
+test("POST /sensorium/proposal-template returns review context without subscriber activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposal-template",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "sensor/jetsorano/realsense/color",
+      requested_scope: "session",
+      reason: "Need a bounded color view of the Sensorium scene for this task.",
+      constraints: {
+        max_seconds: 600,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [384, 384],
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.type, "sensorium_grant_proposal_template");
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.writable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.proposal.capability, "perception.sensorium.color.subscribe");
+  assert.equal(response.body.review.provider, "soma.provider.sensorium.jetsorano");
+  assert.equal(response.body.review.topic, "sensor/jetsorano/realsense/color");
+  assert.equal(response.body.review.max_fps, 5);
+  assert.deepEqual(response.body.grant_intent.constraints.downsample_to, [384, 384]);
+});
+
+test("POST /sensorium/proposal-template rejects invalid review input before grant writes", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposal-template",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "sensor/jetsorano/realsense/depth",
+      requested_scope: "session",
+      reason: "Need color.",
+      constraints: {
+        max_seconds: 600,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [384, 384],
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_sensorium_grant_proposal_template");
+  assert.match(response.body.message, /sensor\/<host>\/realsense\/color/);
 });
 
 test("POST /sensorium/subscriptions returns 403 when no active grant exists", async () => {

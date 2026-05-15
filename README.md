@@ -86,6 +86,20 @@ Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. 
 ship in `config/grants.json`, so subscription requests still fail closed until an explicit active
 grant exists for the exact `perception.sensorium.*.subscribe` capability.
 
+Sensorium proposal review can be generated without enabling the runtime or creating a grant:
+
+```bash
+npm run cli -- sensorium proposal-template \
+  --capability perception.sensorium.color.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/realsense/color \
+  --reason "Need a bounded color view for this task." \
+  --max-seconds 600 \
+  --max-fps 5 \
+  --format jpeg \
+  --downsample 384x384
+```
+
 ## CLI
 
 The local CLI talks to the running Soma service:

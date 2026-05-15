@@ -456,6 +456,115 @@ test("runCli grants list prints revocation metadata", async () => {
   assert.match(writes.join(""), /replacement grant: grant-3/);
 });
 
+test("runCli sensorium proposal-template requests non-activating review context", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "proposal-template",
+    "--capability",
+    "perception.sensorium.color.subscribe",
+    "--provider",
+    "soma.provider.sensorium.jetsorano",
+    "--topic",
+    "sensor/jetsorano/realsense/color",
+    "--reason",
+    "Need a bounded color view.",
+    "--max-seconds",
+    "600",
+    "--max-fps",
+    "5",
+    "--format",
+    "jpeg",
+    "--downsample",
+    "384x384",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: {
+          capability: "perception.sensorium.color.subscribe",
+          requested_scope: "session",
+          reason: "Need a bounded color view.",
+        },
+        review: {
+          provider: "soma.provider.sensorium.jetsorano",
+          topic: "sensor/jetsorano/realsense/color",
+          stream_type: "color",
+          risk_class: "high",
+          scope: "session",
+          max_seconds: 600,
+          max_fps: 5,
+          format_required: "jpeg",
+          downsample_to: [384, 384],
+          active_disclosure: "perception via Sensorium: color from jetsorano, 5 fps max, expires in 600 seconds",
+          revocation: {
+            summary: "Revoking this grant stops active color subscriptions for jetsorano immediately.",
+          },
+          recording_posture: "Frame payloads are not recorded by default.",
+          model_boundary_warning: "Camera-class payloads can be stopped later.",
+        },
+        activation_performed: false,
+        grant_written: false,
+        subscription_activated: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/sensorium/proposal-template");
+  assert.deepEqual(captured.body, {
+    capability: "perception.sensorium.color.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    topic: "sensor/jetsorano/realsense/color",
+    requested_scope: "session",
+    reason: "Need a bounded color view.",
+    constraints: {
+      max_seconds: 600,
+      max_fps: 5,
+      format_required: "jpeg",
+      downsample_to: [384, 384],
+    },
+  });
+  assert.match(writes.join(""), /Sensorium proposal template/);
+  assert.match(writes.join(""), /constraints: max_seconds=600 max_fps=5 format=jpeg downsample=384x384/);
+  assert.match(writes.join(""), /activation performed: no/);
+  assert.match(writes.join(""), /grant written: no/);
+  assert.match(writes.join(""), /subscription activated: no/);
+});
+
+test("runCli sensorium proposal-template validates required flags before request", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "sensorium",
+      "proposal-template",
+      "--capability",
+      "perception.sensorium.status.subscribe",
+      "--provider",
+      "soma.provider.sensorium.jetsorano",
+      "--reason",
+      "Need status.",
+      "--max-seconds",
+      "30",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        return {};
+      },
+    }),
+    { code: "usage_error", statusCode: 2 },
+  );
+  assert.equal(called, false);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

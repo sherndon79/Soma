@@ -175,6 +175,7 @@ Implemented:
   lifecycle mapping, and fail-closed migration triggers
 - non-writing Sensorium grant proposal template added for review-ready proposal objects without
   grant writes or subscription activation
+- Sensorium proposal review endpoint and CLI command added for non-activating operator inspection
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -188,13 +189,14 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose Sensorium proposal templates through a non-activating review endpoint or CLI surface.
+Connect Sensorium proposal review to generic proposal creation without grant activation.
 
 Target:
 
 ```text
-sensorium grant proposal review surface
-  -> let an operator inspect review-ready Sensorium proposal objects
+sensorium proposal creation
+  -> use the Sensorium review template as input validation and review context
+  -> create a pending capability proposal only after review-ready validation
   -> preserve no grant writes
   -> keep Sensorium grants out of default config
   -> keep subscription route bounded by active grant constraints
@@ -202,10 +204,10 @@ sensorium grant proposal review surface
 
 Expected work:
 
-- add a non-activating endpoint or CLI command that calls the pure Sensorium proposal template
-- show full review context without storing a grant or activating a subscription
-- preserve exact capability/provider/topic/constraint fields for later user decision
-- add tests proving the route/command is review-only
+- add a proposal creation path that accepts the Sensorium template output or equivalent request
+- store a pending capability proposal with Sensorium review context
+- keep approval non-activating and separate from grant creation
+- record proposal provenance metadata only; no frames, coordinates, or payloads
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
 - do not add grant writes or subscription activation

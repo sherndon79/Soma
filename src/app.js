@@ -28,6 +28,7 @@ import {
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
+import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import { SessionMemory } from "./sessionMemory.js";
 
@@ -155,6 +156,29 @@ export function createRequestHandler({
           proposal: capabilityProposals.find(proposalId),
           activation_performed: false,
           durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/sensorium/proposal-template") {
+        const body = await readJson(req);
+        const template = buildSensoriumGrantProposalTemplate({
+          catalog: capabilityCatalog,
+          providerRegistry,
+          requested_by: body?.requested_by,
+          capability: body?.capability,
+          provider: body?.provider,
+          topic: body?.topic,
+          constraints: body?.constraints ?? {},
+          requested_scope: body?.requested_scope ?? "session",
+          reason: body?.reason,
+          fallback: body?.fallback,
+        });
+        writeJson(res, 200, {
+          ...template,
+          review_only: true,
+          grant_written: false,
+          subscription_activated: false,
         });
         return;
       }

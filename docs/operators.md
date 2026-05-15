@@ -326,6 +326,24 @@ The first Sensorium grants should be session-only. Durable perception grants are
 deferred until the review surface can show host, topic, stream type, risk class, bounds, active
 disclosure wording, model-boundary warning, and revocation behavior before approval.
 
+To inspect that review surface without creating a grant or starting a subscription:
+
+```bash
+npm run cli -- sensorium proposal-template \
+  --capability perception.sensorium.color.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/realsense/color \
+  --reason "Need a bounded color view for this task." \
+  --max-seconds 600 \
+  --max-fps 5 \
+  --format jpeg \
+  --downsample 384x384
+```
+
+The underlying endpoint is `POST /sensorium/proposal-template`. It returns `review_only: true`,
+`grant_written: false`, and `subscription_activated: false`. It does not require the Sensorium
+subscriber to be configured, because no Zenoh subscription is opened.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

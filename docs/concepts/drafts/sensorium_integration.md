@@ -329,6 +329,16 @@ route or operator UI may use the template output as the review surface, but
 must still preserve the existing lifecycle rule: proposal is not approval,
 approval is not grant creation, and grant creation is not activation.
 
+`POST /sensorium/proposal-template` and `soma sensorium proposal-template`
+now expose the template for operator inspection. This is a review-only
+surface:
+
+- no Sensorium subscriber is required
+- no proposal is stored
+- no grant is written
+- no subscription is activated
+- no frame, coordinate, or sample payload is recorded
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

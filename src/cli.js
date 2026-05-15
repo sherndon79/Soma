@@ -149,6 +149,12 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     }
   }
 
+  if (command === "sensorium" && subcommand === "proposal-template") {
+    const response = await request(baseUrl, "POST", "/sensorium/proposal-template", sensoriumProposalTemplateRequestFromFlags(flags));
+    writeOutput(stdout, response, jsonOutput, sensoriumProposalTemplateSummary(response));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -334,6 +340,61 @@ function integerFlagInRange(value, flagName, minimum, maximum) {
     throw usageError(`desktop inspect ${flagName} must be an integer from ${minimum} to ${maximum}.`);
   }
   return number;
+}
+
+function sensoriumProposalTemplateRequestFromFlags(flags) {
+  const constraints = stripUndefined({
+    max_seconds: integerFlag(flags["max-seconds"], "--max-seconds", 1, 3600, "sensorium proposal-template"),
+    max_fps: integerFlag(flags["max-fps"], "--max-fps", 1, 30, "sensorium proposal-template"),
+    format_required: flags.format,
+    downsample_to: dimensionFlag(flags.downsample, "--downsample"),
+  });
+
+  return stripUndefined({
+    requested_by: flags.by,
+    capability: requiredFlag(flags.capability, "--capability", "sensorium proposal-template"),
+    provider: requiredFlag(flags.provider, "--provider", "sensorium proposal-template"),
+    topic: requiredFlag(flags.topic, "--topic", "sensorium proposal-template"),
+    requested_scope: flags.scope ?? "session",
+    reason: requiredFlag(flags.reason, "--reason", "sensorium proposal-template"),
+    fallback: flags.fallback,
+    constraints,
+  });
+}
+
+function requiredFlag(value, flagName, commandName) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    throw usageError(`${commandName} requires ${flagName}.`);
+  }
+  return normalized;
+}
+
+function integerFlag(value, flagName, minimum, maximum, commandName) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < minimum || number > maximum) {
+    throw usageError(`${commandName} ${flagName} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return number;
+}
+
+function dimensionFlag(value, flagName) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = String(value).trim();
+  const parts = normalized.includes("x") ? normalized.split("x") : normalized.split(",");
+  const dimensions = parts.map((part) => Number(part));
+  if (
+    dimensions.length !== 2 ||
+    dimensions.some((dimension) => !Number.isInteger(dimension) || dimension < 16 || dimension > 1920)
+  ) {
+    throw usageError(`sensorium proposal-template ${flagName} must be WIDTHxHEIGHT with each dimension 16..1920.`);
+  }
+  return dimensions;
 }
 
 function stripUndefined(value) {
@@ -642,6 +703,48 @@ function grantListSummary(response) {
   return lines.join("\n");
 }
 
+function sensoriumProposalTemplateSummary(response) {
+  const proposal = response.proposal ?? {};
+  const review = response.review ?? {};
+  const revocation = review.revocation ?? {};
+  const lines = [
+    "Sensorium proposal template",
+    `  capability: ${proposal.capability ?? review.capability ?? "unknown"}`,
+    `  provider: ${review.provider ?? "unknown"}`,
+    `  topic: ${review.topic ?? "unknown"}`,
+    `  stream: ${review.stream_type ?? "unknown"}`,
+    `  risk class: ${review.risk_class ?? "unknown"}`,
+    `  scope: ${review.scope ?? proposal.requested_scope ?? "unknown"}`,
+    `  reason: ${proposal.reason ?? ""}`,
+    `  constraints: ${sensoriumConstraintSummary(review)}`,
+    `  disclosure: ${review.active_disclosure ?? ""}`,
+    `  revocation: ${revocation.summary ?? "unknown"}`,
+    `  recording: ${review.recording_posture ?? "unknown"}`,
+    `  model boundary: ${review.model_boundary_warning ?? "unknown"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  subscription activated: ${booleanText(response.subscription_activated)}`,
+  ];
+  return lines.join("\n");
+}
+
+function sensoriumConstraintSummary(review) {
+  const parts = [];
+  if (review.max_seconds !== undefined && review.max_seconds !== null) {
+    parts.push(`max_seconds=${review.max_seconds}`);
+  }
+  if (review.max_fps !== undefined && review.max_fps !== null) {
+    parts.push(`max_fps=${review.max_fps}`);
+  }
+  if (review.format_required) {
+    parts.push(`format=${review.format_required}`);
+  }
+  if (Array.isArray(review.downsample_to) && review.downsample_to.length === 2) {
+    parts.push(`downsample=${review.downsample_to[0]}x${review.downsample_to[1]}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "none";
+}
+
 function capabilityViewSummary(response) {
   const summary = response.summary ?? {};
   const grouped = response.grouped ?? {};
@@ -695,6 +798,7 @@ Usage:
   soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
+  soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

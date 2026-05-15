@@ -220,6 +220,33 @@ requirements in this document are satisfied.
 When these names are implemented, they should remain non-activating by default. Creating a grant is
 not the same operation as using the granted capability.
 
+## Sensorium Grant Review
+
+Sensorium perception grants are a special case of the same grant lifecycle, not a separate
+permission system. The first writable Sensorium grants should be session-only. Durable perception
+grants should wait until the review surface, active disclosure, and revocation UX are strong enough
+that live sensing does not become ambient by accident.
+
+A Sensorium grant review must include:
+
+- exact capability key, such as `perception.sensorium.color.subscribe`
+- provider id and host segment, such as `soma.provider.sensorium.jetsorano` and `jetsorano`
+- exact topic or topic family being authorized
+- stream type and risk class
+- scope, initially `session`
+- `max_seconds`
+- `max_fps` where applicable
+- `format_required` where applicable
+- `downsample_to` bounds where applicable
+- disclosure wording that will be shown while active
+- revocation behavior and whether revocation stops the active subscription immediately
+- whether payloads may be recorded; current default is no
+- model-boundary warning for camera-class streams
+
+Sensorium grant migration should fail closed when the provider host, topic namespace, capability
+shape, risk class, or stream schema version changes. A grant with missing or malformed Sensorium
+constraints should not authorize subscription use.
+
 ## Provenance Events
 
 Future grant mutation should record:

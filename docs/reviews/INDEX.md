@@ -68,10 +68,12 @@ Sensorium grants ship by default.
 - [Sensorium Grant Constraint Review](./2026-05-15_sensorium_grant_constraint_review.md)
   - review after active grant constraints started bounding Sensorium subscription requests before
     subscriber invocation
+- [Sensorium Durable Grant Review Design](./2026-05-15_sensorium_durable_grant_review_design.md)
+  - review after session-first Sensorium grant review fields and migration triggers were documented
 
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
-- Run a focused review after durable Sensorium grant review or creation design is added.
+- Run a focused review after a non-writing Sensorium grant proposal template is added.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

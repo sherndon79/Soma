@@ -214,6 +214,86 @@ These are subscriber-side knobs. Sensorium itself doesn't enforce or even
 see them — it publishes once, all subscribers receive. The constraints
 live inside the Soma capability code that wraps the subscription.
 
+## Grant Review Surface
+
+Sensorium grants should start as session-only grants. Durable perception
+grants should wait until Soma has a stronger user-facing review surface,
+active-mode disclosure, and revocation UX. A live camera or location stream
+is too easy to normalize into ambient sensing if the first durable path is
+implemented before the participant can inspect and revoke it comfortably.
+
+The first review surface for any Sensorium grant should show:
+
+- **Host**: the provider id and hostname-scoped segment, for example
+  `soma.provider.sensorium.jetsorano` and `sensor/jetsorano/...`
+- **Topic namespace**: the exact topic or topic family being authorized,
+  such as `sensor/jetsorano/realsense/color`
+- **Capability key**: the exact `perception.sensorium.*.subscribe`
+  capability, not a bundled "Sensorium access" grant
+- **Stream type**: color, depth, IMU, location, or status
+- **Risk class**: restricted for color/depth, sensitive for IMU/location,
+  low or requestable for status
+- **Scope**: initially `session`; durable grants require a separate future
+  review decision
+- **Maximum duration**: `max_seconds`, with an explanation that the
+  subscription ends or must be renewed after that bound
+- **Maximum frame rate**: `max_fps` for video-like streams
+- **Encoding**: `format_required`, such as `jpeg` for color or `png` for
+  depth
+- **Downsample bounds**: the maximum `[width, height]` allowed before frames
+  are handed to the consumer
+- **Recording posture**: currently no frame recording by default
+- **Model-boundary warning**: frames already incorporated into a model turn
+  cannot be withdrawn from that turn's working context
+- **Active disclosure text**: the exact summary that will be visible while
+  the stream is active
+- **Revocation affordance**: how the participant stops the stream and what
+  revocation does immediately
+- **Provenance posture**: lifecycle metadata and aggregate counters are
+  recorded; frame payloads and coordinates are not recorded by default
+
+A proposed review summary might read:
+
+```text
+Allow Soma to receive color frames from Sensorium node jetsorano for this session.
+Topic: sensor/jetsorano/realsense/color
+Limits: up to 5 fps, up to 10 minutes, JPEG, downsampled no larger than 384x384.
+Frames are not recorded. The live subscription can be revoked, but frames already
+used in a model turn cannot be removed from that turn's reasoning.
+Disclosure while active: "perception via Sensorium: color frames from jetsorano,
+5 fps max, expires in 10 minutes."
+```
+
+Sensorium grant creation should map onto the existing grant lifecycle:
+
+- proposal approval records intent only
+- provider installation does not grant authority
+- grant creation requires exact capability, provider, scope, constraints,
+  reason, approval provenance, and a visible revocation affordance
+- grant creation remains separate from subscription activation
+- active subscription still requires the runtime request to pass topic,
+  provider, host, and constraint enforcement
+
+Durable Sensorium grants, when they are eventually considered, should require
+stronger review than session grants:
+
+- a named retention/review interval
+- recurring active disclosure
+- prominent revocation in the operator surface
+- no automatic carryover across provider host changes
+- no automatic carryover across topic namespace or stream schema changes
+- no default remote routing of consumed perception
+
+Migration rules for Sensorium grants should fail closed:
+
+- provider id or `host_segment` changes require review
+- topic namespace changes require review
+- capability split/merge does not silently preserve authority
+- stream schema version changes require review before interpretation
+- risk-class increases require review
+- missing or malformed grant constraints make the grant inactive until
+  reviewed
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

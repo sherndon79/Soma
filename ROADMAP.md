@@ -171,6 +171,8 @@ Implemented:
 - Sensorium grant constraint enforcement added for `max_seconds`, `max_fps`, `format_required`,
   and `downsample_to`, with denials before subscriber invocation and inherited grant bounds for
   omitted request constraints
+- Sensorium durable grant review design documented with session-only first posture, review fields,
+  lifecycle mapping, and fail-closed migration triggers
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -184,27 +186,28 @@ Current authority boundary:
 
 ## Next Slice
 
-Design durable Sensorium grant review before write enablement.
+Add non-writing Sensorium grant proposal template.
 
 Target:
 
 ```text
-sensorium durable grant review design
-  -> define the review surface for Sensorium perception grants
-  -> preserve no durable grant writes until the review surface is explicit
+sensorium grant proposal template
+  -> produce review-ready Sensorium grant proposal objects
+  -> preserve no durable grant writes
   -> keep Sensorium grants out of default config
   -> keep subscription route bounded by active grant constraints
 ```
 
 Expected work:
 
-- document the user-facing review fields for host/topic, stream type, risk class, duration, frame
-  rate, encoding, downsample bounds, disclosure wording, and revocation
-- decide whether Sensorium grants are session-only first or may become durable later
-- map Sensorium grant creation onto the existing grant lifecycle prerequisites
-- document migration behavior for Sensorium provider host or topic namespace changes
+- add a pure template/builder for Sensorium grant proposal review objects
+- include capability, provider, topic, scope, constraints, risk class, disclosure wording,
+  revocation summary, model-boundary warning, and provenance posture
+- validate that template inputs match known Sensorium capability/topic shapes
+- add tests for color, status, and invalid topic/capability cases
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
+- do not add grant writes or subscription activation
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

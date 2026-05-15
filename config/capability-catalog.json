@@ -289,6 +289,118 @@
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.perception.screen.v1",
       "description": "Inspect screen or application state."
+    },
+    {
+      "key": "perception.sensorium.color.subscribe",
+      "name": "Sensorium Color Stream Subscription",
+      "category": "perception",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "JPEG-encoded color frames from a remote Sensorium publisher",
+        "scene contents within the camera's field of view"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export of frames",
+        "audio",
+        "raw uncompressed frames",
+        "frames outside the subscription window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.color.v1",
+      "description": "Subscribe to JPEG-encoded color frames from a remote Sensorium publisher node over the local Zenoh fabric. Subscription itself is droppable; consumption into the model's working context is one-way at the model boundary. See docs/concepts/drafts/sensorium_integration.md for the full integration shape."
+    },
+    {
+      "key": "perception.sensorium.depth.subscribe",
+      "name": "Sensorium Depth Stream Subscription",
+      "category": "perception",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "PNG-encoded 16-bit depth maps from a remote Sensorium publisher",
+        "spatial structure of the scene within the depth sensor's field of view"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export of frames",
+        "color or audio data",
+        "raw uncompressed depth"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.depth.v1",
+      "description": "Subscribe to PNG-encoded 16-bit depth maps from a remote Sensorium publisher node. Each payload carries a depth_units field (meters per raw sample) so consumers can convert to physical distance. Camera-class capability; model-boundary irreversibility applies."
+    },
+    {
+      "key": "perception.sensorium.imu.subscribe",
+      "name": "Sensorium IMU Stream Subscription",
+      "category": "perception",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "accelerometer samples in m/s^2",
+        "gyroscope samples in rad/s",
+        "device-frame motion of the sensor node"
+      ],
+      "excluded_by_default": [
+        "video or audio data",
+        "absolute position fix",
+        "fused orientation estimate"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.imu.v1",
+      "description": "Subscribe to accelerometer and gyroscope samples from a remote Sensorium publisher node. Device-frame motion only; no orientation or position fusion is performed by the producer. Rate is matched to the slowest video stream when video is also enabled — see Sensorium ROADMAP 5f for the matcher caveat."
+    },
+    {
+      "key": "perception.sensorium.location.subscribe",
+      "name": "Sensorium Location Subscription",
+      "category": "perception",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "configured geographic coordinates (lat/lon/alt) if set",
+        "site label if set",
+        "provenance source identifier (currently always \"static\")"
+      ],
+      "excluded_by_default": [
+        "live GPS movement tracking",
+        "remote export of location to third parties",
+        "remote-routing context inclusion without separate consent"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.location.v1",
+      "description": "Subscribe to static location samples from a remote Sensorium publisher node. Current producer publishes operator-configured coordinates with source=\"static\"; a future GPS-backed publisher would emit the same payload shape with source=\"gps\". Treated as Sensitive even in identity-only mode (site label, no coordinates) because the channel can be upgraded without consumer-side code change."
+    },
+    {
+      "key": "perception.sensorium.status.subscribe",
+      "name": "Sensorium Status Subscription",
+      "category": "perception",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "remote node hostname",
+        "remote node uptime",
+        "remote publisher crate version",
+        "list of stream topic tails the remote node is advertising"
+      ],
+      "excluded_by_default": [
+        "sensor frame contents",
+        "credential material",
+        "internal node telemetry"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.status.v1",
+      "description": "Subscribe to liveness and discovery metadata from a remote Sensorium publisher node. Carries node identity and the list of stream tails the node is advertising, so consumers can detect liveness and learn what to subscribe to without enumerating the topic namespace. Lowest-risk Sensorium capability and the recommended first wiring slice."
     }
   ]
 }

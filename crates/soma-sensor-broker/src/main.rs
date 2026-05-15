@@ -4,14 +4,18 @@
 //! writes one response line to stdout per request, plus asynchronous
 //! notification lines as samples arrive on active Zenoh subscriptions.
 //!
-//! Current activation state (step 9a of the disabled-first sequence
+//! Current activation state (step 9b of the disabled-first sequence
 //! documented in docs/concepts/drafts/sensorium_integration.md):
 //!
 //!   sensorium.subscribe.start    ACTIVE — opens a real Zenoh
 //!                                subscriber, streams samples as
-//!                                JSON-RPC notifications
-//!   sensorium.subscribe.stop     stubbed (method_implementation_pending)
-//!   sensorium.subscribe.status   stubbed (method_implementation_pending)
+//!                                JSON-RPC notifications, returns
+//!                                a uuid subscription_id
+//!   sensorium.subscribe.stop     ACTIVE — looks up by subscription_id,
+//!                                aborts the subscriber task, removes
+//!                                from state
+//!   sensorium.subscribe.status   ACTIVE — reports active
+//!                                subscriptions (all, or one by id)
 //!
 //! The Node-side public path is still fail-closed: no HTTP route
 //! invokes this helper, and no grant authorizes a Sensorium
@@ -23,7 +27,9 @@
 //! responses and subscription notifications don't interleave on
 //! stdout.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -43,15 +49,23 @@ const METHOD_NOT_FOUND: i64 = -32601;
 const METHOD_IMPLEMENTATION_PENDING: i64 = -32001;
 const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
+// Step 9b: subscribe.stop / subscribe.status can address subscriptions
+// by id. -32002 is the server-defined code for "you gave me an id but
+// no subscription is currently registered under it." Distinct from
+// invalid_params (which is for malformed param shapes).
+const SUBSCRIPTION_NOT_FOUND: i64 = -32002;
 
 type Output = mpsc::UnboundedSender<String>;
 
+struct Subscription {
+    topic: String,
+    started_at: f64,
+    handle: tokio::task::JoinHandle<()>,
+}
+
 #[derive(Default)]
 struct State {
-    // Holds tokio task handles for active subscriber tasks so they
-    // outlive the start handler. Keyed by subscription_id. Step 9a
-    // doesn't implement removal — that's the subscribe.stop slice.
-    subscribers: Vec<(String, tokio::task::JoinHandle<()>)>,
+    subscribers: HashMap<String, Subscription>,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -98,8 +112,8 @@ async fn main() -> std::process::ExitCode {
     // shutting down — no more samples will be processed regardless.
     {
         let mut s = state.lock().await;
-        for (_, handle) in s.subscribers.drain(..) {
-            handle.abort();
+        for (_, sub) in s.subscribers.drain() {
+            sub.handle.abort();
         }
     }
 
@@ -149,7 +163,9 @@ async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) ->
     let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     match method {
-        "sensorium.subscribe.start" => handle_subscribe_start(id, params, state, output_tx).await,
+        "sensorium.subscribe.start"  => handle_subscribe_start(id, params, state, output_tx).await,
+        "sensorium.subscribe.stop"   => handle_subscribe_stop(id, params, state).await,
+        "sensorium.subscribe.status" => handle_subscribe_status(id, params, state).await,
         _ => error_response(
             id,
             METHOD_IMPLEMENTATION_PENDING,
@@ -159,6 +175,103 @@ async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) ->
             ),
         ),
     }
+}
+
+async fn handle_subscribe_stop(id: Value, params: Value, state: Arc<Mutex<State>>) -> Value {
+    let subscription_id = match params.get("subscription_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            return error_response(
+                id,
+                INVALID_PARAMS,
+                "invalid_params",
+                "subscribe.stop requires params.subscription_id (non-empty string)",
+            );
+        }
+    };
+
+    let removed = {
+        let mut s = state.lock().await;
+        s.subscribers.remove(&subscription_id)
+    };
+
+    match removed {
+        Some(sub) => {
+            sub.handle.abort();
+            // Best-effort: wait briefly for the task to acknowledge
+            // the abort. We don't propagate the JoinError because
+            // aborted tasks always return a cancel error — we only
+            // care that the handle's been signalled.
+            let _ = sub.handle.await;
+            json!({
+                "jsonrpc": "2.0",
+                "result": {
+                    "subscription_id": subscription_id,
+                    "topic": sub.topic,
+                    "stopped": true,
+                },
+                "id": id,
+            })
+        }
+        None => error_response(
+            id,
+            SUBSCRIPTION_NOT_FOUND,
+            "subscription_not_found",
+            &format!("no active subscription with id {subscription_id}"),
+        ),
+    }
+}
+
+async fn handle_subscribe_status(id: Value, params: Value, state: Arc<Mutex<State>>) -> Value {
+    let s = state.lock().await;
+
+    // If a specific subscription_id was requested, return its status
+    // or subscription_not_found.
+    if let Some(want) = params.get("subscription_id").and_then(|v| v.as_str()) {
+        if !want.is_empty() {
+            return match s.subscribers.get(want) {
+                Some(sub) => json!({
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "subscription_id": want,
+                        "topic": sub.topic,
+                        "started_at": sub.started_at,
+                        "active": true,
+                    },
+                    "id": id,
+                }),
+                None => error_response(
+                    id,
+                    SUBSCRIPTION_NOT_FOUND,
+                    "subscription_not_found",
+                    &format!("no active subscription with id {want}"),
+                ),
+            };
+        }
+    }
+
+    // Otherwise return the full list. Always an array, even when empty.
+    let subscriptions: Vec<Value> = s
+        .subscribers
+        .iter()
+        .map(|(sub_id, sub)| {
+            json!({
+                "subscription_id": sub_id,
+                "topic": sub.topic,
+                "started_at": sub.started_at,
+                "active": true,
+            })
+        })
+        .collect();
+
+    json!({
+        "jsonrpc": "2.0",
+        "result": {
+            "subscriptions": subscriptions,
+            "count": subscriptions.len(),
+        },
+        "id": id,
+    })
 }
 
 async fn handle_subscribe_start(
@@ -264,9 +377,21 @@ async fn handle_subscribe_start(
         }
     });
 
+    let started_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+
     {
         let mut s = state.lock().await;
-        s.subscribers.push((subscription_id.clone(), join));
+        s.subscribers.insert(
+            subscription_id.clone(),
+            Subscription {
+                topic: topic.clone(),
+                started_at,
+                handle: join,
+            },
+        );
     }
 
     json!({
@@ -274,6 +399,7 @@ async fn handle_subscribe_start(
         "result": {
             "subscription_id": subscription_id,
             "topic": topic,
+            "started_at": started_at,
         },
         "id": id,
     })
@@ -323,17 +449,127 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_and_status_are_still_implementation_pending() {
-        for method in ["sensorium.subscribe.stop", "sensorium.subscribe.status"] {
-            let (tx, _rx) = make_output();
-            let req = format!(r#"{{"jsonrpc":"2.0","method":"{method}","id":"x"}}"#);
-            let resp = handle_line(&req, make_state(), tx).await;
-            assert_eq!(
-                resp["error"]["code"],
-                json!(METHOD_IMPLEMENTATION_PENDING),
-                "{method} should still be a stub in step 9a"
-            );
-        }
+    async fn stop_without_subscription_id_returns_invalid_params() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.stop","params":{},"id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
+    }
+
+    #[tokio::test]
+    async fn stop_with_unknown_id_returns_subscription_not_found() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.stop","params":{"subscription_id":"never-seen"},"id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert_eq!(resp["error"]["code"], json!(SUBSCRIPTION_NOT_FOUND));
+        assert_eq!(resp["error"]["code_name"], "subscription_not_found");
+    }
+
+    #[tokio::test]
+    async fn status_with_unknown_id_returns_subscription_not_found() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.status","params":{"subscription_id":"never-seen"},"id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert_eq!(resp["error"]["code"], json!(SUBSCRIPTION_NOT_FOUND));
+    }
+
+    #[tokio::test]
+    async fn status_without_id_returns_empty_list_when_idle() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.status","id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert!(resp.get("result").is_some());
+        assert_eq!(resp["result"]["count"], 0);
+        assert_eq!(resp["result"]["subscriptions"], json!([]));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn full_lifecycle_start_status_stop_status() {
+        let state = make_state();
+        let (tx, _rx) = make_output();
+
+        // start
+        let start_resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{"topic":"sensor/test/status"},"id":"s"}"#,
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        let sub_id = start_resp["result"]["subscription_id"]
+            .as_str()
+            .expect("subscription_id")
+            .to_string();
+
+        // status (list mode) — one entry
+        let list_resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.status","id":1}"#,
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(list_resp["result"]["count"], 1);
+        assert_eq!(list_resp["result"]["subscriptions"][0]["subscription_id"], sub_id);
+
+        // status (by id) — match
+        let by_id_resp = handle_line(
+            &format!(
+                r#"{{"jsonrpc":"2.0","method":"sensorium.subscribe.status","params":{{"subscription_id":"{sub_id}"}},"id":2}}"#
+            ),
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(by_id_resp["result"]["subscription_id"], sub_id);
+        assert_eq!(by_id_resp["result"]["topic"], "sensor/test/status");
+        assert_eq!(by_id_resp["result"]["active"], true);
+
+        // stop
+        let stop_resp = handle_line(
+            &format!(
+                r#"{{"jsonrpc":"2.0","method":"sensorium.subscribe.stop","params":{{"subscription_id":"{sub_id}"}},"id":3}}"#
+            ),
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(stop_resp["result"]["stopped"], true);
+        assert_eq!(stop_resp["result"]["subscription_id"], sub_id);
+
+        // status (list mode) — back to empty
+        let list_resp2 = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.status","id":4}"#,
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(list_resp2["result"]["count"], 0);
+
+        // stop again (already gone) — subscription_not_found
+        let stop_again = handle_line(
+            &format!(
+                r#"{{"jsonrpc":"2.0","method":"sensorium.subscribe.stop","params":{{"subscription_id":"{sub_id}"}},"id":5}}"#
+            ),
+            Arc::clone(&state),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(stop_again["error"]["code"], json!(SUBSCRIPTION_NOT_FOUND));
     }
 
     #[tokio::test]

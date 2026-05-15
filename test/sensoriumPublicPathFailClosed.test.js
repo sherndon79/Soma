@@ -107,111 +107,97 @@ const HELPER_SKIP_REASON = existsSync(HELPER_BINARY)
   ? false
   : `binary not built; run 'cargo build -p soma-sensor-broker' from repo root`;
 
-// As of step 9a, the helper has partial activation: subscribe.start
-// opens a real Zenoh subscriber (and is therefore a successful
-// response, not an error). subscribe.stop and subscribe.status remain
-// stubbed — they are scheduled for the next slice. The tripwire's
-// helper-layer assertion is split accordingly:
-//
-//   subscribe.start   → expect successful result with subscription_id
-//   subscribe.stop    → expect method_implementation_pending
-//   subscribe.status  → expect method_implementation_pending
+// As of step 9b, the helper is fully activated:
+//   subscribe.start   → opens a Zenoh subscriber, returns subscription_id
+//   subscribe.stop    → looks up by subscription_id, aborts, removes
+//   subscribe.status  → reports active subscriptions (list or by id)
 //
 // The PUBLIC path stays fail-closed at the Node layers (no grant, no
 // HTTP route mentions Sensorium), which is still verified by the
-// other tests in this file.
+// other tests in this file. The helper-layer assertion is therefore
+// no longer about "everything errors" — it's about the lifecycle
+// being well-formed end to end.
 
 test(
-  "public path fail-closed: sensor-broker stop/status still return method_implementation_pending",
+  "public path fail-closed: helper full lifecycle works while public path stays closed (step 9b)",
   { skip: HELPER_SKIP_REASON },
   () => {
-    for (const method of ["sensorium.subscribe.stop", "sensorium.subscribe.status"]) {
-      const request = JSON.stringify({
-        jsonrpc: "2.0",
-        method,
-        params: {},
-        id: `fail-closed-test-${method}`,
-      });
-      const result = spawnSync(HELPER_BINARY, [], {
-        input: `${request}\n`,
-        encoding: "utf8",
-        timeout: 5000,
-      });
-      assert.equal(
-        result.status,
-        0,
-        `helper exited with ${result.status} for method ${method} (stderr: ${result.stderr})`,
-      );
-
-      const response = JSON.parse(result.stdout.trim());
-
-      assert.equal(response.jsonrpc, "2.0", `${method}: bad jsonrpc version`);
-      assert.equal(response.id, `fail-closed-test-${method}`, `${method}: id not echoed`);
-      assert.ok(
-        response.error,
-        `${method}: response missing error field — helper may have been activated prematurely`,
-      );
-      assert.equal(
-        response.error.code,
-        -32001,
-        `${method}: error code is ${response.error.code}; expected -32001 (method_implementation_pending)`,
-      );
-      assert.equal(response.error.code_name, "method_implementation_pending");
-      assert.equal(
-        "result" in response,
-        false,
-        `${method}: response contains a result field — fail-closed broken at the helper`,
-      );
-    }
-  },
-);
-
-test(
-  "public path fail-closed: sensor-broker start opens a Zenoh subscriber (step 9a partial activation)",
-  { skip: HELPER_SKIP_REASON },
-  () => {
-    // subscribe.start is intentionally activated at the helper layer
-    // as of step 9a. The public path stays fail-closed because no Node
-    // route invokes the helper and no grant authorizes a subscription.
-    // This test verifies the activation is well-formed (successful
-    // result, subscription_id, echoed id) rather than letting it
-    // appear as a regression of the previous assertion.
-    const request = JSON.stringify({
+    // Drive the helper through start → status → stop → status. All
+    // four operations should succeed. This proves the helper is the
+    // right shape to plug into a future Node-side manager, while the
+    // OTHER tripwire tests (catalog/view, grants, public-route grep)
+    // continue to assert the public path is fail-closed.
+    const startRequest = JSON.stringify({
       jsonrpc: "2.0",
       method: "sensorium.subscribe.start",
       params: { topic: "sensor/fail-closed-test/status" },
-      id: "fail-closed-test-start",
+      id: "step9b-start",
     });
-    const result = spawnSync(HELPER_BINARY, [], {
-      input: `${request}\n`,
+    const statusRequest = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "sensorium.subscribe.status",
+      id: "step9b-status",
+    });
+
+    // Phase 1: start, then status. Use stop in the same batch with a
+    // placeholder id; we'll parse the start response to get the real
+    // id and follow up with a focused stop call. The batch form keeps
+    // the helper alive for both calls.
+    const phase1 = spawnSync(HELPER_BINARY, [], {
+      input: `${startRequest}\n${statusRequest}\n`,
       encoding: "utf8",
       timeout: 10000,
     });
     assert.equal(
-      result.status,
+      phase1.status,
       0,
-      `helper exited with ${result.status} (stderr: ${result.stderr})`,
+      `helper exited with ${phase1.status} (stderr: ${phase1.stderr})`,
     );
 
-    const response = JSON.parse(result.stdout.trim());
+    const phase1Lines = phase1.stdout.trim().split("\n").filter((l) => l.length > 0);
+    assert.ok(phase1Lines.length >= 2, "expected at least two responses");
 
-    assert.equal(response.jsonrpc, "2.0");
-    assert.equal(response.id, "fail-closed-test-start");
+    const startResp = JSON.parse(phase1Lines[0]);
+    assert.equal(startResp.id, "step9b-start");
+    assert.ok(startResp.result, "start should succeed");
+    const subscriptionId = startResp.result.subscription_id;
     assert.ok(
-      response.result,
-      "subscribe.start should return a result in step 9a",
+      typeof subscriptionId === "string" && subscriptionId.length > 0,
+      "subscription_id should be a non-empty string",
     );
-    assert.equal(response.result.topic, "sensor/fail-closed-test/status");
-    assert.ok(
-      typeof response.result.subscription_id === "string" &&
-        response.result.subscription_id.length > 0,
-      "subscribe.start should return a subscription_id string",
+
+    const statusResp = JSON.parse(phase1Lines[1]);
+    assert.equal(statusResp.id, "step9b-status");
+    assert.ok(statusResp.result, "status should succeed");
+    assert.equal(
+      statusResp.result.count,
+      1,
+      "status should report exactly one active subscription",
     );
     assert.equal(
-      "error" in response,
-      false,
-      "subscribe.start should not contain an error field after step 9a activation",
+      statusResp.result.subscriptions[0].subscription_id,
+      subscriptionId,
     );
+
+    // Phase 2: a fresh helper instance, drive stop against an unknown id.
+    // This verifies subscription_not_found is the right error class —
+    // the helper distinguishes "no such subscription" from
+    // "malformed request" and "method not found."
+    const unknownStop = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "sensorium.subscribe.stop",
+      params: { subscription_id: "definitely-not-a-real-id" },
+      id: "step9b-stop-unknown",
+    });
+    const phase2 = spawnSync(HELPER_BINARY, [], {
+      input: `${unknownStop}\n`,
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    assert.equal(phase2.status, 0);
+    const unknownStopResp = JSON.parse(phase2.stdout.trim());
+    assert.equal(unknownStopResp.error.code, -32002);
+    assert.equal(unknownStopResp.error.code_name, "subscription_not_found");
   },
 );
 

@@ -356,8 +356,21 @@ file writes, and other tool capabilities remain disabled.
 - `perception.camera` — inspect camera/video input
 - `perception.microphone` — inspect microphone input
 - `perception.filesystem_context` — infer context from files or project structure
+- `perception.sensorium.color.subscribe` — subscribe to Sensorium color frames from an authorized
+  host/topic
+- `perception.sensorium.depth.subscribe` — subscribe to Sensorium depth maps from an authorized
+  host/topic
+- `perception.sensorium.imu.subscribe` — subscribe to Sensorium IMU samples from an authorized
+  host/topic
+- `perception.sensorium.location.subscribe` — subscribe to Sensorium static location metadata from
+  an authorized host/topic
+- `perception.sensorium.status.subscribe` — subscribe to Sensorium status/liveness metadata from an
+  authorized host/topic
 
-MVP does not enable perception beyond submitted chat text.
+MVP does not enable perception beyond submitted chat text by default. Sensorium subscription
+capabilities exist in the catalog and provider registry, and the HTTP seam exists for injected test
+or opt-in runtimes, but default server startup does not configure a subscriber and
+`config/grants.json` does not include active Sensorium grants.
 
 ### Embodiment
 

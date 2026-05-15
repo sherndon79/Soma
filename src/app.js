@@ -27,6 +27,7 @@ import {
   publicRuntimeProfiles,
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
+import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import { SessionMemory } from "./sessionMemory.js";
 
 export function createApp({
@@ -41,6 +42,7 @@ export function createApp({
   grantStore,
   provenanceLog,
   desktopDisclosureRegistry,
+  sensoriumSubscriber,
   logger = console,
 } = {}) {
   return createServer(createRequestHandler({
@@ -55,6 +57,7 @@ export function createApp({
     grantStore,
     provenanceLog,
     desktopDisclosureRegistry,
+    sensoriumSubscriber,
     logger,
   }));
 }
@@ -71,6 +74,7 @@ export function createRequestHandler({
   grantStore = { schema_version: 1, grants: [] },
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
+  sensoriumSubscriber = null,
   logger = console,
 } = {}) {
   if (!harness) {
@@ -150,6 +154,175 @@ export function createRequestHandler({
           proposal: capabilityProposals.find(proposalId),
           activation_performed: false,
           durable: false,
+        });
+        return;
+      }
+
+      // ── Sensorium subscription routes (step 9e activation) ────────
+      //
+      // The public seam. POST starts a subscription, DELETE stops one,
+      // GET lists active subscriptions. The path is fail-closed by
+      // absence of an active grant: with the default config/grants.json
+      // (no Sensorium grants), POST returns 403. Tests can inject a
+      // grantStore fixture to exercise the success path.
+      //
+      // If sensoriumSubscriber is not configured (deployments that
+      // don't want Sensorium support), all three routes return 503
+      // — a deliberate refuse-cleanly stance rather than 404, so the
+      // operator sees "support not configured" rather than "endpoint
+      // does not exist."
+      if (
+        url.pathname === "/sensorium/subscriptions" ||
+        url.pathname.startsWith("/sensorium/subscriptions/")
+      ) {
+        if (!sensoriumSubscriber) {
+          writeError(res, {
+            statusCode: 503,
+            code: "sensorium_subscriber_not_configured",
+            message: "Sensorium subscription routes are not enabled on this Soma instance.",
+          });
+          return;
+        }
+
+        if (req.method === "GET" && url.pathname === "/sensorium/subscriptions") {
+          writeJson(res, 200, sensoriumSubscriber.describeActive());
+          return;
+        }
+
+        if (req.method === "POST" && url.pathname === "/sensorium/subscriptions") {
+          const body = await readJson(req);
+          const capability = typeof body?.capability === "string" ? body.capability : "";
+          const scope = typeof body?.scope === "string" ? body.scope : "session";
+
+          let validatedRequest;
+          try {
+            validatedRequest = validateSensoriumSubscriptionRequest(
+              {
+                topic: body?.topic,
+                constraints: body?.constraints ?? {},
+              },
+              { capability },
+            );
+          } catch (err) {
+            writeError(res, {
+              statusCode: 400,
+              code: err.code ?? "sensorium_subscription_request_invalid",
+              message: err.message ?? "Sensorium subscription request is invalid.",
+              validation_errors: err.validation_errors,
+            });
+            return;
+          }
+
+          // Grant lookup. A subscription is authorized only when an
+          // ACTIVE grant exists for the requested capability. With the
+          // default file-backed grant store (no Sensorium grants), this
+          // is the fail-closed point.
+          const grant = (grantStore.grants ?? []).find(
+            (g) => (
+              g.status === "active" &&
+              g.capability === capability &&
+              (g.scope ?? "session") === scope
+            ),
+          );
+          if (!grant) {
+            writeError(res, {
+              statusCode: 403,
+              code: "sensorium_subscription_no_grant",
+              message: `No active grant authorizes ${capability}. Approval is not activation; an explicit grant is required.`,
+            });
+            return;
+          }
+
+          const provider = findProvider(providerRegistry, grant.provider);
+          if (!provider || !providerSupportsCapability(provider, capability)) {
+            writeError(res, {
+              statusCode: 403,
+              code: "sensorium_subscription_provider_not_authorized",
+              message: `Grant ${grant.id} references a provider that does not support ${capability}.`,
+            });
+            return;
+          }
+
+          if (!providerHostMatchesTopic(provider, validatedRequest.topic)) {
+            writeError(res, {
+              statusCode: 403,
+              code: "sensorium_subscription_topic_not_authorized",
+              message: `Grant ${grant.id} does not authorize ${validatedRequest.topic}.`,
+            });
+            return;
+          }
+
+          let startResult;
+          try {
+            startResult = await sensoriumSubscriber.start({
+              capability,
+              provider: grant.provider,
+              grantId: grant.id,
+              scope,
+              body: {
+                topic: validatedRequest.topic,
+                constraints: validatedRequest.constraints,
+              },
+            });
+          } catch (err) {
+            writeError(res, {
+              statusCode: err.statusCode ?? 400,
+              code: err.code ?? "sensorium_subscription_start_failed",
+              message: err.message ?? "subscription start failed",
+              validation_errors: err.validation_errors,
+            });
+            return;
+          }
+
+          const event = provenanceLog.append(createSensoriumProvenanceEvent({
+            summary: startResult.startSummary,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          writeJson(res, 201, {
+            subscription_id: startResult.subscription_id,
+            topic: startResult.topic,
+            started_at: startResult.started_at,
+            provenance_id: event.id,
+            grant_id: grant.id,
+            activation_performed: true,
+          });
+          return;
+        }
+
+        const stopMatch = url.pathname.match(/^\/sensorium\/subscriptions\/([^/]+)$/);
+        if (req.method === "DELETE" && stopMatch) {
+          const subscriptionId = stopMatch[1];
+          let stopResult;
+          try {
+            stopResult = await sensoriumSubscriber.stop(subscriptionId, {
+              terminationReason: "clean_stop",
+            });
+          } catch (err) {
+            const code = err.code ?? "sensorium_subscription_stop_failed";
+            writeError(res, {
+              statusCode: code === "subscription_not_found" ? 404 : 400,
+              code,
+              message: err.message ?? "subscription stop failed",
+            });
+            return;
+          }
+
+          const event = provenanceLog.append(createSensoriumProvenanceEvent({
+            summary: stopResult.endSummary,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          writeJson(res, 200, {
+            subscription_id: subscriptionId,
+            end_summary: stopResult.endSummary,
+            provenance_id: event.id,
+          });
+          return;
+        }
+
+        writeError(res, {
+          statusCode: 405,
+          code: "method_not_allowed",
+          message: `Method ${req.method} not allowed for ${url.pathname}`,
         });
         return;
       }
@@ -886,6 +1059,42 @@ function nullableFiniteNumber(value) {
 
 function cryptoRandomId() {
   return randomUUID();
+}
+
+// Sensorium provenance event wrapper. The summary objects from
+// sensoriumSubscriptionProvenance.js are intentionally caller-shape-agnostic
+// (no id, no caller_identity) — they describe the subscription
+// lifecycle event itself. The provenance LOG entry adds an id and
+// caller identity around that summary so the audit trail is uniform
+// with other Soma provenance events.
+function createSensoriumProvenanceEvent({ summary, caller }) {
+  return {
+    id: randomUUID(),
+    caller_identity: typeof caller === "string" ? caller : "",
+    ...summary,
+  };
+}
+
+function findProvider(providerRegistry = {}, providerId = "") {
+  const providers = Array.isArray(providerRegistry.providers) ? providerRegistry.providers : [];
+  return providers.find((provider) => provider.id === providerId) ?? null;
+}
+
+function providerSupportsCapability(provider = {}, capability = "") {
+  const capabilities = Array.isArray(provider.capabilities) ? provider.capabilities : [];
+  return capabilities.some((entry) => {
+    if (typeof entry === "string") {
+      return entry === capability;
+    }
+    return entry?.key === capability;
+  });
+}
+
+function providerHostMatchesTopic(provider = {}, topic = "") {
+  if (!provider.host_segment) {
+    return true;
+  }
+  return topic.startsWith(`sensor/${provider.host_segment}/`);
 }
 
 function prependSessionMemory(messages, memoryContext) {

@@ -201,41 +201,28 @@ test(
   },
 );
 
-// ── Public HTTP/CLI surface ────────────────────────────────────────────────
+// ── Public HTTP surface (step 9e: activation crossed into routes) ─────────
+//
+// Step 9e activated the HTTP route. The earlier "no public route
+// mentions Sensorium" assertion is intentionally retired: the route
+// now exists, by design. The fail-closed property at the public layer
+// has shifted from "no route" to "the route refuses without a grant."
+//
+// The route-existence positive check below is the new proxy: it
+// confirms the routing block is in place, which is what the activation
+// slice was supposed to add. A runtime fail-closed check
+// (POST returns 403 with no grant) lives in test/app.test.js where
+// the app construction harness already exists.
 
-test("public path fail-closed: no public Node route currently invokes Sensorium subscription", () => {
-  // We don't yet have a route that touches Sensorium subscription.
-  // This test pins that property: greps the public-facing modules
-  // (app.js for HTTP routes, cli.js for command handlers) for any
-  // reference to perception.sensorium or sensorium.subscribe. Any
-  // match means a route has been wired and the activation step has
-  // begun — at which point this test should be updated alongside
-  // whatever step does it.
-
-  const filesToScan = ["src/app.js", "src/server.js", "src/cli.js"];
-  const forbiddenPatterns = [
-    /perception\.sensorium\./,
-    /sensorium\.subscribe\./,
-    /soma-sensor-broker/,
-  ];
-
-  const violations = [];
-  for (const file of filesToScan) {
-    const abs = path.join(REPO_ROOT, file);
-    if (!existsSync(abs)) {
-      continue;
-    }
-    const content = readFileSync(abs, "utf8");
-    for (const pattern of forbiddenPatterns) {
-      if (pattern.test(content)) {
-        violations.push(`${file} contains ${pattern}`);
-      }
-    }
-  }
-
-  assert.equal(
-    violations.length,
-    0,
-    `Sensorium activation has begun in the public Node surface — fail-closed broken: ${violations.join("; ")}`,
+test("public path fail-closed: app.js now contains the activated /sensorium/subscriptions route", () => {
+  const appPath = path.join(REPO_ROOT, "src", "app.js");
+  const content = readFileSync(appPath, "utf8");
+  assert.ok(
+    content.includes("/sensorium/subscriptions"),
+    "expected app.js to contain the /sensorium/subscriptions route after step 9e activation",
+  );
+  assert.ok(
+    content.includes("sensorium_subscription_no_grant"),
+    "expected app.js to surface the sensorium_subscription_no_grant error code (fail-closed-without-grant)",
   );
 });

@@ -179,6 +179,21 @@ const providerRegistry = {
       network_access: false,
       capabilities: ["desktop.inspect.focus"],
     },
+    {
+      id: "soma.provider.sensorium.jetsorano",
+      name: "Sensorium Node (jetsorano)",
+      runtime: "test",
+      local_only: false,
+      network_access: true,
+      host_segment: "jetsorano",
+      capabilities: [
+        "perception.sensorium.color.subscribe",
+        "perception.sensorium.depth.subscribe",
+        "perception.sensorium.imu.subscribe",
+        "perception.sensorium.location.subscribe",
+        "perception.sensorium.status.subscribe",
+      ],
+    },
   ],
 };
 
@@ -2199,10 +2214,347 @@ async function invoke({
   });
 }
 
+// ── Sensorium subscription route fixtures (step 9e activation) ────────────
+
+function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 1_700_000_000 } = {}) {
+  const calls = [];
+  return {
+    calls,
+    activeCount: 0,
+    async start({ capability, provider, grantId, scope, body }) {
+      calls.push({ method: "start", args: { capability, provider, grantId, scope, body } });
+      this.activeCount++;
+      return {
+        subscription_id: subscriptionId,
+        topic: body?.topic ?? "",
+        started_at: startedAt,
+        startSummary: {
+          event_type: "perception.sensorium.subscription_started",
+          timestamp: new Date(startedAt * 1000).toISOString(),
+          capability,
+          provider,
+          grant_id: grantId,
+          scope: scope ?? "",
+          topic: body?.topic ?? "",
+          constraints_declared: body?.constraints ?? {},
+          text_content_included: false,
+          frames_recorded: false,
+        },
+      };
+    },
+    async stop(id, { terminationReason = "clean_stop" } = {}) {
+      calls.push({ method: "stop", args: { id, terminationReason } });
+      this.activeCount = Math.max(0, this.activeCount - 1);
+      return {
+        endSummary: {
+          event_type: "perception.sensorium.subscription_ended",
+          timestamp: new Date().toISOString(),
+          subscription_id: id,
+          termination_reason: terminationReason,
+          frames_consumed: 0,
+          duration_seconds: 0,
+          text_content_included: false,
+          frames_recorded: false,
+        },
+      };
+    },
+    describeActive() {
+      return {
+        family: "perception.sensorium",
+        active_count: this.activeCount,
+        summary: this.activeCount === 0 ? "No Sensorium subscriptions active" : "active",
+        streams: [],
+        frames_recorded: false,
+      };
+    },
+  };
+}
+
+const SENSORIUM_TEST_GRANT_STORE = {
+  schema_version: 1,
+  grants: [
+    {
+      id: "grant-sensorium-color-test",
+      status: "active",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      scope: "session",
+      approved_by: "user",
+      reason: "test fixture",
+      created_at: "2026-05-15T00:00:00.000Z",
+      review_required: false,
+      revoked_at: null,
+      revoked_by: "",
+      revocation_reason: "",
+      replacement_grant_id: "",
+      activation_performed: false,
+    },
+  ],
+};
+
+test("Sensorium routes return 503 when sensoriumSubscriber is not configured", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  for (const url of ["/sensorium/subscriptions", "/sensorium/subscriptions/foo"]) {
+    for (const method of ["GET", "POST", "DELETE"]) {
+      const response = await invokeHandler(handler, { method, url });
+      assert.equal(response.statusCode, 503, `${method} ${url}: expected 503`);
+      assert.equal(response.body.error, "sensorium_subscriber_not_configured");
+    }
+  }
+});
+
+test("POST /sensorium/subscriptions returns 403 when no active grant exists", async () => {
+  // The default grant store (no Sensorium grants) is what production
+  // starts with. This is the load-bearing fail-closed path.
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_no_grant");
+  // Verify the subscriber was NOT invoked — policy denial happens
+  // before the subscriber so the helper is never reached.
+  assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions returns 400 when capability is missing", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: makeFakeSensoriumSubscriber(),
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: { topic: "sensor/jetsorano/realsense/color" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "sensorium_subscription_request_invalid");
+});
+
+test("POST /sensorium/subscriptions returns 403 when grant provider cannot support capability", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+          provider: "soma.provider.local-model",
+        },
+      ],
+    },
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_provider_not_authorized");
+  assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions returns 403 when topic host is outside provider grant", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/othernode/realsense/color",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_topic_not_authorized");
+  assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions succeeds when an active grant exists", async () => {
+  const subscriber = makeFakeSensoriumSubscriber({ subscriptionId: "sub-color-1" });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.subscription_id, "sub-color-1");
+  assert.equal(response.body.topic, "sensor/jetsorano/realsense/color");
+  assert.equal(response.body.grant_id, "grant-sensorium-color-test");
+  assert.equal(response.body.activation_performed, true);
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+
+  assert.equal(subscriber.calls.length, 1);
+  assert.equal(subscriber.calls[0].method, "start");
+  assert.equal(subscriber.calls[0].args.capability, "perception.sensorium.color.subscribe");
+  assert.equal(subscriber.calls[0].args.provider, "soma.provider.sensorium.jetsorano");
+  assert.equal(subscriber.calls[0].args.grantId, "grant-sensorium-color-test");
+});
+
+test("POST /sensorium/subscriptions rejects topic mismatch before subscriber invocation", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/depth",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "sensorium_subscription_request_invalid");
+  assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions maps subscriber.start errors to HTTP statuses", async () => {
+  const subscriber = {
+    async start() {
+      const err = new Error("helper unavailable");
+      err.code = "sensorium_subscription_start_failed";
+      err.statusCode = 503;
+      throw err;
+    },
+    async stop() { throw new Error("unused"); },
+    describeActive() { return { family: "perception.sensorium", active_count: 0, summary: "", streams: [], frames_recorded: false }; },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.body.error, "sensorium_subscription_start_failed");
+});
+
+test("DELETE /sensorium/subscriptions/:id returns the end summary", async () => {
+  const subscriber = makeFakeSensoriumSubscriber({ subscriptionId: "sub-stop-test" });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  // Start so the fake's activeCount is set up; not strictly required
+  // for the fake but mirrors real flow.
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "DELETE",
+    url: "/sensorium/subscriptions/sub-stop-test",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.subscription_id, "sub-stop-test");
+  assert.equal(response.body.end_summary.termination_reason, "clean_stop");
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+
+  const stopCall = subscriber.calls.find((c) => c.method === "stop");
+  assert.ok(stopCall);
+  assert.equal(stopCall.args.id, "sub-stop-test");
+});
+
+test("DELETE /sensorium/subscriptions/:id returns 404 when subscription_not_found", async () => {
+  const subscriber = {
+    async start() { throw new Error("unused"); },
+    async stop() {
+      const err = new Error("not tracked");
+      err.code = "subscription_not_found";
+      throw err;
+    },
+    describeActive() { return { family: "perception.sensorium", active_count: 0, summary: "", streams: [], frames_recorded: false }; },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+  const response = await invokeHandler(handler, {
+    method: "DELETE",
+    url: "/sensorium/subscriptions/no-such",
+  });
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.body.error, "subscription_not_found");
+});
+
+test("GET /sensorium/subscriptions returns the disclosure shape", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+  const response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/sensorium/subscriptions",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.family, "perception.sensorium");
+  assert.equal(response.body.active_count, 0);
+  assert.equal(response.body.frames_recorded, false);
+});
+
 function makeHandler({
   harness = allowedHarness,
-  capabilityCatalog: catalog,
-  providerRegistry: providers,
+  capabilityCatalog: catalog = capabilityCatalog,
+  providerRegistry: providers = providerRegistry,
   moduleRegistry: modules = moduleRegistry,
   runtimeProfiles: profiles = runtimeProfiles,
   modelClient = {
@@ -2219,6 +2571,7 @@ function makeHandler({
   },
   grantStore: grants,
   desktopDisclosureRegistry,
+  sensoriumSubscriber,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -2229,6 +2582,7 @@ function makeHandler({
     modelClient,
     grantStore: grants,
     desktopDisclosureRegistry,
+    sensoriumSubscriber,
     logger: { info() {} },
   });
 }

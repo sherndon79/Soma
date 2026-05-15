@@ -125,7 +125,12 @@ async fn main() -> std::process::ExitCode {
 async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) -> Value {
     let trimmed = line.trim();
     if trimmed.is_empty() {
-        return error_response(Value::Null, PARSE_ERROR, "parse_error", "empty request line");
+        return error_response(
+            Value::Null,
+            PARSE_ERROR,
+            "parse_error",
+            "empty request line",
+        );
     }
 
     let request: Value = match serde_json::from_str(trimmed) {
@@ -136,7 +141,12 @@ async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) ->
     let id = request.get("id").cloned().unwrap_or(Value::Null);
 
     if request.get("jsonrpc").and_then(|v| v.as_str()) != Some("2.0") {
-        return error_response(id, INVALID_REQUEST, "invalid_request", "jsonrpc must be \"2.0\"");
+        return error_response(
+            id,
+            INVALID_REQUEST,
+            "invalid_request",
+            "jsonrpc must be \"2.0\"",
+        );
     }
 
     let method = match request.get("method").and_then(|v| v.as_str()) {
@@ -163,16 +173,14 @@ async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) ->
     let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     match method {
-        "sensorium.subscribe.start"  => handle_subscribe_start(id, params, state, output_tx).await,
-        "sensorium.subscribe.stop"   => handle_subscribe_stop(id, params, state).await,
+        "sensorium.subscribe.start" => handle_subscribe_start(id, params, state, output_tx).await,
+        "sensorium.subscribe.stop" => handle_subscribe_stop(id, params, state).await,
         "sensorium.subscribe.status" => handle_subscribe_status(id, params, state).await,
         _ => error_response(
             id,
             METHOD_IMPLEMENTATION_PENDING,
             "method_implementation_pending",
-            &format!(
-                "{method} recognized; implementation pending later activation slice"
-            ),
+            &format!("{method} recognized; implementation pending later activation slice"),
         ),
     }
 }
@@ -524,7 +532,10 @@ mod tests {
         )
         .await;
         assert_eq!(list_resp["result"]["count"], 1);
-        assert_eq!(list_resp["result"]["subscriptions"][0]["subscription_id"], sub_id);
+        assert_eq!(
+            list_resp["result"]["subscriptions"][0]["subscription_id"],
+            sub_id
+        );
 
         // status (by id) — match
         let by_id_resp = handle_line(

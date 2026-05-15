@@ -467,12 +467,12 @@ provenance records the shape of consumption, not the consumed content.
 
 ## Current Implementation Status
 
-Nothing on the Soma side yet. Sensorium is shipping (Phase 3 publishers
-complete, Phase 5 hardening mostly complete, payload versioning live).
+Sensorium is shipping as a separate node (Phase 3 publishers complete,
+Phase 5 hardening mostly complete, payload versioning live). Soma now has
+the first integration path implemented through the disabled-first sequence
+from the Implementation Guide.
 
-The first concrete slice on the Soma side follows the disabled-first
-nine-step sequence from the Implementation Guide rather than starting
-with a working subscriber. Approximately, in order:
+Completed Soma-side slices:
 
 1. Capability catalog entries for each Sensorium topic with
    `default_status: "disabled"` and `activation_policy: "explicit_grant"`.
@@ -495,13 +495,29 @@ with a working subscriber. Approximately, in order:
    (camera) until grants exist; active-subscription disclosure shape
    sketched even though nothing can yet activate.
 7. Rust sensor-broker scaffold built behind tests — JSON-RPC method
-   stubs for `sensorium.subscribe.start` / `.stop` / `.status`, no
-   actual Zenoh client yet. Helper output schema-validated by Node.
-8. Public capability path remains fail-closed; tests verify denial.
-9. Activation gates align (real helper, real Zenoh client, real
-   subscription start/stop) only after all the above. Status-topic
-   subscribe activates first; camera-class later, separately, with
-   stronger disclosure review.
+   support for `sensorium.subscribe.start` / `.stop` / `.status`.
+8. Public capability path remained fail-closed while helper and Node-side
+   composition landed behind tests.
+9. Activation gates aligned through a Node-side helper manager,
+   `SensoriumSubscriber` composition layer, and an HTTP subscription seam:
+   `GET /sensorium/subscriptions`, `POST /sensorium/subscriptions`, and
+   `DELETE /sensorium/subscriptions/:id`.
+
+The HTTP seam is still fail-closed in the default service posture. If no
+`sensoriumSubscriber` is configured, Sensorium routes return
+`sensorium_subscriber_not_configured`. If a subscriber is configured but no
+active grant authorizes the exact capability, the POST path returns
+`sensorium_subscription_no_grant` before the helper is reached.
+
+The route also checks that the active grant's provider exists, supports the
+requested Sensorium capability, and matches the hostname-scoped topic
+namespace. A grant for `soma.provider.sensorium.jetsorano` does not authorize
+`sensor/othernode/...`.
+
+Next implementation work should wire the real `SensorBrokerManager` and
+`SensoriumSubscriber` into `src/server.js` only behind an operator-controlled
+opt-in. The default process should continue to start with Sensorium routes
+configured off.
 
 The point of this ordering: a participant should never accidentally
 receive sensor frames because someone forgot a check. The public path

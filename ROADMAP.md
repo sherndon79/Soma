@@ -162,6 +162,10 @@ Implemented:
 - grant mutation validator scaffold added with pure create/revoke/supersede/expire state
   transitions, exact catalog/provider checks, explicit user-decision requirements, idempotent
   revocation tests, and no route, CLI, file-write, or activation path
+- Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
+  provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
+  sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
+  subscription seam that remains fail-closed without an active grant and configured subscriber
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -175,35 +179,28 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation provenance event constructors without enabling writes.
+Wire Sensorium runtime opt-in without changing the default service posture.
 
 Target:
 
 ```text
-grant mutation provenance scaffold
-  -> make grant authority changes auditable as structured events
-  -> preserve explicit user approval and revocation metadata
-  -> keep malformed-arg no-stdout behavior active
-  -> preserve runtime default traversal rejection
-  -> keep traversal limited to authorized root refs and summary-only provenance
+sensorium runtime opt-in
+  -> instantiate SensorBrokerManager and SensoriumSubscriber only when an operator explicitly opts in
+  -> preserve default sensorium_subscriber_not_configured behavior
+  -> preserve no-grant denial before helper invocation
+  -> preserve provider host/topic checks for jetsorano
 ```
 
 Expected work:
 
-- keep current provenance behavior unchanged
-- add grant.created/grant.revoked/grant.superseded/grant.expired event constructors
-- include grant id, capability, provider, scope, actor, reason, timestamp, and source/replacement
-  ids where relevant
-- avoid storing capability payloads or desktop traversal trees in grant mutation provenance
-- add tests for event shape and non-activation
-- keep `GET /grants` reporting `writable: false` and `runtime_writes_enabled: false`
-- keep Rust helper command active
-- keep malformed command args failing before any helper query and emitting no stdout
-- keep the current default validator/assertion behavior unchanged
-- keep `validateDesktopInspectionResult` closed by default
-- preserve current active schema and default runtime rejection of traversal output
-- do not add runtime grant writes or mutation routes
-- keep traversal authority unchanged
+- add server construction for Sensorium only behind an explicit environment flag
+- keep the default `src/server.js` startup from configuring a subscriber
+- expose clear startup diagnostics when opt-in is requested but the helper binary is missing
+- ensure process shutdown stops the sensor broker helper cleanly
+- add tests for default-off server construction behavior where practical
+- do not add Sensorium grants to `config/grants.json`
+- do not add CLI activation for Sensorium subscriptions in this slice
+- keep provenance metadata-only; do not record frames or payloads
 
 Constraints:
 
@@ -212,6 +209,7 @@ Constraints:
 - no text, names, descriptions, states, actions, screenshots, or actuation
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
+- no default sensor subscription, frame decoding, recording, or preprocessing
 
 ## Near-Term
 

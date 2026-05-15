@@ -289,6 +289,23 @@ exact capability and provider validation, explicit user decision provenance, ato
 writes, revocation auditability, migration behavior, and tests for create, revoke, supersede,
 expire, and failed-write behavior.
 
+## Inspect Sensorium Subscriptions
+
+Sensorium is an optional sensor-node integration for the `jetsorano` host. The default Soma service
+does not configure a Sensorium subscriber, so the HTTP routes fail closed with
+`sensorium_subscriber_not_configured`.
+
+When a subscriber is explicitly injected, active subscriptions can be inspected:
+
+```bash
+curl http://127.0.0.1:8765/sensorium/subscriptions
+```
+
+Starting a subscription still requires an active grant for the exact
+`perception.sensorium.*.subscribe` capability. The route validates the request, provider support,
+and hostname-scoped topic before the helper is reached. No Sensorium grants ship in
+`config/grants.json`.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

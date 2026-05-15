@@ -53,8 +53,19 @@ summary-only provenance.
 - [Traversal Artifact Lifecycle Disposition Review](./2026-05-10_traversal_artifact_lifecycle_disposition_review.md)
   - per-artifact disposition for Future-prefixed traversal APIs, fixtures, and schemas
 
+## Sensorium Integration Thread
+
+This thread tracks the disabled-first integration of the external Sensorium node on `jetsorano`.
+The HTTP seam now exists, but the default server posture remains subscriber-not-configured and no
+Sensorium grants ship by default.
+
+- [Sensorium HTTP Seam Review](./2026-05-15_sensorium_http_seam_review.md)
+  - review after the injected HTTP subscription seam landed with validation, provider host checks,
+    and fail-closed no-grant behavior
+
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
+- Run a focused review after Sensorium runtime opt-in wiring is added.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

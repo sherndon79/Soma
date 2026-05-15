@@ -166,6 +166,8 @@ Implemented:
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
   subscription seam that remains fail-closed without an active grant and configured subscriber
+- Sensorium runtime opt-in added behind `SOMA_SENSORIUM_ENABLED`, with default-off startup,
+  configurable helper path, clear helper startup failure, and shutdown cleanup for the helper
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -179,25 +181,26 @@ Current authority boundary:
 
 ## Next Slice
 
-Wire Sensorium runtime opt-in without changing the default service posture.
+Define Sensorium grant constraint enforcement before durable grants.
 
 Target:
 
 ```text
-sensorium runtime opt-in
-  -> instantiate SensorBrokerManager and SensoriumSubscriber only when an operator explicitly opts in
-  -> preserve default sensorium_subscriber_not_configured behavior
+sensorium grant constraint enforcement
+  -> compare requested Sensorium constraints against active grant constraints
   -> preserve no-grant denial before helper invocation
   -> preserve provider host/topic checks for jetsorano
+  -> keep Sensorium grants out of default config
 ```
 
 Expected work:
 
-- add server construction for Sensorium only behind an explicit environment flag
-- keep the default `src/server.js` startup from configuring a subscriber
-- expose clear startup diagnostics when opt-in is requested but the helper binary is missing
-- ensure process shutdown stops the sensor broker helper cleanly
-- add tests for default-off server construction behavior where practical
+- define grant constraint semantics for `max_seconds`, `max_fps`, `format_required`, and
+  `downsample_to`
+- reject requests that exceed the active grant's declared bounds before subscriber invocation
+- preserve requests that are narrower than the active grant
+- keep request-shape validation before grant lookup
+- add focused tests for too-long, too-fast, wrong format, and oversized downsample requests
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
 - keep provenance metadata-only; do not record frames or payloads

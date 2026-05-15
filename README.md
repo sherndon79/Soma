@@ -38,6 +38,8 @@ Environment variables:
 - `SOMA_PORT`
 - `SOMA_LLM_URL`
 - `SOMA_LLM_MODEL`
+- `SOMA_SENSORIUM_ENABLED`
+- `SOMA_SENSOR_BROKER`
 
 Runtime profiles are defined in [config/runtime-profiles.json](./config/runtime-profiles.json).
 Self-scoped narrowing modules are defined in [config/harness-modules.json](./config/harness-modules.json).
@@ -70,6 +72,19 @@ Future traversal provenance is expected to remain summary-only by default, as do
 [desktop traversal provenance](./docs/concepts/drafts/desktop_traversal_provenance.md).
 The remaining gates before traversal can be enabled are ordered in
 [desktop traversal enablement sequence](./docs/concepts/drafts/desktop_traversal_enablement_sequence.md).
+
+## Sensorium Runtime
+
+Sensorium integration is default-off. The service only constructs the sensor broker helper and
+subscriber when explicitly enabled:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 npm start
+```
+
+Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. No Sensorium grants
+ship in `config/grants.json`, so subscription requests still fail closed until an explicit active
+grant exists for the exact `perception.sensorium.*.subscribe` capability.
 
 ## CLI
 

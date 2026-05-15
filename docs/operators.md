@@ -11,6 +11,17 @@ npm start
 
 By default Soma listens on `http://127.0.0.1:8765`.
 
+Sensorium is off by default. To opt in to the local Sensorium helper and subscriber:
+
+```bash
+cargo build -p soma-sensor-broker
+SOMA_SENSORIUM_ENABLED=1 npm start
+```
+
+Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. If opt-in is
+requested but the helper is missing or not executable, startup fails with a Sensorium runtime error
+instead of silently disabling the subscriber.
+
 The local model profile expects an OpenAI-compatible runtime at `http://127.0.0.1:8000`. The
 included GPU compose file can start the current Gemma/vLLM test runtime:
 

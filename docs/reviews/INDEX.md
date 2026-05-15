@@ -62,10 +62,13 @@ Sensorium grants ship by default.
 - [Sensorium HTTP Seam Review](./2026-05-15_sensorium_http_seam_review.md)
   - review after the injected HTTP subscription seam landed with validation, provider host checks,
     and fail-closed no-grant behavior
+- [Sensorium Runtime Opt-In Review](./2026-05-15_sensorium_runtime_opt_in_review.md)
+  - review after server startup gained explicit `SOMA_SENSORIUM_ENABLED` wiring for the real helper
+    and subscriber while preserving default-off behavior
 
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
-- Run a focused review after Sensorium runtime opt-in wiring is added.
+- Run a focused review after Sensorium grant constraint enforcement is added.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

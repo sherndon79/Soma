@@ -514,10 +514,16 @@ requested Sensorium capability, and matches the hostname-scoped topic
 namespace. A grant for `soma.provider.sensorium.jetsorano` does not authorize
 `sensor/othernode/...`.
 
-Next implementation work should wire the real `SensorBrokerManager` and
-`SensoriumSubscriber` into `src/server.js` only behind an operator-controlled
-opt-in. The default process should continue to start with Sensorium routes
-configured off.
+The real `SensorBrokerManager` and `SensoriumSubscriber` are wired into
+`src/server.js` only behind an operator-controlled opt-in:
+`SOMA_SENSORIUM_ENABLED=1`. The default process continues to start with
+Sensorium routes configured off. Operators may override the helper path with
+`SOMA_SENSOR_BROKER`.
+
+Next implementation work should define how active grant constraints bound
+subscription requests. The route validates request-shape constraints today, but
+it does not yet compare request values such as `max_seconds`, `max_fps`,
+`format_required`, or `downsample_to` against grant-specific maxima.
 
 The point of this ordering: a participant should never accidentally
 receive sensor frames because someone forgot a check. The public path

@@ -107,11 +107,25 @@ const HELPER_SKIP_REASON = existsSync(HELPER_BINARY)
   ? false
   : `binary not built; run 'cargo build -p soma-sensor-broker' from repo root`;
 
+// As of step 9a, the helper has partial activation: subscribe.start
+// opens a real Zenoh subscriber (and is therefore a successful
+// response, not an error). subscribe.stop and subscribe.status remain
+// stubbed — they are scheduled for the next slice. The tripwire's
+// helper-layer assertion is split accordingly:
+//
+//   subscribe.start   → expect successful result with subscription_id
+//   subscribe.stop    → expect method_implementation_pending
+//   subscribe.status  → expect method_implementation_pending
+//
+// The PUBLIC path stays fail-closed at the Node layers (no grant, no
+// HTTP route mentions Sensorium), which is still verified by the
+// other tests in this file.
+
 test(
-  "public path fail-closed: sensor-broker helper returns method_implementation_pending for every known method",
+  "public path fail-closed: sensor-broker stop/status still return method_implementation_pending",
   { skip: HELPER_SKIP_REASON },
   () => {
-    for (const method of SENSORIUM_HELPER_METHODS) {
+    for (const method of ["sensorium.subscribe.stop", "sensorium.subscribe.status"]) {
       const request = JSON.stringify({
         jsonrpc: "2.0",
         method,
@@ -135,7 +149,7 @@ test(
       assert.equal(response.id, `fail-closed-test-${method}`, `${method}: id not echoed`);
       assert.ok(
         response.error,
-        `${method}: response missing error field — helper may have been activated`,
+        `${method}: response missing error field — helper may have been activated prematurely`,
       );
       assert.equal(
         response.error.code,
@@ -149,6 +163,55 @@ test(
         `${method}: response contains a result field — fail-closed broken at the helper`,
       );
     }
+  },
+);
+
+test(
+  "public path fail-closed: sensor-broker start opens a Zenoh subscriber (step 9a partial activation)",
+  { skip: HELPER_SKIP_REASON },
+  () => {
+    // subscribe.start is intentionally activated at the helper layer
+    // as of step 9a. The public path stays fail-closed because no Node
+    // route invokes the helper and no grant authorizes a subscription.
+    // This test verifies the activation is well-formed (successful
+    // result, subscription_id, echoed id) rather than letting it
+    // appear as a regression of the previous assertion.
+    const request = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "sensorium.subscribe.start",
+      params: { topic: "sensor/fail-closed-test/status" },
+      id: "fail-closed-test-start",
+    });
+    const result = spawnSync(HELPER_BINARY, [], {
+      input: `${request}\n`,
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    assert.equal(
+      result.status,
+      0,
+      `helper exited with ${result.status} (stderr: ${result.stderr})`,
+    );
+
+    const response = JSON.parse(result.stdout.trim());
+
+    assert.equal(response.jsonrpc, "2.0");
+    assert.equal(response.id, "fail-closed-test-start");
+    assert.ok(
+      response.result,
+      "subscribe.start should return a result in step 9a",
+    );
+    assert.equal(response.result.topic, "sensor/fail-closed-test/status");
+    assert.ok(
+      typeof response.result.subscription_id === "string" &&
+        response.result.subscription_id.length > 0,
+      "subscribe.start should return a subscription_id string",
+    );
+    assert.equal(
+      "error" in response,
+      false,
+      "subscribe.start should not contain an error field after step 9a activation",
+    );
   },
 );
 

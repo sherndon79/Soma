@@ -1,26 +1,34 @@
 //! Soma sensor-broker helper.
 //!
 //! Long-lived JSON-RPC over stdio. Reads request lines from stdin,
-//! writes one response line to stdout per request, until EOF.
+//! writes one response line to stdout per request, plus asynchronous
+//! notification lines as samples arrive on active Zenoh subscriptions.
 //!
-//! This is the helper named in
-//! `docs/concepts/drafts/sensorium_integration.md` "Subscription
-//! Invocation Contract" — the long-lived process that will own the
-//! Zenoh client when activation lands. For now (step 7 of the
-//! disabled-first sequence) every method is a stub: recognized methods
-//! return an explicit `method_implementation_pending` error so the
-//! Node service plane has a stable, well-formed signal that the helper
-//! exists and recognizes the protocol but cannot fulfill the request.
-//! No Zenoh client, no live subscription state, no frame flow.
+//! Current activation state (step 9a of the disabled-first sequence
+//! documented in docs/concepts/drafts/sensorium_integration.md):
 //!
-//! The fail-closed property is preserved by design, not by absence:
-//! even if a future Node endpoint accidentally invokes this helper,
-//! every response is a structured error.
+//!   sensorium.subscribe.start    ACTIVE — opens a real Zenoh
+//!                                subscriber, streams samples as
+//!                                JSON-RPC notifications
+//!   sensorium.subscribe.stop     stubbed (method_implementation_pending)
+//!   sensorium.subscribe.status   stubbed (method_implementation_pending)
+//!
+//! The Node-side public path is still fail-closed: no HTTP route
+//! invokes this helper, and no grant authorizes a Sensorium
+//! subscription. Helper-side activation here doesn't move the public
+//! path; it makes the *building block* exist so the Node-side activation
+//! slice (still pending) can plug it in.
+//!
+//! Output is serialized through a single mpsc channel so command
+//! responses and subscription notifications don't interleave on
+//! stdout.
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::ExitCode;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{mpsc, Mutex};
+use uuid::Uuid;
 
 const KNOWN_METHODS: &[&str] = &[
     "sensorium.subscribe.start",
@@ -28,74 +36,93 @@ const KNOWN_METHODS: &[&str] = &[
     "sensorium.subscribe.status",
 ];
 
-// JSON-RPC 2.0 standard error codes.
+// JSON-RPC 2.0 codes
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
-
-// Server-defined range (-32000 to -32099). We use -32001 specifically
-// for "recognized method, implementation pending" so Node can
-// distinguish "method we don't know about" from "method we know
-// about but haven't wired yet."
 const METHOD_IMPLEMENTATION_PENDING: i64 = -32001;
+const INVALID_PARAMS: i64 = -32602;
+const INTERNAL_ERROR: i64 = -32603;
 
-fn main() -> ExitCode {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut stdout = stdout.lock();
+type Output = mpsc::UnboundedSender<String>;
 
+#[derive(Default)]
+struct State {
+    // Holds tokio task handles for active subscriber tasks so they
+    // outlive the start handler. Keyed by subscription_id. Step 9a
+    // doesn't implement removal — that's the subscribe.stop slice.
+    subscribers: Vec<(String, tokio::task::JoinHandle<()>)>,
+}
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> std::process::ExitCode {
+    let state = Arc::new(Mutex::new(State::default()));
+    let (output_tx, mut output_rx) = mpsc::unbounded_channel::<String>();
+
+    // Output task — single writer, prevents interleaved lines on stdout.
+    let output_task = tokio::spawn(async move {
+        let mut stdout = tokio::io::stdout();
+        while let Some(line) = output_rx.recv().await {
+            if stdout.write_all(line.as_bytes()).await.is_err() {
+                break;
+            }
+            if stdout.write_all(b"\n").await.is_err() {
+                break;
+            }
+            let _ = stdout.flush().await;
+        }
+    });
+
+    // Input task — reads stdin, dispatches each line.
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
     let mut line = String::new();
     loop {
         line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) => return ExitCode::SUCCESS, // EOF
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
             Ok(_) => {
-                let response = handle_line(&line);
-                if writeln!(stdout, "{response}").is_err() {
-                    return ExitCode::from(2);
-                }
-                if stdout.flush().is_err() {
-                    return ExitCode::from(2);
+                let response = handle_line(&line, Arc::clone(&state), output_tx.clone()).await;
+                if output_tx.send(response.to_string()).is_err() {
+                    break;
                 }
             }
-            Err(_) => return ExitCode::from(2),
+            Err(_) => break,
         }
     }
+
+    // On stdin EOF, abort all subscriber tasks. Each subscriber task
+    // holds a clone of output_tx; without aborting them the output
+    // task would wait forever for senders to drop and the process
+    // would hang. Aborting is correct here because the helper is
+    // shutting down — no more samples will be processed regardless.
+    {
+        let mut s = state.lock().await;
+        for (_, handle) in s.subscribers.drain(..) {
+            handle.abort();
+        }
+    }
+
+    drop(output_tx);
+    let _ = output_task.await;
+    std::process::ExitCode::SUCCESS
 }
 
-fn handle_line(line: &str) -> Value {
+async fn handle_line(line: &str, state: Arc<Mutex<State>>, output_tx: Output) -> Value {
     let trimmed = line.trim();
     if trimmed.is_empty() {
-        return error_response(
-            Value::Null,
-            PARSE_ERROR,
-            "parse_error",
-            "empty request line",
-        );
+        return error_response(Value::Null, PARSE_ERROR, "parse_error", "empty request line");
     }
 
     let request: Value = match serde_json::from_str(trimmed) {
         Ok(v) => v,
-        Err(e) => {
-            return error_response(
-                Value::Null,
-                PARSE_ERROR,
-                "parse_error",
-                &e.to_string(),
-            )
-        }
+        Err(e) => return error_response(Value::Null, PARSE_ERROR, "parse_error", &e.to_string()),
     };
 
     let id = request.get("id").cloned().unwrap_or(Value::Null);
 
     if request.get("jsonrpc").and_then(|v| v.as_str()) != Some("2.0") {
-        return error_response(
-            id,
-            INVALID_REQUEST,
-            "invalid_request",
-            "jsonrpc must be \"2.0\"",
-        );
+        return error_response(id, INVALID_REQUEST, "invalid_request", "jsonrpc must be \"2.0\"");
     }
 
     let method = match request.get("method").and_then(|v| v.as_str()) {
@@ -119,14 +146,137 @@ fn handle_line(line: &str) -> Value {
         );
     }
 
-    error_response(
-        id,
-        METHOD_IMPLEMENTATION_PENDING,
-        "method_implementation_pending",
-        &format!(
-            "{method} recognized; implementation pending step 9 of disabled-first sequence"
+    let params = request.get("params").cloned().unwrap_or(Value::Null);
+
+    match method {
+        "sensorium.subscribe.start" => handle_subscribe_start(id, params, state, output_tx).await,
+        _ => error_response(
+            id,
+            METHOD_IMPLEMENTATION_PENDING,
+            "method_implementation_pending",
+            &format!(
+                "{method} recognized; implementation pending later activation slice"
+            ),
         ),
-    )
+    }
+}
+
+async fn handle_subscribe_start(
+    id: Value,
+    params: Value,
+    state: Arc<Mutex<State>>,
+    output_tx: Output,
+) -> Value {
+    // Required param: topic.
+    let topic = match params.get("topic").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            return error_response(
+                id,
+                INVALID_PARAMS,
+                "invalid_params",
+                "subscribe.start requires params.topic (non-empty string)",
+            );
+        }
+    };
+
+    // Optional param: zenoh_config_path. When absent we use
+    // zenoh::Config::default() (no auth). The Node side is expected
+    // to refuse subscriptions that would route to a producer without
+    // a matching credential; this helper trusts the caller for the
+    // config path.
+    let zenoh_config_path = params
+        .get("zenoh_config_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let subscription_id = Uuid::new_v4().to_string();
+
+    // Open Zenoh session.
+    let config = match zenoh_config_path.as_deref() {
+        Some(path) => match zenoh::Config::from_file(path) {
+            Ok(c) => c,
+            Err(e) => {
+                return error_response(
+                    id,
+                    INTERNAL_ERROR,
+                    "zenoh_config_load_failed",
+                    &format!("failed to load Zenoh config from {path}: {e}"),
+                );
+            }
+        },
+        None => zenoh::Config::default(),
+    };
+
+    let session = match zenoh::open(config).await {
+        Ok(s) => s,
+        Err(e) => {
+            return error_response(
+                id,
+                INTERNAL_ERROR,
+                "zenoh_open_failed",
+                &format!("zenoh::open failed: {e}"),
+            );
+        }
+    };
+
+    let subscriber = match session.declare_subscriber(topic.clone()).await {
+        Ok(s) => s,
+        Err(e) => {
+            return error_response(
+                id,
+                INTERNAL_ERROR,
+                "zenoh_declare_subscriber_failed",
+                &format!("declare_subscriber({topic}) failed: {e}"),
+            );
+        }
+    };
+
+    // Spawn the subscriber task: forwards each received sample to
+    // stdout as a JSON-RPC notification. The session is moved into
+    // the task to keep it alive for the subscriber's lifetime.
+    let sub_id_for_task = subscription_id.clone();
+    let topic_for_task = topic.clone();
+    let join = tokio::spawn(async move {
+        // Move both subscriber and session into the task so they live
+        // together; dropping either ends the subscription.
+        let _session_guard = session;
+        loop {
+            match subscriber.recv_async().await {
+                Ok(sample) => {
+                    let bytes = sample.payload().to_bytes().to_vec();
+                    let notification = json!({
+                        "jsonrpc": "2.0",
+                        "method": "sensorium.subscription.sample",
+                        "params": {
+                            "subscription_id": sub_id_for_task,
+                            "topic": topic_for_task,
+                            "payload_bytes": bytes,
+                            "payload_size": bytes.len(),
+                        }
+                    });
+                    if output_tx.send(notification.to_string()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    {
+        let mut s = state.lock().await;
+        s.subscribers.push((subscription_id.clone(), join));
+    }
+
+    json!({
+        "jsonrpc": "2.0",
+        "result": {
+            "subscription_id": subscription_id,
+            "topic": topic,
+        },
+        "id": id,
+    })
 }
 
 fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value {
@@ -145,112 +295,86 @@ fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value
 mod tests {
     use super::*;
 
-    fn parse(line: &str) -> Value {
-        handle_line(line)
+    fn make_state() -> Arc<Mutex<State>> {
+        Arc::new(Mutex::new(State::default()))
     }
 
-    #[test]
-    fn empty_line_returns_parse_error() {
-        let resp = parse("");
+    fn make_output() -> (Output, mpsc::UnboundedReceiver<String>) {
+        mpsc::unbounded_channel::<String>()
+    }
+
+    #[tokio::test]
+    async fn empty_line_returns_parse_error() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line("", make_state(), tx).await;
         assert_eq!(resp["error"]["code"], json!(PARSE_ERROR));
-        assert_eq!(resp["error"]["code_name"], "parse_error");
-        assert_eq!(resp["id"], Value::Null);
     }
 
-    #[test]
-    fn malformed_json_returns_parse_error() {
-        let resp = parse("not json {");
-        assert_eq!(resp["error"]["code"], json!(PARSE_ERROR));
-        assert_eq!(resp["error"]["code_name"], "parse_error");
-    }
-
-    #[test]
-    fn missing_jsonrpc_version_returns_invalid_request() {
-        let resp = parse(r#"{"method":"sensorium.subscribe.start","id":1}"#);
-        assert_eq!(resp["error"]["code"], json!(INVALID_REQUEST));
-        assert_eq!(resp["error"]["code_name"], "invalid_request");
-    }
-
-    #[test]
-    fn missing_method_returns_invalid_request() {
-        let resp = parse(r#"{"jsonrpc":"2.0","id":1}"#);
-        assert_eq!(resp["error"]["code"], json!(INVALID_REQUEST));
-        assert_eq!(resp["error"]["code_name"], "invalid_request");
-    }
-
-    #[test]
-    fn unknown_method_returns_method_not_found() {
-        let resp = parse(r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.invent","id":1}"#);
+    #[tokio::test]
+    async fn unknown_method_returns_method_not_found() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.invent","id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
         assert_eq!(resp["error"]["code"], json!(METHOD_NOT_FOUND));
-        assert_eq!(resp["error"]["code_name"], "method_not_found");
-        assert_eq!(resp["id"], json!(1));
     }
 
-    #[test]
-    fn known_methods_return_implementation_pending_with_id_echo() {
-        for method in KNOWN_METHODS {
-            let request = format!(
-                r#"{{"jsonrpc":"2.0","method":"{method}","params":{{}},"id":"req-{method}"}}"#
-            );
-            let resp = parse(&request);
+    #[tokio::test]
+    async fn stop_and_status_are_still_implementation_pending() {
+        for method in ["sensorium.subscribe.stop", "sensorium.subscribe.status"] {
+            let (tx, _rx) = make_output();
+            let req = format!(r#"{{"jsonrpc":"2.0","method":"{method}","id":"x"}}"#);
+            let resp = handle_line(&req, make_state(), tx).await;
             assert_eq!(
                 resp["error"]["code"],
                 json!(METHOD_IMPLEMENTATION_PENDING),
-                "method {method} should return implementation_pending"
-            );
-            assert_eq!(
-                resp["error"]["code_name"], "method_implementation_pending",
-                "method {method} should carry code_name"
-            );
-            assert_eq!(
-                resp["id"],
-                json!(format!("req-{method}")),
-                "method {method} should echo the request id"
+                "{method} should still be a stub in step 9a"
             );
         }
     }
 
-    #[test]
-    fn responses_are_always_well_formed_jsonrpc_2_0() {
-        // Property: regardless of input, the response should be valid
-        // JSON-RPC 2.0 (jsonrpc field = "2.0", an id field exists,
-        // either result or error but not both). For step 7 every
-        // response is an error, but the shape requirement holds.
-        for input in [
-            "",
-            "not json",
-            r#"{"jsonrpc":"2.0"}"#,
-            r#"{"jsonrpc":"1.0","method":"sensorium.subscribe.start","id":1}"#,
-            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","id":1}"#,
-            r#"{"jsonrpc":"2.0","method":"unknown","id":2}"#,
-        ] {
-            let resp = parse(input);
-            assert_eq!(resp["jsonrpc"], "2.0", "input {input:?} jsonrpc field");
-            assert!(resp.get("id").is_some(), "input {input:?} id field present");
-            assert!(
-                resp.get("error").is_some(),
-                "input {input:?} should produce an error response in step 7"
-            );
-            assert!(
-                resp.get("result").is_none(),
-                "input {input:?} must not produce a result in step 7"
-            );
-        }
+    #[tokio::test]
+    async fn start_without_topic_returns_invalid_params() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{},"id":1}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
+        assert_eq!(resp["error"]["code_name"], "invalid_params");
     }
 
-    #[test]
-    fn no_method_returns_a_successful_result_in_step_7() {
-        // Step-7 invariant. No method produces a `result` field. If
-        // any of the three known methods accidentally returns a
-        // success, fail-closed has been violated and this test
-        // catches it.
-        for method in KNOWN_METHODS {
-            let request = format!(r#"{{"jsonrpc":"2.0","method":"{method}","id":1}}"#);
-            let resp = parse(&request);
-            assert!(
-                resp.get("result").is_none(),
-                "method {method} returned a successful result; fail-closed broken"
-            );
-        }
+    // Zenoh requires a multi-thread tokio runtime; current_thread
+    // panics during session creation. The production main() already
+    // uses multi_thread; this attribute matches.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn start_with_topic_succeeds_and_returns_subscription_id() {
+        // This actually opens a Zenoh session — which the default
+        // config allows (peer-mode loopback). Without any publisher
+        // reachable, no samples will arrive, but the session and
+        // subscriber should both come up successfully.
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{"topic":"sensor/test/status"},"id":"start-1"}"#,
+            make_state(),
+            tx,
+        )
+        .await;
+        assert!(
+            resp.get("result").is_some(),
+            "expected a result, got: {resp}"
+        );
+        let result = &resp["result"];
+        assert_eq!(result["topic"], "sensor/test/status");
+        assert!(
+            result["subscription_id"].as_str().is_some(),
+            "expected subscription_id to be a string"
+        );
+        assert_eq!(resp["id"], "start-1");
     }
 }

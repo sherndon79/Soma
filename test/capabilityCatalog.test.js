@@ -40,40 +40,35 @@ test("capability view keeps remote planning unsupported until a provider is regi
   assert.equal(remotePlan.activation_policy, "explicit_grant");
 });
 
-// ── Sensorium subscription capabilities (catalog-only, disabled-first) ──────
+// ── Sensorium subscription capabilities (disabled-first integration) ───────
 //
-// These entries are step 3 of the disabled-first sequence documented in
-// docs/concepts/drafts/sensorium_integration.md: catalog fixtures with
-// default_status="disabled", no provider registered yet, public path
-// must stay fail-closed until later slices wire activation gates.
-//
-// The test below pins the load-bearing facts of those entries so a future
-// change cannot silently drop one, downgrade its risk class, or flip
-// default_status to "allowed" before the rest of the sequence is in
-// place.
+// Tests below pin the load-bearing facts of the Sensorium capability
+// entries and provider claim across the disabled-first sequence
+// documented in docs/concepts/drafts/sensorium_integration.md. The
+// assertions guard against silent drift: dropping an entry, downgrading
+// a risk class, flipping default_status to "allowed" before later
+// activation gates are in place, or accidentally promoting harness_status
+// when only a provider claim has landed.
 
-test("Sensorium subscription capabilities are catalogued as disabled, unsupported, per-class risk", async () => {
+const SENSORIUM_CAPABILITIES = [
+  { key: "perception.sensorium.color.subscribe",    risk: "high",      contract: "soma.perception.sensorium.color.v1" },
+  { key: "perception.sensorium.depth.subscribe",    risk: "high",      contract: "soma.perception.sensorium.depth.v1" },
+  { key: "perception.sensorium.imu.subscribe",      risk: "sensitive", contract: "soma.perception.sensorium.imu.v1" },
+  { key: "perception.sensorium.location.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.location.v1" },
+  { key: "perception.sensorium.status.subscribe",   risk: "low",       contract: "soma.perception.sensorium.status.v1" },
+];
+
+test("Sensorium subscription capabilities are catalogued with the disabled-first shape", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();
   const view = buildCapabilityView({ catalog, providerRegistry });
 
-  const expected = [
-    { key: "perception.sensorium.color.subscribe",    risk: "high",      contract: "soma.perception.sensorium.color.v1" },
-    { key: "perception.sensorium.depth.subscribe",    risk: "high",      contract: "soma.perception.sensorium.depth.v1" },
-    { key: "perception.sensorium.imu.subscribe",      risk: "sensitive", contract: "soma.perception.sensorium.imu.v1" },
-    { key: "perception.sensorium.location.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.location.v1" },
-    { key: "perception.sensorium.status.subscribe",   risk: "low",       contract: "soma.perception.sensorium.status.v1" },
-  ];
-
-  for (const want of expected) {
+  for (const want of SENSORIUM_CAPABILITIES) {
     const cap = view.capabilities.find((c) => c.key === want.key);
     assert.ok(cap, `expected capability ${want.key} to be present in catalog`);
     assert.equal(cap.category, "perception");
     assert.equal(cap.risk_class, want.risk);
     assert.equal(cap.harness_status, "disabled");
-    assert.equal(cap.status, "unsupported"); // no provider yet
-    assert.equal(cap.support_status, "unsupported");
-    assert.deepEqual(cap.providers, []);
     assert.equal(cap.activation_policy, "explicit_grant");
     assert.equal(cap.provider_contract, want.contract);
     assert.equal(cap.reversible, false);
@@ -89,5 +84,47 @@ test("Sensorium subscription capabilities are catalogued as disabled, unsupporte
       Array.isArray(cap.excluded_by_default) && cap.excluded_by_default.length >= 1,
       `expected ${want.key} to declare its excluded_by_default surface`,
     );
+  }
+});
+
+test("Sensorium provider registry claim makes capabilities requestable without activating them", async () => {
+  // Step 2 of the disabled-first sequence: the Sensorium provider entry
+  // claims the five capability contracts but neither the helper binary
+  // nor any grant has landed yet. The capability view should report:
+  //   support_status = "supported"   (provider claims the contract)
+  //   status         = "requestable" (eligible for proposal)
+  //   harness_status = "disabled"    (still inactive — provider claim
+  //                                   is not activation)
+  // This is the "approval is not activation" / "provider installation
+  // is not permission" load-bearing rule from AGENTS.md, made visible
+  // in test assertions.
+
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const sensoriumProvider = providerRegistry.providers.find(
+    (p) => p.id === "soma.provider.sensorium.jetsorano",
+  );
+  assert.ok(sensoriumProvider, "expected Sensorium provider entry to be present");
+  assert.equal(sensoriumProvider.runtime, "zenoh-subscriber-pending");
+  assert.equal(sensoriumProvider.local_only, false);
+  assert.equal(sensoriumProvider.network_access, true);
+  assert.equal(
+    sensoriumProvider.capabilities.length,
+    SENSORIUM_CAPABILITIES.length,
+    "expected Sensorium provider to claim all five capability contracts",
+  );
+
+  for (const want of SENSORIUM_CAPABILITIES) {
+    const cap = view.capabilities.find((c) => c.key === want.key);
+    assert.ok(cap, `expected capability ${want.key} to be present in view`);
+
+    assert.equal(cap.harness_status, "disabled", `${want.key}: provider claim must not activate harness`);
+    assert.equal(cap.status, "requestable", `${want.key}: status should be requestable now that a provider claims it`);
+    assert.equal(cap.support_status, "supported", `${want.key}: provider claim should make support_status = supported`);
+    assert.equal(cap.providers.length, 1, `${want.key}: expected exactly one provider claim`);
+    assert.equal(cap.providers[0].id, "soma.provider.sensorium.jetsorano");
+    assert.equal(cap.providers[0].provider_contract, want.contract);
   }
 });

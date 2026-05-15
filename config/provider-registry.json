@@ -109,6 +109,47 @@
           "command": "inspect-focus"
         }
       ]
+    },
+    {
+      "id": "soma.provider.sensorium.jetsorano",
+      "name": "Sensorium Node (jetsorano)",
+      "version": "0.1.0",
+      "runtime": "zenoh-subscriber-pending",
+      "local_only": false,
+      "network_access": true,
+      "network_scope": "lan-zenoh-peer",
+      "host_segment": "jetsorano",
+      "requires": [
+        "soma-sensor-broker (not yet implemented; step 7 of disabled-first sequence)",
+        "zenoh client transport"
+      ],
+      "capabilities": [
+        {
+          "key": "perception.sensorium.color.subscribe",
+          "provider_contract": "soma.perception.sensorium.color.v1",
+          "output_schema": "soma.perception.sensorium.color.response.v1"
+        },
+        {
+          "key": "perception.sensorium.depth.subscribe",
+          "provider_contract": "soma.perception.sensorium.depth.v1",
+          "output_schema": "soma.perception.sensorium.depth.response.v1"
+        },
+        {
+          "key": "perception.sensorium.imu.subscribe",
+          "provider_contract": "soma.perception.sensorium.imu.v1",
+          "output_schema": "soma.perception.sensorium.imu.response.v1"
+        },
+        {
+          "key": "perception.sensorium.location.subscribe",
+          "provider_contract": "soma.perception.sensorium.location.v1",
+          "output_schema": "soma.perception.sensorium.location.response.v1"
+        },
+        {
+          "key": "perception.sensorium.status.subscribe",
+          "provider_contract": "soma.perception.sensorium.status.v1",
+          "output_schema": "soma.perception.sensorium.status.response.v1"
+        }
+      ]
     }
   ]
 }

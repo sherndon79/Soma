@@ -27,31 +27,48 @@ const SENSORIUM_CAPABILITY_KEYS = new Set([
 
 const REQUEST_KEYS = new Set(["topic", "constraints"]);
 
-// Per-capability allowed constraint keys and (where relevant) the
-// allowed `format_required` values. Constraints not in the allowed set
-// for a given capability are rejected; capability-specific constraints
-// like `max_fps` and `downsample_to` are silently ignored on
-// non-streaming capabilities by being absent from those allowed sets.
+// Per-capability rules: allowed constraint keys, allowed
+// `format_required` values, and the capability-specific topic pattern
+// (so the color capability cannot be invoked against the depth topic
+// and vice versa — that kind of cross-capability topic confusion is a
+// real overreach class the disabled-first slice explicitly closes).
+//
+// `topic_description` is a human-readable form of the pattern, used in
+// error messages so a caller knows the shape they were supposed to
+// send.
 const CONSTRAINT_RULES = {
   "perception.sensorium.color.subscribe": {
     allowed: new Set(["max_seconds", "max_fps", "downsample_to", "format_required"]),
     formats: new Set(["jpeg"]),
+    topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/color$/,
+    topic_description: "sensor/<host>/realsense/color",
   },
   "perception.sensorium.depth.subscribe": {
     allowed: new Set(["max_seconds", "max_fps", "downsample_to", "format_required"]),
     formats: new Set(["png"]),
+    topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/depth$/,
+    topic_description: "sensor/<host>/realsense/depth",
   },
   "perception.sensorium.imu.subscribe": {
     allowed: new Set(["max_seconds"]),
     formats: null,
+    // imu capability covers both accel and gyro topics; either is
+    // valid. A request for the imu capability with neither suffix is
+    // rejected.
+    topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/imu\/(accel|gyro)$/,
+    topic_description: "sensor/<host>/realsense/imu/accel or .../gyro",
   },
   "perception.sensorium.location.subscribe": {
     allowed: new Set(["max_seconds"]),
     formats: null,
+    topic_pattern: /^sensor\/[a-z0-9-]+\/location$/,
+    topic_description: "sensor/<host>/location",
   },
   "perception.sensorium.status.subscribe": {
     allowed: new Set(["max_seconds"]),
     formats: null,
+    topic_pattern: /^sensor\/[a-z0-9-]+\/status$/,
+    topic_description: "sensor/<host>/status",
   },
 };
 
@@ -97,7 +114,21 @@ export function validateSensoriumSubscriptionRequest(body, { capability } = {}) 
 
   if (typeof body.topic !== "string" || body.topic.length === 0) {
     errors.push("request.topic must be a non-empty string");
+  } else if (SENSORIUM_CAPABILITY_KEYS.has(capability)) {
+    // Capability is known — apply the capability-specific pattern.
+    // This is stricter than the generic pattern, so we don't also
+    // check the generic one (a topic that matches the cap-specific
+    // pattern necessarily matches the generic one).
+    const rules = CONSTRAINT_RULES[capability];
+    if (!rules.topic_pattern.test(body.topic)) {
+      errors.push(
+        `request.topic must match ${rules.topic_description} for ${capability}`,
+      );
+    }
   } else if (!TOPIC_PATTERN.test(body.topic)) {
+    // Capability unknown — fall back to the generic pattern so this
+    // doesn't surface as a confusing "topic doesn't match capability"
+    // error when the real problem is the capability itself.
     errors.push("request.topic must match sensor/<host>/<tail>");
   }
 

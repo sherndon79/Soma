@@ -294,6 +294,41 @@ Migration rules for Sensorium grants should fail closed:
 - missing or malformed grant constraints make the grant inactive until
   reviewed
 
+### Non-Writing Proposal Template
+
+`src/sensoriumGrantProposalTemplate.js` provides the first implementation
+surface for preparing Sensorium grant review records. It is intentionally
+non-writing:
+
+- it does not create grants
+- it does not add Sensorium grants to `config/grants.json`
+- it does not approve proposals
+- it does not activate subscriptions
+- it emits `activation_performed: false`, `durable: false`, and
+  `writable: false`
+
+The template validates a proposed Sensorium grant against the capability
+catalog, provider registry, topic shape, provider host segment, requested
+scope, and required constraints. Current templates require `session` scope.
+
+The output has three parts:
+
+- `proposal`: current proposal-compatible fields such as `capability`,
+  `reason`, `requested_scope`, `data_exposed`, `excluded_data`, `risk`, and
+  `fallback`
+- `review`: user-facing review fields including provider, host segment,
+  topic, stream type, risk class, duration, FPS where applicable, encoding
+  where applicable, downsample bounds where applicable, active disclosure,
+  revocation behavior, recording posture, model-boundary warning, and
+  provenance posture
+- `grant_intent`: the exact future grant inputs that would still require
+  explicit user approval before becoming authority
+
+This keeps proposal preparation separate from authority creation. A future
+route or operator UI may use the template output as the review surface, but
+must still preserve the existing lifecycle rule: proposal is not approval,
+approval is not grant creation, and grant creation is not activation.
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

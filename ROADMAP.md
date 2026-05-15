@@ -173,6 +173,8 @@ Implemented:
   omitted request constraints
 - Sensorium durable grant review design documented with session-only first posture, review fields,
   lifecycle mapping, and fail-closed migration triggers
+- non-writing Sensorium grant proposal template added for review-ready proposal objects without
+  grant writes or subscription activation
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -186,25 +188,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add non-writing Sensorium grant proposal template.
+Expose Sensorium proposal templates through a non-activating review endpoint or CLI surface.
 
 Target:
 
 ```text
-sensorium grant proposal template
-  -> produce review-ready Sensorium grant proposal objects
-  -> preserve no durable grant writes
+sensorium grant proposal review surface
+  -> let an operator inspect review-ready Sensorium proposal objects
+  -> preserve no grant writes
   -> keep Sensorium grants out of default config
   -> keep subscription route bounded by active grant constraints
 ```
 
 Expected work:
 
-- add a pure template/builder for Sensorium grant proposal review objects
-- include capability, provider, topic, scope, constraints, risk class, disclosure wording,
-  revocation summary, model-boundary warning, and provenance posture
-- validate that template inputs match known Sensorium capability/topic shapes
-- add tests for color, status, and invalid topic/capability cases
+- add a non-activating endpoint or CLI command that calls the pure Sensorium proposal template
+- show full review context without storing a grant or activating a subscription
+- preserve exact capability/provider/topic/constraint fields for later user decision
+- add tests proving the route/command is review-only
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
 - do not add grant writes or subscription activation

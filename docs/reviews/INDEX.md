@@ -70,10 +70,12 @@ Sensorium grants ship by default.
     subscriber invocation
 - [Sensorium Durable Grant Review Design](./2026-05-15_sensorium_durable_grant_review_design.md)
   - review after session-first Sensorium grant review fields and migration triggers were documented
+- [Sensorium Grant Proposal Template Review](./2026-05-15_sensorium_grant_proposal_template_review.md)
+  - review after a non-writing Sensorium proposal template was added
 
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
-- Run a focused review after a non-writing Sensorium grant proposal template is added.
+- Run a focused review after a Sensorium proposal review endpoint or CLI surface is added.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

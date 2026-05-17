@@ -353,6 +353,32 @@ This proposal path is still non-activating:
 - no subscription is activated
 - provenance records review metadata only, not sensor payloads
 
+`src/sensoriumGrantCreateCandidate.js` defines the first approved-proposal
+bridge, still as a pure function. It can build a validated
+`grant_create_input` from an approved Sensorium proposal only when:
+
+- the proposal status and decision are approved
+- the approver is the user
+- approval provenance exists
+- `review_context` and `grant_intent` are present
+- capability, provider, scope, topic, and constraints still agree
+- scope is `session`
+- revocation declares immediate stop behavior
+- the topic and constraints still pass Sensorium subscription request
+  validation
+
+The candidate includes the exact review topic in `constraints.topic` so a
+future grant write path can preserve topic authority. This is intentionally
+stricter than the currently active subscription route, which still only
+checks provider host and bounded request constraints.
+
+The candidate builder remains non-writing:
+
+- it does not mutate `config/grants.json`
+- it does not append to the in-memory grant store
+- it does not activate a subscription
+- it returns `grant_written: false` and `subscription_activated: false`
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

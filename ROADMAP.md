@@ -178,6 +178,8 @@ Implemented:
 - Sensorium proposal review endpoint and CLI command added for non-activating operator inspection
 - Sensorium proposal creation endpoint and CLI command added to store pending proposals with
   review context while preserving no grant write and no subscription activation
+- non-writing Sensorium grant-create candidate builder added for approved proposals, with tests
+  proving approval alone does not create grants or activate subscriptions
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -191,13 +193,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Design explicit Sensorium grant creation prerequisites after proposal approval.
+Add explicit Sensorium session grant creation path after approved proposal.
 
 Target:
 
 ```text
-sensorium grant creation prerequisites
-  -> define how an approved Sensorium proposal can become an active session grant
+sensorium session grant creation
+  -> create an active session grant only from a validated approved-proposal candidate
   -> preserve explicit user decision and review provenance
   -> keep grant creation separate from subscription activation
   -> keep Sensorium grants out of default config
@@ -206,11 +208,11 @@ sensorium grant creation prerequisites
 
 Expected work:
 
-- document or implement the smallest safe bridge from approved proposal to session grant
-- require explicit user actor, approval provenance, exact provider, exact topic, exact constraints,
-  revocation affordance, and fail-closed validation
-- ensure approval alone still does not create a grant
-- add tests that no grant is created from proposal approval alone
+- add a narrow grant creation endpoint or CLI command that consumes the validated candidate
+- require explicit user actor and approved proposal provenance
+- preserve exact provider, topic, and constraints from the approved proposal candidate
+- return `activation_performed: false` and do not start a Sensorium subscription
+- add tests for successful session grant creation and failed candidate validation
 - do not add Sensorium grants to `config/grants.json`
 - do not add CLI activation for Sensorium subscriptions in this slice
 - do not activate subscriptions from grant creation

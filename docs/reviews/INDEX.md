@@ -76,6 +76,8 @@ Sensorium grants ship by default.
   - review after the Sensorium proposal template became inspectable through API and CLI surfaces
 - [Sensorium Proposal Creation Surface](./2026-05-15_sensorium_proposal_creation_surface.md)
   - review after Sensorium template validation began storing pending proposals with review context
+- [Sensorium Grant Candidate Prerequisites](./2026-05-17_sensorium_grant_candidate_prerequisites.md)
+  - review after a non-writing approved-proposal-to-grant candidate builder was added
 
 ## Remote Graphical Session Thread
 
@@ -85,6 +87,6 @@ Sensorium grants ship by default.
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
-- Run a focused review after Sensorium grant creation prerequisites or implementation are added.
+- Run a focused review after Sensorium session grant creation is implemented.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

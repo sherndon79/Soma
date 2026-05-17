@@ -247,6 +247,22 @@ Sensorium grant migration should fail closed when the provider host, topic names
 shape, risk class, or stream schema version changes. A grant with missing or malformed Sensorium
 constraints should not authorize subscription use.
 
+Before any approved Sensorium proposal becomes a session grant, Soma should construct a
+non-writing grant-create candidate and validate the prerequisites:
+
+- proposal status and decision are approved
+- decision was made by the user
+- approval provenance exists
+- `review_context` and `grant_intent` are present
+- capability, provider, scope, topic, and constraints still agree
+- scope is `session`
+- revocation includes immediate stop behavior
+- topic and constraints still pass Sensorium request validation
+
+The current candidate builder returns a grant-create input only. It does not write to the grant
+store, does not mutate `config/grants.json`, and does not activate a subscription. Proposal
+approval alone remains non-authorizing.
+
 ## Provenance Events
 
 Future grant mutation should record:

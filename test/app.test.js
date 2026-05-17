@@ -2512,6 +2512,60 @@ test("POST /sensorium/proposals rejects invalid input before proposal storage", 
   assert.equal(response.body.proposals.length, 0);
 });
 
+test("approving a Sensorium proposal does not create grants or activate subscriptions", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+    sensoriumSubscriber: makeFakeSensoriumSubscriber(),
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "sensor/jetsorano/realsense/color",
+      requested_scope: "session",
+      reason: "Need a bounded color view of the Sensorium scene for this task.",
+      constraints: {
+        max_seconds: 600,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [384, 384],
+      },
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposal.status, "approved");
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+  assert.equal(response.body.summary.total, 0);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.writable, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/sensorium/subscriptions",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.active_count, 0);
+});
+
 test("POST /sensorium/subscriptions returns 403 when no active grant exists", async () => {
   // The default grant store (no Sensorium grants) is what production
   // starts with. This is the load-bearing fail-closed path.

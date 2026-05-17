@@ -185,6 +185,8 @@ Implemented:
   activation and durable config writes
 - explicit Sensorium session grant revocation endpoint and CLI command added, stopping active
   subscriptions tied to the grant and preserving runtime-only metadata provenance
+- ergonomic Sensorium CLI subscription commands added for start, stop, and active disclosure using
+  the existing guarded subscription routes
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -198,27 +200,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add ergonomic Sensorium subscription activation and stop CLI commands.
+Add Sensorium subscription operator validation hardening.
 
 Target:
 
 ```text
-sensorium subscription operator commands
-  -> start a Sensorium subscription from an active session grant
-  -> stop a specific subscription explicitly
-  -> surface active subscription disclosure from CLI
-  -> preserve grant, provider, topic, and constraint checks
-  -> keep sensor payloads out of CLI output and provenance
+sensorium subscription operator hardening
+  -> add end-to-end CLI tests through the running HTTP handler
+  -> improve operator error messages for no-grant and constraint failures
+  -> verify disclosure remains payload-free after start/stop/revoke sequences
+  -> document a complete proposal-to-revoke operator flow
 ```
 
 Expected work:
 
-- add `soma sensorium subscribe-start` for already granted topics
-- add `soma sensorium subscribe-stop` for explicit subscription stop
-- add `soma sensorium subscriptions` for active disclosure
-- require an active grant; do not create grants from subscription commands
-- keep route-time exact-topic and constraint enforcement
-- add tests for successful start, no-grant failure, explicit stop, and disclosure output
+- add integration-style tests that run CLI request shapes against `createRequestHandler`
+- cover no-grant, exact-topic mismatch, constraint exceeded, stop missing id, and disclosure output
+- add docs for the complete operator flow: proposal-template, propose, approve, grant-create,
+  subscribe-start, subscriptions, subscribe-stop, grant-revoke
+- keep subscription CLI commands grant-consuming only; they must not create or revive grants
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

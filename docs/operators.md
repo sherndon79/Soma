@@ -383,6 +383,33 @@ subscriptions are tied to the grant, they are stopped with termination reason `r
 revocation response returns. The response remains metadata-only and returns
 `subscription_activated: false`.
 
+With an active grant, start a bounded subscription explicitly:
+
+```bash
+npm run cli -- sensorium subscribe-start \
+  --capability perception.sensorium.status.subscribe \
+  --topic sensor/jetsorano/status \
+  --max-seconds 30
+```
+
+The underlying endpoint is `POST /sensorium/subscriptions`. The route, not the CLI, enforces active
+grant presence, provider support, exact topic authority when present, and bounded constraints.
+
+Active Sensorium disclosure can be inspected without exposing payloads:
+
+```bash
+npm run cli -- sensorium subscriptions
+```
+
+To stop a specific subscription:
+
+```bash
+npm run cli -- sensorium subscribe-stop subscription-id
+```
+
+This calls `DELETE /sensorium/subscriptions/:id` and records a metadata-only subscription-ended
+summary.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

@@ -412,6 +412,17 @@ revocation path for Sensorium session grants:
 - the response returns `activation_performed: false`,
   `subscription_activated: false`, and `file_written: false`
 
+The CLI exposes the existing subscription routes for operator use:
+
+- `soma sensorium subscribe-start` calls `POST /sensorium/subscriptions`
+- `soma sensorium subscriptions` calls `GET /sensorium/subscriptions`
+- `soma sensorium subscribe-stop` calls `DELETE /sensorium/subscriptions/:id`
+
+These commands do not create grants. Start requests still require an already
+active grant and still pass through route-time provider, topic, exact-topic,
+and bounded-constraint enforcement. Disclosure and stop summaries remain
+metadata-only.
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

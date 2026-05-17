@@ -82,6 +82,8 @@ Sensorium grants ship by default.
   - review after approved Sensorium proposals gained an explicit runtime session grant creation path
 - [Sensorium Session Grant Revocation](./2026-05-17_sensorium_session_grant_revocation.md)
   - review after runtime Sensorium grants gained explicit revocation with subscription stop handling
+- [Sensorium Subscription CLI](./2026-05-17_sensorium_subscription_cli.md)
+  - review after start, stop, and active disclosure CLI wrappers were added for guarded subscription routes
 
 ## Remote Graphical Session Thread
 

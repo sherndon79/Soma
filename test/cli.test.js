@@ -734,6 +734,138 @@ test("runCli sensorium grant-revoke revokes grant and reports stopped subscripti
   assert.match(writes.join(""), /file written: no/);
 });
 
+test("runCli sensorium subscribe-start starts a granted subscription", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "subscribe-start",
+    "--capability",
+    "perception.sensorium.color.subscribe",
+    "--topic",
+    "sensor/jetsorano/realsense/color",
+    "--max-seconds",
+    "30",
+    "--max-fps",
+    "5",
+    "--format",
+    "jpeg",
+    "--downsample",
+    "320x240",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        subscription_id: "sub-color-1",
+        topic: "sensor/jetsorano/realsense/color",
+        started_at: 1_700_000_000,
+        grant_id: "grant-color",
+        activation_performed: true,
+        provenance_id: "prov-start",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/sensorium/subscriptions");
+  assert.deepEqual(captured.body, {
+    capability: "perception.sensorium.color.subscribe",
+    topic: "sensor/jetsorano/realsense/color",
+    scope: "session",
+    constraints: {
+      max_seconds: 30,
+      max_fps: 5,
+      format_required: "jpeg",
+      downsample_to: [320, 240],
+    },
+  });
+  assert.match(writes.join(""), /Sensorium subscription started/);
+  assert.match(writes.join(""), /subscription: sub-color-1/);
+  assert.match(writes.join(""), /grant: grant-color/);
+  assert.match(writes.join(""), /activation performed: yes/);
+});
+
+test("runCli sensorium subscribe-stop stops a subscription", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "subscribe-stop",
+    "sub-color-1",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        subscription_id: "sub-color-1",
+        end_summary: {
+          subscription_id: "sub-color-1",
+          termination_reason: "clean_stop",
+          frames_consumed: 3,
+          duration_seconds: 12,
+          frames_recorded: false,
+        },
+        provenance_id: "prov-stop",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "DELETE");
+  assert.equal(captured.path, "/sensorium/subscriptions/sub-color-1");
+  assert.equal(captured.body, undefined);
+  assert.match(writes.join(""), /Sensorium subscription stopped/);
+  assert.match(writes.join(""), /subscription: sub-color-1/);
+  assert.match(writes.join(""), /termination: clean_stop/);
+  assert.match(writes.join(""), /frames consumed: 3/);
+});
+
+test("runCli sensorium subscriptions lists active disclosure", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "subscriptions",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        family: "perception.sensorium",
+        active_count: 1,
+        summary: "1 Sensorium subscription active",
+        frames_recorded: false,
+        streams: [
+          {
+            subscription_id: "sub-color-1",
+            capability: "perception.sensorium.color.subscribe",
+            topic: "sensor/jetsorano/realsense/color",
+            grant_id: "grant-color",
+            expires_in_seconds: 30,
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "GET");
+  assert.equal(captured.path, "/sensorium/subscriptions");
+  assert.equal(captured.body, undefined);
+  assert.match(writes.join(""), /Sensorium subscriptions/);
+  assert.match(writes.join(""), /active: 1/);
+  assert.match(writes.join(""), /sub-color-1/);
+  assert.match(writes.join(""), /frames recorded: no/);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

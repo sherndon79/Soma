@@ -191,6 +191,28 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "sensorium" && subcommand === "subscribe-start") {
+    const response = await request(baseUrl, "POST", "/sensorium/subscriptions", sensoriumSubscribeStartRequestFromFlags(flags));
+    writeOutput(stdout, response, jsonOutput, sensoriumSubscriptionStartedSummary(response));
+    return 0;
+  }
+
+  if (command === "sensorium" && subcommand === "subscribe-stop") {
+    const subscriptionId = rest[0];
+    if (!subscriptionId) {
+      throw usageError("sensorium subscribe-stop requires a subscription id.");
+    }
+    const response = await request(baseUrl, "DELETE", `/sensorium/subscriptions/${subscriptionId}`);
+    writeOutput(stdout, response, jsonOutput, sensoriumSubscriptionStoppedSummary(response));
+    return 0;
+  }
+
+  if (command === "sensorium" && (subcommand === "subscriptions" || subcommand === "subscriptions-list")) {
+    const response = await request(baseUrl, "GET", "/sensorium/subscriptions");
+    writeOutput(stdout, response, jsonOutput, sensoriumSubscriptionsSummary(response));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -398,6 +420,22 @@ function sensoriumProposalTemplateRequestFromFlags(flags) {
   });
 }
 
+function sensoriumSubscribeStartRequestFromFlags(flags) {
+  const constraints = stripUndefined({
+    max_seconds: integerFlag(flags["max-seconds"], "--max-seconds", 1, 3600, "sensorium subscribe-start"),
+    max_fps: integerFlag(flags["max-fps"], "--max-fps", 1, 30, "sensorium subscribe-start"),
+    format_required: flags.format,
+    downsample_to: dimensionFlag(flags.downsample, "--downsample", "sensorium subscribe-start"),
+  });
+
+  return stripUndefined({
+    capability: requiredFlag(flags.capability, "--capability", "sensorium subscribe-start"),
+    topic: requiredFlag(flags.topic, "--topic", "sensorium subscribe-start"),
+    scope: flags.scope ?? "session",
+    constraints,
+  });
+}
+
 function requiredFlag(value, flagName, commandName) {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -417,7 +455,7 @@ function integerFlag(value, flagName, minimum, maximum, commandName) {
   return number;
 }
 
-function dimensionFlag(value, flagName) {
+function dimensionFlag(value, flagName, commandName = "sensorium proposal-template") {
   if (value === undefined) {
     return undefined;
   }
@@ -428,7 +466,7 @@ function dimensionFlag(value, flagName) {
     dimensions.length !== 2 ||
     dimensions.some((dimension) => !Number.isInteger(dimension) || dimension < 16 || dimension > 1920)
   ) {
-    throw usageError(`sensorium proposal-template ${flagName} must be WIDTHxHEIGHT with each dimension 16..1920.`);
+    throw usageError(`${commandName} ${flagName} must be WIDTHxHEIGHT with each dimension 16..1920.`);
   }
   return dimensions;
 }
@@ -821,6 +859,60 @@ function sensoriumGrantRevokedSummary(response) {
   return lines.join("\n");
 }
 
+function sensoriumSubscriptionStartedSummary(response) {
+  const lines = [
+    "Sensorium subscription started",
+    `  subscription: ${response.subscription_id ?? "unknown"}`,
+    `  grant: ${response.grant_id ?? "unknown"}`,
+    `  topic: ${response.topic ?? "unknown"}`,
+    `  started at: ${response.started_at ?? "unknown"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
+function sensoriumSubscriptionStoppedSummary(response) {
+  const summary = response.end_summary ?? {};
+  const lines = [
+    "Sensorium subscription stopped",
+    `  subscription: ${response.subscription_id ?? summary.subscription_id ?? "unknown"}`,
+    `  termination: ${summary.termination_reason ?? "unknown"}`,
+    `  frames consumed: ${summary.frames_consumed ?? 0}`,
+    `  duration seconds: ${summary.duration_seconds ?? "unknown"}`,
+    `  frames recorded: ${booleanText(summary.frames_recorded)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
+function sensoriumSubscriptionsSummary(response) {
+  const streams = Array.isArray(response.streams) ? response.streams : [];
+  const lines = [
+    "Sensorium subscriptions",
+    `  active: ${response.active_count ?? streams.length}`,
+    `  summary: ${response.summary ?? ""}`,
+    `  frames recorded: ${booleanText(response.frames_recorded)}`,
+  ];
+
+  if (streams.length === 0) {
+    lines.push("  none");
+    return lines.join("\n");
+  }
+
+  for (const stream of streams) {
+    lines.push([
+      `  ${stream.subscription_id ?? "unknown-subscription"}`,
+      `capability=${stream.capability ?? "unknown"}`,
+      `topic=${stream.topic ?? "unknown"}`,
+      `grant=${stream.grant_id ?? "unknown"}`,
+      `expires_in=${stream.expires_in_seconds ?? "unknown"}`,
+    ].join(" "));
+  }
+
+  return lines.join("\n");
+}
+
 function sensoriumConstraintSummary(review) {
   const parts = [];
   if (review.max_seconds !== undefined && review.max_seconds !== null) {
@@ -895,6 +987,9 @@ Usage:
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]
   soma sensorium grant-revoke grant-id --reason text [--by user] [--json]
+  soma sensorium subscribe-start --capability key --topic topic --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--scope session] [--json]
+  soma sensorium subscribe-stop subscription-id [--json]
+  soma sensorium subscriptions [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

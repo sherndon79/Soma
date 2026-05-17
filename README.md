@@ -126,6 +126,17 @@ revocation provenance:
 npm run cli -- sensorium grant-revoke grant-id --by user --reason "No longer needed."
 ```
 
+With an active session grant, an operator can start, inspect, and stop a bounded subscription:
+
+```bash
+npm run cli -- sensorium subscribe-start \
+  --capability perception.sensorium.status.subscribe \
+  --topic sensor/jetsorano/status \
+  --max-seconds 30
+npm run cli -- sensorium subscriptions
+npm run cli -- sensorium subscribe-stop subscription-id
+```
+
 ## CLI
 
 The local CLI talks to the running Soma service:

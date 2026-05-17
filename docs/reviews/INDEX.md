@@ -86,6 +86,8 @@ Sensorium grants ship by default.
   - review after start, stop, and active disclosure CLI wrappers were added for guarded subscription routes
 - [Sensorium Operator Hardening](./2026-05-17_sensorium_operator_hardening.md)
   - review after CLI subscription commands gained handler-backed integration coverage
+- [Sensorium Live Smoke Runbook](./2026-05-17_sensorium_live_smoke_runbook.md)
+  - review after an opt-in helper-backed Sensorium smoke workflow was documented
 
 ## Remote Graphical Session Thread
 

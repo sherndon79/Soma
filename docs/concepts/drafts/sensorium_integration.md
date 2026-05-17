@@ -433,6 +433,12 @@ metadata-only.
 - stop-without-id CLI usage failure before HTTP
 - payload-free disclosure after the subscription flow
 
+`docs/runbooks/sensorium_live_smoke.md` defines the first real-runtime smoke
+workflow. It is manual and opt-in, requires `SOMA_SENSORIUM_ENABLED=1`, starts
+from `perception.sensorium.status.subscribe`, and preserves the same
+metadata-only posture: no default grants, no recording, no decoding, and no
+preprocessing.
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

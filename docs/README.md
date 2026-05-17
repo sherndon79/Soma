@@ -74,6 +74,10 @@ should inform implementation.
 - [Sensorium Integration](./concepts/drafts/sensorium_integration.md)
 - [Traversal Root Authorization](./concepts/drafts/traversal_root_authorization.md)
 
+## Runbooks
+
+- [Sensorium Live Smoke Workflow](./runbooks/sensorium_live_smoke.md)
+
 ## Related Projects
 
 - **TheCommons** — a 3D meeting space and shared world that has already developed strong

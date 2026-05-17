@@ -22,6 +22,11 @@ Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. 
 requested but the helper is missing or not executable, startup fails with a Sensorium runtime error
 instead of silently disabling the subscriber.
 
+For a real helper-backed Sensorium check, use the opt-in
+[Sensorium live smoke workflow](./runbooks/sensorium_live_smoke.md). It starts from the low-risk
+status topic, requires an explicit runtime grant, and does not record, decode, or preprocess sensor
+payloads.
+
 The local model profile expects an OpenAI-compatible runtime at `http://127.0.0.1:8000`. The
 included GPU compose file can start the current Gemma/vLLM test runtime:
 

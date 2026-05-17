@@ -189,6 +189,8 @@ Implemented:
   the existing guarded subscription routes
 - Sensorium CLI/operator hardening tests added against `createRequestHandler`, covering no-grant,
   exact-topic, constraint, stop-id, and payload-free disclosure paths
+- opt-in Sensorium live smoke runbook added for helper-backed status subscriptions without default
+  grants, recording, decoding, or preprocessing
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -202,25 +204,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add optional live Sensorium runtime smoke workflow.
+Add Sensorium live smoke script guardrails.
 
 Target:
 
 ```text
-sensorium live smoke workflow
-  -> provide an opt-in operator checklist or script for a real helper-backed subscription
-  -> require SOMA_SENSORIUM_ENABLED=1 and an explicit active runtime grant
-  -> avoid default subscriptions, recording, decoding, or preprocessing
-  -> verify start, disclosure, stop, and revoke behavior against the real helper surface
+sensorium smoke script guardrails
+  -> optionally automate the manual smoke workflow behind explicit env guards
+  -> refuse to run unless SOMA_SENSORIUM_ENABLED=1 and SOMA_SENSORIUM_LIVE_SMOKE=1
+  -> keep status-topic-first behavior and no durable grant writes
+  -> preserve no recording, decoding, or preprocessing
 ```
 
 Expected work:
 
-- add a documented manual smoke path under `docs/operators.md` or `docs/runbooks`
-- keep it opt-in and environment-gated
-- use status or another low-risk topic first
-- prove CLI start/list/stop/revoke works with a configured `sensoriumSubscriber`
-- keep subscription CLI commands grant-consuming only; they must not create or revive grants
+- decide whether a script is useful after the manual runbook has been exercised
+- if added, make it refuse by default and print the exact commands before running them
+- require explicit topic, provider, capability, and max_seconds values or use status-only defaults
+- keep subscription commands grant-consuming only; they must not create or revive grants outside
+  the explicit grant-create step
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

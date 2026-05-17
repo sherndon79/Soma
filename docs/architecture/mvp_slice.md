@@ -353,6 +353,8 @@ file writes, and other tool capabilities remain disabled.
 ### Perception
 
 - `perception.screen` — inspect screen or application state
+- `perception.remote_desktop.video.subscribe` — receive a bounded graphical stream from a local or
+  remote desktop session
 - `perception.camera` — inspect camera/video input
 - `perception.microphone` — inspect microphone input
 - `perception.filesystem_context` — infer context from files or project structure
@@ -371,6 +373,11 @@ MVP does not enable perception beyond submitted chat text by default. Sensorium 
 capabilities exist in the catalog and provider registry, and the HTTP seam exists for injected test
 or opt-in runtimes, but default server startup does not configure a subscriber and
 `config/grants.json` does not include active Sensorium grants.
+
+Remote graphical sessions, including possible Sunshine/Moonlight support, remain unimplemented and
+disabled. They should be treated as high-risk visual perception and separate input-actuation
+surfaces, not as the default local desktop API. Local semantic inspection remains the preferred
+local host path.
 
 ### Embodiment
 

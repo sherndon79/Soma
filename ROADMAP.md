@@ -255,6 +255,8 @@ These require explicit design review before implementation:
 - filesystem writes
 - shell execution
 - screen/camera/microphone perception
+- remote graphical session provider, possibly Sunshine/Moonlight, as a governed visual session
+  surface rather than the local desktop authority boundary
 - desktop actuation
 - input synthesis through `wtype`, `ydotool`, `uinput`, or `xdotool`
 

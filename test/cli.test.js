@@ -633,6 +633,57 @@ test("runCli sensorium propose creates pending proposal without activation", asy
   assert.match(writes.join(""), /show: soma proposals show proposal-sensorium-status/);
 });
 
+test("runCli sensorium grant-create creates grant without subscription activation", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "grant-create",
+    "proposal-sensorium-status",
+    "--by",
+    "user",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        grant: {
+          id: "grant-sensorium-status",
+          capability: "perception.sensorium.status.subscribe",
+          provider: "soma.provider.sensorium.jetsorano",
+          scope: "session",
+          constraints: {
+            topic: "sensor/jetsorano/status",
+            max_seconds: 30,
+          },
+        },
+        source_proposal_id: "proposal-sensorium-status",
+        activation_performed: false,
+        subscription_activated: false,
+        file_written: false,
+        provenance_id: "prov-grant",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/sensorium/grants");
+  assert.deepEqual(captured.body, {
+    proposal_id: "proposal-sensorium-status",
+    actor: "user",
+  });
+  assert.match(writes.join(""), /Sensorium grant created/);
+  assert.match(writes.join(""), /grant: grant-sensorium-status/);
+  assert.match(writes.join(""), /proposal: proposal-sensorium-status/);
+  assert.match(writes.join(""), /topic: sensor\/jetsorano\/status/);
+  assert.match(writes.join(""), /activation performed: no/);
+  assert.match(writes.join(""), /subscription activated: no/);
+  assert.match(writes.join(""), /file written: no/);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

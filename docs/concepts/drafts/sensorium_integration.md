@@ -367,10 +367,10 @@ bridge, still as a pure function. It can build a validated
 - the topic and constraints still pass Sensorium subscription request
   validation
 
-The candidate includes the exact review topic in `constraints.topic` so a
-future grant write path can preserve topic authority. This is intentionally
-stricter than the currently active subscription route, which still only
-checks provider host and bounded request constraints.
+The candidate includes the exact review topic in `constraints.topic` so grant
+creation preserves topic authority. The active subscription route fails closed
+when a grant carries `constraints.topic` and the requested topic does not
+exactly match it, in addition to provider-host and bounded-constraint checks.
 
 The candidate builder remains non-writing:
 
@@ -378,6 +378,24 @@ The candidate builder remains non-writing:
 - it does not append to the in-memory grant store
 - it does not activate a subscription
 - it returns `grant_written: false` and `subscription_activated: false`
+
+`POST /sensorium/grants` and `soma sensorium grant-create proposal-id`
+now consume this candidate and append an in-memory session grant after the
+proposal has been approved. This is the first Sensorium grant write path, but
+it is still not subscription activation:
+
+- the caller must provide `actor: "user"` or `--by user`
+- the proposal must already be approved by the user
+- approval provenance must exist
+- the grant preserves provider, exact topic, and constraints from the
+  validated candidate
+- `config/grants.json` is not mutated
+- no Sensorium subscription is started
+- the response returns `activation_performed: false`,
+  `subscription_activated: false`, and `file_written: false`
+
+The active subscription route now fails closed when an active grant carries
+`constraints.topic` and the requested topic does not exactly match it.
 
 ## Schema Handshake
 

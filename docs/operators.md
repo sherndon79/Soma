@@ -360,6 +360,17 @@ This records a normal pending proposal and notification with Sensorium `review_c
 `grant_written: false`, and `subscription_activated: false`; approval remains separate from grant
 creation, and grant creation remains separate from subscription activation.
 
+After the proposal is approved, create a session grant explicitly:
+
+```bash
+npm run cli -- sensorium grant-create proposal-id --by user
+```
+
+The underlying endpoint is `POST /sensorium/grants`. It consumes the approved proposal's validated
+grant candidate, appends an in-memory session grant, and returns `activation_performed: false`,
+`subscription_activated: false`, and `file_written: false`. It does not mutate
+`config/grants.json` and does not start a subscription.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

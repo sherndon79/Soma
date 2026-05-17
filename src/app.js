@@ -10,7 +10,7 @@ import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.j
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
-import { listGrants, summarizeGrants } from "./grants.js";
+import { createGrant, listGrants, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
   adoptSelfApplyModule,
@@ -28,6 +28,9 @@ import {
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
+import {
+  buildSensoriumGrantCreateCandidateFromProposal,
+} from "./sensoriumGrantCreateCandidate.js";
 import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import { SessionMemory } from "./sessionMemory.js";
@@ -224,6 +227,56 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/sensorium/grants") {
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "sensorium_grant_create_requires_user_actor",
+            message: "Sensorium grant creation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const proposal = capabilityProposals.find(String(body?.proposal_id ?? ""));
+        const candidate = buildSensoriumGrantCreateCandidateFromProposal(proposal, {
+          catalog: capabilityCatalog,
+          providerRegistry,
+          now: () => new Date().toISOString(),
+          createId: () => `grant-sensorium-${cryptoRandomId()}`,
+        });
+        const nextGrantStore = createGrant(
+          grantStore,
+          candidate.grant_create_input,
+          {
+            catalog: capabilityCatalog,
+            providerRegistry,
+          },
+        );
+        grantStore = nextGrantStore;
+        const grant = nextGrantStore.grants.find(
+          (entry) => entry.id === candidate.grant_create_input.id,
+        );
+        const event = provenanceLog.append(createSensoriumGrantCreatedEvent({
+          grant,
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          grant,
+          source_proposal_id: proposal.id,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          file_written: false,
+          grant_written: true,
+          subscription_activated: false,
+        });
+        return;
+      }
+
       // ── Sensorium subscription routes (step 9e activation) ────────
       //
       // The public seam. POST starts a subscription, DELETE stops one,
@@ -310,6 +363,15 @@ export function createRequestHandler({
           }
 
           if (!providerHostMatchesTopic(provider, validatedRequest.topic)) {
+            writeError(res, {
+              statusCode: 403,
+              code: "sensorium_subscription_topic_not_authorized",
+              message: `Grant ${grant.id} does not authorize ${validatedRequest.topic}.`,
+            });
+            return;
+          }
+
+          if (!grantTopicMatchesTopic(grant, validatedRequest.topic)) {
             writeError(res, {
               statusCode: 403,
               code: "sensorium_subscription_topic_not_authorized",
@@ -1002,6 +1064,33 @@ function createCapabilityProposalDecisionEvent({ proposal, caller }) {
   };
 }
 
+function createSensoriumGrantCreatedEvent({ grant, proposal, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "perception.sensorium.grant.created",
+    capability: "perception.sensorium.grant.create",
+    caller_identity: caller,
+    allowed: true,
+    proposal_id: proposal.id ?? "",
+    grant_id: grant.id,
+    requested_capability: grant.capability,
+    provider: grant.provider,
+    scope: grant.scope,
+    topic: grant.constraints?.topic ?? "",
+    max_seconds: grant.constraints?.max_seconds ?? null,
+    max_fps: grant.constraints?.max_fps ?? null,
+    format_required: grant.constraints?.format_required ?? "",
+    downsample_to: grant.constraints?.downsample_to ?? [],
+    activation_performed: false,
+    grant_written: true,
+    file_written: false,
+    subscription_activated: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
 function createStewardshipAssessmentEvent({ assessment, caller }) {
   return {
     id: cryptoRandomId(),
@@ -1184,6 +1273,11 @@ function providerHostMatchesTopic(provider = {}, topic = "") {
     return true;
   }
   return topic.startsWith(`sensor/${provider.host_segment}/`);
+}
+
+function grantTopicMatchesTopic(grant = {}, topic = "") {
+  const grantTopic = typeof grant.constraints?.topic === "string" ? grant.constraints.topic : "";
+  return !grantTopic || grantTopic === topic;
 }
 
 function prependSessionMemory(messages, memoryContext) {

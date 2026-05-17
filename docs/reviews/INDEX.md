@@ -78,6 +78,8 @@ Sensorium grants ship by default.
   - review after Sensorium template validation began storing pending proposals with review context
 - [Sensorium Grant Candidate Prerequisites](./2026-05-17_sensorium_grant_candidate_prerequisites.md)
   - review after a non-writing approved-proposal-to-grant candidate builder was added
+- [Sensorium Session Grant Creation](./2026-05-17_sensorium_session_grant_creation.md)
+  - review after approved Sensorium proposals gained an explicit runtime session grant creation path
 
 ## Remote Graphical Session Thread
 

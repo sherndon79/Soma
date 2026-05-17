@@ -111,6 +111,13 @@ npm run cli -- sensorium propose \
   --max-seconds 30
 ```
 
+After approving that proposal, a session grant can be created explicitly without starting a
+subscription:
+
+```bash
+npm run cli -- sensorium grant-create proposal-id --by user
+```
+
 ## CLI
 
 The local CLI talks to the running Soma service:

@@ -2566,6 +2566,172 @@ test("approving a Sensorium proposal does not create grants or activate subscrip
   assert.equal(response.body.active_count, 0);
 });
 
+test("POST /sensorium/grants creates session grant from approved proposal without activating subscription", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+    sensoriumSubscriber: makeFakeSensoriumSubscriber(),
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "sensor/jetsorano/realsense/color",
+      requested_scope: "session",
+      reason: "Need a bounded color view of the Sensorium scene for this task.",
+      constraints: {
+        max_seconds: 600,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [384, 384],
+      },
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants",
+    body: { proposal_id: proposalId, actor: "user" },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.source_proposal_id, proposalId);
+  assert.equal(response.body.grant.capability, "perception.sensorium.color.subscribe");
+  assert.equal(response.body.grant.provider, "soma.provider.sensorium.jetsorano");
+  assert.equal(response.body.grant.scope, "session");
+  assert.equal(response.body.grant.constraints.topic, "sensor/jetsorano/realsense/color");
+  assert.equal(response.body.grant.constraints.max_fps, 5);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.file_written, false);
+  assert.equal(response.body.grant_written, true);
+  assert.equal(response.body.subscription_activated, false);
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].constraints.topic, "sensor/jetsorano/realsense/color");
+  assert.equal(response.body.grants[0].activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/sensorium/subscriptions",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.active_count, 0);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=perception.sensorium.grant.created",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_id, proposalId);
+  assert.equal(response.body.entries[0].topic, "sensor/jetsorano/realsense/color");
+  assert.equal(response.body.entries[0].subscription_activated, false);
+});
+
+test("POST /sensorium/grants rejects unapproved proposals and non-user actors", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "sensor/jetsorano/realsense/color",
+      requested_scope: "session",
+      reason: "Need a bounded color view of the Sensorium scene for this task.",
+      constraints: {
+        max_seconds: 600,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [384, 384],
+      },
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants",
+    body: { proposal_id: proposalId, actor: "assistant" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "sensorium_grant_create_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants",
+    body: { proposal_id: proposalId, actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_sensorium_grant_candidate");
+});
+
+test("POST /sensorium/subscriptions enforces exact grant topic when present", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-sensorium-imu-accel",
+          status: "active",
+          capability: "perception.sensorium.imu.subscribe",
+          provider: "soma.provider.sensorium.jetsorano",
+          scope: "session",
+          constraints: {
+            topic: "sensor/jetsorano/realsense/imu/accel",
+            max_seconds: 60,
+          },
+          approved_by: "user",
+          approval_provenance_id: "prov-imu",
+          reason: "test fixture",
+          created_at: "2026-05-17T00:00:00.000Z",
+          activation_performed: false,
+        },
+      ],
+    },
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.imu.subscribe",
+      topic: "sensor/jetsorano/realsense/imu/gyro",
+      constraints: { max_seconds: 30 },
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_topic_not_authorized");
+  assert.equal(subscriber.calls.length, 0);
+});
+
 test("POST /sensorium/subscriptions returns 403 when no active grant exists", async () => {
   // The default grant store (no Sensorium grants) is what production
   // starts with. This is the load-bearing fail-closed path.

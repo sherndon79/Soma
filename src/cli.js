@@ -161,6 +161,19 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "sensorium" && subcommand === "grant-create") {
+    const proposalId = rest[0];
+    if (!proposalId) {
+      throw usageError("sensorium grant-create requires a proposal id.");
+    }
+    const response = await request(baseUrl, "POST", "/sensorium/grants", {
+      proposal_id: proposalId,
+      actor: flags.by ?? "user",
+    });
+    writeOutput(stdout, response, jsonOutput, sensoriumGrantCreatedSummary(response));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -755,6 +768,24 @@ function sensoriumProposalCreatedSummary(response) {
   return lines.join("\n");
 }
 
+function sensoriumGrantCreatedSummary(response) {
+  const grant = response.grant ?? {};
+  const lines = [
+    "Sensorium grant created",
+    `  grant: ${grant.id ?? "unknown"}`,
+    `  proposal: ${response.source_proposal_id ?? "unknown"}`,
+    `  capability: ${grant.capability ?? "unknown"}`,
+    `  provider: ${grant.provider ?? "unknown"}`,
+    `  scope: ${grant.scope ?? "unknown"}`,
+    `  topic: ${grant.constraints?.topic ?? "unknown"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  subscription activated: ${booleanText(response.subscription_activated)}`,
+    `  file written: ${booleanText(response.file_written)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumConstraintSummary(review) {
   const parts = [];
   if (review.max_seconds !== undefined && review.max_seconds !== null) {
@@ -827,6 +858,7 @@ Usage:
   soma grants list [--status active|revoked|expired] [--json]
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
+  soma sensorium grant-create proposal-id [--by user] [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

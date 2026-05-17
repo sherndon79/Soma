@@ -180,6 +180,9 @@ Implemented:
   review context while preserving no grant write and no subscription activation
 - non-writing Sensorium grant-create candidate builder added for approved proposals, with tests
   proving approval alone does not create grants or activate subscriptions
+- explicit Sensorium session grant creation endpoint and CLI command added for approved proposals,
+  preserving exact topic authority while keeping grant creation separate from subscription
+  activation and durable config writes
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -193,29 +196,28 @@ Current authority boundary:
 
 ## Next Slice
 
-Add explicit Sensorium session grant creation path after approved proposal.
+Add Sensorium session grant revocation before making subscription activation ergonomic.
 
 Target:
 
 ```text
-sensorium session grant creation
-  -> create an active session grant only from a validated approved-proposal candidate
-  -> preserve explicit user decision and review provenance
-  -> keep grant creation separate from subscription activation
-  -> keep Sensorium grants out of default config
-  -> keep subscription route bounded by active grant constraints
+sensorium session grant revocation
+  -> revoke active session grants through an explicit user action
+  -> stop matching active subscriptions when revocation requires immediate stop
+  -> preserve metadata-only provenance for revocation
+  -> keep revocation separate from durable config mutation
+  -> keep subscription activation CLI deferred until revocation is available
 ```
 
 Expected work:
 
-- add a narrow grant creation endpoint or CLI command that consumes the validated candidate
-- require explicit user actor and approved proposal provenance
-- preserve exact provider, topic, and constraints from the approved proposal candidate
-- return `activation_performed: false` and do not start a Sensorium subscription
-- add tests for successful session grant creation and failed candidate validation
-- do not add Sensorium grants to `config/grants.json`
+- add a narrow revocation endpoint or CLI command for runtime session grants
+- require explicit user actor and active grant id
+- mark the in-memory grant revoked without mutating `config/grants.json`
+- stop active Sensorium subscriptions tied to the revoked grant when `immediate_stop` is required
+- return clear revocation and stop results without sensor payloads
+- add tests for revocation, non-user rejection, unknown grant rejection, and subscription stop
 - do not add CLI activation for Sensorium subscriptions in this slice
-- do not activate subscriptions from grant creation
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

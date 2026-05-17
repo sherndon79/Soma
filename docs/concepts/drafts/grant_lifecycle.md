@@ -263,6 +263,12 @@ The current candidate builder returns a grant-create input only. It does not wri
 store, does not mutate `config/grants.json`, and does not activate a subscription. Proposal
 approval alone remains non-authorizing.
 
+The first Sensorium session grant creation path is runtime-only. `POST /sensorium/grants` consumes
+the approved proposal candidate, appends an active session grant to the in-memory grant store, and
+records metadata-only provenance. It does not mutate `config/grants.json`, and it does not activate
+a subscription. Live subscription use is still a separate `POST /sensorium/subscriptions` action
+and must pass route-time grant, provider, topic, and constraint checks.
+
 ## Provenance Events
 
 Future grant mutation should record:

@@ -200,6 +200,38 @@ test("subscriber.stop with unknown id throws subscription_not_found", async () =
   });
 });
 
+test("subscriber.stopByGrantId stops every active subscription for a grant", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-a",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-b",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_001.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+
+  await subscriber.start(COMMON_START);
+  await subscriber.start({
+    ...COMMON_START,
+    grantId: "grant-other",
+  });
+
+  const result = await subscriber.stopByGrantId("grant-test-1", {
+    terminationReason: "revoked",
+    errorClass: "grant_revoked",
+  });
+
+  assert.equal(result.stopped_count, 1);
+  assert.equal(result.stopped[0].subscription_id, "sub-a");
+  assert.equal(result.stopped[0].endSummary.termination_reason, "revoked");
+  assert.equal(result.stopped[0].endSummary.error_class, "grant_revoked");
+  assert.equal(subscriber.activeCount, 1);
+});
+
 test("subscriber.stop honors a custom termination reason and error class", async () => {
   const manager = new FakeManager();
   manager.enqueueStartSuccess({

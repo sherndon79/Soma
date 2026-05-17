@@ -80,6 +80,8 @@ Sensorium grants ship by default.
   - review after a non-writing approved-proposal-to-grant candidate builder was added
 - [Sensorium Session Grant Creation](./2026-05-17_sensorium_session_grant_creation.md)
   - review after approved Sensorium proposals gained an explicit runtime session grant creation path
+- [Sensorium Session Grant Revocation](./2026-05-17_sensorium_session_grant_revocation.md)
+  - review after runtime Sensorium grants gained explicit revocation with subscription stop handling
 
 ## Remote Graphical Session Thread
 

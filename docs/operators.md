@@ -371,6 +371,18 @@ grant candidate, appends an in-memory session grant, and returns `activation_per
 `subscription_activated: false`, and `file_written: false`. It does not mutate
 `config/grants.json` and does not start a subscription.
 
+To revoke a runtime Sensorium session grant:
+
+```bash
+npm run cli -- sensorium grant-revoke grant-id --by user --reason "No longer needed."
+```
+
+The underlying endpoint is `POST /sensorium/grants/:id/revoke`. It requires an explicit user actor
+and reason, marks the in-memory grant revoked, and leaves `config/grants.json` unchanged. If active
+subscriptions are tied to the grant, they are stopped with termination reason `revoked` before the
+revocation response returns. The response remains metadata-only and returns
+`subscription_activated: false`.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

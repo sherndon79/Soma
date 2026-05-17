@@ -156,6 +156,29 @@ export class SensoriumSubscriber {
     return { endSummary };
   }
 
+  async stopByGrantId(grantId, { terminationReason = "revoked", errorClass = "" } = {}) {
+    const ids = Array.from(this.#active.values())
+      .filter((record) => record.grant_id === grantId)
+      .map((record) => record.subscription_id);
+    const stopped = [];
+
+    for (const subscriptionId of ids) {
+      const result = await this.stop(subscriptionId, {
+        terminationReason,
+        errorClass,
+      });
+      stopped.push({
+        subscription_id: subscriptionId,
+        endSummary: result.endSummary,
+      });
+    }
+
+    return {
+      stopped,
+      stopped_count: stopped.length,
+    };
+  }
+
   /**
    * Render the disclosure shape for active subscriptions, suitable
    * for the operator/participant-facing surface.

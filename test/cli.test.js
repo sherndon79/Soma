@@ -684,6 +684,56 @@ test("runCli sensorium grant-create creates grant without subscription activatio
   assert.match(writes.join(""), /file written: no/);
 });
 
+test("runCli sensorium grant-revoke revokes grant and reports stopped subscriptions", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "grant-revoke",
+    "grant-sensorium-status",
+    "--by",
+    "user",
+    "--reason",
+    "No longer need status updates.",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        grant: {
+          id: "grant-sensorium-status",
+          status: "revoked",
+          revoked_by: "user",
+          revocation_reason: "No longer need status updates.",
+        },
+        changed: true,
+        stopped_subscription_count: 1,
+        activation_performed: false,
+        subscription_activated: false,
+        file_written: false,
+        provenance_id: "prov-revoke",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/sensorium/grants/grant-sensorium-status/revoke");
+  assert.deepEqual(captured.body, {
+    actor: "user",
+    reason: "No longer need status updates.",
+  });
+  assert.match(writes.join(""), /Sensorium grant revoked/);
+  assert.match(writes.join(""), /grant: grant-sensorium-status/);
+  assert.match(writes.join(""), /changed: yes/);
+  assert.match(writes.join(""), /status: revoked/);
+  assert.match(writes.join(""), /stopped subscriptions: 1/);
+  assert.match(writes.join(""), /subscription activated: no/);
+  assert.match(writes.join(""), /file written: no/);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

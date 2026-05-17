@@ -118,6 +118,14 @@ subscription:
 npm run cli -- sensorium grant-create proposal-id --by user
 ```
 
+Runtime session grants can be revoked explicitly. Revocation does not write to
+`config/grants.json`; if active subscriptions are tied to the grant, they are stopped with
+revocation provenance:
+
+```bash
+npm run cli -- sensorium grant-revoke grant-id --by user --reason "No longer needed."
+```
+
 ## CLI
 
 The local CLI talks to the running Soma service:

@@ -10,7 +10,7 @@ import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.j
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
-import { createGrant, listGrants, summarizeGrants } from "./grants.js";
+import { createGrant, listGrants, revokeGrant, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
   adoptSelfApplyModule,
@@ -268,6 +268,115 @@ export function createRequestHandler({
           grant,
           source_proposal_id: proposal.id,
           provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          file_written: false,
+          grant_written: true,
+          subscription_activated: false,
+        });
+        return;
+      }
+
+      const sensoriumGrantRevokeMatch = url.pathname.match(/^\/sensorium\/grants\/([^/]+)\/revoke$/);
+      if (req.method === "POST" && sensoriumGrantRevokeMatch) {
+        const body = await readJson(req);
+        const grantId = sensoriumGrantRevokeMatch[1];
+        const actor = String(body?.actor ?? body?.revoked_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "sensorium_grant_revoke_requires_user_actor",
+            message: "Sensorium grant revocation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const grantBeforeRevocation = (grantStore.grants ?? []).find(
+          (entry) => entry.id === grantId,
+        );
+        if (!grantBeforeRevocation) {
+          writeError(res, {
+            statusCode: 400,
+            code: "unknown_grant",
+            message: "Grant mutation requires an existing grant.",
+          });
+          return;
+        }
+
+        if (!isSensoriumSubscribeCapability(grantBeforeRevocation.capability)) {
+          writeError(res, {
+            statusCode: 400,
+            code: "sensorium_grant_revoke_requires_sensorium_grant",
+            message: "Sensorium grant revocation requires a Sensorium subscription grant.",
+          });
+          return;
+        }
+
+        const reason = String(body?.reason ?? body?.revocation_reason ?? "").trim();
+        if (!reason) {
+          writeError(res, {
+            statusCode: 400,
+            code: "missing_revocation_reason",
+            message: "Sensorium grant revocation requires a reason.",
+          });
+          return;
+        }
+
+        let stopResult = { stopped: [], stopped_count: 0 };
+        if (
+          grantBeforeRevocation?.status === "active" &&
+          typeof sensoriumSubscriber?.stopByGrantId === "function"
+        ) {
+          try {
+            stopResult = await sensoriumSubscriber.stopByGrantId(grantId, {
+              terminationReason: "revoked",
+              errorClass: "grant_revoked",
+            });
+          } catch (err) {
+            writeError(res, {
+              statusCode: err.statusCode ?? 400,
+              code: err.code ?? "sensorium_subscription_stop_failed",
+              message: err.message ?? "subscription stop failed during grant revocation",
+            });
+            return;
+          }
+        }
+
+        const nextGrantStore = revokeGrant(grantStore, {
+          id: grantId,
+          actor,
+          reason,
+        });
+        grantStore = nextGrantStore;
+        const grant = nextGrantStore.mutation.grant;
+        const event = provenanceLog.append(createSensoriumGrantRevokedEvent({
+          grant,
+          previousGrant: grantBeforeRevocation,
+          caller: req.headers["x-soma-caller"] ?? "",
+          stoppedSubscriptions: stopResult.stopped,
+          changed: nextGrantStore.mutation.changed,
+        }));
+        logger.info?.("soma.provenance", event);
+
+        const subscriptionEvents = [];
+        for (const stopped of stopResult.stopped) {
+          const subscriptionEvent = provenanceLog.append(createSensoriumProvenanceEvent({
+            summary: stopped.endSummary,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          subscriptionEvents.push(subscriptionEvent);
+        }
+
+        writeJson(res, 200, {
+          grant,
+          changed: nextGrantStore.mutation.changed,
+          provenance_id: event.id,
+          stopped_subscriptions: stopResult.stopped.map((stopped, index) => ({
+            subscription_id: stopped.subscription_id,
+            end_summary: stopped.endSummary,
+            provenance_id: subscriptionEvents[index]?.id ?? "",
+          })),
+          stopped_subscription_count: stopResult.stopped_count,
           activation_performed: false,
           durable: false,
           file_written: false,
@@ -1091,6 +1200,41 @@ function createSensoriumGrantCreatedEvent({ grant, proposal, caller }) {
   };
 }
 
+function createSensoriumGrantRevokedEvent({
+  grant,
+  previousGrant,
+  caller,
+  stoppedSubscriptions = [],
+  changed,
+}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "perception.sensorium.grant.revoked",
+    capability: "perception.sensorium.grant.revoke",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id,
+    previous_status: previousGrant?.status ?? "",
+    status: grant.status,
+    requested_capability: grant.capability,
+    provider: grant.provider,
+    scope: grant.scope,
+    topic: grant.constraints?.topic ?? "",
+    revoked_by: grant.revoked_by,
+    revocation_reason: grant.revocation_reason,
+    changed: Boolean(changed),
+    stopped_subscription_count: stoppedSubscriptions.length,
+    stopped_subscription_ids: stoppedSubscriptions.map((entry) => entry.subscription_id),
+    activation_performed: false,
+    grant_written: true,
+    file_written: false,
+    subscription_activated: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
 function createStewardshipAssessmentEvent({ assessment, caller }) {
   return {
     id: cryptoRandomId(),
@@ -1278,6 +1422,10 @@ function providerHostMatchesTopic(provider = {}, topic = "") {
 function grantTopicMatchesTopic(grant = {}, topic = "") {
   const grantTopic = typeof grant.constraints?.topic === "string" ? grant.constraints.topic : "";
   return !grantTopic || grantTopic === topic;
+}
+
+function isSensoriumSubscribeCapability(capability = "") {
+  return capability.startsWith("perception.sensorium.") && capability.endsWith(".subscribe");
 }
 
 function prependSessionMemory(messages, memoryContext) {

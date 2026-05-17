@@ -397,6 +397,21 @@ it is still not subscription activation:
 The active subscription route now fails closed when an active grant carries
 `constraints.topic` and the requested topic does not exactly match it.
 
+`POST /sensorium/grants/:id/revoke` and
+`soma sensorium grant-revoke grant-id --reason text` provide the runtime
+revocation path for Sensorium session grants:
+
+- the caller must provide `actor: "user"` or `--by user`
+- a participant-facing reason is required
+- unknown grants fail closed before any subscription stop attempt
+- the in-memory grant is marked `revoked`
+- `config/grants.json` is not mutated
+- active subscriptions tied to the grant are stopped with termination reason
+  `revoked`
+- revocation and subscription-ended provenance remain metadata-only
+- the response returns `activation_performed: false`,
+  `subscription_activated: false`, and `file_written: false`
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

@@ -183,6 +183,8 @@ Implemented:
 - explicit Sensorium session grant creation endpoint and CLI command added for approved proposals,
   preserving exact topic authority while keeping grant creation separate from subscription
   activation and durable config writes
+- explicit Sensorium session grant revocation endpoint and CLI command added, stopping active
+  subscriptions tied to the grant and preserving runtime-only metadata provenance
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -196,28 +198,27 @@ Current authority boundary:
 
 ## Next Slice
 
-Add Sensorium session grant revocation before making subscription activation ergonomic.
+Add ergonomic Sensorium subscription activation and stop CLI commands.
 
 Target:
 
 ```text
-sensorium session grant revocation
-  -> revoke active session grants through an explicit user action
-  -> stop matching active subscriptions when revocation requires immediate stop
-  -> preserve metadata-only provenance for revocation
-  -> keep revocation separate from durable config mutation
-  -> keep subscription activation CLI deferred until revocation is available
+sensorium subscription operator commands
+  -> start a Sensorium subscription from an active session grant
+  -> stop a specific subscription explicitly
+  -> surface active subscription disclosure from CLI
+  -> preserve grant, provider, topic, and constraint checks
+  -> keep sensor payloads out of CLI output and provenance
 ```
 
 Expected work:
 
-- add a narrow revocation endpoint or CLI command for runtime session grants
-- require explicit user actor and active grant id
-- mark the in-memory grant revoked without mutating `config/grants.json`
-- stop active Sensorium subscriptions tied to the revoked grant when `immediate_stop` is required
-- return clear revocation and stop results without sensor payloads
-- add tests for revocation, non-user rejection, unknown grant rejection, and subscription stop
-- do not add CLI activation for Sensorium subscriptions in this slice
+- add `soma sensorium subscribe-start` for already granted topics
+- add `soma sensorium subscribe-stop` for explicit subscription stop
+- add `soma sensorium subscriptions` for active disclosure
+- require an active grant; do not create grants from subscription commands
+- keep route-time exact-topic and constraint enforcement
+- add tests for successful start, no-grant failure, explicit stop, and disclosure output
 - keep provenance metadata-only; do not record frames or payloads
 
 Constraints:

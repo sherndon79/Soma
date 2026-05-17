@@ -269,6 +269,12 @@ records metadata-only provenance. It does not mutate `config/grants.json`, and i
 a subscription. Live subscription use is still a separate `POST /sensorium/subscriptions` action
 and must pass route-time grant, provider, topic, and constraint checks.
 
+Sensorium session grant revocation is also runtime-only. `POST /sensorium/grants/:id/revoke`
+requires an explicit user actor and reason, marks the grant revoked in the in-memory grant store,
+and records metadata-only provenance. If active Sensorium subscriptions are tied to the grant, Soma
+stops them with termination reason `revoked` and records the corresponding subscription-ended
+summaries. The durable grant file is not mutated.
+
 ## Provenance Events
 
 Future grant mutation should record:

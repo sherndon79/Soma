@@ -2266,12 +2266,14 @@ async function invoke({
 
 function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 1_700_000_000 } = {}) {
   const calls = [];
+  const active = new Map();
   return {
     calls,
     activeCount: 0,
     async start({ capability, provider, grantId, scope, body }) {
       calls.push({ method: "start", args: { capability, provider, grantId, scope, body } });
       this.activeCount++;
+      active.set(subscriptionId, { grantId });
       return {
         subscription_id: subscriptionId,
         topic: body?.topic ?? "",
@@ -2292,6 +2294,7 @@ function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 
     },
     async stop(id, { terminationReason = "clean_stop" } = {}) {
       calls.push({ method: "stop", args: { id, terminationReason } });
+      active.delete(id);
       this.activeCount = Math.max(0, this.activeCount - 1);
       return {
         endSummary: {
@@ -2304,6 +2307,23 @@ function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 
           text_content_included: false,
           frames_recorded: false,
         },
+      };
+    },
+    async stopByGrantId(grantId, { terminationReason = "revoked" } = {}) {
+      const ids = Array.from(active.entries())
+        .filter(([, record]) => record.grantId === grantId)
+        .map(([id]) => id);
+      const stopped = [];
+      for (const id of ids) {
+        const result = await this.stop(id, { terminationReason });
+        stopped.push({
+          subscription_id: id,
+          endSummary: result.endSummary,
+        });
+      }
+      return {
+        stopped,
+        stopped_count: stopped.length,
       };
     },
     describeActive() {
@@ -2687,6 +2707,140 @@ test("POST /sensorium/grants rejects unapproved proposals and non-user actors", 
   });
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "invalid_sensorium_grant_candidate");
+});
+
+test("POST /sensorium/grants/:id/revoke revokes runtime grant and stops active subscriptions", async () => {
+  const subscriber = makeFakeSensoriumSubscriber({ subscriptionId: "sub-revoked" });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: {
+        max_seconds: 30,
+        max_fps: 5,
+        format_required: "jpeg",
+        downsample_to: [320, 240],
+      },
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.subscription_id, "sub-revoked");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants/grant-sensorium-color-test/revoke",
+    body: {
+      actor: "user",
+      reason: "No longer need a color stream for this task.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.changed, true);
+  assert.equal(response.body.grant.status, "revoked");
+  assert.equal(response.body.grant.revoked_by, "user");
+  assert.equal(response.body.grant.revocation_reason, "No longer need a color stream for this task.");
+  assert.equal(response.body.file_written, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.stopped_subscription_count, 1);
+  assert.equal(response.body.stopped_subscriptions[0].subscription_id, "sub-revoked");
+  assert.equal(response.body.stopped_subscriptions[0].end_summary.termination_reason, "revoked");
+  assert.equal(subscriber.activeCount, 0);
+  assert.deepEqual(
+    subscriber.calls.map((call) => [call.method, call.args.terminationReason ?? ""]),
+    [["start", ""], ["stop", "revoked"]],
+  );
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=revoked",
+  });
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].id, "grant-sensorium-color-test");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=perception.sensorium.grant.revoked",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].grant_id, "grant-sensorium-color-test");
+  assert.equal(response.body.entries[0].stopped_subscription_count, 1);
+});
+
+test("POST /sensorium/grants/:id/revoke rejects non-user actors and unknown grants", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: makeFakeSensoriumSubscriber(),
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants/grant-sensorium-color-test/revoke",
+    body: {
+      actor: "assistant",
+      reason: "No longer needed.",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "sensorium_grant_revoke_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants/no-such-grant/revoke",
+    body: {
+      actor: "user",
+      reason: "No longer needed.",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "unknown_grant");
+});
+
+test("POST /sensorium/grants/:id/revoke rejects non-Sensorium grants", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-desktop",
+          status: "active",
+          capability: "desktop.inspect.accessibility_tree",
+          provider: "soma.provider.desktop.local",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "test fixture",
+          created_at: "2026-05-17T00:00:00.000Z",
+          activation_performed: false,
+        },
+      ],
+    },
+    sensoriumSubscriber: makeFakeSensoriumSubscriber(),
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants/grant-desktop/revoke",
+    body: {
+      actor: "user",
+      reason: "No longer needed.",
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "sensorium_grant_revoke_requires_sensorium_grant");
 });
 
 test("POST /sensorium/subscriptions enforces exact grant topic when present", async () => {

@@ -174,6 +174,23 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "sensorium" && subcommand === "grant-revoke") {
+    const grantId = rest[0];
+    if (!grantId) {
+      throw usageError("sensorium grant-revoke requires a grant id.");
+    }
+    const reason = String(flags.reason ?? "").trim();
+    if (!reason) {
+      throw usageError("sensorium grant-revoke requires --reason text.");
+    }
+    const response = await request(baseUrl, "POST", `/sensorium/grants/${grantId}/revoke`, {
+      actor: flags.by ?? "user",
+      reason,
+    });
+    writeOutput(stdout, response, jsonOutput, sensoriumGrantRevokedSummary(response));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -786,6 +803,24 @@ function sensoriumGrantCreatedSummary(response) {
   return lines.join("\n");
 }
 
+function sensoriumGrantRevokedSummary(response) {
+  const grant = response.grant ?? {};
+  const lines = [
+    "Sensorium grant revoked",
+    `  grant: ${grant.id ?? "unknown"}`,
+    `  changed: ${booleanText(response.changed)}`,
+    `  status: ${grant.status ?? "unknown"}`,
+    `  revoked by: ${grant.revoked_by ?? "unknown"}`,
+    `  reason: ${grant.revocation_reason ?? "unknown"}`,
+    `  stopped subscriptions: ${response.stopped_subscription_count ?? 0}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  subscription activated: ${booleanText(response.subscription_activated)}`,
+    `  file written: ${booleanText(response.file_written)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumConstraintSummary(review) {
   const parts = [];
   if (review.max_seconds !== undefined && review.max_seconds !== null) {
@@ -859,6 +894,7 @@ Usage:
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]
+  soma sensorium grant-revoke grant-id --reason text [--by user] [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

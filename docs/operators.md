@@ -410,6 +410,35 @@ npm run cli -- sensorium subscribe-stop subscription-id
 This calls `DELETE /sensorium/subscriptions/:id` and records a metadata-only subscription-ended
 summary.
 
+Complete bounded session flow:
+
+```bash
+npm run cli -- sensorium proposal-template \
+  --capability perception.sensorium.status.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/status \
+  --reason "Need node liveness for this task." \
+  --max-seconds 30
+npm run cli -- sensorium propose \
+  --capability perception.sensorium.status.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/status \
+  --reason "Need node liveness for this task." \
+  --max-seconds 30
+npm run cli -- proposals approve proposal-id --scope session --by user
+npm run cli -- sensorium grant-create proposal-id --by user
+npm run cli -- sensorium subscribe-start \
+  --capability perception.sensorium.status.subscribe \
+  --topic sensor/jetsorano/status \
+  --max-seconds 30
+npm run cli -- sensorium subscriptions
+npm run cli -- sensorium subscribe-stop subscription-id
+npm run cli -- sensorium grant-revoke grant-id --by user --reason "Task complete."
+```
+
+The subscription commands consume existing authority only. They do not create proposals, approve
+proposals, create grants, revive revoked grants, or write durable grant config.
+
 ## Read Files In Scope
 
 The base harness allows read-only text file access under the configured read roots:

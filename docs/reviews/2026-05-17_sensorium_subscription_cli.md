@@ -41,9 +41,11 @@ payloads, decoded samples, coordinates, screenshots, or raw sensor values.
 
 ## Actionable Follow-Up
 
-Add integration-style tests that run the new CLI command shapes against the HTTP request handler,
-especially no-grant failure, exact-topic mismatch, constraint-denied requests, and payload-free
-disclosure after start/stop/revoke sequences.
+The handler-backed integration coverage for no-grant failure, exact-topic mismatch,
+constraint-denied requests, and payload-free disclosure now lives in
+`test/sensoriumCliIntegration.test.js`.
+
+The next follow-up is an opt-in live smoke workflow against a configured Sensorium runtime.
 
 ## Residual Risk
 

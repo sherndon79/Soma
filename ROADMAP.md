@@ -187,6 +187,8 @@ Implemented:
   subscriptions tied to the grant and preserving runtime-only metadata provenance
 - ergonomic Sensorium CLI subscription commands added for start, stop, and active disclosure using
   the existing guarded subscription routes
+- Sensorium CLI/operator hardening tests added against `createRequestHandler`, covering no-grant,
+  exact-topic, constraint, stop-id, and payload-free disclosure paths
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -200,24 +202,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add Sensorium subscription operator validation hardening.
+Add optional live Sensorium runtime smoke workflow.
 
 Target:
 
 ```text
-sensorium subscription operator hardening
-  -> add end-to-end CLI tests through the running HTTP handler
-  -> improve operator error messages for no-grant and constraint failures
-  -> verify disclosure remains payload-free after start/stop/revoke sequences
-  -> document a complete proposal-to-revoke operator flow
+sensorium live smoke workflow
+  -> provide an opt-in operator checklist or script for a real helper-backed subscription
+  -> require SOMA_SENSORIUM_ENABLED=1 and an explicit active runtime grant
+  -> avoid default subscriptions, recording, decoding, or preprocessing
+  -> verify start, disclosure, stop, and revoke behavior against the real helper surface
 ```
 
 Expected work:
 
-- add integration-style tests that run CLI request shapes against `createRequestHandler`
-- cover no-grant, exact-topic mismatch, constraint exceeded, stop missing id, and disclosure output
-- add docs for the complete operator flow: proposal-template, propose, approve, grant-create,
-  subscribe-start, subscriptions, subscribe-stop, grant-revoke
+- add a documented manual smoke path under `docs/operators.md` or `docs/runbooks`
+- keep it opt-in and environment-gated
+- use status or another low-risk topic first
+- prove CLI start/list/stop/revoke works with a configured `sensoriumSubscriber`
 - keep subscription CLI commands grant-consuming only; they must not create or revive grants
 - keep provenance metadata-only; do not record frames or payloads
 

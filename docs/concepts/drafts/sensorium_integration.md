@@ -423,6 +423,16 @@ active grant and still pass through route-time provider, topic, exact-topic,
 and bounded-constraint enforcement. Disclosure and stop summaries remain
 metadata-only.
 
+`test/sensoriumCliIntegration.test.js` exercises the CLI command shapes against
+`createRequestHandler` instead of a mocked request function. It covers:
+
+- successful start, disclosure, and stop through the handler
+- no-active-grant failure
+- exact-topic mismatch failure
+- grant-constraint failure
+- stop-without-id CLI usage failure before HTTP
+- payload-free disclosure after the subscription flow
+
 ## Schema Handshake
 
 Every Sensorium payload carries `schema_version: u32` as its first field.

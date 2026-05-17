@@ -84,6 +84,8 @@ Sensorium grants ship by default.
   - review after runtime Sensorium grants gained explicit revocation with subscription stop handling
 - [Sensorium Subscription CLI](./2026-05-17_sensorium_subscription_cli.md)
   - review after start, stop, and active disclosure CLI wrappers were added for guarded subscription routes
+- [Sensorium Operator Hardening](./2026-05-17_sensorium_operator_hardening.md)
+  - review after CLI subscription commands gained handler-backed integration coverage
 
 ## Remote Graphical Session Thread
 

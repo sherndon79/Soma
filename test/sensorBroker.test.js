@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,31 @@ const HELPER_BINARY = path.join(REPO_ROOT, "target", "debug", "soma-sensor-broke
 const HELPER_SKIP_REASON = existsSync(HELPER_BINARY)
   ? false
   : "binary not built; run 'cargo build -p soma-sensor-broker' from repo root";
+
+const ZENOH_TEST_CONFIG = path.join(
+  mkdtempSync(path.join(os.tmpdir(), "soma-sensor-broker-test-")),
+  "zenoh-sandbox.json5",
+);
+
+writeFileSync(
+  ZENOH_TEST_CONFIG,
+  `{
+  mode: "peer",
+  listen: { endpoints: [] },
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+}
+`,
+);
+
+function subscribeParams(topic) {
+  return {
+    topic,
+    zenoh_config_path: ZENOH_TEST_CONFIG,
+  };
+}
 
 // The manager spawns the real helper for these tests. Each test owns
 // its own manager instance so failures don't leak between tests.
@@ -36,9 +62,10 @@ test(
     const mgr = new SensorBrokerManager();
     await mgr.start();
     try {
-      const result = await mgr.send("sensorium.subscribe.start", {
-        topic: "sensor/manager-test/status",
-      });
+      const result = await mgr.send(
+        "sensorium.subscribe.start",
+        subscribeParams("sensor/manager-test/status"),
+      );
       assert.equal(result.topic, "sensor/manager-test/status");
       assert.ok(
         typeof result.subscription_id === "string" &&
@@ -103,7 +130,7 @@ test(
     await mgr.start();
     try {
       const startResult = await mgr.send("sensorium.subscribe.start", {
-        topic: "sensor/lifecycle-test/status",
+        ...subscribeParams("sensor/lifecycle-test/status"),
       });
       const subscriptionId = startResult.subscription_id;
 
@@ -144,9 +171,10 @@ test(
     // the helper side) and then stop the manager. We expect the
     // start to resolve normally first; pending-request rejection
     // is the rare case where the helper crashes mid-call.
-    const startResult = await mgr.send("sensorium.subscribe.start", {
-      topic: "sensor/premature-exit-test/status",
-    });
+    const startResult = await mgr.send(
+      "sensorium.subscribe.start",
+      subscribeParams("sensor/premature-exit-test/status"),
+    );
     assert.ok(startResult.subscription_id);
 
     // Now force the helper to exit by ending stdin and watching the

@@ -428,6 +428,8 @@ fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
 
     fn make_state() -> Arc<Mutex<State>> {
         Arc::new(Mutex::new(State::default()))
@@ -435,6 +437,27 @@ mod tests {
 
     fn make_output() -> (Output, mpsc::UnboundedReceiver<String>) {
         mpsc::unbounded_channel::<String>()
+    }
+
+    fn sandbox_zenoh_config_path() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "soma-sensor-broker-test-{}.json5",
+            Uuid::new_v4()
+        ));
+        fs::write(
+            &path,
+            r#"{
+  mode: "peer",
+  listen: { endpoints: [] },
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+}
+"#,
+        )
+        .expect("write sandbox zenoh config");
+        path
     }
 
     #[tokio::test]
@@ -511,10 +534,14 @@ mod tests {
     async fn full_lifecycle_start_status_stop_status() {
         let state = make_state();
         let (tx, _rx) = make_output();
+        let zenoh_config_path = sandbox_zenoh_config_path();
 
         // start
         let start_resp = handle_line(
-            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{"topic":"sensor/test/status"},"id":"s"}"#,
+            &format!(
+                r#"{{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{{"topic":"sensor/test/status","zenoh_config_path":"{}"}},"id":"s"}}"#,
+                zenoh_config_path.display()
+            ),
             Arc::clone(&state),
             tx.clone(),
         )
@@ -602,12 +629,17 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn start_with_topic_succeeds_and_returns_subscription_id() {
         // This actually opens a Zenoh session — which the default
-        // config allows (peer-mode loopback). Without any publisher
-        // reachable, no samples will arrive, but the session and
-        // subscriber should both come up successfully.
+        // sandbox config allows without binding network listeners or
+        // joining multicast discovery. Without any publisher reachable,
+        // no samples will arrive, but the session and subscriber should
+        // both come up successfully.
         let (tx, _rx) = make_output();
+        let zenoh_config_path = sandbox_zenoh_config_path();
         let resp = handle_line(
-            r#"{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{"topic":"sensor/test/status"},"id":"start-1"}"#,
+            &format!(
+                r#"{{"jsonrpc":"2.0","method":"sensorium.subscribe.start","params":{{"topic":"sensor/test/status","zenoh_config_path":"{}"}},"id":"start-1"}}"#,
+                zenoh_config_path.display()
+            ),
             make_state(),
             tx,
         )

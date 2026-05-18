@@ -33,7 +33,8 @@ npm start
 
 The example at `config/sensorium-zenoh-client.example.json5` shows the unauthenticated peer-mode
 shape for connecting to a specific Sensorium endpoint. For durable use, pin the Sensorium listener
-port on the publisher side rather than relying on the dynamic port shown in startup logs.
+port on the publisher side rather than relying on the dynamic port shown in startup logs. The
+current example points at the pinned `jetsorano` listener `tcp/192.168.20.179:7447`.
 
 For a real helper-backed Sensorium check, use the opt-in
 [Sensorium live smoke workflow](./runbooks/sensorium_live_smoke.md). It starts from the low-risk

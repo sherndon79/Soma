@@ -1,19 +1,18 @@
 // Example Zenoh client config for Soma consuming a Sensorium publisher
 // across a routed subnet where multicast discovery does not cross.
 //
-// Replace the endpoint with the Sensorium node's advertised Zenoh
-// endpoint from its startup logs. Example:
-//   Zenoh can be reached at: tcp/192.168.20.179:37183
+// This example points at the current jetsorano fixed listener used for
+// repeatable live smoke tests:
+//   Zenoh can be reached at: tcp/192.168.20.179:7447
 //
-// If Sensorium restarts without a fixed listen endpoint, this dynamic
-// port can change. A durable deployment should pin the Sensorium
-// listener in its Zenoh config, then point this client config at that
-// stable endpoint.
+// If your Sensorium deployment still uses a dynamic Zenoh listen port,
+// replace this endpoint with the advertised value from its startup logs
+// or pin the publisher listener before relying on this config.
 
 {
   mode: "peer",
 
   connect: {
-    endpoints: ["tcp/192.168.20.179:37183"],
+    endpoints: ["tcp/192.168.20.179:7447"],
   },
 }

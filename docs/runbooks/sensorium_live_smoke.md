@@ -54,13 +54,13 @@ Example for the current routed-subnet topology:
 
 ```bash
 SOMA_SENSORIUM_ENABLED=1 \
-SOMA_SENSORIUM_ZENOH_CONFIG=/tmp/soma-sensorium-zenoh-current.json5 \
+SOMA_SENSORIUM_ZENOH_CONFIG=config/sensorium-zenoh-client.example.json5 \
 npm start
 ```
 
 The referenced config should contain a Zenoh `connect.endpoints` value such as
-`tcp/192.168.20.179:<publisher-port>`. Treat the port as temporary unless the publisher has been
-configured to listen on a fixed endpoint.
+`tcp/192.168.20.179:7447`. Treat dynamically advertised ports as temporary unless the publisher
+has been configured to listen on a fixed endpoint.
 
 Startup should log that the Sensorium runtime is enabled. If helper startup fails, Soma should exit
 with `sensorium_runtime_start_failed` rather than silently disabling Sensorium.

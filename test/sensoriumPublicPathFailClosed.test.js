@@ -23,11 +23,12 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SensorBrokerManager } from "../src/sensorBroker.js";
 import {
   buildCapabilityView,
   loadCapabilityCatalog,
@@ -107,6 +108,24 @@ const HELPER_SKIP_REASON = existsSync(HELPER_BINARY)
   ? false
   : `binary not built; run 'cargo build -p soma-sensor-broker' from repo root`;
 
+const ZENOH_TEST_CONFIG = path.join(
+  mkdtempSync(path.join(os.tmpdir(), "soma-sensorium-public-path-test-")),
+  "zenoh-sandbox.json5",
+);
+
+writeFileSync(
+  ZENOH_TEST_CONFIG,
+  `{
+  mode: "peer",
+  listen: { endpoints: [] },
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+}
+`,
+);
+
 // As of step 9b, the helper is fully activated:
 //   subscribe.start   → opens a Zenoh subscriber, returns subscription_id
 //   subscribe.stop    → looks up by subscription_id, aborts, removes
@@ -121,83 +140,61 @@ const HELPER_SKIP_REASON = existsSync(HELPER_BINARY)
 test(
   "public path fail-closed: helper full lifecycle works while public path stays closed (step 9b)",
   { skip: HELPER_SKIP_REASON },
-  () => {
+  async () => {
     // Drive the helper through start → status → stop → status. All
     // four operations should succeed. This proves the helper is the
     // right shape to plug into a future Node-side manager, while the
     // OTHER tripwire tests (catalog/view, grants, public-route grep)
     // continue to assert the public path is fail-closed.
-    const startRequest = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "sensorium.subscribe.start",
-      params: { topic: "sensor/fail-closed-test/status" },
-      id: "step9b-start",
-    });
-    const statusRequest = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "sensorium.subscribe.status",
-      id: "step9b-status",
-    });
+    const mgr = new SensorBrokerManager();
+    await mgr.start();
+    try {
+      const startResp = await mgr.send("sensorium.subscribe.start", {
+        topic: "sensor/fail-closed-test/status",
+        zenoh_config_path: ZENOH_TEST_CONFIG,
+      });
+      const subscriptionId = startResp.subscription_id;
+      assert.ok(
+        typeof subscriptionId === "string" && subscriptionId.length > 0,
+        "subscription_id should be a non-empty string",
+      );
 
-    // Phase 1: start, then status. Use stop in the same batch with a
-    // placeholder id; we'll parse the start response to get the real
-    // id and follow up with a focused stop call. The batch form keeps
-    // the helper alive for both calls.
-    const phase1 = spawnSync(HELPER_BINARY, [], {
-      input: `${startRequest}\n${statusRequest}\n`,
-      encoding: "utf8",
-      timeout: 10000,
-    });
-    assert.equal(
-      phase1.status,
-      0,
-      `helper exited with ${phase1.status} (stderr: ${phase1.stderr})`,
-    );
+      const statusResp = await mgr.send("sensorium.subscribe.status");
+      assert.equal(
+        statusResp.count,
+        1,
+        "status should report exactly one active subscription",
+      );
+      assert.equal(
+        statusResp.subscriptions[0].subscription_id,
+        subscriptionId,
+      );
 
-    const phase1Lines = phase1.stdout.trim().split("\n").filter((l) => l.length > 0);
-    assert.ok(phase1Lines.length >= 2, "expected at least two responses");
+      const stopResp = await mgr.send("sensorium.subscribe.stop", {
+        subscription_id: subscriptionId,
+      });
+      assert.equal(stopResp.stopped, true);
 
-    const startResp = JSON.parse(phase1Lines[0]);
-    assert.equal(startResp.id, "step9b-start");
-    assert.ok(startResp.result, "start should succeed");
-    const subscriptionId = startResp.result.subscription_id;
-    assert.ok(
-      typeof subscriptionId === "string" && subscriptionId.length > 0,
-      "subscription_id should be a non-empty string",
-    );
+      const finalStatus = await mgr.send("sensorium.subscribe.status");
+      assert.equal(finalStatus.count, 0);
 
-    const statusResp = JSON.parse(phase1Lines[1]);
-    assert.equal(statusResp.id, "step9b-status");
-    assert.ok(statusResp.result, "status should succeed");
-    assert.equal(
-      statusResp.result.count,
-      1,
-      "status should report exactly one active subscription",
-    );
-    assert.equal(
-      statusResp.result.subscriptions[0].subscription_id,
-      subscriptionId,
-    );
-
-    // Phase 2: a fresh helper instance, drive stop against an unknown id.
-    // This verifies subscription_not_found is the right error class —
-    // the helper distinguishes "no such subscription" from
-    // "malformed request" and "method not found."
-    const unknownStop = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "sensorium.subscribe.stop",
-      params: { subscription_id: "definitely-not-a-real-id" },
-      id: "step9b-stop-unknown",
-    });
-    const phase2 = spawnSync(HELPER_BINARY, [], {
-      input: `${unknownStop}\n`,
-      encoding: "utf8",
-      timeout: 10000,
-    });
-    assert.equal(phase2.status, 0);
-    const unknownStopResp = JSON.parse(phase2.stdout.trim());
-    assert.equal(unknownStopResp.error.code, -32002);
-    assert.equal(unknownStopResp.error.code_name, "subscription_not_found");
+      // Verify subscription_not_found is the right error class: the
+      // helper distinguishes "no such subscription" from "malformed
+      // request" and "method not found."
+      await assert.rejects(
+        () =>
+          mgr.send("sensorium.subscribe.stop", {
+            subscription_id: "definitely-not-a-real-id",
+          }),
+        (err) => {
+          assert.equal(err.code, -32002);
+          assert.equal(err.code_name, "subscription_not_found");
+          return true;
+        },
+      );
+    } finally {
+      await mgr.stop();
+    }
   },
 );
 

@@ -92,6 +92,8 @@ If the Sensorium publisher is on another routed subnet, Zenoh multicast discover
 the network boundary. Provide `SOMA_SENSORIUM_ZENOH_CONFIG=/path/to/zenoh-client.json5` to pass an
 explicit Zenoh client config into the helper. See
 [config/sensorium-zenoh-client.example.json5](./config/sensorium-zenoh-client.example.json5).
+The current example points at the pinned `jetsorano` listener `tcp/192.168.20.179:7447` used for
+repeatable live smoke tests.
 
 Sensorium proposal review can be generated without enabling the runtime or creating a grant:
 

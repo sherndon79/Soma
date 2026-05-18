@@ -90,3 +90,27 @@ is explicit.
 Remaining durability concern: the endpoint above came from Sensorium startup logs and uses a
 dynamic Zenoh listen port. A durable deployment should pin the Sensorium listener on the publisher
 side, then point Soma's client config at that stable endpoint.
+
+## Addendum: Stable Endpoint Success
+
+Sensorium on `jetsorano` was restarted with a fixed plain-TCP Zenoh listener:
+
+```text
+tcp/192.168.20.179:7447
+```
+
+Soma's example client config now points at that stable endpoint. A fresh Soma service started with
+`SOMA_SENSORIUM_ZENOH_CONFIG=config/sensorium-zenoh-client.example.json5` used that fixed listener
+instead of a dynamic port from Sensorium logs.
+
+The guarded smoke wrapper completed successfully:
+
+```text
+Observation wait: 8 second(s).
+Observed sample count: 2
+Sensorium live smoke completed.
+```
+
+Post-run checks confirmed `active_count: 0`, the runtime grant was revoked, and provenance stayed
+metadata-only with `frames_consumed: 2`, `frames_recorded: false`, and
+`text_content_included: false`.

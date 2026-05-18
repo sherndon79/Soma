@@ -206,6 +206,10 @@ Implemented:
 - added `SOMA_SENSORIUM_ZENOH_CONFIG` wiring so Soma can pass an explicit Zenoh client config into
   the helper; rerunning the guarded smoke wrapper against the current Sensorium endpoint observed
   one status sample and completed with metadata-only cleanup
+- pinned the live Sensorium publisher on `jetsorano` to `tcp/192.168.20.179:7447` and updated
+  Soma's example Zenoh client config to use the stable endpoint for repeatable live smoke tests
+- reran the guarded wrapper from a fresh Soma service using the stable endpoint; observed two
+  status samples and confirmed process-local grant revocation plus metadata-only cleanup
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -219,25 +223,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Stabilize Sensorium endpoint configuration for repeatable smoke tests.
+Design bounded Sensorium status observation.
 
 Target:
 
 ```text
-sensorium stable endpoint config
-  -> pin the Sensorium publisher's Zenoh listen endpoint instead of reading a dynamic port from logs
-  -> point Soma's client config at the stable endpoint
-  -> rerun the guarded smoke wrapper from a fresh service start
+sensorium bounded status observation
+  -> define the status payload contract Soma may observe
+  -> keep status as the first low-risk stream
   -> keep runtime grants process-local and cleanup metadata-only
   -> preserve no recording, decoding, or preprocessing
+  -> decide whether status schema/version fields may enter provenance summaries
 ```
 
 Expected work:
 
-- update the Sensorium deployment config or compose setup to use a fixed Zenoh endpoint
-- update Soma's local client config path to reference that stable endpoint
-- rerun the guarded wrapper against `SOMA_SENSORIUM_ENABLED=1` service
-- record whether the stable endpoint survives Sensorium container restart
+- draft the bounded status observation contract before decoding or storing any frame payloads
+- add tests for allowed status metadata summaries and excluded payload fields
+- decide how schema mismatches should appear in subscription provenance
+- keep color/depth/IMU subscription work out of this slice
 
 Constraints:
 

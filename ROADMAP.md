@@ -219,6 +219,9 @@ Implemented:
 - added `soma sensorium status`, a read-only operator CLI surface that filters active Sensorium
   disclosure to bounded status summaries without creating grants, starting subscriptions, or
   exposing raw payload bytes
+- drafted the first higher-risk Sensorium stream contract for color: allowed summary fields are
+  schema version, frame number, dimensions, format, and payload size; image bytes, screenshots,
+  raw frames, timestamps, and cross-stream fields are contract violations
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -232,26 +235,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Draft the first higher-risk Sensorium stream contract.
+Implement bounded color summary decoding.
 
 Target:
 
 ```text
-sensorium stream contract
-  -> choose the first higher-risk stream to specify (likely color, because it is the main visual
-     perception path)
-  -> define the allowed summary fields before decoding any payload
+sensorium color summary decode
+  -> decode color payload metadata only
+  -> enforce the color stream contract before any summary reaches disclosure or provenance
   -> keep runtime grants process-local and cleanup metadata-only
-  -> preserve no recording, frame decoding, or preprocessing for higher-risk streams until their
-     contracts are written and tested
+  -> preserve no image bytes, screenshots, recording, model delivery, or preprocessing
 ```
 
 Expected work:
 
-- document the selected stream contract, risk posture, allowed summary fields, excluded fields, and
-  schema mismatch behavior
-- add tests that prove the contract rejects raw content retention and cross-stream field leakage
-- do not add payload decoding until the contract and tests are in place
+- add a bounded color MessagePack metadata reader or reuse the existing reader safely
+- count schema mismatches for malformed/unexpected-version color frames
+- record only allowed aggregate metadata such as schema version, first/last frame number, dimensions,
+  format, and payload size
+- keep actual image delivery to model context out of this slice
 
 Constraints:
 

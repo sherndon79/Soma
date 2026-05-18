@@ -127,6 +127,50 @@ Restricted treatment: explicit assent, scoped grant, active-mode
 disclosure, reversible drop. IMU and location are lower-risk but still
 require a grant — neither is implicitly authorized by base harness.
 
+### Color Stream Contract
+
+The first higher-risk stream contract is color. Sensorium publishes
+`ColorFrame` as MessagePack with these fields:
+
+- `schema_version`
+- `timestamp`
+- `frame_number`
+- `width`
+- `height`
+- `format`
+- `data`
+
+Soma's initial color contract is metadata-only. It does not authorize delivery
+of image bytes into a model turn and it does not authorize screenshots,
+recording, or raw frame retention.
+
+Allowed color summary fields:
+
+- `schema_version`
+- `frame_number`
+- `width`
+- `height`
+- `format`
+- `payload_size`
+
+Excluded color fields:
+
+- `data`
+- `payload_bytes`
+- `image_bytes`
+- `image_content`
+- `screenshot`
+- `text_content`
+- `raw_frame`
+- `timestamp`
+- cross-stream fields such as `depth_units`, `uptime_seconds`, and
+  `enabled_streams`
+
+The expected color schema version is `1` and the only allowed color format is
+`jpeg`. A future color decoder must first prove, in tests, that it emits only
+the allowed summary fields above and rejects content-bearing or cross-stream
+fields before any frame is routed to a model or stored.
+
 ## Provider Manifest Sketch
 
 A Sensorium provider entry in Soma's provider registry might look like:
@@ -769,6 +813,10 @@ Completed Soma-side slices:
     summary: schema version, hostname, uptime, node version, and enabled stream
     tails. Raw payload bytes are not retained or surfaced; malformed or
     unexpected-version status payloads increment schema mismatch counters.
+16. The color stream contract is documented and test-backed before activation:
+    allowed fields are schema version, frame number, dimensions, format, and
+    payload size; image bytes, screenshots, raw frames, timestamps, and
+    cross-stream fields are explicitly rejected.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

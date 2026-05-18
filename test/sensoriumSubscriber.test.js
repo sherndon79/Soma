@@ -3,6 +3,7 @@ import test from "node:test";
 import { EventEmitter } from "node:events";
 
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
+import { encodeStatusPayload } from "./support/msgpackStatus.js";
 
 // ── fake manager ───────────────────────────────────────────────────────────
 // A small EventEmitter that records sent requests and lets tests
@@ -63,14 +64,21 @@ class FakeManager extends EventEmitter {
     throw new Error(`fake manager has no handler for method ${method}`);
   }
 
-  emitSample(subscriptionId, topic, payloadSize = 256) {
+  emitSample(subscriptionId, topic, payloadSizeOrOptions = 256) {
+    const options = Array.isArray(payloadSizeOrOptions)
+      ? { payloadBytes: payloadSizeOrOptions, payloadSize: payloadSizeOrOptions.length }
+      : typeof payloadSizeOrOptions === "object"
+        ? payloadSizeOrOptions
+        : { payloadSize: payloadSizeOrOptions };
+    const payloadBytes = options.payloadBytes ?? [];
+    const payloadSize = options.payloadSize ?? payloadBytes.length;
     this.emit("notification", {
       jsonrpc: "2.0",
       method: "sensorium.subscription.sample",
       params: {
         subscription_id: subscriptionId,
         topic,
-        payload_bytes: [],
+        payload_bytes: payloadBytes,
         payload_size: payloadSize,
       },
     });
@@ -271,6 +279,106 @@ test("subscriber.stop honors a custom termination reason and error class", async
   });
   assert.equal(endSummary.termination_reason, "error");
   assert.equal(endSummary.error_class, "channel_closed_unexpectedly");
+});
+
+test("status samples decode to bounded metadata summaries without retaining payload bytes", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-status",
+    topic: "sensor/jetsorano/status",
+    startedAt: 1_700_000_000.0,
+  });
+
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    capability: "perception.sensorium.status.subscribe",
+    body: { topic: "sensor/jetsorano/status" },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/status", {
+    payloadBytes: encodeStatusPayload({
+      schema_version: 1,
+      hostname: "jetsorano",
+      uptime_seconds: 42.5,
+      node_version: "0.1.0",
+      enabled_streams: ["realsense/color", "realsense/depth"],
+    }),
+  });
+
+  const disclosure = subscriber.describeActive();
+  assert.deepEqual(disclosure.streams[0].status_summary_observed, {
+    schema_version: 1,
+    hostname: "jetsorano",
+    uptime_seconds: 42.5,
+    node_version: "0.1.0",
+    enabled_streams: ["realsense/color", "realsense/depth"],
+  });
+
+  nowMs += 5_000;
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, 1);
+  assert.equal(endSummary.schema_mismatches, 0);
+  assert.deepEqual(endSummary.status_summary_observed, {
+    schema_version: 1,
+    hostname: "jetsorano",
+    uptime_seconds: 42.5,
+    node_version: "0.1.0",
+    enabled_streams: ["realsense/color", "realsense/depth"],
+  });
+  assert.equal(JSON.stringify(endSummary).includes("payload_bytes"), false);
+});
+
+test("status samples with malformed payloads count schema mismatches only", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-status-bad",
+    topic: "sensor/jetsorano/status",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    capability: "perception.sensorium.status.subscribe",
+    body: { topic: "sensor/jetsorano/status" },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/status", {
+    payloadBytes: [0xc1],
+  });
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, null);
+  assert.equal(endSummary.schema_mismatches, 1);
+  assert.equal("status_summary_observed" in endSummary, false);
+});
+
+test("status samples with unexpected schema record mismatch without summary", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-status-schema",
+    topic: "sensor/jetsorano/status",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    capability: "perception.sensorium.status.subscribe",
+    body: { topic: "sensor/jetsorano/status" },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/status", {
+    payloadBytes: encodeStatusPayload({ schema_version: 2 }),
+  });
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.schema_version_observed, 2);
+  assert.equal(endSummary.schema_mismatches, 1);
+  assert.equal("status_summary_observed" in endSummary, false);
 });
 
 // ── describeActive ─────────────────────────────────────────────────────────

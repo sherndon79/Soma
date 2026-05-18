@@ -114,3 +114,24 @@ Sensorium live smoke completed.
 Post-run checks confirmed `active_count: 0`, the runtime grant was revoked, and provenance stayed
 metadata-only with `frames_consumed: 2`, `frames_recorded: false`, and
 `text_content_included: false`.
+
+## Addendum: Bounded Status Observation
+
+Soma now decodes `perception.sensorium.status.subscribe` samples into a bounded status summary
+only. The live smoke path against the stable `jetsorano` endpoint observed:
+
+```text
+frames_consumed: 2
+schema_version_observed: 1
+schema_mismatches: 0
+status_summary_observed.hostname: jetsorano
+status_summary_observed.node_version: 0.1.0
+status_summary_observed.enabled_streams:
+  - realsense/color
+  - realsense/depth
+  - realsense/imu/accel
+  - realsense/imu/gyro
+```
+
+The provenance entry remained metadata-only: no raw payload bytes, frame contents, credential
+material, screenshots, or higher-risk stream payloads were retained or surfaced.

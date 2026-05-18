@@ -73,6 +73,7 @@ function describeStream(subscription, now) {
     constraints_declared: copyConstraints(subscription.constraints_declared),
     recent_frame_rate: recentFps,
     frames_consumed_so_far: nonNegativeIntOrZero(subscription.frames_consumed_so_far),
+    status_summary_observed: copyStatusSummary(subscription.status_summary_observed),
     description,
   };
 }
@@ -148,6 +149,34 @@ function copyConstraints(constraints) {
     }
   }
   return out;
+}
+
+function copyStatusSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  const schemaVersion = numberOrNull(summary.schema_version);
+  const uptimeSeconds = numberOrNull(summary.uptime_seconds);
+  const hostname = stringOrEmpty(summary.hostname);
+  const nodeVersion = stringOrEmpty(summary.node_version);
+  const enabledStreams = Array.isArray(summary.enabled_streams)
+    ? summary.enabled_streams.filter((item) => typeof item === "string")
+    : [];
+  if (
+    schemaVersion === null ||
+    uptimeSeconds === null ||
+    hostname.length === 0 ||
+    nodeVersion.length === 0
+  ) {
+    return null;
+  }
+  return {
+    schema_version: schemaVersion,
+    hostname,
+    uptime_seconds: uptimeSeconds,
+    node_version: nodeVersion,
+    enabled_streams: enabledStreams,
+  };
 }
 
 function numberOrNull(value) {

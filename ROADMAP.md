@@ -210,6 +210,12 @@ Implemented:
   Soma's example Zenoh client config to use the stable endpoint for repeatable live smoke tests
 - reran the guarded wrapper from a fresh Soma service using the stable endpoint; observed two
   status samples and confirmed process-local grant revocation plus metadata-only cleanup
+- added bounded status payload observation for `perception.sensorium.status.subscribe`: Soma may
+  summarize schema version, hostname, uptime, node version, and enabled stream tails while
+  rejecting raw payload retention and counting malformed/unexpected schema payloads as mismatches
+- verified bounded status observation against the live `jetsorano` publisher: the guarded smoke
+  observed two samples, `schema_version_observed: 1`, `schema_mismatches: 0`, and a metadata-only
+  status summary listing the active Sensorium stream tails
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -223,24 +229,26 @@ Current authority boundary:
 
 ## Next Slice
 
-Design bounded Sensorium status observation.
+Decide the next Sensorium consumption surface.
 
 Target:
 
 ```text
-sensorium bounded status observation
-  -> define the status payload contract Soma may observe
+sensorium next consumption surface
+  -> decide whether to expose status summaries as an operator command/API or move to the first
+     higher-risk stream contract
   -> keep status as the first low-risk stream
   -> keep runtime grants process-local and cleanup metadata-only
-  -> preserve no recording, decoding, or preprocessing
-  -> decide whether status schema/version fields may enter provenance summaries
+  -> preserve no recording, frame decoding, or preprocessing for higher-risk streams until their
+     contracts are written and tested
 ```
 
 Expected work:
 
-- draft the bounded status observation contract before decoding or storing any frame payloads
-- add tests for allowed status metadata summaries and excluded payload fields
-- decide how schema mismatches should appear in subscription provenance
+- choose between a first-class status observation surface and the next stream-specific contract
+- if status surface: add a narrowed command/API that reads the latest status summary without raw
+  payload access
+- if next stream: write the color/depth/IMU contract before adding any decoding
 - keep color/depth/IMU subscription work out of this slice
 
 Constraints:

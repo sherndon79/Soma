@@ -102,6 +102,26 @@ discovery surface — its payload includes the `enabled_streams` list, so a
 Soma capability authoring agent can introspect what's available on a given
 host without enumerating the topic namespace.
 
+### Bounded Status Observation
+
+Soma may decode the `sensor/<host>/status` payload after an explicit
+`perception.sensorium.status.subscribe` grant because the status payload is
+the low-risk discovery contract. The decoded surface is deliberately bounded:
+
+- allowed: `schema_version`, `hostname`, `uptime_seconds`, `node_version`, and
+  `enabled_streams`
+- excluded: raw `payload_bytes`, payload retention, frame contents, credentials,
+  internal Sensorium telemetry, and timestamp persistence
+- provenance: `schema_version_observed`, `schema_mismatches`, and the sanitized
+  `status_summary_observed` may be recorded
+- mismatch handling: malformed status payloads or unexpected status schema
+  versions increment `schema_mismatches`; unexpected schema versions may record
+  the observed schema number but must not record a status summary
+
+This does not authorize color, depth, IMU, or location decoding. Those streams
+need their own contracts before any payload-specific fields enter Soma
+disclosure or provenance.
+
 Camera-class capabilities (color, depth) should follow the existing
 Restricted treatment: explicit assent, scoped grant, active-mode
 disclosure, reversible drop. IMU and location are lower-risk but still
@@ -745,6 +765,10 @@ Completed Soma-side slices:
 14. A live smoke runbook documents the helper-backed workflow for bounded
     status-topic verification without recording payloads, decoding frames, or
     writing durable grants.
+15. Soma decodes status payloads only into the bounded status observation
+    summary: schema version, hostname, uptime, node version, and enabled stream
+    tails. Raw payload bytes are not retained or surfaced; malformed or
+    unexpected-version status payloads increment schema mismatch counters.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return
@@ -777,10 +801,9 @@ request includes a bounded key that the active grant does not declare, Soma
 rejects before helper invocation. This keeps the successful path explicit while
 avoiding accidental unbounded subscriptions.
 
-Next implementation work should verify the live smoke runbook against the real
-helper and publisher, then decide whether the next behavior slice should harden
-the live operator path, introduce durable Sensorium grant design, or add a
-stream-consumption surface. No Sensorium grants ship in `config/grants.json`.
+Next implementation work should keep status as the only decoded stream until
+the same contract-first treatment exists for any higher-risk stream. No
+Sensorium grants ship in `config/grants.json`.
 
 The point of this ordering: a participant should never accidentally
 receive sensor frames because someone forgot a check. The public path

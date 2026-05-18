@@ -123,6 +123,13 @@ test("subscription end summary captures aggregate counters and duration", () => 
     schemaMismatches: 0,
     firstFrameNumber: 1,
     lastFrameNumber: 8543,
+    statusSummaryObserved: {
+      schema_version: 1,
+      hostname: "jetsorano",
+      uptime_seconds: 42.5,
+      node_version: "0.1.0",
+      enabled_streams: ["realsense/color"],
+    },
   });
 
   assert.equal(endSummary.event_type, "perception.sensorium.subscription_ended");
@@ -141,6 +148,13 @@ test("subscription end summary captures aggregate counters and duration", () => 
   assert.equal(endSummary.first_frame_number, 1);
   assert.equal(endSummary.last_frame_number, 8543);
   assert.equal(endSummary.error_class, "");
+  assert.deepEqual(endSummary.status_summary_observed, {
+    schema_version: 1,
+    hostname: "jetsorano",
+    uptime_seconds: 42.5,
+    node_version: "0.1.0",
+    enabled_streams: ["realsense/color"],
+  });
   assert.equal(endSummary.text_content_included, false);
   assert.equal(endSummary.frames_recorded, false);
 });

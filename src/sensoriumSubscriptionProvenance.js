@@ -104,6 +104,7 @@ export function createSensoriumSubscriptionEndSummary({
   schemaMismatches = 0,
   firstFrameNumber = null,
   lastFrameNumber = null,
+  statusSummaryObserved = null,
   errorClass = "",
 } = {}) {
   if (!isPlainObject(startSummary)) {
@@ -141,7 +142,7 @@ export function createSensoriumSubscriptionEndSummary({
   const end = stringOrEmpty(endedAt) || new Date().toISOString();
   const durationSeconds = isoDurationSeconds(start, end);
 
-  return {
+  const summary = {
     event_type: "perception.sensorium.subscription_ended",
     timestamp: end,
     capability: startSummary.capability,
@@ -162,6 +163,11 @@ export function createSensoriumSubscriptionEndSummary({
     text_content_included: false,
     frames_recorded: false,
   };
+  const copiedStatusSummary = copyStatusSummary(statusSummaryObserved);
+  if (copiedStatusSummary) {
+    summary.status_summary_observed = copiedStatusSummary;
+  }
+  return summary;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -180,6 +186,34 @@ function copyDeclaredConstraints(constraints) {
     }
   }
   return out;
+}
+
+function copyStatusSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  const schemaVersion = numberOrNull(summary.schema_version);
+  const uptimeSeconds = numberOrNull(summary.uptime_seconds);
+  const hostname = stringOrEmpty(summary.hostname);
+  const nodeVersion = stringOrEmpty(summary.node_version);
+  const enabledStreams = Array.isArray(summary.enabled_streams)
+    ? summary.enabled_streams.filter((item) => typeof item === "string")
+    : [];
+  if (
+    schemaVersion === null ||
+    uptimeSeconds === null ||
+    hostname.length === 0 ||
+    nodeVersion.length === 0
+  ) {
+    return null;
+  }
+  return {
+    schema_version: schemaVersion,
+    hostname,
+    uptime_seconds: uptimeSeconds,
+    node_version: nodeVersion,
+    enabled_streams: enabledStreams,
+  };
 }
 
 function isoDurationSeconds(startISO, endISO) {

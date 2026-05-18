@@ -83,6 +83,13 @@ test("disclosure with multiple active subscriptions groups them", () => {
         recent_frame_rate: 0.2,
         frames_consumed_so_far: 5,
         constraints_declared: { max_seconds: 600 },
+        status_summary_observed: {
+          schema_version: 1,
+          hostname: "jetsorano",
+          uptime_seconds: 42.5,
+          node_version: "0.1.0",
+          enabled_streams: ["realsense/color"],
+        },
       }),
     ],
     { now: NOW },
@@ -98,6 +105,13 @@ test("disclosure with multiple active subscriptions groups them", () => {
       "perception.sensorium.status.subscribe",
     ],
   );
+  assert.deepEqual(disclosure.streams[2].status_summary_observed, {
+    schema_version: 1,
+    hostname: "jetsorano",
+    uptime_seconds: 42.5,
+    node_version: "0.1.0",
+    enabled_streams: ["realsense/color"],
+  });
 });
 
 // ── per-capability descriptions ────────────────────────────────────────────

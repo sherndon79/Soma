@@ -30,6 +30,7 @@ import {
   createSensoriumSubscriptionEndSummary,
   createSensoriumSubscriptionStartSummary,
 } from "./sensoriumSubscriptionProvenance.js";
+import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 
@@ -112,6 +113,7 @@ export class SensoriumSubscriber {
         schemaMismatches: 0,
         firstFrameNumber: null,
         lastFrameNumber: null,
+        statusSummaryObserved: null,
       },
     };
     this.#active.set(subscriptionId, record);
@@ -153,6 +155,7 @@ export class SensoriumSubscriber {
       schemaMismatches: record._stats.schemaMismatches,
       firstFrameNumber: record._stats.firstFrameNumber,
       lastFrameNumber: record._stats.lastFrameNumber,
+      statusSummaryObserved: record._stats.statusSummaryObserved,
       errorClass,
     });
 
@@ -200,6 +203,7 @@ export class SensoriumSubscriber {
       constraints_declared: record.constraints_declared,
       recent_frame_rate: estimateFrameRate(record, this.#now()),
       frames_consumed_so_far: record._stats.framesConsumed,
+      status_summary_observed: record._stats.statusSummaryObserved,
     }));
     return describeActiveSensoriumSubscriptions(subscriptions, { now: now ?? this.#now() });
   }
@@ -234,10 +238,26 @@ export class SensoriumSubscriber {
       return;
     }
     sub._stats.framesConsumed += 1;
-    // payload_size is the helper's view; we leave deeper introspection
-    // (decoding msgpack to extract schema_version + frame_number) to
-    // a future hardening slice. For now the counters that matter for
-    // provenance are framesConsumed and time bounds.
+    if (sub.capability !== "perception.sensorium.status.subscribe") {
+      return;
+    }
+    try {
+      const summary = summarizeSensoriumStatusPayload(msg.params?.payload_bytes);
+      sub._stats.schemaVersionObserved = summary.schema_version;
+      if (!summary.schema_matches_expected) {
+        sub._stats.schemaMismatches += 1;
+        return;
+      }
+      sub._stats.statusSummaryObserved = {
+        schema_version: summary.schema_version,
+        hostname: summary.hostname,
+        uptime_seconds: summary.uptime_seconds,
+        node_version: summary.node_version,
+        enabled_streams: summary.enabled_streams,
+      };
+    } catch {
+      sub._stats.schemaMismatches += 1;
+    }
   }
 }
 

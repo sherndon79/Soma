@@ -502,8 +502,11 @@ metadata-only.
 `docs/runbooks/sensorium_live_smoke.md` defines the first real-runtime smoke
 workflow. It is manual and opt-in, requires `SOMA_SENSORIUM_ENABLED=1`, starts
 from `perception.sensorium.status.subscribe`, and preserves the same
-metadata-only posture: no default grants, no recording, no decoding, and no
-preprocessing.
+metadata-only posture: no default grants, no recording, and no preprocessing.
+Camera-class smoke targets such as color require an additional explicit camera
+acknowledgement plus bounded video constraints before the wrapper will start the
+subscription. The color smoke path validates `stream_summary_observed` and fails
+if content-bearing fields appear.
 
 ## Schema Handshake
 
@@ -824,6 +827,10 @@ Completed Soma-side slices:
     format, and payload size for disclosure/provenance; malformed or
     unexpected-version color payloads increment schema mismatch counters and do
     not produce a stream summary.
+18. The live smoke wrapper has a camera-class guard: color/depth smoke targets
+    require an explicit camera acknowledgement plus `max_fps`, `format`, and
+    `downsample` constraints. Color smoke validates that the ended subscription
+    exposes only bounded `stream_summary_observed` metadata.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

@@ -7,6 +7,7 @@ import {
   formatCliCommand,
   parseSensoriumLiveSmokeArgs,
   sensoriumLiveSmokeGuardErrors,
+  validateCameraSmokeEndSummary,
 } from "../scripts/sensorium-live-smoke.js";
 
 test("sensorium live smoke refuses unless both explicit guards are set", () => {
@@ -18,6 +19,46 @@ test("sensorium live smoke refuses unless both explicit guards are set", () => {
     SOMA_SENSORIUM_ENABLED: "1",
     SOMA_SENSORIUM_LIVE_SMOKE: "yes",
   }), []);
+});
+
+test("sensorium live smoke requires extra acknowledgement for camera-class targets", () => {
+  const options = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.color.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/color",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "jpeg",
+    "--downsample", "320x240",
+  ]);
+
+  assert.deepEqual(sensoriumLiveSmokeGuardErrors({
+    SOMA_SENSORIUM_ENABLED: "1",
+    SOMA_SENSORIUM_LIVE_SMOKE: "1",
+  }, options), [
+    "camera-class Sensorium smoke requires --acknowledge-camera-stream or SOMA_SENSORIUM_CAMERA_SMOKE=1",
+  ]);
+
+  assert.deepEqual(sensoriumLiveSmokeGuardErrors({
+    SOMA_SENSORIUM_ENABLED: "1",
+    SOMA_SENSORIUM_LIVE_SMOKE: "1",
+    SOMA_SENSORIUM_CAMERA_SMOKE: "1",
+  }, options), []);
+
+  const acknowledged = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.color.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/color",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "jpeg",
+    "--downsample", "320x240",
+    "--acknowledge-camera-stream",
+  ]);
+  assert.deepEqual(sensoriumLiveSmokeGuardErrors({
+    SOMA_SENSORIUM_ENABLED: "1",
+    SOMA_SENSORIUM_LIVE_SMOKE: "1",
+  }, acknowledged), []);
 });
 
 test("sensorium live smoke defaults to status-topic-only workflow", () => {
@@ -63,11 +104,105 @@ test("sensorium live smoke rejects invalid observation waits", () => {
   );
 });
 
+test("sensorium live smoke requires bounded video constraints for color targets", () => {
+  assert.throws(
+    () => parseSensoriumLiveSmokeArgs([
+      "--capability", "perception.sensorium.color.subscribe",
+      "--provider", "soma.provider.sensorium.jetsorano",
+      "--topic", "sensor/jetsorano/realsense/color",
+      "--max-seconds", "15",
+    ]),
+    /camera-class smoke requires --max-fps/,
+  );
+
+  assert.throws(
+    () => parseSensoriumLiveSmokeArgs([
+      "--capability", "perception.sensorium.color.subscribe",
+      "--provider", "soma.provider.sensorium.jetsorano",
+      "--topic", "sensor/jetsorano/realsense/color",
+      "--max-seconds", "15",
+      "--max-fps", "1",
+      "--format", "jpeg",
+      "--downsample", "bad",
+    ]),
+    /--downsample must use WIDTHxHEIGHT/,
+  );
+});
+
 test("sensorium live smoke plan preserves grant-before-subscribe order and runtime cleanup", () => {
   const labels = buildSensoriumLiveSmokePlan(DEFAULT_SENSORIUM_SMOKE).map((entry) => entry.label);
 
   assert.ok(labels.indexOf("create runtime session grant from approved proposal") < labels.indexOf("start bounded Sensorium subscription"));
   assert.ok(labels.indexOf("stop bounded Sensorium subscription") < labels.indexOf("revoke runtime session grant"));
+});
+
+test("sensorium live smoke plan carries bounded color constraints", () => {
+  const options = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.color.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/color",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "jpeg",
+    "--downsample", "320x240",
+    "--acknowledge-camera-stream",
+  ]);
+  const plan = buildSensoriumLiveSmokePlan(options);
+
+  assert.ok(plan[1].args.includes("--max-fps"));
+  assert.ok(plan[1].args.includes("1"));
+  assert.ok(plan[1].args.includes("--format"));
+  assert.ok(plan[1].args.includes("jpeg"));
+  assert.ok(plan[1].args.includes("--downsample"));
+  assert.ok(plan[1].args.includes("320x240"));
+  assert.ok(plan[4].args.includes("--max-fps"));
+  assert.ok(plan[4].args.includes("--format"));
+  assert.ok(plan[4].args.includes("--downsample"));
+});
+
+test("sensorium live smoke validates color metadata-only end summaries", () => {
+  const options = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.color.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/color",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "jpeg",
+    "--downsample", "320x240",
+    "--acknowledge-camera-stream",
+  ]);
+
+  assert.doesNotThrow(() =>
+    validateCameraSmokeEndSummary({
+      stream_summary_observed: {
+        schema_version: 1,
+        frame_number: 42,
+        width: 320,
+        height: 240,
+        format: "jpeg",
+        payload_size: 128,
+      },
+    }, options),
+  );
+  assert.throws(
+    () => validateCameraSmokeEndSummary({ stream_summary_observed: null }, options),
+    /did not receive bounded stream_summary_observed metadata/,
+  );
+  assert.throws(
+    () =>
+      validateCameraSmokeEndSummary({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 320,
+          height: 240,
+          format: "jpeg",
+          payload_size: 128,
+          data: [1, 2, 3],
+        },
+      }, options),
+    /forbidden content field/,
+  );
 });
 
 test("formatCliCommand quotes human text without changing machine-readable flags", () => {

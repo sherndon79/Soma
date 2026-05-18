@@ -78,9 +78,9 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke
 The wrapper refuses unless both `SOMA_SENSORIUM_ENABLED=1` and
 `SOMA_SENSORIUM_LIVE_SMOKE=1` are present in its environment. It prints the exact CLI commands
 before executing them, creates only process-local runtime grants, waits briefly for metadata-only
-sample counters, and does not record, decode, or preprocess payloads. The default observation wait
-is three seconds; override it with `--observe-seconds 1..60`. A run that opens and stops a
-subscription but observes zero samples fails with `no_samples_observed`.
+sample counters, and does not record or preprocess payload content. The default observation wait is
+three seconds; override it with `--observe-seconds 1..60`. A run that opens and stops a subscription
+but observes zero samples fails with `no_samples_observed`.
 
 The default wrapper target is the low-risk status topic:
 
@@ -102,6 +102,28 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
   --topic sensor/jetsorano/status \
   --max-seconds 30 \
   --observe-seconds 3
+```
+
+Camera-class targets such as `perception.sensorium.color.subscribe` require an additional explicit
+acknowledgement. Provide `--acknowledge-camera-stream` or set
+`SOMA_SENSORIUM_CAMERA_SMOKE=1`. The wrapper also requires tight video constraints for camera-class
+targets: `--max-fps`, `--format`, and `--downsample`. For color, the smoke path validates that the
+ended subscription contains only bounded `stream_summary_observed` metadata and fails if image
+bytes, screenshots, raw frames, timestamps, or text-like content fields appear.
+
+Example color metadata smoke:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- \
+  --capability perception.sensorium.color.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/realsense/color \
+  --max-seconds 15 \
+  --max-fps 1 \
+  --format jpeg \
+  --downsample 320x240 \
+  --observe-seconds 3 \
+  --acknowledge-camera-stream
 ```
 
 ## Confirm No Subscription Is Active

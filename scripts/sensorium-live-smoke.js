@@ -4,12 +4,25 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const TRUTHY = new Set(["1", "true", "yes"]);
+const FORBIDDEN_STREAM_CONTENT_FIELDS = [
+  "data",
+  "payload_bytes",
+  "image_bytes",
+  "image_content",
+  "screenshot",
+  "text_content",
+  "raw_frame",
+  "timestamp",
+];
 
 export const DEFAULT_SENSORIUM_SMOKE = Object.freeze({
   capability: "perception.sensorium.status.subscribe",
   provider: "soma.provider.sensorium.jetsorano",
   topic: "sensor/jetsorano/status",
   maxSeconds: "30",
+  maxFps: "",
+  format: "",
+  downsample: "",
   observeSeconds: "3",
   reason: "Smoke test status/liveness subscription.",
   actor: "user",
@@ -28,6 +41,7 @@ export function parseSensoriumLiveSmokeArgs(argv = []) {
     ...DEFAULT_SENSORIUM_SMOKE,
     url: "",
     dryRun: false,
+    acknowledgeCameraStream: false,
   };
   const seenCore = new Set();
 
@@ -35,6 +49,10 @@ export function parseSensoriumLiveSmokeArgs(argv = []) {
     const arg = argv[i];
     if (arg === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+    if (arg === "--acknowledge-camera-stream") {
+      options.acknowledgeCameraStream = true;
       continue;
     }
     if (!arg.startsWith("--")) {
@@ -62,6 +80,15 @@ export function parseSensoriumLiveSmokeArgs(argv = []) {
       case "max-seconds":
         options.maxSeconds = value;
         seenCore.add(key);
+        break;
+      case "max-fps":
+        options.maxFps = value;
+        break;
+      case "format":
+        options.format = value;
+        break;
+      case "downsample":
+        options.downsample = value;
         break;
       case "observe-seconds":
         options.observeSeconds = value;
@@ -91,7 +118,7 @@ export function parseSensoriumLiveSmokeArgs(argv = []) {
   return options;
 }
 
-export function sensoriumLiveSmokeGuardErrors(env = process.env) {
+export function sensoriumLiveSmokeGuardErrors(env = process.env, options = DEFAULT_SENSORIUM_SMOKE) {
   const errors = [];
   if (!isTruthy(env.SOMA_SENSORIUM_ENABLED)) {
     errors.push("SOMA_SENSORIUM_ENABLED=1 is required");
@@ -99,22 +126,35 @@ export function sensoriumLiveSmokeGuardErrors(env = process.env) {
   if (!isTruthy(env.SOMA_SENSORIUM_LIVE_SMOKE)) {
     errors.push("SOMA_SENSORIUM_LIVE_SMOKE=1 is required");
   }
+  if (
+    isCameraClassCapability(options.capability) &&
+    !options.acknowledgeCameraStream &&
+    !isTruthy(env.SOMA_SENSORIUM_CAMERA_SMOKE)
+  ) {
+    errors.push(
+      "camera-class Sensorium smoke requires --acknowledge-camera-stream or SOMA_SENSORIUM_CAMERA_SMOKE=1",
+    );
+  }
   return errors;
 }
 
 export function buildSensoriumLiveSmokePlan(options = DEFAULT_SENSORIUM_SMOKE) {
   const normalized = normalizeSmokeOptions(options);
+  const proposalConstraintArgs = sensoriumConstraintArgs(normalized);
+  const subscriptionConstraintArgs = sensoriumConstraintArgs(normalized);
   const commonReviewArgs = [
     "--capability", normalized.capability,
     "--provider", normalized.provider,
     "--topic", normalized.topic,
     "--reason", normalized.reason,
     "--max-seconds", normalized.maxSeconds,
+    ...proposalConstraintArgs,
   ];
   const commonSubscribeArgs = [
     "--capability", normalized.capability,
     "--topic", normalized.topic,
     "--max-seconds", normalized.maxSeconds,
+    ...subscriptionConstraintArgs,
   ];
 
   return [
@@ -162,7 +202,7 @@ export async function runSensoriumLiveSmoke({
   runner = runCliCommand,
 } = {}) {
   const options = parseSensoriumLiveSmokeArgs(argv);
-  const guardErrors = sensoriumLiveSmokeGuardErrors(env);
+  const guardErrors = sensoriumLiveSmokeGuardErrors(env, options);
   if (guardErrors.length > 0) {
     throw new SensoriumLiveSmokeError(
       `Sensorium live smoke refused: ${guardErrors.join("; ")}`,
@@ -177,7 +217,7 @@ export async function runSensoriumLiveSmoke({
     stdout.write(`  $ ${formatCliCommand(planStep.args)}\n`);
   }
   stdout.write("\n");
-  stdout.write("This workflow uses runtime grants only and does not record, decode, or preprocess payloads.\n");
+  stdout.write("This workflow uses runtime grants only and records bounded metadata summaries, not payload content.\n");
   stdout.write(`Observation wait: ${options.observeSeconds} second(s).\n`);
 
   if (options.dryRun) {
@@ -199,6 +239,7 @@ export async function runSensoriumLiveSmoke({
       "--topic", options.topic,
       "--reason", options.reason,
       "--max-seconds", options.maxSeconds,
+      ...sensoriumConstraintArgs(options),
       "--json",
     ], options);
     proposalId = requireString(proposalResponse?.proposal?.id, "proposal id");
@@ -222,6 +263,7 @@ export async function runSensoriumLiveSmoke({
       "--capability", options.capability,
       "--topic", options.topic,
       "--max-seconds", options.maxSeconds,
+      ...sensoriumConstraintArgs(options),
       "--json",
     ], options);
     subscriptionId = requireString(subscriptionResponse?.subscription_id, "subscription id");
@@ -235,12 +277,14 @@ export async function runSensoriumLiveSmoke({
       ["sensorium", "subscriptions", "--json"],
       options,
     );
+    validateCameraSmokeDisclosure(activeDisclosure, options);
     const disclosureFrames = findFramesConsumedSoFar(activeDisclosure, subscriptionId);
     const stopResponse = await runStep(runner, "stop bounded Sensorium subscription", [
       "sensorium", "subscribe-stop", subscriptionId,
       "--json",
     ], options);
     subscriptionId = "";
+    validateCameraSmokeEndSummary(stopResponse?.end_summary, options);
     const framesConsumed = Number(stopResponse?.end_summary?.frames_consumed ?? disclosureFrames ?? 0);
     stdout.write(`Observed sample count: ${framesConsumed}\n`);
     if (!Number.isFinite(framesConsumed) || framesConsumed < 1) {
@@ -266,11 +310,61 @@ export async function runSensoriumLiveSmoke({
   }
 }
 
+export function validateCameraSmokeDisclosure(disclosure, options = DEFAULT_SENSORIUM_SMOKE) {
+  if (!isCameraClassCapability(options.capability)) {
+    return;
+  }
+  const streams = Array.isArray(disclosure?.streams) ? disclosure.streams : [];
+  for (const stream of streams) {
+    if (stream?.capability !== options.capability || stream?.topic !== options.topic) {
+      continue;
+    }
+    if (stream.stream_summary_observed) {
+      assertMetadataOnlySummary(stream.stream_summary_observed, "active color disclosure");
+    }
+  }
+}
+
+export function validateCameraSmokeEndSummary(endSummary, options = DEFAULT_SENSORIUM_SMOKE) {
+  if (!isCameraClassCapability(options.capability)) {
+    return;
+  }
+  const streamSummary = endSummary?.stream_summary_observed;
+  if (!streamSummary) {
+    throw new SensoriumLiveSmokeError(
+      "camera-class Sensorium smoke observed samples but did not receive bounded stream_summary_observed metadata",
+      "missing_stream_summary",
+    );
+  }
+  assertMetadataOnlySummary(streamSummary, "ended color subscription");
+}
+
+function assertMetadataOnlySummary(summary, label) {
+  const forbidden = FORBIDDEN_STREAM_CONTENT_FIELDS.filter((field) => field in summary);
+  if (forbidden.length > 0) {
+    throw new SensoriumLiveSmokeError(
+      `${label} included forbidden content field(s): ${forbidden.join(", ")}`,
+      "stream_content_leak",
+    );
+  }
+  for (const field of ["schema_version", "frame_number", "width", "height", "format", "payload_size"]) {
+    if (!(field in summary)) {
+      throw new SensoriumLiveSmokeError(
+        `${label} missing bounded metadata field: ${field}`,
+        "malformed_stream_summary",
+      );
+    }
+  }
+}
+
 function normalizeSmokeOptions(options) {
   return {
     ...DEFAULT_SENSORIUM_SMOKE,
     ...options,
     maxSeconds: String(options.maxSeconds ?? DEFAULT_SENSORIUM_SMOKE.maxSeconds),
+    maxFps: String(options.maxFps ?? ""),
+    format: String(options.format ?? ""),
+    downsample: String(options.downsample ?? ""),
     url: String(options.url ?? ""),
   };
 }
@@ -283,6 +377,26 @@ function validateSmokeOptions(options) {
   const observeSeconds = Number(options.observeSeconds);
   if (!Number.isInteger(observeSeconds) || observeSeconds < 1 || observeSeconds > 60) {
     throw new SensoriumLiveSmokeError("--observe-seconds must be an integer from 1 to 60", "usage_error");
+  }
+  if (options.maxFps !== "") {
+    const maxFps = Number(options.maxFps);
+    if (!Number.isInteger(maxFps) || maxFps < 1 || maxFps > 30) {
+      throw new SensoriumLiveSmokeError("--max-fps must be an integer from 1 to 30", "usage_error");
+    }
+  }
+  if (options.downsample !== "" && !/^[1-9][0-9]*x[1-9][0-9]*$/.test(options.downsample)) {
+    throw new SensoriumLiveSmokeError("--downsample must use WIDTHxHEIGHT with positive integers", "usage_error");
+  }
+  if (isCameraClassCapability(options.capability)) {
+    if (options.maxFps === "") {
+      throw new SensoriumLiveSmokeError("camera-class smoke requires --max-fps", "usage_error");
+    }
+    if (options.format === "") {
+      throw new SensoriumLiveSmokeError("camera-class smoke requires --format", "usage_error");
+    }
+    if (options.downsample === "") {
+      throw new SensoriumLiveSmokeError("camera-class smoke requires --downsample", "usage_error");
+    }
   }
   for (const [name, value] of Object.entries({
     capability: options.capability,
@@ -297,6 +411,20 @@ function validateSmokeOptions(options) {
   }
 }
 
+function sensoriumConstraintArgs(options) {
+  const args = [];
+  if (options.maxFps) {
+    args.push("--max-fps", options.maxFps);
+  }
+  if (options.format) {
+    args.push("--format", options.format);
+  }
+  if (options.downsample) {
+    args.push("--downsample", options.downsample);
+  }
+  return args;
+}
+
 function step(label, args, options) {
   const withUrl = options.url ? [...args, "--url", options.url] : args;
   return { label, args: withUrl };
@@ -304,6 +432,11 @@ function step(label, args, options) {
 
 function isTruthy(value) {
   return TRUTHY.has(String(value ?? "").trim().toLowerCase());
+}
+
+function isCameraClassCapability(capability) {
+  return capability === "perception.sensorium.color.subscribe" ||
+    capability === "perception.sensorium.depth.subscribe";
 }
 
 async function runStep(runner, label, args, options) {

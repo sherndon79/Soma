@@ -225,6 +225,9 @@ Implemented:
 - added bounded color payload metadata decoding: the subscriber records only schema version,
   first/last frame number, dimensions, format, and payload size in disclosure/provenance; raw image
   bytes are not retained or routed to model context
+- added an explicit camera-class live smoke guard: color/depth smoke targets require an extra
+  camera acknowledgement plus bounded video constraints, and color smoke validates metadata-only
+  `stream_summary_observed` before passing
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -238,13 +241,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Add an explicit live color metadata smoke approval path.
+Run and document an explicitly approved live color metadata smoke.
 
 Target:
 
 ```text
-sensorium color metadata smoke
-  -> require explicit operator approval before starting a camera-class subscription
+sensorium color live metadata verification
+  -> use the camera-class smoke guard with explicit operator assent
   -> observe only bounded metadata from live color payloads
   -> prove cleanup leaves process-local grants and subscriptions cleared
   -> preserve no image bytes, screenshots, recording, model delivery, or preprocessing
@@ -252,11 +255,11 @@ sensorium color metadata smoke
 
 Expected work:
 
-- add a guarded runbook or CLI smoke command that refuses to run without an explicit camera-stream
-  acknowledgment
 - start a short-lived color subscription with tight `max_seconds`, `max_fps`, `format_required`, and
   `downsample_to` constraints
 - verify only `stream_summary_observed` metadata reaches disclosure/provenance
+- record the exact command, observed metadata keys, sample count, schema mismatch count, and cleanup
+  result in a review doc
 - keep actual image delivery to model context out of this slice
 
 Constraints:

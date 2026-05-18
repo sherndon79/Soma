@@ -191,6 +191,9 @@ Implemented:
   exact-topic, constraint, stop-id, and payload-free disclosure paths
 - opt-in Sensorium live smoke runbook added for helper-backed status subscriptions without default
   grants, recording, decoding, or preprocessing
+- guarded Sensorium live smoke wrapper added behind `SOMA_SENSORIUM_ENABLED=1` and
+  `SOMA_SENSORIUM_LIVE_SMOKE=1`, printing the exact CLI commands before running the
+  status-topic-first runtime grant/subscription/revocation flow
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -204,26 +207,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add Sensorium live smoke script guardrails.
+Verify Sensorium live smoke against the real helper and publisher.
 
 Target:
 
 ```text
-sensorium smoke script guardrails
-  -> optionally automate the manual smoke workflow behind explicit env guards
-  -> refuse to run unless SOMA_SENSORIUM_ENABLED=1 and SOMA_SENSORIUM_LIVE_SMOKE=1
-  -> keep status-topic-first behavior and no durable grant writes
+sensorium live smoke verification
+  -> run the guarded smoke wrapper against a Soma service started with SOMA_SENSORIUM_ENABLED=1
+  -> confirm the real helper reaches the Sensorium publisher on the status topic
+  -> capture any operator-facing failure modes without adding default grants
   -> preserve no recording, decoding, or preprocessing
 ```
 
 Expected work:
 
-- decide whether a script is useful after the manual runbook has been exercised
-- if added, make it refuse by default and print the exact commands before running them
-- require explicit topic, provider, capability, and max_seconds values or use status-only defaults
-- keep subscription commands grant-consuming only; they must not create or revive grants outside
-  the explicit grant-create step
-- keep provenance metadata-only; do not record frames or payloads
+- build `soma-sensor-broker`
+- start Soma with `SOMA_SENSORIUM_ENABLED=1`
+- run `SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke`
+- verify active disclosure remains metadata-only
+- capture whether status-topic subscription works against the current `jetsorano` publisher
 
 Constraints:
 

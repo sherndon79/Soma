@@ -40,6 +40,41 @@ npm start
 Startup should log that the Sensorium runtime is enabled. If helper startup fails, Soma should exit
 with `sensorium_runtime_start_failed` rather than silently disabling Sensorium.
 
+## Optional Guarded Wrapper
+
+The manual commands below remain the canonical workflow. A guarded wrapper can run the same
+status-topic-first sequence after the service is already started:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- --dry-run
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke
+```
+
+The wrapper refuses unless both `SOMA_SENSORIUM_ENABLED=1` and
+`SOMA_SENSORIUM_LIVE_SMOKE=1` are present in its environment. It prints the exact CLI commands
+before executing them, creates only process-local runtime grants, and does not record, decode, or
+preprocess payloads.
+
+The default wrapper target is the low-risk status topic:
+
+```text
+capability: perception.sensorium.status.subscribe
+provider: soma.provider.sensorium.jetsorano
+topic: sensor/jetsorano/status
+max_seconds: 30
+```
+
+To use a different target, provide the full explicit tuple so partial retargeting cannot happen by
+accident:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- \
+  --capability perception.sensorium.status.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/status \
+  --max-seconds 30
+```
+
 ## Confirm No Subscription Is Active
 
 ```bash

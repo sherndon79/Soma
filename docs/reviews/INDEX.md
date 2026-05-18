@@ -90,6 +90,9 @@ default.
   - review after CLI subscription commands gained handler-backed integration coverage
 - [Sensorium Live Smoke Runbook](./2026-05-17_sensorium_live_smoke_runbook.md)
   - review after an opt-in helper-backed Sensorium smoke workflow was documented
+- [Sensorium Live Smoke Script Guardrails](./2026-05-17_sensorium_live_smoke_script_guardrails.md)
+  - review after a guarded `npm run sensorium:smoke` wrapper was added for the status-topic-first
+    runtime grant/subscription/revocation workflow
 
 ## Remote Graphical Session Thread
 

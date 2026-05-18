@@ -39,6 +39,7 @@ Environment variables:
 - `SOMA_LLM_URL`
 - `SOMA_LLM_MODEL`
 - `SOMA_SENSORIUM_ENABLED`
+- `SOMA_SENSORIUM_LIVE_SMOKE`
 - `SOMA_SENSOR_BROKER`
 
 Runtime profiles are defined in [config/runtime-profiles.json](./config/runtime-profiles.json).
@@ -136,6 +137,18 @@ npm run cli -- sensorium subscribe-start \
 npm run cli -- sensorium subscriptions
 npm run cli -- sensorium subscribe-stop subscription-id
 ```
+
+The manual live smoke workflow is documented in
+[docs/runbooks/sensorium_live_smoke.md](./docs/runbooks/sensorium_live_smoke.md). A guarded
+wrapper is available for the same status-topic-first flow:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- --dry-run
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke
+```
+
+The wrapper refuses by default, prints the exact CLI commands before running them, uses runtime
+grants only, and does not record, decode, or preprocess payloads.
 
 ## CLI
 

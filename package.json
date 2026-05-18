@@ -11,6 +11,7 @@
     "cli": "node src/cli.js",
     "desktop-broker:build": "cargo build -p soma-desktop-broker",
     "eval:capabilities": "node scripts/eval-capabilities.js",
+    "sensorium:smoke": "node scripts/sensorium-live-smoke.js",
     "start": "node src/server.js",
     "test": "node --test"
   },

@@ -34,8 +34,8 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
 SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke
 ```
 
-It refuses without both environment guards, prints the exact CLI commands before execution, and
-uses process-local runtime grants only.
+It refuses without both environment guards, prints the exact CLI commands before execution, waits
+briefly for metadata-only sample counters, and uses process-local runtime grants only.
 
 The local model profile expects an OpenAI-compatible runtime at `http://127.0.0.1:8000`. The
 included GPU compose file can start the current Gemma/vLLM test runtime:

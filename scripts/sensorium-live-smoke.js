@@ -10,6 +10,7 @@ export const DEFAULT_SENSORIUM_SMOKE = Object.freeze({
   provider: "soma.provider.sensorium.jetsorano",
   topic: "sensor/jetsorano/status",
   maxSeconds: "30",
+  observeSeconds: "3",
   reason: "Smoke test status/liveness subscription.",
   actor: "user",
 });
@@ -61,6 +62,9 @@ export function parseSensoriumLiveSmokeArgs(argv = []) {
       case "max-seconds":
         options.maxSeconds = value;
         seenCore.add(key);
+        break;
+      case "observe-seconds":
+        options.observeSeconds = value;
         break;
       case "reason":
         options.reason = value;
@@ -174,6 +178,7 @@ export async function runSensoriumLiveSmoke({
   }
   stdout.write("\n");
   stdout.write("This workflow uses runtime grants only and does not record, decode, or preprocess payloads.\n");
+  stdout.write(`Observation wait: ${options.observeSeconds} second(s).\n`);
 
   if (options.dryRun) {
     stdout.write("Dry run requested; no commands executed.\n");
@@ -221,12 +226,29 @@ export async function runSensoriumLiveSmoke({
     ], options);
     subscriptionId = requireString(subscriptionResponse?.subscription_id, "subscription id");
 
-    await runStep(runner, "inspect active Sensorium disclosure", ["sensorium", "subscriptions", "--json"], options);
-    await runStep(runner, "stop bounded Sensorium subscription", [
+    stdout.write(`Waiting ${options.observeSeconds} second(s) for metadata-only sample counters.\n`);
+    await sleepSeconds(Number(options.observeSeconds));
+
+    const activeDisclosure = await runStep(
+      runner,
+      "inspect active Sensorium disclosure",
+      ["sensorium", "subscriptions", "--json"],
+      options,
+    );
+    const disclosureFrames = findFramesConsumedSoFar(activeDisclosure, subscriptionId);
+    const stopResponse = await runStep(runner, "stop bounded Sensorium subscription", [
       "sensorium", "subscribe-stop", subscriptionId,
       "--json",
     ], options);
     subscriptionId = "";
+    const framesConsumed = Number(stopResponse?.end_summary?.frames_consumed ?? disclosureFrames ?? 0);
+    stdout.write(`Observed sample count: ${framesConsumed}\n`);
+    if (!Number.isFinite(framesConsumed) || framesConsumed < 1) {
+      throw new SensoriumLiveSmokeError(
+        "Sensorium live smoke completed the control path but observed zero samples from the publisher",
+        "no_samples_observed",
+      );
+    }
 
     await runStep(runner, "revoke runtime session grant", [
       "sensorium", "grant-revoke", grantId,
@@ -257,6 +279,10 @@ function validateSmokeOptions(options) {
   const maxSeconds = Number(options.maxSeconds);
   if (!Number.isInteger(maxSeconds) || maxSeconds < 1 || maxSeconds > 3600) {
     throw new SensoriumLiveSmokeError("--max-seconds must be an integer from 1 to 3600", "usage_error");
+  }
+  const observeSeconds = Number(options.observeSeconds);
+  if (!Number.isInteger(observeSeconds) || observeSeconds < 1 || observeSeconds > 60) {
+    throw new SensoriumLiveSmokeError("--observe-seconds must be an integer from 1 to 60", "usage_error");
   }
   for (const [name, value] of Object.entries({
     capability: options.capability,
@@ -310,7 +336,7 @@ async function cleanupAfterFailure({ runner, options, subscriptionId, grantId, s
 }
 
 function runCliCommand(args, { label } = {}) {
-  const result = spawnSync("npm", ["run", "cli", "--", ...args], {
+  const result = spawnSync(process.execPath, ["src/cli.js", ...args], {
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     encoding: "utf8",
   });
@@ -328,6 +354,20 @@ function runCliCommand(args, { label } = {}) {
       "invalid_json",
     );
   }
+}
+
+function sleepSeconds(seconds) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, seconds * 1000);
+  });
+}
+
+function findFramesConsumedSoFar(disclosure, subscriptionId) {
+  const stream = Array.isArray(disclosure?.streams)
+    ? disclosure.streams.find((entry) => entry?.subscription_id === subscriptionId)
+    : null;
+  const value = stream?.frames_consumed_so_far;
+  return typeof value === "number" ? value : null;
 }
 
 function requireString(value, label) {

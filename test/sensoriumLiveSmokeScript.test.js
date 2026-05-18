@@ -27,6 +27,7 @@ test("sensorium live smoke defaults to status-topic-only workflow", () => {
   assert.equal(options.provider, DEFAULT_SENSORIUM_SMOKE.provider);
   assert.equal(options.topic, DEFAULT_SENSORIUM_SMOKE.topic);
   assert.equal(options.maxSeconds, DEFAULT_SENSORIUM_SMOKE.maxSeconds);
+  assert.equal(options.observeSeconds, DEFAULT_SENSORIUM_SMOKE.observeSeconds);
 
   const plan = buildSensoriumLiveSmokePlan(options);
   assert.equal(plan[1].args[0], "sensorium");
@@ -47,10 +48,19 @@ test("sensorium live smoke custom targets require the full explicit target tuple
     "--provider", "soma.provider.sensorium.other",
     "--topic", "sensor/other/status",
     "--max-seconds", "15",
+    "--observe-seconds", "5",
   ]);
   assert.equal(options.provider, "soma.provider.sensorium.other");
   assert.equal(options.topic, "sensor/other/status");
   assert.equal(options.maxSeconds, "15");
+  assert.equal(options.observeSeconds, "5");
+});
+
+test("sensorium live smoke rejects invalid observation waits", () => {
+  assert.throws(
+    () => parseSensoriumLiveSmokeArgs(["--observe-seconds", "0"]),
+    /--observe-seconds must be an integer from 1 to 60/,
+  );
 });
 
 test("sensorium live smoke plan preserves grant-before-subscribe order and runtime cleanup", () => {

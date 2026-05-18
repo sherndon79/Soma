@@ -93,6 +93,9 @@ default.
 - [Sensorium Live Smoke Script Guardrails](./2026-05-17_sensorium_live_smoke_script_guardrails.md)
   - review after a guarded `npm run sensorium:smoke` wrapper was added for the status-topic-first
     runtime grant/subscription/revocation workflow
+- [Sensorium Live Smoke Verification](./2026-05-17_sensorium_live_smoke_verification.md)
+  - review after the guarded smoke wrapper was run against a real Sensorium-enabled Soma service;
+    control path worked, but status samples were not observed from `jetsorano`
 
 ## Remote Graphical Session Thread
 

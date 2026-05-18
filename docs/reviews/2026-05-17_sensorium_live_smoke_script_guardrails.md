@@ -16,6 +16,7 @@ The wrapper preserves the intended operator posture:
 - defaults to the low-risk `sensor/jetsorano/status` topic
 - requires the full target tuple when retargeting so partial custom targets fail closed
 - prints the exact CLI command sequence before execution
+- waits briefly for metadata-only sample counters before stopping
 - keeps proposal creation, approval, runtime grant creation, subscription start, subscription stop,
   and grant revocation as separate visible steps
 - writes only process-local runtime grants and does not touch `config/grants.json`

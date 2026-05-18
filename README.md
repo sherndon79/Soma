@@ -148,7 +148,8 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke
 ```
 
 The wrapper refuses by default, prints the exact CLI commands before running them, uses runtime
-grants only, and does not record, decode, or preprocess payloads.
+grants only, waits briefly for metadata-only sample counters, and does not record, decode, or
+preprocess payloads.
 
 ## CLI
 

@@ -194,6 +194,11 @@ Implemented:
 - guarded Sensorium live smoke wrapper added behind `SOMA_SENSORIUM_ENABLED=1` and
   `SOMA_SENSORIUM_LIVE_SMOKE=1`, printing the exact CLI commands before running the
   status-topic-first runtime grant/subscription/revocation flow
+- Sensorium live smoke wrapper hardened to wait for metadata-only sample counters and fail with
+  `no_samples_observed` when the control path completes but the publisher delivers no samples
+- live smoke verification run confirmed the Soma/helper control path and metadata-only cleanup,
+  but did not observe status samples from `sensor/jetsorano/status`; `jetsorano` is LAN-reachable,
+  while SSH inspection is blocked until host key verification is resolved
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -207,25 +212,27 @@ Current authority boundary:
 
 ## Next Slice
 
-Verify Sensorium live smoke against the real helper and publisher.
+Diagnose Sensorium publisher sample delivery.
 
 Target:
 
 ```text
-sensorium live smoke verification
-  -> run the guarded smoke wrapper against a Soma service started with SOMA_SENSORIUM_ENABLED=1
-  -> confirm the real helper reaches the Sensorium publisher on the status topic
-  -> capture any operator-facing failure modes without adding default grants
+sensorium publisher delivery diagnosis
+  -> resolve jetsorano SSH host key verification deliberately before remote inspection
+  -> confirm the Sensorium publisher service is running on jetsorano
+  -> confirm the advertised status topic matches sensor/jetsorano/status
+  -> confirm Zenoh peer discovery/routing between workstation and jetsorano
+  -> rerun the guarded smoke wrapper and require at least one observed sample
   -> preserve no recording, decoding, or preprocessing
 ```
 
 Expected work:
 
-- build `soma-sensor-broker`
-- start Soma with `SOMA_SENSORIUM_ENABLED=1`
-- run `SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke`
-- verify active disclosure remains metadata-only
-- capture whether status-topic subscription works against the current `jetsorano` publisher
+- verify the SSH host key path for `jetsorano`; do not bypass host identity silently
+- inspect the Sensorium publisher process/service on `jetsorano`
+- inspect topic names or logs on the publisher side
+- check whether Zenoh needs explicit peer configuration rather than default multicast discovery
+- rerun the guarded wrapper against `SOMA_SENSORIUM_ENABLED=1` service
 
 Constraints:
 

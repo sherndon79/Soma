@@ -114,13 +114,13 @@
       "id": "soma.provider.sensorium.jetsorano",
       "name": "Sensorium Node (jetsorano)",
       "version": "0.1.0",
-      "runtime": "zenoh-subscriber-pending",
+      "runtime": "zenoh-subscriber",
       "local_only": false,
       "network_access": true,
       "network_scope": "lan-zenoh-peer",
       "host_segment": "jetsorano",
       "requires": [
-        "soma-sensor-broker (not yet implemented; step 7 of disabled-first sequence)",
+        "soma-sensor-broker",
         "zenoh client transport"
       ],
       "capabilities": [

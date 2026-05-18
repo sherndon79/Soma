@@ -239,6 +239,8 @@ Implemented:
 - implemented helper-side color JPEG minimization: `soma-sensor-broker` can downsample Sensorium
   `ColorFrame` MessagePack payloads to the requested bounds before notifying Node, and the live
   smoke wrapper checks observed dimensions
+- verified the live color minimization boundary against `jetsorano`: `downsample_to=320x240`
+  produced bounded `320x180` metadata, nine samples over eight seconds, and clean runtime cleanup
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -252,22 +254,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Verify the live color content-minimization boundary and keep model-facing visual delivery separate.
+Surface Sensorium helper stream errors through Node metadata without exposing payload contents.
 
 Target:
 
 ```text
-sensorium color minimization verification
-  -> run explicitly acknowledged live color smoke against the helper-side transform
-  -> prove downsample_to is reflected in observed bounded metadata
-  -> preserve metadata-only status/color smoke paths as the default verification posture
-  -> keep recording, screenshots, and raw frame retention out of scope
+sensorium helper error propagation
+  -> consume bounded sensorium.subscription.error notifications from the helper
+  -> attach error_class to subscription state and end provenance
+  -> preserve metadata-only status/color smoke paths
+  -> do not route malformed payload bytes, screenshots, or frame contents to Node-visible state
 ```
 
 Expected work:
 
-- document the live minimized dimensions, sample count, and cleanup result
-- add tests proving model-facing visual payloads cannot bypass the transform boundary
+- add unit coverage for transform error notifications and end summaries
+- ensure helper transform failures terminate subscriptions fail-closed
+- document the error surface in the Sensorium integration draft
 - keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:

@@ -8,18 +8,16 @@
 //   step 4   validator rejects cross-capability and overreach payloads
 //   step 5   provenance shape records consumption, not content
 //   step 6   disclosure shape never leaks frame content
-//   step 7   sensor-broker helper returns implementation_pending for
-//            every method
+//   step 7   sensor-broker helper lifecycle is explicit and bounded
 //
 // This test file walks the *public path* end-to-end and asserts the
 // composite fail-closed property explicitly, so a future regression
 // that accidentally activates any one of these layers gets caught
 // here with a clear message identifying which layer broke.
 //
-// The test is a tripwire. It will only "pass" while no Sensorium
-// subscription can actually flow; activation (step 9) will require
-// updating these assertions in lockstep with whatever layer it
-// touches.
+// The test is a tripwire for default posture. Sensorium subscriptions
+// can flow only through the explicit grant path; default catalog,
+// grant-store, and public-route behavior must remain fail-closed.
 
 import assert from "node:assert/strict";
 import test from "node:test";

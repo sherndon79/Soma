@@ -43,12 +43,11 @@ test("capability view keeps remote planning unsupported until a provider is regi
 // ── Sensorium subscription capabilities (disabled-first integration) ───────
 //
 // Tests below pin the load-bearing facts of the Sensorium capability
-// entries and provider claim across the disabled-first sequence
-// documented in docs/concepts/drafts/sensorium_integration.md. The
-// assertions guard against silent drift: dropping an entry, downgrading
-// a risk class, flipping default_status to "allowed" before later
-// activation gates are in place, or accidentally promoting harness_status
-// when only a provider claim has landed.
+// entries and provider claim documented in
+// docs/concepts/drafts/sensorium_integration.md. The assertions guard
+// against silent drift: dropping an entry, downgrading a risk class,
+// flipping default_status to "allowed", or accidentally promoting
+// harness_status when a provider claim exists.
 
 const SENSORIUM_CAPABILITIES = [
   { key: "perception.sensorium.color.subscribe",    risk: "high",      contract: "soma.perception.sensorium.color.v1" },
@@ -88,14 +87,14 @@ test("Sensorium subscription capabilities are catalogued with the disabled-first
 });
 
 test("Sensorium provider registry claim makes capabilities requestable without activating them", async () => {
-  // Step 2 of the disabled-first sequence: the Sensorium provider entry
-  // claims the five capability contracts but neither the helper binary
-  // nor any grant has landed yet. The capability view should report:
+  // The Sensorium provider entry claims the five subscription
+  // capability contracts and the helper is implemented, but provider
+  // availability is not grant authority. The capability view should
+  // report:
   //   support_status = "supported"   (provider claims the contract)
   //   status         = "requestable" (eligible for proposal)
-  //   harness_status = "disabled"    (still inactive — provider claim
-  //                                   is not activation)
-  // This is the "approval is not activation" / "provider installation
+  //   harness_status = "disabled"    (provider claim is not activation)
+  // This is the "approval is not activation" / "provider availability
   // is not permission" load-bearing rule from AGENTS.md, made visible
   // in test assertions.
 
@@ -107,9 +106,13 @@ test("Sensorium provider registry claim makes capabilities requestable without a
     (p) => p.id === "soma.provider.sensorium.jetsorano",
   );
   assert.ok(sensoriumProvider, "expected Sensorium provider entry to be present");
-  assert.equal(sensoriumProvider.runtime, "zenoh-subscriber-pending");
+  assert.equal(sensoriumProvider.runtime, "zenoh-subscriber");
   assert.equal(sensoriumProvider.local_only, false);
   assert.equal(sensoriumProvider.network_access, true);
+  assert.deepEqual(sensoriumProvider.requires, [
+    "soma-sensor-broker",
+    "zenoh client transport",
+  ]);
   assert.equal(
     sensoriumProvider.capabilities.length,
     SENSORIUM_CAPABILITIES.length,
@@ -126,5 +129,26 @@ test("Sensorium provider registry claim makes capabilities requestable without a
     assert.equal(cap.providers.length, 1, `${want.key}: expected exactly one provider claim`);
     assert.equal(cap.providers[0].id, "soma.provider.sensorium.jetsorano");
     assert.equal(cap.providers[0].provider_contract, want.contract);
+  }
+});
+
+test("Sensorium catalog exposes subscriptions without model-facing visual delivery", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const sensoriumCapabilities = view.capabilities.filter((capability) =>
+    capability.key.startsWith("perception.sensorium."),
+  );
+  assert.equal(sensoriumCapabilities.length, SENSORIUM_CAPABILITIES.length);
+
+  for (const capability of sensoriumCapabilities) {
+    assert.ok(
+      capability.key.endsWith(".subscribe"),
+      `${capability.key} should remain a subscription capability, not a delivery capability`,
+    );
+    assert.doesNotMatch(capability.key, /deliver|route|model|visual_context|screenshot|record/);
+    assert.equal(capability.status, "requestable");
+    assert.equal(capability.harness_status, "disabled");
   }
 });

@@ -727,6 +727,24 @@ Completed Soma-side slices:
    `SensoriumSubscriber` composition layer, and an HTTP subscription seam:
    `GET /sensorium/subscriptions`, `POST /sensorium/subscriptions`, and
    `DELETE /sensorium/subscriptions/:id`.
+10. Review-only proposal creation surfaces let an operator prepare, store,
+    inspect, and approve Sensorium grant proposals without writing runtime or
+    durable grants.
+11. Approved proposals can be converted into runtime session grants through
+    an explicit `POST /sensorium/grants` path and matching CLI command. This
+    path writes only process-local session state and records metadata-only
+    provenance.
+12. Runtime Sensorium grants can be explicitly revoked through
+    `POST /sensorium/grants/:id/revoke` and the matching CLI command. If
+    active subscriptions are tied to the revoked grant, revocation stops them
+    before reporting the grant as revoked.
+13. CLI wrappers now cover the guarded operator path: proposal template,
+    proposal creation, approval, runtime grant creation, subscription start,
+    active-subscription disclosure, subscription stop, and runtime grant
+    revocation.
+14. A live smoke runbook documents the helper-backed workflow for bounded
+    status-topic verification without recording payloads, decoding frames, or
+    writing durable grants.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return
@@ -759,8 +777,10 @@ request includes a bounded key that the active grant does not declare, Soma
 rejects before helper invocation. This keeps the successful path explicit while
 avoiding accidental unbounded subscriptions.
 
-Next implementation work should define how durable Sensorium grants are created
-and reviewed. No Sensorium grants ship in `config/grants.json`.
+Next implementation work should verify the live smoke runbook against the real
+helper and publisher, then decide whether the next behavior slice should harden
+the live operator path, introduce durable Sensorium grant design, or add a
+stream-consumption surface. No Sensorium grants ship in `config/grants.json`.
 
 The point of this ordering: a participant should never accidentally
 receive sensor frames because someone forgot a check. The public path

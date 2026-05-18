@@ -56,8 +56,10 @@ summary-only provenance.
 ## Sensorium Integration Thread
 
 This thread tracks the disabled-first integration of the external Sensorium node on `jetsorano`.
-The HTTP seam now exists, but the default server posture remains subscriber-not-configured and no
-Sensorium grants ship by default.
+The HTTP seam, explicit runtime opt-in, session grant creation, session grant revocation, CLI
+subscription commands, and live smoke runbook now exist. The default server posture remains
+subscriber-not-configured, runtime grants are process-local, and no Sensorium grants ship by
+default.
 
 - [Sensorium HTTP Seam Review](./2026-05-15_sensorium_http_seam_review.md)
   - review after the injected HTTP subscription seam landed with validation, provider host checks,
@@ -97,6 +99,7 @@ Sensorium grants ship by default.
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.
-- Run a focused review after Sensorium session grant creation is implemented.
+- Run a focused review after the next Sensorium behavior change, especially a live helper-backed
+  smoke result, durable grant design change, or stream-consumption behavior change.
 - Revisit compatibility delegates after a broader draft-lifecycle policy is formalized.
 - Add new thread sections here when review density for another capability starts to grow.

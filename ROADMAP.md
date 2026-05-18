@@ -216,6 +216,9 @@ Implemented:
 - verified bounded status observation against the live `jetsorano` publisher: the guarded smoke
   observed two samples, `schema_version_observed: 1`, `schema_mismatches: 0`, and a metadata-only
   status summary listing the active Sensorium stream tails
+- added `soma sensorium status`, a read-only operator CLI surface that filters active Sensorium
+  disclosure to bounded status summaries without creating grants, starting subscriptions, or
+  exposing raw payload bytes
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -229,15 +232,15 @@ Current authority boundary:
 
 ## Next Slice
 
-Decide the next Sensorium consumption surface.
+Draft the first higher-risk Sensorium stream contract.
 
 Target:
 
 ```text
-sensorium next consumption surface
-  -> decide whether to expose status summaries as an operator command/API or move to the first
-     higher-risk stream contract
-  -> keep status as the first low-risk stream
+sensorium stream contract
+  -> choose the first higher-risk stream to specify (likely color, because it is the main visual
+     perception path)
+  -> define the allowed summary fields before decoding any payload
   -> keep runtime grants process-local and cleanup metadata-only
   -> preserve no recording, frame decoding, or preprocessing for higher-risk streams until their
      contracts are written and tested
@@ -245,11 +248,10 @@ sensorium next consumption surface
 
 Expected work:
 
-- choose between a first-class status observation surface and the next stream-specific contract
-- if status surface: add a narrowed command/API that reads the latest status summary without raw
-  payload access
-- if next stream: write the color/depth/IMU contract before adding any decoding
-- keep color/depth/IMU subscription work out of this slice
+- document the selected stream contract, risk posture, allowed summary fields, excluded fields, and
+  schema mismatch behavior
+- add tests that prove the contract rejects raw content retention and cross-stream field leakage
+- do not add payload decoding until the contract and tests are in place
 
 Constraints:
 

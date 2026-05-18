@@ -213,6 +213,13 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "sensorium" && subcommand === "status") {
+    const response = await request(baseUrl, "GET", "/sensorium/subscriptions");
+    const statusView = sensoriumStatusView(response);
+    writeOutput(stdout, statusView, jsonOutput, sensoriumStatusSummary(statusView));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -913,6 +920,65 @@ function sensoriumSubscriptionsSummary(response) {
   return lines.join("\n");
 }
 
+function sensoriumStatusView(response) {
+  const streams = Array.isArray(response.streams) ? response.streams : [];
+  const statuses = streams
+    .filter((stream) => stream?.capability === "perception.sensorium.status.subscribe")
+    .map((stream) => ({
+      subscription_id: stream.subscription_id ?? "",
+      grant_id: stream.grant_id ?? "",
+      topic: stream.topic ?? "",
+      host: stream.host ?? "",
+      frames_consumed_so_far: stream.frames_consumed_so_far ?? 0,
+      status_summary_observed: stream.status_summary_observed ?? null,
+    }));
+
+  return {
+    family: "perception.sensorium",
+    active_status_count: statuses.length,
+    summary: statuses.length === 0
+      ? "No active Sensorium status summaries"
+      : `Sensorium status summaries: ${statuses.length} active`,
+    statuses,
+    frames_recorded: Boolean(response.frames_recorded),
+  };
+}
+
+function sensoriumStatusSummary(response) {
+  const statuses = Array.isArray(response.statuses) ? response.statuses : [];
+  const lines = [
+    "Sensorium status",
+    `  active status subscriptions: ${response.active_status_count ?? statuses.length}`,
+    `  summary: ${response.summary ?? ""}`,
+    `  frames recorded: ${booleanText(response.frames_recorded)}`,
+  ];
+
+  if (statuses.length === 0) {
+    lines.push("  none");
+    return lines.join("\n");
+  }
+
+  for (const status of statuses) {
+    const observed = status.status_summary_observed ?? {};
+    lines.push(`  ${status.subscription_id || "unknown-subscription"}`);
+    lines.push(`    topic: ${status.topic || "unknown"}`);
+    lines.push(`    grant: ${status.grant_id || "unknown"}`);
+    lines.push(`    frames consumed so far: ${status.frames_consumed_so_far ?? 0}`);
+    if (!observed || Object.keys(observed).length === 0) {
+      lines.push("    observed: none yet");
+      continue;
+    }
+    lines.push(`    host: ${observed.hostname ?? status.host ?? "unknown"}`);
+    lines.push(`    schema version: ${observed.schema_version ?? "unknown"}`);
+    lines.push(`    node version: ${observed.node_version ?? "unknown"}`);
+    lines.push(`    uptime seconds: ${observed.uptime_seconds ?? "unknown"}`);
+    const streams = Array.isArray(observed.enabled_streams) ? observed.enabled_streams : [];
+    lines.push(`    enabled streams: ${streams.length > 0 ? streams.join(", ") : "none"}`);
+  }
+
+  return lines.join("\n");
+}
+
 function sensoriumConstraintSummary(review) {
   const parts = [];
   if (review.max_seconds !== undefined && review.max_seconds !== null) {
@@ -990,6 +1056,7 @@ Usage:
   soma sensorium subscribe-start --capability key --topic topic --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--scope session] [--json]
   soma sensorium subscribe-stop subscription-id [--json]
   soma sensorium subscriptions [--json]
+  soma sensorium status [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

@@ -143,8 +143,12 @@ npm run cli -- sensorium subscribe-start \
   --topic sensor/jetsorano/status \
   --max-seconds 30
 npm run cli -- sensorium subscriptions
+npm run cli -- sensorium status
 npm run cli -- sensorium subscribe-stop subscription-id
 ```
+
+`sensorium status` is read-only. It filters the active subscription disclosure down to bounded
+status summaries and does not start a subscription or expose raw payload bytes.
 
 The manual live smoke workflow is documented in
 [docs/runbooks/sensorium_live_smoke.md](./docs/runbooks/sensorium_live_smoke.md). A guarded

@@ -430,6 +430,17 @@ Active Sensorium disclosure can be inspected without exposing payloads:
 npm run cli -- sensorium subscriptions
 ```
 
+Bounded status summaries can be inspected separately:
+
+```bash
+npm run cli -- sensorium status
+```
+
+This command is read-only. It uses the active subscription disclosure and filters it to
+`perception.sensorium.status.subscribe` summaries: schema version, hostname, uptime, node version,
+and enabled stream tails. It does not create a grant, start a subscription, retain raw payload
+bytes, or expose higher-risk stream payloads.
+
 To stop a specific subscription:
 
 ```bash

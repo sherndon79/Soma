@@ -866,6 +866,112 @@ test("runCli sensorium subscriptions lists active disclosure", async () => {
   assert.match(writes.join(""), /frames recorded: no/);
 });
 
+test("runCli sensorium status prints bounded status summaries only", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "status",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        family: "perception.sensorium",
+        active_count: 2,
+        summary: "perception via Sensorium: 2 streams active",
+        frames_recorded: false,
+        streams: [
+          {
+            subscription_id: "sub-color-1",
+            capability: "perception.sensorium.color.subscribe",
+            topic: "sensor/jetsorano/realsense/color",
+            grant_id: "grant-color",
+            frames_consumed_so_far: 20,
+            frame_content: "must-not-print",
+          },
+          {
+            subscription_id: "sub-status-1",
+            capability: "perception.sensorium.status.subscribe",
+            topic: "sensor/jetsorano/status",
+            grant_id: "grant-status",
+            host: "jetsorano",
+            frames_consumed_so_far: 2,
+            status_summary_observed: {
+              schema_version: 1,
+              hostname: "jetsorano",
+              uptime_seconds: 42.5,
+              node_version: "0.1.0",
+              enabled_streams: [
+                "realsense/color",
+                "realsense/depth",
+              ],
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.equal(captured.method, "GET");
+  assert.equal(captured.path, "/sensorium/subscriptions");
+  assert.equal(captured.body, undefined);
+  assert.match(output, /Sensorium status/);
+  assert.match(output, /active status subscriptions: 1/);
+  assert.match(output, /sub-status-1/);
+  assert.match(output, /host: jetsorano/);
+  assert.match(output, /enabled streams: realsense\/color, realsense\/depth/);
+  assert.doesNotMatch(output, /sub-color-1/);
+  assert.doesNotMatch(output, /must-not-print/);
+});
+
+test("runCli sensorium status json returns filtered status view", async () => {
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "sensorium",
+    "status",
+    "--json",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => ({
+      streams: [
+        {
+          subscription_id: "sub-color-1",
+          capability: "perception.sensorium.color.subscribe",
+          status_summary_observed: { hostname: "should-not-appear" },
+        },
+        {
+          subscription_id: "sub-status-1",
+          capability: "perception.sensorium.status.subscribe",
+          topic: "sensor/jetsorano/status",
+          status_summary_observed: {
+            schema_version: 1,
+            hostname: "jetsorano",
+            uptime_seconds: 42.5,
+            node_version: "0.1.0",
+            enabled_streams: ["realsense/color"],
+          },
+        },
+      ],
+      frames_recorded: false,
+    }),
+  });
+
+  const payload = JSON.parse(writes.join(""));
+  assert.equal(code, 0);
+  assert.equal(payload.active_status_count, 1);
+  assert.equal(payload.statuses.length, 1);
+  assert.equal(payload.statuses[0].subscription_id, "sub-status-1");
+  assert.equal(payload.statuses[0].status_summary_observed.hostname, "jetsorano");
+  assert.equal(JSON.stringify(payload).includes("should-not-appear"), false);
+});
+
 test("runCli proposals deny sends decision request", async () => {
   let captured;
   const writes = [];

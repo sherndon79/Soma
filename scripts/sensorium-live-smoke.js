@@ -293,6 +293,7 @@ export async function runSensoriumLiveSmoke({
         "no_samples_observed",
       );
     }
+    validateCameraSmokeFrameBound(framesConsumed, options);
 
     await runStep(runner, "revoke runtime session grant", [
       "sensorium", "grant-revoke", grantId,
@@ -337,6 +338,24 @@ export function validateCameraSmokeEndSummary(endSummary, options = DEFAULT_SENS
     );
   }
   assertMetadataOnlySummary(streamSummary, "ended color subscription");
+}
+
+export function validateCameraSmokeFrameBound(framesConsumed, options = DEFAULT_SENSORIUM_SMOKE) {
+  if (!isCameraClassCapability(options.capability)) {
+    return;
+  }
+  const maxFps = Number(options.maxFps);
+  const observeSeconds = Number(options.observeSeconds);
+  if (!Number.isInteger(maxFps) || !Number.isInteger(observeSeconds)) {
+    return;
+  }
+  const tolerated = maxFps * observeSeconds + Math.max(2, maxFps);
+  if (framesConsumed > tolerated) {
+    throw new SensoriumLiveSmokeError(
+      `camera-class Sensorium smoke exceeded max_fps delivery bound: observed ${framesConsumed} sample(s), expected at most ${tolerated}`,
+      "max_fps_exceeded",
+    );
+  }
 }
 
 function assertMetadataOnlySummary(summary, label) {

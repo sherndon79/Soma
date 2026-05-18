@@ -71,6 +71,7 @@ export class SensoriumSubscriber {
       stripEmpty({
         topic: validated.topic,
         zenoh_config_path: this.#zenohConfigPath,
+        max_fps: validated.constraints?.max_fps,
       }),
     );
 

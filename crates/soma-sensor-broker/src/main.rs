@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -310,6 +310,12 @@ async fn handle_subscribe_start(
         .get("zenoh_config_path")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let max_fps = match parse_optional_max_fps(&params) {
+        Ok(value) => value,
+        Err(message) => {
+            return error_response(id, INVALID_PARAMS, "invalid_params", &message);
+        }
+    };
 
     let subscription_id = Uuid::new_v4().to_string();
 
@@ -362,9 +368,17 @@ async fn handle_subscribe_start(
         // Move both subscriber and session into the task so they live
         // together; dropping either ends the subscription.
         let _session_guard = session;
+        let min_interval = max_fps.map(|fps| Duration::from_secs_f64(1.0 / f64::from(fps)));
+        let mut last_delivered: Option<Instant> = None;
         loop {
             match subscriber.recv_async().await {
                 Ok(sample) => {
+                    if let Some(interval) = min_interval {
+                        if last_delivered.is_some_and(|last| last.elapsed() < interval) {
+                            continue;
+                        }
+                        last_delivered = Some(Instant::now());
+                    }
                     let bytes = sample.payload().to_bytes().to_vec();
                     let notification = json!({
                         "jsonrpc": "2.0",
@@ -413,6 +427,16 @@ async fn handle_subscribe_start(
     })
 }
 
+fn parse_optional_max_fps(params: &Value) -> Result<Option<u32>, String> {
+    match params.get("max_fps") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => match value.as_u64() {
+            Some(raw) if (1..=30).contains(&raw) => Ok(Some(raw as u32)),
+            _ => Err("subscribe.start params.max_fps must be an integer from 1 to 30".to_string()),
+        },
+    }
+}
+
 fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -440,10 +464,8 @@ mod tests {
     }
 
     fn sandbox_zenoh_config_path() -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "soma-sensor-broker-test-{}.json5",
-            Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("soma-sensor-broker-test-{}.json5", Uuid::new_v4()));
         fs::write(
             &path,
             r#"{
@@ -621,6 +643,37 @@ mod tests {
         .await;
         assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
         assert_eq!(resp["error"]["code_name"], "invalid_params");
+    }
+
+    #[tokio::test]
+    async fn start_rejects_invalid_max_fps_before_opening_subscription() {
+        let (tx, _rx) = make_output();
+        for bad in [json!(0), json!(31), json!(1.5), json!("1")] {
+            let resp = handle_line(
+                &json!({
+                    "jsonrpc": "2.0",
+                    "method": "sensorium.subscribe.start",
+                    "params": {
+                        "topic": "sensor/test/status",
+                        "max_fps": bad,
+                    },
+                    "id": "bad-max-fps",
+                })
+                .to_string(),
+                make_state(),
+                tx.clone(),
+            )
+            .await;
+            assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
+            assert_eq!(resp["error"]["code_name"], "invalid_params");
+            assert!(
+                resp["error"]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("max_fps"),
+                "expected max_fps error, got {resp}"
+            );
+        }
     }
 
     // Zenoh requires a multi-thread tokio runtime; current_thread

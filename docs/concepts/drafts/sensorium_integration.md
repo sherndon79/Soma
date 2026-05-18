@@ -275,18 +275,22 @@ be bounded the same way other invocations are:
 The constraints field is where consumer-shape preprocessing gets specified.
 A few that matter for the camera path:
 
-- `max_fps` — Soma capabilities almost never need 30 fps. Throttling at
-  the subscriber edge keeps the model's input within budget.
+- `max_fps` — Soma capabilities almost never need 30 fps. The current
+  helper applies this at the delivery boundary before serializing sample
+  payload bytes back to Node.
 - `max_seconds` — bounded session length matches Soma's scoping model.
 - `downsample_to` — frame size at the Soma-side decoder before handing
   to the model. Gemma's vision encoder has fixed input resolution; sending
-  full-res frames is wasted decoding.
+  full-res frames is wasted decoding. This is not yet an active image
+  transform in the metadata-only smoke path; it must be implemented before
+  any model-facing visual delivery.
 - `format_required` — pin the expected encoding; reject if Sensorium
   starts publishing something else.
 
 These are subscriber-side knobs. Sensorium itself doesn't enforce or even
 see them — it publishes once, all subscribers receive. The constraints
-live inside the Soma capability code that wraps the subscription.
+live inside the Soma capability code and bounded helper path that wrap the
+subscription.
 
 ## Grant Review Surface
 

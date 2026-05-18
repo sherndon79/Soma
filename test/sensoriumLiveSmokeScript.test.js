@@ -8,6 +8,7 @@ import {
   parseSensoriumLiveSmokeArgs,
   sensoriumLiveSmokeGuardErrors,
   validateCameraSmokeEndSummary,
+  validateCameraSmokeFrameBound,
 } from "../scripts/sensorium-live-smoke.js";
 
 test("sensorium live smoke refuses unless both explicit guards are set", () => {
@@ -203,6 +204,26 @@ test("sensorium live smoke validates color metadata-only end summaries", () => {
         },
       }, options),
     /forbidden content field/,
+  );
+});
+
+test("sensorium live smoke rejects camera sample counts far beyond max_fps", () => {
+  const options = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.color.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/color",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "jpeg",
+    "--downsample", "320x240",
+    "--observe-seconds", "8",
+    "--acknowledge-camera-stream",
+  ]);
+
+  assert.doesNotThrow(() => validateCameraSmokeFrameBound(9, options));
+  assert.throws(
+    () => validateCameraSmokeFrameBound(194, options),
+    /exceeded max_fps delivery bound/,
   );
 });
 

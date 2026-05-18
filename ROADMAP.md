@@ -231,6 +231,9 @@ Implemented:
 - added an explicit camera-class live smoke guard: color/depth smoke targets require an extra
   camera acknowledgement plus bounded video constraints, and color smoke validates metadata-only
   `stream_summary_observed` before passing
+- verified an explicitly acknowledged live color metadata smoke against `jetsorano`; the run found
+  and fixed missing helper-side `max_fps` delivery throttling, then passed with nine metadata-only
+  samples over eight seconds and clean runtime grant/subscription cleanup
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -244,26 +247,27 @@ Current authority boundary:
 
 ## Next Slice
 
-Run and document an explicitly approved live color metadata smoke.
+Design and implement the color content-minimization boundary before any model-facing visual
+delivery.
 
 Target:
 
 ```text
-sensorium color live metadata verification
-  -> use the camera-class smoke guard with explicit operator assent
-  -> observe only bounded metadata from live color payloads
-  -> prove cleanup leaves process-local grants and subscriptions cleared
-  -> preserve no image bytes, screenshots, recording, model delivery, or preprocessing
+sensorium color minimization boundary
+  -> decide whether downsampling happens in soma-sensor-broker, a dedicated bounded helper, or a
+     Sensorium-side derivative stream
+  -> ensure downsample_to is enforced before any model-facing image delivery
+  -> preserve metadata-only status/color smoke paths as the default verification posture
+  -> keep recording, screenshots, and raw frame retention out of scope
 ```
 
 Expected work:
 
-- start a short-lived color subscription with tight `max_seconds`, `max_fps`, `format_required`, and
-  `downsample_to` constraints
-- verify only `stream_summary_observed` metadata reaches disclosure/provenance
-- record the exact command, observed metadata keys, sample count, schema mismatch count, and cleanup
-  result in a review doc
-- keep actual image delivery to model context out of this slice
+- document the transform trust boundary and dependency choice
+- decide whether `downsample_to` remains a grant declaration until visual delivery is implemented or
+  becomes an actively enforced stream transform earlier
+- add tests proving model-facing visual payloads cannot bypass the transform boundary
+- keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:
 

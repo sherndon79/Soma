@@ -97,6 +97,9 @@ default.
   - review after the guarded smoke wrapper was run against a real Sensorium-enabled Soma service;
     addenda now capture stable-endpoint success, bounded status summaries, live producer profile
     disclosure, and the eight-second smoke wait aligned with the five-second status heartbeat
+- [Sensorium Color Live Metadata Verification](./2026-05-18_sensorium_color_live_metadata.md)
+  - review after an explicitly acknowledged live color metadata smoke; documents helper-side
+    `max_fps` enforcement, metadata-only summaries, cleanup, and the remaining downsample boundary
 
 ## Remote Graphical Session Thread
 

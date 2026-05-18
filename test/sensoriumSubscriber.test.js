@@ -175,6 +175,7 @@ test("subscriber.start passes optional Zenoh config path to the helper", async (
   assert.equal(manager.calls.length, 1);
   assert.deepEqual(manager.calls[0].params, {
     topic: "sensor/jetsorano/realsense/color",
+    max_fps: 5,
     zenoh_config_path: "/tmp/soma-sensorium-zenoh.json5",
   });
 });

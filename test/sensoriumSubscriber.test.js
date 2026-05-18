@@ -83,6 +83,18 @@ class FakeManager extends EventEmitter {
       },
     });
   }
+
+  emitStreamError(subscriptionId, errorClass) {
+    this.emit("notification", {
+      jsonrpc: "2.0",
+      method: "sensorium.subscription.error",
+      params: {
+        subscription_id: subscriptionId,
+        topic: "sensor/jetsorano/realsense/color",
+        error_class: errorClass,
+      },
+    });
+  }
 }
 
 const COMMON_START = {
@@ -288,6 +300,50 @@ test("subscriber.stop honors a custom termination reason and error class", async
   });
   assert.equal(endSummary.termination_reason, "error");
   assert.equal(endSummary.error_class, "channel_closed_unexpectedly");
+});
+
+test("subscriber records helper stream errors as bounded metadata", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-helper-error",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitStreamError(subscription_id, "color_jpeg_decode_failed");
+
+  const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].helper_error_class, "color_jpeg_decode_failed");
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.termination_reason, "error");
+  assert.equal(endSummary.error_class, "color_jpeg_decode_failed");
+  assert.equal(endSummary.frames_consumed, 0);
+  assert.equal(JSON.stringify(endSummary).includes("payload_bytes"), false);
+  assert.equal(JSON.stringify(endSummary).includes("sensor/jetsorano/realsense/color"), true);
+});
+
+test("subscriber sanitizes malformed helper stream error classes", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-helper-error-bad",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitStreamError(subscription_id, "bad error with payload_bytes=[1,2,3]");
+
+  const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].helper_error_class, "helper_stream_error");
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.termination_reason, "error");
+  assert.equal(endSummary.error_class, "helper_stream_error");
+  assert.equal(JSON.stringify(endSummary).includes("payload_bytes"), false);
 });
 
 test("status samples decode to bounded metadata summaries without retaining payload bytes", async () => {

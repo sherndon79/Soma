@@ -241,6 +241,9 @@ Implemented:
   smoke wrapper checks observed dimensions
 - verified the live color minimization boundary against `jetsorano`: `downsample_to=320x240`
   produced bounded `320x180` metadata, nine samples over eight seconds, and clean runtime cleanup
+- surfaced helper stream errors as bounded metadata: `sensorium.subscription.error` notifications
+  record only sanitized `error_class` in active disclosure and subscription-ended provenance, with
+  no payload or helper diagnostic content copied into Node-visible state
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -254,23 +257,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Surface Sensorium helper stream errors through Node metadata without exposing payload contents.
+Enforce Sensorium subscription `max_seconds` expiration in the Node subscriber.
 
 Target:
 
 ```text
-sensorium helper error propagation
-  -> consume bounded sensorium.subscription.error notifications from the helper
-  -> attach error_class to subscription state and end provenance
+sensorium subscription timeout enforcement
+  -> schedule bounded session subscriptions to stop when max_seconds elapses
+  -> record termination_reason: timeout in end provenance
   -> preserve metadata-only status/color smoke paths
-  -> do not route malformed payload bytes, screenshots, or frame contents to Node-visible state
+  -> avoid leaving helper subscriptions open after the grant's declared duration
 ```
 
 Expected work:
 
-- add unit coverage for transform error notifications and end summaries
-- ensure helper transform failures terminate subscriptions fail-closed
-- document the error surface in the Sensorium integration draft
+- add injectable timer coverage for timeout stop behavior
+- ensure manual stop/revocation clears pending timeout handles
+- document the duration-enforcement boundary in the Sensorium integration draft
 - keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:

@@ -70,6 +70,7 @@ test("disclosure with one active color subscription describes it", () => {
   assert.equal(stream.expires_in_seconds, 480);
   assert.equal(stream.recent_frame_rate, 4.8);
   assert.equal(stream.frames_consumed_so_far, 12345);
+  assert.equal(stream.helper_error_class, "");
   assert.equal(stream.description, "Receiving color frames from jetsorano at ~4.8 fps");
   assert.deepEqual(stream.constraints_declared, {
     max_seconds: 600,
@@ -86,6 +87,27 @@ test("disclosure with one active color subscription describes it", () => {
     payload_size: 6,
   });
   assert.equal(JSON.stringify(stream).includes("must not copy"), false);
+});
+
+test("disclosure includes sanitized helper error metadata only", () => {
+  const disclosure = describeActiveSensoriumSubscriptions(
+    [
+      activeSubscription({
+        helper_error_class: "color_jpeg_decode_failed",
+        stream_error_payload: "payload bytes must not appear",
+      }),
+      activeSubscription({
+        helper_error_class: "bad error with payload_bytes=[1,2,3]",
+      }),
+    ],
+    { now: NOW },
+  );
+
+  assert.equal(disclosure.streams[0].helper_error_class, "color_jpeg_decode_failed");
+  assert.equal(disclosure.streams[1].helper_error_class, "");
+  const serialized = JSON.stringify(disclosure);
+  assert.equal(serialized.includes("payload bytes must not appear"), false);
+  assert.equal(serialized.includes("payload_bytes"), false);
 });
 
 test("disclosure with multiple active subscriptions groups them", () => {

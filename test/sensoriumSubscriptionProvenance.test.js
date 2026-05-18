@@ -196,6 +196,20 @@ test("subscription end summary defaults counters to zero/null", () => {
   assert.equal(endSummary.error_class, "helper_unreachable");
 });
 
+test("subscription end summary sanitizes malformed error classes", () => {
+  const startSummary = createSensoriumSubscriptionStartSummary(VALID_START_INPUT);
+  const endSummary = createSensoriumSubscriptionEndSummary({
+    startSummary,
+    startedAt: "2026-05-15T07:00:00.000Z",
+    endedAt: "2026-05-15T07:00:30.000Z",
+    terminationReason: "error",
+    errorClass: "bad error with payload_bytes=[1,2,3]",
+  });
+
+  assert.equal(endSummary.error_class, "");
+  assert.equal(JSON.stringify(endSummary).includes("payload_bytes"), false);
+});
+
 test("subscription end summary omits malformed stream summaries", () => {
   const startSummary = createSensoriumSubscriptionStartSummary(VALID_START_INPUT);
   const endSummary = createSensoriumSubscriptionEndSummary({

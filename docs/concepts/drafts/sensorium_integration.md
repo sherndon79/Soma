@@ -187,6 +187,13 @@ subscriptions, `soma-sensor-broker` enforces that boundary before sample payload
 back to Node. The disclosure/provenance path remains metadata-only and still does not deliver image
 bytes to model context.
 
+If the helper cannot decode, validate, or transform a stream sample, it emits a bounded
+`sensorium.subscription.error` notification with `subscription_id`, `topic`, and `error_class`. Node
+copies only a sanitized `error_class` into active disclosure and subscription-ended provenance. It
+does not copy malformed payload bytes, original full-resolution frames, helper diagnostics, or
+content-bearing error text. Stopping a subscription after such a helper error defaults the end
+summary to `termination_reason: "error"`.
+
 ## Provider Manifest Sketch
 
 A Sensorium provider entry in Soma's provider registry might look like:
@@ -505,7 +512,8 @@ The CLI exposes the existing subscription routes for operator use:
 These commands do not create grants. Start requests still require an already
 active grant and still pass through route-time provider, topic, exact-topic,
 and bounded-constraint enforcement. Disclosure and stop summaries remain
-metadata-only.
+metadata-only. Helper stream failures surface only as sanitized `error_class`
+metadata on active disclosure and the eventual subscription end summary.
 
 `test/sensoriumCliIntegration.test.js` exercises the CLI command shapes against
 `createRequestHandler` instead of a mocked request function. It covers:
@@ -849,6 +857,10 @@ Completed Soma-side slices:
     require an explicit camera acknowledgement plus `max_fps`, `format`, and
     `downsample` constraints. Color smoke validates that the ended subscription
     exposes only bounded `stream_summary_observed` metadata.
+19. Helper stream errors are consumed as bounded metadata only. `error_class`
+    may appear in active disclosure and end provenance, but helper error
+    handling must not copy payload bytes, image contents, screenshots, raw
+    frames, or free-form content-bearing diagnostics into Node-visible state.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

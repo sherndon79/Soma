@@ -160,7 +160,7 @@ export function createSensoriumSubscriptionEndSummary({
     schema_mismatches: schemaMismatches,
     first_frame_number: numberOrNull(firstFrameNumber),
     last_frame_number: numberOrNull(lastFrameNumber),
-    error_class: errorClass && errorClass.length > 0 ? errorClass : "",
+    error_class: copyErrorClass(errorClass),
     text_content_included: false,
     frames_recorded: false,
   };
@@ -310,6 +310,14 @@ function integerOrNull(value) {
 
 function stringOrEmpty(value) {
   return typeof value === "string" ? value : "";
+}
+
+function copyErrorClass(value) {
+  const normalized = stringOrEmpty(value).trim();
+  if (/^[a-z0-9_:-]{1,96}$/.test(normalized)) {
+    return normalized;
+  }
+  return "";
 }
 
 function isPlainObject(value) {

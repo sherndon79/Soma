@@ -75,6 +75,7 @@ function describeStream(subscription, now) {
     frames_consumed_so_far: nonNegativeIntOrZero(subscription.frames_consumed_so_far),
     status_summary_observed: copyStatusSummary(subscription.status_summary_observed),
     stream_summary_observed: copyStreamSummary(subscription.stream_summary_observed),
+    helper_error_class: copyHelperErrorClass(subscription.helper_error_class),
     description,
   };
 }
@@ -267,6 +268,14 @@ function nonNegativeIntOrZero(value) {
 
 function stringOrEmpty(value) {
   return typeof value === "string" ? value : "";
+}
+
+function copyHelperErrorClass(value) {
+  const normalized = stringOrEmpty(value);
+  if (/^[a-z0-9_:-]{1,96}$/.test(normalized)) {
+    return normalized;
+  }
+  return "";
 }
 
 function isPlainObject(value) {

@@ -36,6 +36,7 @@ import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDis
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 
 const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
+const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
 
 export class SensoriumSubscriber {
   #manager;
@@ -119,6 +120,7 @@ export class SensoriumSubscriber {
         lastFrameNumber: null,
         statusSummaryObserved: null,
         streamSummaryObserved: null,
+        helperErrorClass: "",
       },
     };
     this.#active.set(subscriptionId, record);
@@ -135,7 +137,7 @@ export class SensoriumSubscriber {
    * Terminate a tracked subscription. Returns the end provenance
    * summary built from the tracked counters.
    */
-  async stop(subscriptionId, { terminationReason = "clean_stop", errorClass = "" } = {}) {
+  async stop(subscriptionId, { terminationReason = "", errorClass = "" } = {}) {
     const record = this.#active.get(subscriptionId);
     if (!record) {
       const err = new Error(
@@ -150,11 +152,14 @@ export class SensoriumSubscriber {
     });
 
     const endedAtISO = this.#now().toISOString();
+    const effectiveErrorClass = errorClass || record._stats.helperErrorClass;
+    const effectiveTerminationReason =
+      terminationReason || (effectiveErrorClass ? "error" : "clean_stop");
     const endSummary = createSensoriumSubscriptionEndSummary({
       startSummary: record._startSummary,
       startedAt: record.started_at_iso,
       endedAt: endedAtISO,
-      terminationReason,
+      terminationReason: effectiveTerminationReason,
       framesConsumed: record._stats.framesConsumed,
       schemaVersionObserved: record._stats.schemaVersionObserved,
       schemaMismatches: record._stats.schemaMismatches,
@@ -162,7 +167,7 @@ export class SensoriumSubscriber {
       lastFrameNumber: record._stats.lastFrameNumber,
       statusSummaryObserved: record._stats.statusSummaryObserved,
       streamSummaryObserved: record._stats.streamSummaryObserved,
-      errorClass,
+      errorClass: effectiveErrorClass,
     });
 
     this.#active.delete(subscriptionId);
@@ -211,6 +216,7 @@ export class SensoriumSubscriber {
       frames_consumed_so_far: record._stats.framesConsumed,
       status_summary_observed: record._stats.statusSummaryObserved,
       stream_summary_observed: record._stats.streamSummaryObserved,
+      helper_error_class: record._stats.helperErrorClass,
     }));
     return describeActiveSensoriumSubscriptions(subscriptions, { now: now ?? this.#now() });
   }
@@ -237,7 +243,14 @@ export class SensoriumSubscriber {
   }
 
   #onNotification(msg) {
-    if (!msg || msg.method !== SENSORIUM_SAMPLE_NOTIFICATION) {
+    if (!msg) {
+      return;
+    }
+    if (msg.method === SENSORIUM_ERROR_NOTIFICATION) {
+      this.#recordHelperError(msg);
+      return;
+    }
+    if (msg.method !== SENSORIUM_SAMPLE_NOTIFICATION) {
       return;
     }
     const sub = this.#active.get(msg.params?.subscription_id);
@@ -253,6 +266,14 @@ export class SensoriumSubscriber {
       return;
     }
     this.#recordStatusSample(sub, msg.params?.payload_bytes);
+  }
+
+  #recordHelperError(msg) {
+    const sub = this.#active.get(msg.params?.subscription_id);
+    if (!sub) {
+      return;
+    }
+    sub._stats.helperErrorClass = sanitizeHelperErrorClass(msg.params?.error_class);
   }
 
   #recordStatusSample(sub, payloadBytes) {
@@ -332,4 +353,15 @@ function stripEmpty(object) {
 
 function colorOnly(capability, value) {
   return capability === "perception.sensorium.color.subscribe" ? value : undefined;
+}
+
+function sanitizeHelperErrorClass(value) {
+  if (typeof value !== "string") {
+    return "helper_stream_error";
+  }
+  const normalized = value.trim();
+  if (/^[a-z0-9_:-]{1,96}$/.test(normalized)) {
+    return normalized;
+  }
+  return "helper_stream_error";
 }

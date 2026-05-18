@@ -95,7 +95,8 @@ default.
     runtime grant/subscription/revocation workflow
 - [Sensorium Live Smoke Verification](./2026-05-17_sensorium_live_smoke_verification.md)
   - review after the guarded smoke wrapper was run against a real Sensorium-enabled Soma service;
-    control path worked, but status samples were not observed from `jetsorano`
+    addenda now capture stable-endpoint success, bounded status summaries, live producer profile
+    disclosure, and the eight-second smoke wait aligned with the five-second status heartbeat
 
 ## Remote Graphical Session Thread
 

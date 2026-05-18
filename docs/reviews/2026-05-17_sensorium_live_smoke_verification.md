@@ -135,3 +135,39 @@ status_summary_observed.enabled_streams:
 
 The provenance entry remained metadata-only: no raw payload bytes, frame contents, credential
 material, screenshots, or higher-risk stream payloads were retained or surfaced.
+
+## Addendum: Producer Profile Disclosure
+
+**Date:** 2026-05-18
+
+Sensorium was rebuilt and redeployed on `jetsorano` through its Docker Compose service so the live
+publisher used the status payload that includes producer-side `stream_profiles`.
+
+The rebuilt container logged native profile disclosure at status publisher startup:
+
+```text
+realsense/color 1280x720 @ 30fps jpeg q85
+realsense/depth 848x480 @ 30fps png
+```
+
+Soma's status subscription path decoded those profiles as bounded metadata. A temporary status
+subscription followed by `sensorium status` showed:
+
+```text
+native profiles: realsense/color 1280x720 @ 30fps jpeg q85; realsense/depth 848x480 @ 30fps png
+```
+
+This confirms the intended split: Sensorium discloses the producer's native stream shape, while
+Soma grants continue to constrain downstream delivery. The status path still did not retain raw
+payload bytes, camera frames, screenshots, text content, or higher-risk stream payloads.
+
+The first post-redeploy default smoke run completed the control path but observed zero samples
+because the wrapper waited three seconds and the Sensorium status heartbeat is five seconds. The
+wrapper default was raised to eight seconds, and the default guarded smoke then completed
+successfully:
+
+```text
+Observation wait: 8 second(s).
+Observed sample count: 1
+Sensorium live smoke completed.
+```

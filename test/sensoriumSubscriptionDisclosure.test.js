@@ -43,7 +43,19 @@ test("disclosure with no active subscriptions returns empty digest", () => {
 
 test("disclosure with one active color subscription describes it", () => {
   const disclosure = describeActiveSensoriumSubscriptions(
-    [activeSubscription()],
+    [
+      activeSubscription({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 1280,
+          height: 720,
+          format: "jpeg",
+          payload_size: 6,
+          data: "must not copy",
+        },
+      }),
+    ],
     { now: NOW },
   );
 
@@ -65,6 +77,15 @@ test("disclosure with one active color subscription describes it", () => {
     downsample_to: [384, 384],
     format_required: "jpeg",
   });
+  assert.deepEqual(stream.stream_summary_observed, {
+    schema_version: 1,
+    frame_number: 42,
+    width: 1280,
+    height: 720,
+    format: "jpeg",
+    payload_size: 6,
+  });
+  assert.equal(JSON.stringify(stream).includes("must not copy"), false);
 });
 
 test("disclosure with multiple active subscriptions groups them", () => {
@@ -250,6 +271,25 @@ test("disclosure never includes frame content even if a record carries it", () =
   assert.equal(serialized.includes("last_frame_bytes"), false);
   assert.equal(serialized.includes("frame_data"), false);
   assert.equal(disclosure.frames_recorded, false);
+});
+
+test("disclosure omits malformed stream summaries", () => {
+  const disclosure = describeActiveSensoriumSubscriptions(
+    [
+      activeSubscription({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 0,
+          height: 720,
+          format: "jpeg",
+          payload_size: 6,
+        },
+      }),
+    ],
+    { now: NOW },
+  );
+  assert.equal(disclosure.streams[0].stream_summary_observed, null);
 });
 
 test("disclosure rejects non-array input", () => {

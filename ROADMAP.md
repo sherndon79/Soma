@@ -222,6 +222,9 @@ Implemented:
 - drafted the first higher-risk Sensorium stream contract for color: allowed summary fields are
   schema version, frame number, dimensions, format, and payload size; image bytes, screenshots,
   raw frames, timestamps, and cross-stream fields are contract violations
+- added bounded color payload metadata decoding: the subscriber records only schema version,
+  first/last frame number, dimensions, format, and payload size in disclosure/provenance; raw image
+  bytes are not retained or routed to model context
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -235,24 +238,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement bounded color summary decoding.
+Add an explicit live color metadata smoke approval path.
 
 Target:
 
 ```text
-sensorium color summary decode
-  -> decode color payload metadata only
-  -> enforce the color stream contract before any summary reaches disclosure or provenance
-  -> keep runtime grants process-local and cleanup metadata-only
+sensorium color metadata smoke
+  -> require explicit operator approval before starting a camera-class subscription
+  -> observe only bounded metadata from live color payloads
+  -> prove cleanup leaves process-local grants and subscriptions cleared
   -> preserve no image bytes, screenshots, recording, model delivery, or preprocessing
 ```
 
 Expected work:
 
-- add a bounded color MessagePack metadata reader or reuse the existing reader safely
-- count schema mismatches for malformed/unexpected-version color frames
-- record only allowed aggregate metadata such as schema version, first/last frame number, dimensions,
-  format, and payload size
+- add a guarded runbook or CLI smoke command that refuses to run without an explicit camera-stream
+  acknowledgment
+- start a short-lived color subscription with tight `max_seconds`, `max_fps`, `format_required`, and
+  `downsample_to` constraints
+- verify only `stream_summary_observed` metadata reaches disclosure/provenance
 - keep actual image delivery to model context out of this slice
 
 Constraints:
@@ -260,6 +264,7 @@ Constraints:
 - no desktop capability expansion
 - no additional desktop fields beyond the activated traversal envelope
 - no text, names, descriptions, states, actions, screenshots, or actuation
+- no live camera subscription without explicit operator assent
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 - no default sensor subscription, frame decoding, recording, or preprocessing

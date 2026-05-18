@@ -74,6 +74,7 @@ function describeStream(subscription, now) {
     recent_frame_rate: recentFps,
     frames_consumed_so_far: nonNegativeIntOrZero(subscription.frames_consumed_so_far),
     status_summary_observed: copyStatusSummary(subscription.status_summary_observed),
+    stream_summary_observed: copyStreamSummary(subscription.stream_summary_observed),
     description,
   };
 }
@@ -179,8 +180,46 @@ function copyStatusSummary(summary) {
   };
 }
 
+function copyStreamSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  const schemaVersion = integerOrNull(summary.schema_version);
+  const frameNumber = integerOrNull(summary.frame_number);
+  const width = integerOrNull(summary.width);
+  const height = integerOrNull(summary.height);
+  const format = stringOrEmpty(summary.format);
+  const payloadSize = integerOrNull(summary.payload_size);
+  if (
+    schemaVersion === null ||
+    frameNumber === null ||
+    frameNumber < 0 ||
+    width === null ||
+    width <= 0 ||
+    height === null ||
+    height <= 0 ||
+    format.length === 0 ||
+    payloadSize === null ||
+    payloadSize < 0
+  ) {
+    return null;
+  }
+  return {
+    schema_version: schemaVersion,
+    frame_number: frameNumber,
+    width,
+    height,
+    format,
+    payload_size: payloadSize,
+  };
+}
+
 function numberOrNull(value) {
   return Number.isFinite(value) ? value : null;
+}
+
+function integerOrNull(value) {
+  return Number.isInteger(value) ? value : null;
 }
 
 function nonNegativeIntOrZero(value) {

@@ -23,6 +23,34 @@ export function encodeStatusPayload({
   ];
 }
 
+export function encodeColorPayload({
+  schema_version = 1,
+  timestamp = 1_779_000_001.25,
+  frame_number = 42,
+  width = 1280,
+  height = 720,
+  format = "jpeg",
+  data = [0xff, 0xd8, 0xff, 0xd9],
+} = {}) {
+  return [
+    ...mapHeader(7),
+    ...str("schema_version"),
+    ...uint(schema_version),
+    ...str("timestamp"),
+    ...float64(timestamp),
+    ...str("frame_number"),
+    ...uint(frame_number),
+    ...str("width"),
+    ...uint(width),
+    ...str("height"),
+    ...uint(height),
+    ...str("format"),
+    ...str(format),
+    ...str("data"),
+    ...bin(data),
+  ];
+}
+
 function mapHeader(length) {
   if (length <= 15) return [0x80 | length];
   return [0xde, (length >> 8) & 0xff, length & 0xff];
@@ -51,6 +79,24 @@ function uint(value) {
     (value >>> 16) & 0xff,
     (value >>> 8) & 0xff,
     value & 0xff,
+  ];
+}
+
+function bin(value) {
+  const bytes = value instanceof Uint8Array
+    ? Array.from(value)
+    : Array.from(value ?? []);
+  if (bytes.length <= 0xff) return [0xc4, bytes.length, ...bytes];
+  if (bytes.length <= 0xffff) {
+    return [0xc5, (bytes.length >> 8) & 0xff, bytes.length & 0xff, ...bytes];
+  }
+  return [
+    0xc6,
+    (bytes.length >>> 24) & 0xff,
+    (bytes.length >>> 16) & 0xff,
+    (bytes.length >>> 8) & 0xff,
+    bytes.length & 0xff,
+    ...bytes,
   ];
 }
 

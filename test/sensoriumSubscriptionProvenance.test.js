@@ -130,6 +130,15 @@ test("subscription end summary captures aggregate counters and duration", () => 
       node_version: "0.1.0",
       enabled_streams: ["realsense/color"],
     },
+    streamSummaryObserved: {
+      schema_version: 1,
+      frame_number: 8543,
+      width: 1280,
+      height: 720,
+      format: "jpeg",
+      payload_size: 6,
+      data: "must not copy",
+    },
   });
 
   assert.equal(endSummary.event_type, "perception.sensorium.subscription_ended");
@@ -155,6 +164,15 @@ test("subscription end summary captures aggregate counters and duration", () => 
     node_version: "0.1.0",
     enabled_streams: ["realsense/color"],
   });
+  assert.deepEqual(endSummary.stream_summary_observed, {
+    schema_version: 1,
+    frame_number: 8543,
+    width: 1280,
+    height: 720,
+    format: "jpeg",
+    payload_size: 6,
+  });
+  assert.equal(JSON.stringify(endSummary).includes("must not copy"), false);
   assert.equal(endSummary.text_content_included, false);
   assert.equal(endSummary.frames_recorded, false);
 });
@@ -175,6 +193,26 @@ test("subscription end summary defaults counters to zero/null", () => {
   assert.equal(endSummary.first_frame_number, null);
   assert.equal(endSummary.last_frame_number, null);
   assert.equal(endSummary.error_class, "helper_unreachable");
+});
+
+test("subscription end summary omits malformed stream summaries", () => {
+  const startSummary = createSensoriumSubscriptionStartSummary(VALID_START_INPUT);
+  const endSummary = createSensoriumSubscriptionEndSummary({
+    startSummary,
+    startedAt: "2026-05-15T07:00:00.000Z",
+    endedAt: "2026-05-15T07:00:30.000Z",
+    terminationReason: "clean_stop",
+    streamSummaryObserved: {
+      schema_version: 1,
+      frame_number: 42,
+      width: 1280,
+      height: 0,
+      format: "jpeg",
+      payload_size: 6,
+    },
+  });
+
+  assert.equal("stream_summary_observed" in endSummary, false);
 });
 
 test("subscription end summary rejects unknown termination reasons", () => {

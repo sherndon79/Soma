@@ -167,9 +167,11 @@ Excluded color fields:
   `enabled_streams`
 
 The expected color schema version is `1` and the only allowed color format is
-`jpeg`. A future color decoder must first prove, in tests, that it emits only
-the allowed summary fields above and rejects content-bearing or cross-stream
-fields before any frame is routed to a model or stored.
+`jpeg`. The current color decoder emits only the allowed summary fields above,
+rejects content-bearing or cross-stream fields through the stream contract, and
+records the metadata summary as `stream_summary_observed` for active disclosure
+and end provenance. It does not route image bytes to a model, retain raw frame
+content, create screenshots, or perform image preprocessing.
 
 ## Provider Manifest Sketch
 
@@ -817,6 +819,11 @@ Completed Soma-side slices:
     allowed fields are schema version, frame number, dimensions, format, and
     payload size; image bytes, screenshots, raw frames, timestamps, and
     cross-stream fields are explicitly rejected.
+17. Color payloads can be decoded only into bounded stream metadata. The
+    subscriber records schema version, first/last frame number, dimensions,
+    format, and payload size for disclosure/provenance; malformed or
+    unexpected-version color payloads increment schema mismatch counters and do
+    not produce a stream summary.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

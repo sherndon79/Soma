@@ -105,6 +105,7 @@ export function createSensoriumSubscriptionEndSummary({
   firstFrameNumber = null,
   lastFrameNumber = null,
   statusSummaryObserved = null,
+  streamSummaryObserved = null,
   errorClass = "",
 } = {}) {
   if (!isPlainObject(startSummary)) {
@@ -167,6 +168,10 @@ export function createSensoriumSubscriptionEndSummary({
   if (copiedStatusSummary) {
     summary.status_summary_observed = copiedStatusSummary;
   }
+  const copiedStreamSummary = copyStreamSummary(streamSummaryObserved);
+  if (copiedStreamSummary) {
+    summary.stream_summary_observed = copiedStreamSummary;
+  }
   return summary;
 }
 
@@ -216,6 +221,40 @@ function copyStatusSummary(summary) {
   };
 }
 
+function copyStreamSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  const schemaVersion = integerOrNull(summary.schema_version);
+  const frameNumber = integerOrNull(summary.frame_number);
+  const width = integerOrNull(summary.width);
+  const height = integerOrNull(summary.height);
+  const format = stringOrEmpty(summary.format);
+  const payloadSize = integerOrNull(summary.payload_size);
+  if (
+    schemaVersion === null ||
+    frameNumber === null ||
+    frameNumber < 0 ||
+    width === null ||
+    width <= 0 ||
+    height === null ||
+    height <= 0 ||
+    format.length === 0 ||
+    payloadSize === null ||
+    payloadSize < 0
+  ) {
+    return null;
+  }
+  return {
+    schema_version: schemaVersion,
+    frame_number: frameNumber,
+    width,
+    height,
+    format,
+    payload_size: payloadSize,
+  };
+}
+
 function isoDurationSeconds(startISO, endISO) {
   const start = Date.parse(startISO);
   const end = Date.parse(endISO);
@@ -227,6 +266,10 @@ function isoDurationSeconds(startISO, endISO) {
 
 function numberOrNull(value) {
   return Number.isFinite(value) ? value : null;
+}
+
+function integerOrNull(value) {
+  return Number.isInteger(value) ? value : null;
 }
 
 function stringOrEmpty(value) {

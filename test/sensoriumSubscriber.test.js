@@ -3,7 +3,7 @@ import test from "node:test";
 import { EventEmitter } from "node:events";
 
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
-import { encodeStatusPayload } from "./support/msgpackStatus.js";
+import { encodeColorPayload, encodeStatusPayload } from "./support/msgpackStatus.js";
 
 // ── fake manager ───────────────────────────────────────────────────────────
 // A small EventEmitter that records sent requests and lets tests
@@ -379,6 +379,101 @@ test("status samples with unexpected schema record mismatch without summary", as
   assert.equal(endSummary.schema_version_observed, 2);
   assert.equal(endSummary.schema_mismatches, 1);
   assert.equal("status_summary_observed" in endSummary, false);
+});
+
+test("color samples decode to bounded stream metadata without retaining frame bytes", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      timestamp: 1_779_000_001.25,
+      frame_number: 42,
+      width: 1280,
+      height: 720,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0x02, 0xff, 0xd9],
+    }),
+  });
+
+  const expected = {
+    schema_version: 1,
+    frame_number: 42,
+    width: 1280,
+    height: 720,
+    format: "jpeg",
+    payload_size: 6,
+  };
+  const disclosure = subscriber.describeActive();
+  assert.deepEqual(disclosure.streams[0].stream_summary_observed, expected);
+
+  nowMs += 5_000;
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, 1);
+  assert.equal(endSummary.schema_mismatches, 0);
+  assert.equal(endSummary.first_frame_number, 42);
+  assert.equal(endSummary.last_frame_number, 42);
+  assert.deepEqual(endSummary.stream_summary_observed, expected);
+
+  const serialized = JSON.stringify(endSummary);
+  assert.equal(serialized.includes("data"), false);
+  assert.equal(serialized.includes("payload_bytes"), false);
+  assert.equal(serialized.includes("screenshot"), false);
+  assert.equal("timestamp" in endSummary.stream_summary_observed, false);
+});
+
+test("color samples with malformed payloads count schema mismatches only", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-bad",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: [0xc1],
+  });
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, null);
+  assert.equal(endSummary.schema_mismatches, 1);
+  assert.equal("stream_summary_observed" in endSummary, false);
+});
+
+test("color samples with unexpected schema record mismatch without stream summary", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-schema",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({ schema_version: 2 }),
+  });
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.schema_version_observed, 2);
+  assert.equal(endSummary.schema_mismatches, 1);
+  assert.equal(endSummary.first_frame_number, null);
+  assert.equal(endSummary.last_frame_number, null);
+  assert.equal("stream_summary_observed" in endSummary, false);
 });
 
 // ── describeActive ─────────────────────────────────────────────────────────

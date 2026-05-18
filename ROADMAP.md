@@ -234,6 +234,8 @@ Implemented:
 - verified an explicitly acknowledged live color metadata smoke against `jetsorano`; the run found
   and fixed missing helper-side `max_fps` delivery throttling, then passed with nine metadata-only
   samples over eight seconds and clean runtime grant/subscription cleanup
+- documented the Sensorium color minimization boundary for future `downsample_to` enforcement before
+  any model-facing visual delivery
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 

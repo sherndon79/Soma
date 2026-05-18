@@ -71,6 +71,7 @@ should inform implementation.
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Session Provider](./concepts/drafts/remote_graphical_session_provider.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
+- [Sensorium Color Minimization Boundary](./concepts/drafts/sensorium_color_minimization_boundary.md)
 - [Sensorium Integration](./concepts/drafts/sensorium_integration.md)
 - [Traversal Root Authorization](./concepts/drafts/traversal_root_authorization.md)
 

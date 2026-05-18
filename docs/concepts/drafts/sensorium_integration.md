@@ -181,6 +181,11 @@ records the metadata summary as `stream_summary_observed` for active disclosure
 and end provenance. It does not route image bytes to a model, retain raw frame
 content, create screenshots, or perform image preprocessing.
 
+The active `downsample_to` implementation path is specified separately in
+[Sensorium Color Minimization Boundary](./sensorium_color_minimization_boundary.md). Until that
+slice lands, `downsample_to` is a grant/review constraint and model-facing precondition, not proof
+that metadata-only live smoke samples have been resized.
+
 ## Provider Manifest Sketch
 
 A Sensorium provider entry in Soma's provider registry might look like:

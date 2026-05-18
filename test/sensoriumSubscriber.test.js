@@ -92,7 +92,12 @@ const COMMON_START = {
   scope: "session",
   body: {
     topic: "sensor/jetsorano/realsense/color",
-    constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    constraints: {
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "jpeg",
+      downsample_to: [320, 240],
+    },
   },
 };
 
@@ -127,6 +132,7 @@ test("subscriber.start composes validator, manager, and provenance correctly", a
     max_seconds: 60,
     max_fps: 5,
     format_required: "jpeg",
+    downsample_to: [320, 240],
   });
   assert.equal(ss.text_content_included, false);
   assert.equal(ss.frames_recorded, false);
@@ -176,6 +182,8 @@ test("subscriber.start passes optional Zenoh config path to the helper", async (
   assert.deepEqual(manager.calls[0].params, {
     topic: "sensor/jetsorano/realsense/color",
     max_fps: 5,
+    downsample_to: [320, 240],
+    format_required: "jpeg",
     zenoh_config_path: "/tmp/soma-sensorium-zenoh.json5",
   });
 });

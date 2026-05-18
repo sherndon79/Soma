@@ -72,6 +72,8 @@ export class SensoriumSubscriber {
         topic: validated.topic,
         zenoh_config_path: this.#zenohConfigPath,
         max_fps: validated.constraints?.max_fps,
+        downsample_to: colorOnly(capability, validated.constraints?.downsample_to),
+        format_required: colorOnly(capability, validated.constraints?.format_required),
       }),
     );
 
@@ -326,4 +328,8 @@ function stripEmpty(object) {
   return Object.fromEntries(
     Object.entries(object).filter(([, value]) => value !== ""),
   );
+}
+
+function colorOnly(capability, value) {
+  return capability === "perception.sensorium.color.subscribe" ? value : undefined;
 }

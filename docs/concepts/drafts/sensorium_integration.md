@@ -182,9 +182,10 @@ and end provenance. It does not route image bytes to a model, retain raw frame
 content, create screenshots, or perform image preprocessing.
 
 The active `downsample_to` implementation path is specified separately in
-[Sensorium Color Minimization Boundary](./sensorium_color_minimization_boundary.md). Until that
-slice lands, `downsample_to` is a grant/review constraint and model-facing precondition, not proof
-that metadata-only live smoke samples have been resized.
+[Sensorium Color Minimization Boundary](./sensorium_color_minimization_boundary.md). For color JPEG
+subscriptions, `soma-sensor-broker` enforces that boundary before sample payload bytes are serialized
+back to Node. The disclosure/provenance path remains metadata-only and still does not deliver image
+bytes to model context.
 
 ## Provider Manifest Sketch
 

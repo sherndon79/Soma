@@ -33,7 +33,7 @@ npm run sensorium:smoke -- \
   --acknowledge-camera-stream
 ```
 
-## Result
+## Result: Delivery Rate
 
 Pass, after one implementation correction.
 
@@ -92,3 +92,51 @@ bounded preprocessing boundary.
 
 No image bytes, screenshots, recordings, text content, or model-facing visual payloads were retained
 or surfaced by the Soma disclosure/provenance path in this run.
+
+## Addendum: Color Downsample Boundary
+
+After the follow-up minimization slice, Soma now passes color-only `downsample_to` and
+`format_required` constraints to `soma-sensor-broker`. The helper decodes Sensorium color
+MessagePack/JPEG samples, downsamples them before serializing sample bytes back to Node, re-encodes
+JPEG output, and fails closed on malformed payloads instead of passing original bytes through.
+
+The guarded camera-class smoke was rerun with the same command above after rebuilding
+`target/debug/soma-sensor-broker` and restarting Soma. The smoke wrapper now also verifies that
+observed color metadata fits the declared `--downsample` bound.
+
+```text
+Observation wait: 8 second(s).
+Observed sample count: 9
+Sensorium live smoke completed.
+```
+
+A manual temporary color subscription captured the resulting bounded metadata:
+
+```text
+frames_consumed: 9
+schema_version_observed: 1
+schema_mismatches: 0
+first_frame_number: 156784
+last_frame_number: 157026
+stream_summary_observed:
+  schema_version: 1
+  frame_number: 157026
+  width: 320
+  height: 180
+  format: jpeg
+  payload_size: 16233
+frames_recorded: false
+text_content_included: false
+```
+
+Cleanup check:
+
+```text
+active_count: 0
+streams: []
+```
+
+This verifies the live helper-side color JPEG minimization boundary for `downsample_to=320x240`:
+the original `1280x720` producer frame is reduced to `320x180`, preserving aspect ratio inside the
+requested bound, before Node receives sample bytes for metadata summarization. It still does not
+activate model-facing visual delivery, screenshots, recording, retention, or derivative streams.

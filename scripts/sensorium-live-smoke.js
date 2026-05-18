@@ -338,6 +338,7 @@ export function validateCameraSmokeEndSummary(endSummary, options = DEFAULT_SENS
     );
   }
   assertMetadataOnlySummary(streamSummary, "ended color subscription");
+  assertDownsampleBound(streamSummary, options, "ended color subscription");
 }
 
 export function validateCameraSmokeFrameBound(framesConsumed, options = DEFAULT_SENSORIUM_SMOKE) {
@@ -373,6 +374,23 @@ function assertMetadataOnlySummary(summary, label) {
         "malformed_stream_summary",
       );
     }
+  }
+}
+
+function assertDownsampleBound(summary, options, label) {
+  if (!options.downsample) {
+    return;
+  }
+  const [maxWidth, maxHeight] = options.downsample.split("x").map((entry) => Number(entry));
+  if (
+    Number.isInteger(maxWidth) &&
+    Number.isInteger(maxHeight) &&
+    (summary.width > maxWidth || summary.height > maxHeight)
+  ) {
+    throw new SensoriumLiveSmokeError(
+      `${label} exceeded downsample bound: observed ${summary.width}x${summary.height}, expected at most ${maxWidth}x${maxHeight}`,
+      "downsample_bound_exceeded",
+    );
   }
 }
 

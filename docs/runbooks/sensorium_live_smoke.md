@@ -90,7 +90,7 @@ capability: perception.sensorium.status.subscribe
 provider: soma.provider.sensorium.jetsorano
 topic: sensor/jetsorano/status
 max_seconds: 30
-observe_seconds: 3
+observe_seconds: 8
 ```
 
 To use a different target, provide the full explicit tuple so partial retargeting cannot happen by
@@ -123,7 +123,7 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
   --max-fps 1 \
   --format jpeg \
   --downsample 320x240 \
-  --observe-seconds 3 \
+  --observe-seconds 8 \
   --acknowledge-camera-stream
 ```
 

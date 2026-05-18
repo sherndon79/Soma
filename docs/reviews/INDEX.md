@@ -99,7 +99,7 @@ default.
     disclosure, and the eight-second smoke wait aligned with the five-second status heartbeat
 - [Sensorium Color Live Metadata Verification](./2026-05-18_sensorium_color_live_metadata.md)
   - review after an explicitly acknowledged live color metadata smoke; documents helper-side
-    `max_fps` enforcement, metadata-only summaries, cleanup, and the remaining downsample boundary
+    `max_fps` enforcement, live helper-side color downsampling, metadata-only summaries, and cleanup
 
 ## Remote Graphical Session Thread
 

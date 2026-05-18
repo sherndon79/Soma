@@ -19,11 +19,15 @@ Implemented:
 - Node records only `stream_summary_observed` metadata for color samples
 - live color metadata smoke passes with bounded sample delivery and clean runtime cleanup
 
-Not implemented:
+Implemented in the helper for color JPEG subscriptions:
 
 - image decoding
 - image downsampling
 - image re-encoding
+- fail-closed transform errors
+
+Still not implemented:
+
 - model-facing visual delivery
 - image recording or screenshots
 - derivative visual streams
@@ -64,7 +68,8 @@ Rules:
 - `max_fps` remains a delivery-rate bound.
 - `downsample_to` is a maximum output size, not permission to enlarge frames.
 - `format_required` must match the decoded color payload format before transformation.
-- Missing transform params keep the current metadata-only behavior.
+- Missing transform params keep the current pass-through subscription behavior, but color smoke and
+  future model-facing visual delivery should require explicit transform params.
 - Invalid transform params fail before opening a subscription.
 
 ## Transform Contract
@@ -113,12 +118,9 @@ fallback.
 
 ## Metadata-Only Smoke
 
-The existing color live smoke should remain metadata-only. It may be extended to assert that, when
-`downsample_to` enforcement is active, the observed `stream_summary_observed.width` and `.height`
-fit within the requested bound.
-
-Until that implementation exists, review docs must continue to state that `downsample_to` is grant
-intent, not an active transform.
+The existing color live smoke remains metadata-only. It asserts that the observed
+`stream_summary_observed.width` and `.height` fit within the requested `downsample_to` bound while
+still refusing image bytes, screenshots, text content, recordings, or model-facing visual payloads.
 
 ## Test Requirements
 
@@ -135,8 +137,7 @@ Integration tests:
 
 - fake or fixture-backed helper test proves a 1280x720 color payload becomes bounded to 320x180 or
   smaller for `downsample_to=[320, 240]`.
-- live color smoke may pass only when observed metadata fits the declared bounds once transform
-  activation is claimed.
+- live color smoke may pass only when observed metadata fits the declared bounds.
 
 Regression tests:
 
@@ -145,12 +146,13 @@ Regression tests:
 - model-facing visual delivery remains unavailable until a separate capability explicitly consumes
   the transformed payload.
 
-## Open Dependency Question
+## Dependency Choice
 
-The helper needs a Rust image stack before this can be implemented. Candidate shape:
+The helper uses a small Rust image stack for this boundary:
 
 - `rmp-serde` and `serde` for Sensorium `ColorFrame` MessagePack
 - `image` with JPEG support for decode/resize/encode
 
-Before adding dependencies, run a focused review on binary size, Jetson build cost, and whether the
-helper should split media transforms into a dedicated crate or binary.
+This keeps the first transform inside `soma-sensor-broker`. If additional media transforms grow
+substantially, split them into a dedicated crate or binary before adding broader image/video
+processing responsibilities.

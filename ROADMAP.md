@@ -236,6 +236,9 @@ Implemented:
   samples over eight seconds and clean runtime grant/subscription cleanup
 - documented the Sensorium color minimization boundary for future `downsample_to` enforcement before
   any model-facing visual delivery
+- implemented helper-side color JPEG minimization: `soma-sensor-broker` can downsample Sensorium
+  `ColorFrame` MessagePack payloads to the requested bounds before notifying Node, and the live
+  smoke wrapper checks observed dimensions
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -249,25 +252,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Design and implement the color content-minimization boundary before any model-facing visual
-delivery.
+Verify the live color content-minimization boundary and keep model-facing visual delivery separate.
 
 Target:
 
 ```text
-sensorium color minimization boundary
-  -> decide whether downsampling happens in soma-sensor-broker, a dedicated bounded helper, or a
-     Sensorium-side derivative stream
-  -> ensure downsample_to is enforced before any model-facing image delivery
+sensorium color minimization verification
+  -> run explicitly acknowledged live color smoke against the helper-side transform
+  -> prove downsample_to is reflected in observed bounded metadata
   -> preserve metadata-only status/color smoke paths as the default verification posture
   -> keep recording, screenshots, and raw frame retention out of scope
 ```
 
 Expected work:
 
-- document the transform trust boundary and dependency choice
-- decide whether `downsample_to` remains a grant declaration until visual delivery is implemented or
-  becomes an actively enforced stream transform earlier
+- document the live minimized dimensions, sample count, and cleanup result
 - add tests proving model-facing visual payloads cannot bypass the transform boundary
 - keep live camera validation explicitly acknowledged and metadata-first
 

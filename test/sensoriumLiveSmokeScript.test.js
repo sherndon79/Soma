@@ -180,11 +180,25 @@ test("sensorium live smoke validates color metadata-only end summaries", () => {
         schema_version: 1,
         frame_number: 42,
         width: 320,
-        height: 240,
+        height: 180,
         format: "jpeg",
         payload_size: 128,
       },
     }, options),
+  );
+  assert.throws(
+    () =>
+      validateCameraSmokeEndSummary({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 1280,
+          height: 720,
+          format: "jpeg",
+          payload_size: 128,
+        },
+      }, options),
+    /exceeded downsample bound/,
   );
   assert.throws(
     () => validateCameraSmokeEndSummary({ stream_summary_observed: null }, options),

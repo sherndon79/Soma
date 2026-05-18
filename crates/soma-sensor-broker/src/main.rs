@@ -28,9 +28,14 @@
 //! stdout.
 
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
+use image::GenericImageView;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, Mutex};
@@ -56,6 +61,24 @@ const INTERNAL_ERROR: i64 = -32603;
 const SUBSCRIPTION_NOT_FOUND: i64 = -32002;
 
 type Output = mpsc::UnboundedSender<String>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ColorTransformConfig {
+    max_width: u32,
+    max_height: u32,
+    format_required: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ColorFrame {
+    schema_version: u32,
+    timestamp: f64,
+    frame_number: u64,
+    width: u32,
+    height: u32,
+    format: String,
+    data: Vec<u8>,
+}
 
 struct Subscription {
     topic: String,
@@ -316,6 +339,12 @@ async fn handle_subscribe_start(
             return error_response(id, INVALID_PARAMS, "invalid_params", &message);
         }
     };
+    let color_transform = match parse_optional_color_transform(&params) {
+        Ok(value) => value,
+        Err(message) => {
+            return error_response(id, INVALID_PARAMS, "invalid_params", &message);
+        }
+    };
 
     let subscription_id = Uuid::new_v4().to_string();
 
@@ -379,7 +408,24 @@ async fn handle_subscribe_start(
                         }
                         last_delivered = Some(Instant::now());
                     }
-                    let bytes = sample.payload().to_bytes().to_vec();
+                    let original = sample.payload().to_bytes().to_vec();
+                    let bytes = match transform_sample_payload(&original, color_transform.as_ref())
+                    {
+                        Ok(bytes) => bytes,
+                        Err(error_class) => {
+                            let notification = json!({
+                                "jsonrpc": "2.0",
+                                "method": "sensorium.subscription.error",
+                                "params": {
+                                    "subscription_id": sub_id_for_task,
+                                    "topic": topic_for_task,
+                                    "error_class": error_class,
+                                }
+                            });
+                            let _ = output_tx.send(notification.to_string());
+                            break;
+                        }
+                    };
                     let notification = json!({
                         "jsonrpc": "2.0",
                         "method": "sensorium.subscription.sample",
@@ -437,6 +483,148 @@ fn parse_optional_max_fps(params: &Value) -> Result<Option<u32>, String> {
     }
 }
 
+fn parse_optional_color_transform(params: &Value) -> Result<Option<ColorTransformConfig>, String> {
+    let downsample = match params.get("downsample_to") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(parse_downsample_to(value)?),
+    };
+    let format_required = match params.get("format_required") {
+        None | Some(Value::Null) => None,
+        Some(value) => match value.as_str() {
+            Some("jpeg") => Some("jpeg".to_string()),
+            Some(_) => {
+                return Err(
+                    "subscribe.start params.format_required must be jpeg for color transforms"
+                        .to_string(),
+                )
+            }
+            None => {
+                return Err(
+                    "subscribe.start params.format_required must be a non-empty string".to_string(),
+                )
+            }
+        },
+    };
+
+    match (downsample, format_required) {
+        (None, None) => Ok(None),
+        (Some((max_width, max_height)), Some(format_required)) => Ok(Some(ColorTransformConfig {
+            max_width,
+            max_height,
+            format_required,
+        })),
+        (Some(_), None) => {
+            Err("subscribe.start params.format_required is required with downsample_to".to_string())
+        }
+        (None, Some(_)) => {
+            Err("subscribe.start params.downsample_to is required with format_required".to_string())
+        }
+    }
+}
+
+fn parse_downsample_to(value: &Value) -> Result<(u32, u32), String> {
+    let entries = value.as_array().ok_or_else(|| {
+        "subscribe.start params.downsample_to must be [width, height]".to_string()
+    })?;
+    if entries.len() != 2 {
+        return Err("subscribe.start params.downsample_to must be [width, height]".to_string());
+    }
+    let width = parse_dimension(&entries[0], "width")?;
+    let height = parse_dimension(&entries[1], "height")?;
+    Ok((width, height))
+}
+
+fn parse_dimension(value: &Value, label: &str) -> Result<u32, String> {
+    match value.as_u64() {
+        Some(raw) if (1..=1920).contains(&raw) => Ok(raw as u32),
+        _ => Err(format!(
+            "subscribe.start params.downsample_to {label} must be an integer from 1 to 1920"
+        )),
+    }
+}
+
+fn transform_sample_payload(
+    payload: &[u8],
+    color_transform: Option<&ColorTransformConfig>,
+) -> Result<Vec<u8>, &'static str> {
+    match color_transform {
+        None => Ok(payload.to_vec()),
+        Some(config) => transform_color_payload(payload, config),
+    }
+}
+
+fn transform_color_payload(
+    payload: &[u8],
+    config: &ColorTransformConfig,
+) -> Result<Vec<u8>, &'static str> {
+    let mut frame: ColorFrame =
+        rmp_serde::from_slice(payload).map_err(|_| "color_msgpack_decode_failed")?;
+    if frame.schema_version != 1 {
+        return Err("color_schema_unsupported");
+    }
+    if frame.format != config.format_required {
+        return Err("color_format_mismatch");
+    }
+    if frame.format != "jpeg" {
+        return Err("color_format_unsupported");
+    }
+
+    let image = image::load_from_memory(&frame.data).map_err(|_| "color_jpeg_decode_failed")?;
+    let (source_width, source_height) = image.dimensions();
+    if source_width == 0 || source_height == 0 {
+        return Err("color_image_dimensions_invalid");
+    }
+
+    let (target_width, target_height) = bounded_dimensions(
+        source_width,
+        source_height,
+        config.max_width,
+        config.max_height,
+    );
+    if target_width == source_width && target_height == source_height {
+        frame.width = source_width;
+        frame.height = source_height;
+    } else {
+        let resized = image.resize(target_width, target_height, FilterType::Triangle);
+        let mut encoded = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut encoded);
+            let mut encoder = JpegEncoder::new_with_quality(&mut cursor, 85);
+            encoder
+                .encode_image(&resized)
+                .map_err(|_| "color_jpeg_encode_failed")?;
+        }
+        frame.width = target_width;
+        frame.height = target_height;
+        frame.data = encoded;
+    }
+
+    if frame.width > config.max_width || frame.height > config.max_height {
+        return Err("color_downsample_bounds_exceeded");
+    }
+
+    rmp_serde::to_vec_named(&frame).map_err(|_| "color_msgpack_encode_failed")
+}
+
+fn bounded_dimensions(
+    source_width: u32,
+    source_height: u32,
+    max_width: u32,
+    max_height: u32,
+) -> (u32, u32) {
+    if source_width <= max_width && source_height <= max_height {
+        return (source_width, source_height);
+    }
+    let width_limited_height =
+        ((u64::from(source_height) * u64::from(max_width)) / u64::from(source_width)).max(1);
+    if width_limited_height <= u64::from(max_height) {
+        return (max_width, width_limited_height as u32);
+    }
+    let height_limited_width =
+        ((u64::from(source_width) * u64::from(max_height)) / u64::from(source_height)).max(1);
+    (height_limited_width as u32, max_height)
+}
+
 fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -452,6 +640,7 @@ fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{DynamicImage, ImageBuffer, Rgb};
     use std::fs;
     use std::path::PathBuf;
 
@@ -480,6 +669,33 @@ mod tests {
         )
         .expect("write sandbox zenoh config");
         path
+    }
+
+    fn jpeg_bytes(width: u32, height: u32) -> Vec<u8> {
+        let image = ImageBuffer::from_fn(width, height, |x, y| {
+            Rgb([(x % 255) as u8, (y % 255) as u8, ((x + y) % 255) as u8])
+        });
+        let dyn_image = DynamicImage::ImageRgb8(image);
+        let mut encoded = Vec::new();
+        let mut cursor = Cursor::new(&mut encoded);
+        let mut encoder = JpegEncoder::new_with_quality(&mut cursor, 85);
+        encoder
+            .encode_image(&dyn_image)
+            .expect("encode fixture jpeg");
+        encoded
+    }
+
+    fn color_payload(width: u32, height: u32) -> Vec<u8> {
+        rmp_serde::to_vec_named(&ColorFrame {
+            schema_version: 1,
+            timestamp: 1_779_000_001.25,
+            frame_number: 42,
+            width,
+            height,
+            format: "jpeg".to_string(),
+            data: jpeg_bytes(width, height),
+        })
+        .expect("encode color frame")
     }
 
     #[tokio::test]
@@ -674,6 +890,111 @@ mod tests {
                 "expected max_fps error, got {resp}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn start_rejects_invalid_color_transform_params_before_opening_subscription() {
+        let (tx, _rx) = make_output();
+        let cases = [
+            json!({"downsample_to":[320,240]}),
+            json!({"format_required":"jpeg"}),
+            json!({"downsample_to":[0,240],"format_required":"jpeg"}),
+            json!({"downsample_to":[320,240],"format_required":"png"}),
+        ];
+        for params in cases {
+            let resp = handle_line(
+                &json!({
+                    "jsonrpc": "2.0",
+                    "method": "sensorium.subscribe.start",
+                    "params": {
+                        "topic": "sensor/test/realsense/color",
+                        "downsample_to": params.get("downsample_to").cloned().unwrap_or(Value::Null),
+                        "format_required": params.get("format_required").cloned().unwrap_or(Value::Null),
+                    },
+                    "id": "bad-transform",
+                })
+                .to_string(),
+                make_state(),
+                tx.clone(),
+            )
+            .await;
+            assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS), "{resp}");
+            assert_eq!(resp["error"]["code_name"], "invalid_params");
+        }
+    }
+
+    #[test]
+    fn color_transform_downsamples_jpeg_payload_without_passthrough() {
+        let payload = color_payload(1280, 720);
+        let transformed = transform_color_payload(
+            &payload,
+            &ColorTransformConfig {
+                max_width: 320,
+                max_height: 240,
+                format_required: "jpeg".to_string(),
+            },
+        )
+        .expect("transform color payload");
+        assert_ne!(transformed, payload);
+
+        let frame: ColorFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
+        assert_eq!(frame.schema_version, 1);
+        assert_eq!(frame.frame_number, 42);
+        assert_eq!(frame.format, "jpeg");
+        assert!(frame.width <= 320, "width was {}", frame.width);
+        assert!(frame.height <= 240, "height was {}", frame.height);
+        assert_eq!((frame.width, frame.height), (320, 180));
+
+        let decoded = image::load_from_memory(&frame.data).expect("decode transformed jpeg");
+        assert_eq!(decoded.dimensions(), (320, 180));
+    }
+
+    #[test]
+    fn color_transform_never_enlarges_small_frames() {
+        let payload = color_payload(160, 90);
+        let transformed = transform_color_payload(
+            &payload,
+            &ColorTransformConfig {
+                max_width: 320,
+                max_height: 240,
+                format_required: "jpeg".to_string(),
+            },
+        )
+        .expect("transform color payload");
+        let frame: ColorFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
+        assert_eq!((frame.width, frame.height), (160, 90));
+    }
+
+    #[test]
+    fn color_transform_rejects_malformed_payloads_instead_of_passthrough() {
+        assert_eq!(
+            transform_color_payload(
+                &[0xc1],
+                &ColorTransformConfig {
+                    max_width: 320,
+                    max_height: 240,
+                    format_required: "jpeg".to_string(),
+                },
+            )
+            .unwrap_err(),
+            "color_msgpack_decode_failed",
+        );
+
+        let mut frame: ColorFrame = rmp_serde::from_slice(&color_payload(1280, 720)).unwrap();
+        frame.data = vec![1, 2, 3, 4];
+        let malformed_jpeg = rmp_serde::to_vec_named(&frame).unwrap();
+        assert_eq!(
+            transform_color_payload(
+                &malformed_jpeg,
+                &ColorTransformConfig {
+                    max_width: 320,
+                    max_height: 240,
+                    format_required: "jpeg".to_string(),
+                },
+            )
+            .unwrap_err(),
+            "color_jpeg_decode_failed",
+        );
     }
 
     // Zenoh requires a multi-thread tokio runtime; current_thread

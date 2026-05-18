@@ -57,3 +57,36 @@ The Soma-side control path is good enough to keep. The smoke wrapper correctly d
 The next slice should diagnose Sensorium publisher delivery on `jetsorano`: confirm the publisher
 service is running, confirm the status topic name, confirm Zenoh peer discovery/routing between
 the workstation and node, then rerun the guarded smoke wrapper.
+
+## Addendum: Cross-Subnet Discovery
+
+Follow-up inspection found the publisher host on `192.168.20.0/24` and the workstation on
+`192.168.21.0/24`. Zenoh default multicast discovery does not cross that routed boundary, so
+Soma needs an explicit Zenoh client config for this topology.
+
+## Addendum: Explicit Zenoh Config Success
+
+Soma now accepts `SOMA_SENSORIUM_ZENOH_CONFIG` and passes that path into the sensor broker helper
+as `zenoh_config_path`.
+
+Using an explicit client config pointed at the current Sensorium endpoint:
+
+```text
+tcp/192.168.20.179:37183
+```
+
+the guarded smoke wrapper completed successfully:
+
+```text
+Observation wait: 8 second(s).
+Observed sample count: 1
+Sensorium live smoke completed.
+```
+
+Post-run checks confirmed `active_count: 0`, the runtime grant was revoked, and provenance stayed
+metadata-only. This validates the Soma/helper path across the routed subnet when the Zenoh endpoint
+is explicit.
+
+Remaining durability concern: the endpoint above came from Sensorium startup logs and uses a
+dynamic Zenoh listen port. A durable deployment should pin the Sensorium listener on the publisher
+side, then point Soma's client config at that stable endpoint.

@@ -38,6 +38,7 @@ test("createSensoriumRuntime starts helper and constructs subscriber when enable
     env: {
       SOMA_SENSORIUM_ENABLED: "1",
       SOMA_SENSOR_BROKER: "/tmp/test-soma-sensor-broker",
+      SOMA_SENSORIUM_ZENOH_CONFIG: "/tmp/test-zenoh.json5",
     },
     logger: {
       info(message) {
@@ -59,8 +60,8 @@ test("createSensoriumRuntime starts helper and constructs subscriber when enable
         },
       };
     },
-    subscriberFactory({ manager }) {
-      events.push(["subscriber", Boolean(manager)]);
+    subscriberFactory({ manager, zenohConfigPath }) {
+      events.push(["subscriber", Boolean(manager), zenohConfigPath]);
       return { kind: "fake-subscriber" };
     },
   });
@@ -68,12 +69,13 @@ test("createSensoriumRuntime starts helper and constructs subscriber when enable
   assert.equal(runtime.enabled, true);
   assert.deepEqual(runtime.subscriber, { kind: "fake-subscriber" });
   assert.equal(runtime.helper_path, "/tmp/test-soma-sensor-broker");
+  assert.equal(runtime.zenoh_config_path, "/tmp/test-zenoh.json5");
   await runtime.stop();
   assert.deepEqual(events, [
     ["manager", "/tmp/test-soma-sensor-broker"],
     ["start", "/tmp/test-soma-sensor-broker"],
     ["info", "Sensorium runtime enabled with helper /tmp/test-soma-sensor-broker"],
-    ["subscriber", true],
+    ["subscriber", true, "/tmp/test-zenoh.json5"],
     ["stop", "/tmp/test-soma-sensor-broker"],
   ]);
 });

@@ -1,0 +1,19 @@
+// Example Zenoh client config for Soma consuming a Sensorium publisher
+// across a routed subnet where multicast discovery does not cross.
+//
+// Replace the endpoint with the Sensorium node's advertised Zenoh
+// endpoint from its startup logs. Example:
+//   Zenoh can be reached at: tcp/192.168.20.179:37183
+//
+// If Sensorium restarts without a fixed listen endpoint, this dynamic
+// port can change. A durable deployment should pin the Sensorium
+// listener in its Zenoh config, then point this client config at that
+// stable endpoint.
+
+{
+  mode: "peer",
+
+  connect: {
+    endpoints: ["tcp/192.168.20.179:37183"],
+  },
+}

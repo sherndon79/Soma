@@ -199,6 +199,13 @@ Implemented:
 - live smoke verification run confirmed the Soma/helper control path and metadata-only cleanup,
   but did not observe status samples from `sensor/jetsorano/status`; `jetsorano` is LAN-reachable,
   while SSH inspection is blocked until host key verification is resolved
+- diagnosed the first publisher delivery blocker: Sensorium was not running; after starting the
+  existing Docker compose deployment, the Jetson-local subscriber check received
+  `sensor/jetsorano/status`; Soma still needs explicit Zenoh client config because the workstation
+  is on `192.168.21.0/24` and `jetsorano` is on `192.168.20.0/24`
+- added `SOMA_SENSORIUM_ZENOH_CONFIG` wiring so Soma can pass an explicit Zenoh client config into
+  the helper; rerunning the guarded smoke wrapper against the current Sensorium endpoint observed
+  one status sample and completed with metadata-only cleanup
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -212,27 +219,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Diagnose Sensorium publisher sample delivery.
+Stabilize Sensorium endpoint configuration for repeatable smoke tests.
 
 Target:
 
 ```text
-sensorium publisher delivery diagnosis
-  -> resolve jetsorano SSH host key verification deliberately before remote inspection
-  -> confirm the Sensorium publisher service is running on jetsorano
-  -> confirm the advertised status topic matches sensor/jetsorano/status
-  -> confirm Zenoh peer discovery/routing between workstation and jetsorano
-  -> rerun the guarded smoke wrapper and require at least one observed sample
+sensorium stable endpoint config
+  -> pin the Sensorium publisher's Zenoh listen endpoint instead of reading a dynamic port from logs
+  -> point Soma's client config at the stable endpoint
+  -> rerun the guarded smoke wrapper from a fresh service start
+  -> keep runtime grants process-local and cleanup metadata-only
   -> preserve no recording, decoding, or preprocessing
 ```
 
 Expected work:
 
-- verify the SSH host key path for `jetsorano`; do not bypass host identity silently
-- inspect the Sensorium publisher process/service on `jetsorano`
-- inspect topic names or logs on the publisher side
-- check whether Zenoh needs explicit peer configuration rather than default multicast discovery
+- update the Sensorium deployment config or compose setup to use a fixed Zenoh endpoint
+- update Soma's local client config path to reference that stable endpoint
 - rerun the guarded wrapper against `SOMA_SENSORIUM_ENABLED=1` service
+- record whether the stable endpoint survives Sensorium container restart
 
 Constraints:
 

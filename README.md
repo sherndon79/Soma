@@ -41,6 +41,7 @@ Environment variables:
 - `SOMA_SENSORIUM_ENABLED`
 - `SOMA_SENSORIUM_LIVE_SMOKE`
 - `SOMA_SENSOR_BROKER`
+- `SOMA_SENSORIUM_ZENOH_CONFIG`
 
 Runtime profiles are defined in [config/runtime-profiles.json](./config/runtime-profiles.json).
 Self-scoped narrowing modules are defined in [config/harness-modules.json](./config/harness-modules.json).
@@ -86,6 +87,11 @@ SOMA_SENSORIUM_ENABLED=1 npm start
 Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. No Sensorium grants
 ship in `config/grants.json`, so subscription requests still fail closed until an explicit active
 grant exists for the exact `perception.sensorium.*.subscribe` capability.
+
+If the Sensorium publisher is on another routed subnet, Zenoh multicast discovery may not cross
+the network boundary. Provide `SOMA_SENSORIUM_ZENOH_CONFIG=/path/to/zenoh-client.json5` to pass an
+explicit Zenoh client config into the helper. See
+[config/sensorium-zenoh-client.example.json5](./config/sensorium-zenoh-client.example.json5).
 
 Sensorium proposal review can be generated without enabling the runtime or creating a grant:
 

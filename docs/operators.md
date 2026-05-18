@@ -22,6 +22,19 @@ Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. 
 requested but the helper is missing or not executable, startup fails with a Sensorium runtime error
 instead of silently disabling the subscriber.
 
+If the Sensorium publisher is on another routed subnet, Zenoh multicast discovery may not cross
+the boundary. Provide a client config explicitly:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 \
+SOMA_SENSORIUM_ZENOH_CONFIG=/path/to/zenoh-client.json5 \
+npm start
+```
+
+The example at `config/sensorium-zenoh-client.example.json5` shows the unauthenticated peer-mode
+shape for connecting to a specific Sensorium endpoint. For durable use, pin the Sensorium listener
+port on the publisher side rather than relying on the dynamic port shown in startup logs.
+
 For a real helper-backed Sensorium check, use the opt-in
 [Sensorium live smoke workflow](./runbooks/sensorium_live_smoke.md). It starts from the low-risk
 status topic, requires an explicit runtime grant, and does not record, decode, or preprocess sensor

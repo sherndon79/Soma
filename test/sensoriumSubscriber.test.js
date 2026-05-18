@@ -155,6 +155,22 @@ test("subscriber.start propagates helper failure without storing state", async (
   assert.equal(subscriber.activeCount, 0);
 });
 
+test("subscriber.start passes optional Zenoh config path to the helper", async () => {
+  const manager = new FakeManager();
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    zenohConfigPath: "/tmp/soma-sensorium-zenoh.json5",
+  });
+
+  await subscriber.start(COMMON_START);
+
+  assert.equal(manager.calls.length, 1);
+  assert.deepEqual(manager.calls[0].params, {
+    topic: "sensor/jetsorano/realsense/color",
+    zenoh_config_path: "/tmp/soma-sensorium-zenoh.json5",
+  });
+});
+
 // ── stop ───────────────────────────────────────────────────────────────────
 
 test("subscriber.stop returns an end provenance summary with the right counters", async () => {

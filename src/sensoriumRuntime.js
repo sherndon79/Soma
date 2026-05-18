@@ -26,6 +26,7 @@ export async function createSensoriumRuntime({
   }
 
   const helperPath = env.SOMA_SENSOR_BROKER || SENSOR_BROKER_DEFAULT_BINARY;
+  const zenohConfigPath = String(env.SOMA_SENSORIUM_ZENOH_CONFIG ?? "").trim();
   const manager = managerFactory({ binaryPath: helperPath });
 
   try {
@@ -45,8 +46,9 @@ export async function createSensoriumRuntime({
 
   return {
     enabled: true,
-    subscriber: subscriberFactory({ manager }),
+    subscriber: subscriberFactory({ manager, zenohConfigPath }),
     helper_path: helperPath,
+    zenoh_config_path: zenohConfigPath,
     async stop() {
       await manager.stop();
     },
@@ -57,6 +59,6 @@ function defaultManagerFactory({ binaryPath }) {
   return new SensorBrokerManager({ binaryPath });
 }
 
-function defaultSubscriberFactory({ manager }) {
-  return new SensoriumSubscriber({ manager });
+function defaultSubscriberFactory({ manager, zenohConfigPath }) {
+  return new SensoriumSubscriber({ manager, zenohConfigPath });
 }

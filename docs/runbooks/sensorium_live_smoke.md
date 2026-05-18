@@ -37,6 +37,31 @@ SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker \
 npm start
 ```
 
+If Sensorium is on another routed subnet, provide a Zenoh client config with an explicit
+`connect.endpoints` entry:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 \
+SOMA_SENSORIUM_ZENOH_CONFIG=/path/to/zenoh-client.json5 \
+npm start
+```
+
+Use the endpoint advertised in the Sensorium publisher logs. If the publisher is using a dynamic
+Zenoh listen port, that endpoint may change after restart; durable deployments should pin the
+publisher listener and then point Soma at that stable endpoint.
+
+Example for the current routed-subnet topology:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 \
+SOMA_SENSORIUM_ZENOH_CONFIG=/tmp/soma-sensorium-zenoh-current.json5 \
+npm start
+```
+
+The referenced config should contain a Zenoh `connect.endpoints` value such as
+`tcp/192.168.20.179:<publisher-port>`. Treat the port as temporary unless the publisher has been
+configured to listen on a fixed endpoint.
+
 Startup should log that the Sensorium runtime is enabled. If helper startup fails, Soma should exit
 with `sensorium_runtime_start_failed` rather than silently disabling Sensorium.
 

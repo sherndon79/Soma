@@ -40,13 +40,15 @@ export class SensoriumSubscriber {
   #active = new Map();
   #notificationHandlerInstalled = false;
   #now;
+  #zenohConfigPath;
 
-  constructor({ manager, now = () => new Date() } = {}) {
+  constructor({ manager, now = () => new Date(), zenohConfigPath = "" } = {}) {
     if (!manager) {
       throw new TypeError("SensoriumSubscriber requires a manager");
     }
     this.#manager = manager;
     this.#now = now;
+    this.#zenohConfigPath = String(zenohConfigPath ?? "").trim();
   }
 
   /**
@@ -64,7 +66,10 @@ export class SensoriumSubscriber {
 
     const helperResult = await this.#manager.send(
       "sensorium.subscribe.start",
-      { topic: validated.topic },
+      stripEmpty({
+        topic: validated.topic,
+        zenoh_config_path: this.#zenohConfigPath,
+      }),
     );
 
     const subscriptionId = helperResult.subscription_id;
@@ -256,4 +261,10 @@ function estimateFrameRate(record, now) {
     return 0;
   }
   return record._stats.framesConsumed / elapsedSec;
+}
+
+function stripEmpty(object) {
+  return Object.fromEntries(
+    Object.entries(object).filter(([, value]) => value !== ""),
+  );
 }

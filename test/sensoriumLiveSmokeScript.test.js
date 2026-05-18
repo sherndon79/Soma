@@ -69,6 +69,7 @@ test("sensorium live smoke defaults to status-topic-only workflow", () => {
   assert.equal(options.topic, DEFAULT_SENSORIUM_SMOKE.topic);
   assert.equal(options.maxSeconds, DEFAULT_SENSORIUM_SMOKE.maxSeconds);
   assert.equal(options.observeSeconds, DEFAULT_SENSORIUM_SMOKE.observeSeconds);
+  assert.equal(options.observeSeconds, "8");
 
   const plan = buildSensoriumLiveSmokePlan(options);
   assert.equal(plan[1].args[0], "sensorium");

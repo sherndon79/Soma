@@ -79,8 +79,9 @@ The wrapper refuses unless both `SOMA_SENSORIUM_ENABLED=1` and
 `SOMA_SENSORIUM_LIVE_SMOKE=1` are present in its environment. It prints the exact CLI commands
 before executing them, creates only process-local runtime grants, waits briefly for metadata-only
 sample counters, and does not record or preprocess payload content. The default observation wait is
-three seconds; override it with `--observe-seconds 1..60`. A run that opens and stops a subscription
-but observes zero samples fails with `no_samples_observed`.
+eight seconds so the status-topic smoke spans at least one 5-second Sensorium heartbeat; override it
+with `--observe-seconds 1..60`. A run that opens and stops a subscription but observes zero samples
+fails with `no_samples_observed`.
 
 The default wrapper target is the low-risk status topic:
 
@@ -101,7 +102,7 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
   --provider soma.provider.sensorium.jetsorano \
   --topic sensor/jetsorano/status \
   --max-seconds 30 \
-  --observe-seconds 3
+  --observe-seconds 8
 ```
 
 Camera-class targets such as `perception.sensorium.color.subscribe` require an additional explicit

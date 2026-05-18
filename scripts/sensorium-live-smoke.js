@@ -23,7 +23,7 @@ export const DEFAULT_SENSORIUM_SMOKE = Object.freeze({
   maxFps: "",
   format: "",
   downsample: "",
-  observeSeconds: "3",
+  observeSeconds: "8",
   reason: "Smoke test status/liveness subscription.",
   actor: "user",
 });

@@ -315,6 +315,7 @@ test("status samples decode to bounded metadata summaries without retaining payl
     uptime_seconds: 42.5,
     node_version: "0.1.0",
     enabled_streams: ["realsense/color", "realsense/depth"],
+    stream_profiles: [],
   });
 
   nowMs += 5_000;
@@ -328,6 +329,7 @@ test("status samples decode to bounded metadata summaries without retaining payl
     uptime_seconds: 42.5,
     node_version: "0.1.0",
     enabled_streams: ["realsense/color", "realsense/depth"],
+    stream_profiles: [],
   });
   assert.equal(JSON.stringify(endSummary).includes("payload_bytes"), false);
 });

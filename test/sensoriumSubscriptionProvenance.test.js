@@ -163,6 +163,7 @@ test("subscription end summary captures aggregate counters and duration", () => 
     uptime_seconds: 42.5,
     node_version: "0.1.0",
     enabled_streams: ["realsense/color"],
+    stream_profiles: [],
   });
   assert.deepEqual(endSummary.stream_summary_observed, {
     schema_version: 1,

@@ -266,6 +266,7 @@ export class SensoriumSubscriber {
         uptime_seconds: summary.uptime_seconds,
         node_version: summary.node_version,
         enabled_streams: summary.enabled_streams,
+        stream_profiles: summary.stream_profiles,
       };
     } catch {
       sub._stats.schemaMismatches += 1;

@@ -132,6 +132,7 @@ test("disclosure with multiple active subscriptions groups them", () => {
     uptime_seconds: 42.5,
     node_version: "0.1.0",
     enabled_streams: ["realsense/color"],
+    stream_profiles: [],
   });
 });
 

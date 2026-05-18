@@ -98,9 +98,11 @@ A first-pass capability mapping for the Soma side:
 | `perception.sensorium.location.subscribe` | sensitive | disabled | Static geo position |
 
 The status topic is the lightest-risk subscription and the most useful
-discovery surface — its payload includes the `enabled_streams` list, so a
-Soma capability authoring agent can introspect what's available on a given
-host without enumerating the topic namespace.
+discovery surface — its payload includes the `enabled_streams` list and
+producer-side `stream_profiles`, so a Soma capability authoring agent can
+introspect what's available on a given host and compare native color/depth
+capture profiles against Soma's delivery bounds without enumerating the topic
+namespace.
 
 ### Bounded Status Observation
 
@@ -108,8 +110,8 @@ Soma may decode the `sensor/<host>/status` payload after an explicit
 `perception.sensorium.status.subscribe` grant because the status payload is
 the low-risk discovery contract. The decoded surface is deliberately bounded:
 
-- allowed: `schema_version`, `hostname`, `uptime_seconds`, `node_version`, and
-  `enabled_streams`
+- allowed: `schema_version`, `hostname`, `uptime_seconds`, `node_version`,
+  `enabled_streams`, and `stream_profiles`
 - excluded: raw `payload_bytes`, payload retention, frame contents, credentials,
   internal Sensorium telemetry, and timestamp persistence
 - provenance: `schema_version_observed`, `schema_mismatches`, and the sanitized
@@ -121,6 +123,12 @@ the low-risk discovery contract. The decoded surface is deliberately bounded:
 This does not authorize color, depth, IMU, or location decoding. Those streams
 need their own contracts before any payload-specific fields enter Soma
 disclosure or provenance.
+
+`stream_profiles` is disclosure, not control. Sensorium remains producer-only:
+the node publishes its configured native profile, while Soma grants constrain
+what a subscriber may consume downstream (`max_fps`, `downsample_to`, and
+`format_required`). A status profile such as `realsense/color 1280x720 @ 30fps`
+can coexist with a Soma grant allowing only `1fps` and `320x240` delivery.
 
 Camera-class capabilities (color, depth) should follow the existing
 Restricted treatment: explicit assent, scoped grant, active-mode

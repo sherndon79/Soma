@@ -148,7 +148,9 @@ npm run cli -- sensorium subscribe-stop subscription-id
 ```
 
 `sensorium status` is read-only. It filters the active subscription disclosure down to bounded
-status summaries and does not start a subscription or expose raw payload bytes.
+status summaries and does not start a subscription or expose raw payload bytes. When Sensorium
+advertises producer-side `stream_profiles`, the status view may show native color/depth profiles
+such as `1280x720 @ 30fps`; Soma grants still control downstream delivery bounds separately.
 
 The manual live smoke workflow is documented in
 [docs/runbooks/sensorium_live_smoke.md](./docs/runbooks/sensorium_live_smoke.md). A guarded

@@ -5,9 +5,10 @@ export function encodeStatusPayload({
   uptime_seconds = 12.5,
   node_version = "0.1.0",
   enabled_streams = ["realsense/color", "realsense/depth"],
+  stream_profiles = [],
 } = {}) {
   return [
-    ...mapHeader(6),
+    ...mapHeader(7),
     ...str("schema_version"),
     ...uint(schema_version),
     ...str("timestamp"),
@@ -20,6 +21,8 @@ export function encodeStatusPayload({
     ...str(node_version),
     ...str("enabled_streams"),
     ...array(enabled_streams.map((item) => str(item))),
+    ...str("stream_profiles"),
+    ...array(stream_profiles.map(profile)),
   ];
 }
 
@@ -60,6 +63,24 @@ function array(items) {
   const flat = items.flat();
   if (items.length <= 15) return [0x90 | items.length, ...flat];
   return [0xdc, (items.length >> 8) & 0xff, items.length & 0xff, ...flat];
+}
+
+function profile(value) {
+  const entries = [
+    ["stream", str(value.stream)],
+  ];
+  for (const key of ["width", "height", "fps", "jpeg_quality"]) {
+    if (value[key] !== undefined && value[key] !== null) {
+      entries.push([key, uint(value[key])]);
+    }
+  }
+  if (value.format !== undefined && value.format !== null) {
+    entries.push(["format", str(value.format)]);
+  }
+  return [
+    ...mapHeader(entries.length),
+    ...entries.flatMap(([key, encoded]) => [...str(key), ...encoded]),
+  ];
 }
 
 function str(value) {

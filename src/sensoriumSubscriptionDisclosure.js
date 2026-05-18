@@ -177,7 +177,43 @@ function copyStatusSummary(summary) {
     uptime_seconds: uptimeSeconds,
     node_version: nodeVersion,
     enabled_streams: enabledStreams,
+    stream_profiles: copyStatusStreamProfiles(summary.stream_profiles),
   };
+}
+
+function copyStatusStreamProfiles(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(copyStatusStreamProfile).filter(Boolean);
+}
+
+function copyStatusStreamProfile(profile) {
+  if (!isPlainObject(profile)) {
+    return null;
+  }
+  const stream = stringOrEmpty(profile.stream);
+  if (stream.length === 0) {
+    return null;
+  }
+  const out = { stream };
+  copyOptionalPositiveInteger(profile, out, "width");
+  copyOptionalPositiveInteger(profile, out, "height");
+  copyOptionalPositiveInteger(profile, out, "fps");
+  copyOptionalPositiveInteger(profile, out, "jpeg_quality");
+  if (profile.format !== undefined && profile.format !== null) {
+    const format = stringOrEmpty(profile.format);
+    if (format.length > 0) {
+      out.format = format;
+    }
+  }
+  return out;
+}
+
+function copyOptionalPositiveInteger(source, target, field) {
+  if (Number.isInteger(source[field]) && source[field] > 0) {
+    target[field] = source[field];
+  }
 }
 
 function copyStreamSummary(summary) {

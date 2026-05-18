@@ -908,6 +908,16 @@ test("runCli sensorium status prints bounded status summaries only", async () =>
                 "realsense/color",
                 "realsense/depth",
               ],
+              stream_profiles: [
+                {
+                  stream: "realsense/color",
+                  width: 1280,
+                  height: 720,
+                  fps: 30,
+                  format: "jpeg",
+                  jpeg_quality: 85,
+                },
+              ],
             },
           },
         ],
@@ -925,6 +935,7 @@ test("runCli sensorium status prints bounded status summaries only", async () =>
   assert.match(output, /sub-status-1/);
   assert.match(output, /host: jetsorano/);
   assert.match(output, /enabled streams: realsense\/color, realsense\/depth/);
+  assert.match(output, /native profiles: realsense\/color 1280x720 @ 30fps jpeg q85/);
   assert.doesNotMatch(output, /sub-color-1/);
   assert.doesNotMatch(output, /must-not-print/);
 });
@@ -956,6 +967,15 @@ test("runCli sensorium status json returns filtered status view", async () => {
             uptime_seconds: 42.5,
             node_version: "0.1.0",
             enabled_streams: ["realsense/color"],
+            stream_profiles: [
+              {
+                stream: "realsense/color",
+                width: 1280,
+                height: 720,
+                fps: 30,
+                format: "jpeg",
+              },
+            ],
           },
         },
       ],
@@ -969,6 +989,7 @@ test("runCli sensorium status json returns filtered status view", async () => {
   assert.equal(payload.statuses.length, 1);
   assert.equal(payload.statuses[0].subscription_id, "sub-status-1");
   assert.equal(payload.statuses[0].status_summary_observed.hostname, "jetsorano");
+  assert.equal(payload.statuses[0].status_summary_observed.stream_profiles[0].width, 1280);
   assert.equal(JSON.stringify(payload).includes("should-not-appear"), false);
 });
 

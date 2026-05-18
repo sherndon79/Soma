@@ -15,6 +15,7 @@ export function summarizeSensoriumStatusPayload(payloadBytes) {
   const uptimeSeconds = decoded.uptime_seconds;
   const nodeVersion = decoded.node_version;
   const enabledStreams = decoded.enabled_streams;
+  const streamProfiles = decoded.stream_profiles;
 
   if (!Number.isInteger(schemaVersion)) {
     throwStatusDecodeError("sensorium_status_schema_missing", "status payload schema_version must be an integer");
@@ -40,7 +41,53 @@ export function summarizeSensoriumStatusPayload(payloadBytes) {
     uptime_seconds: uptimeSeconds,
     node_version: nodeVersion,
     enabled_streams: [...enabledStreams],
+    stream_profiles: copyStreamProfiles(streamProfiles),
   };
+}
+
+function copyStreamProfiles(value) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throwStatusDecodeError("sensorium_status_profiles_invalid", "status payload stream_profiles must be an array when provided");
+  }
+  return value.map(copyStreamProfile);
+}
+
+function copyStreamProfile(profile) {
+  if (!isPlainObject(profile)) {
+    throwStatusDecodeError("sensorium_status_profile_invalid", "status payload stream_profiles entries must be objects");
+  }
+  const stream = profile.stream;
+  if (typeof stream !== "string" || stream.length === 0) {
+    throwStatusDecodeError("sensorium_status_profile_stream_invalid", "status payload stream profile must include stream");
+  }
+  const out = { stream };
+  copyOptionalPositiveInteger(profile, out, "width");
+  copyOptionalPositiveInteger(profile, out, "height");
+  copyOptionalPositiveInteger(profile, out, "fps");
+  copyOptionalPositiveInteger(profile, out, "jpeg_quality");
+  if (profile.format !== undefined && profile.format !== null) {
+    if (typeof profile.format !== "string" || profile.format.length === 0) {
+      throwStatusDecodeError("sensorium_status_profile_format_invalid", "status payload stream profile format must be a non-empty string");
+    }
+    out.format = profile.format;
+  }
+  return out;
+}
+
+function copyOptionalPositiveInteger(source, target, field) {
+  if (source[field] === undefined || source[field] === null) {
+    return;
+  }
+  if (!Number.isInteger(source[field]) || source[field] <= 0) {
+    throwStatusDecodeError(
+      "sensorium_status_profile_number_invalid",
+      `status payload stream profile ${field} must be a positive integer`,
+    );
+  }
+  target[field] = source[field];
 }
 
 function isPlainObject(value) {

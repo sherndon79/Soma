@@ -351,6 +351,10 @@ Request constraints must stay within the active grant's declared bounds. `max_se
 `downsample_to` must fit within the grant dimensions. Omitted bounded values inherit the grant's
 declared value before the subscriber is invoked.
 
+Sensorium's status payload may disclose producer-side native stream profiles, such as
+`realsense/color 1280x720 @ 30fps`. Treat those as node configuration facts, not subscriber
+authority. Soma grants still define what the agent may consume downstream.
+
 The first Sensorium grants should be session-only. Durable perception grants are intentionally
 deferred until the review surface can show host, topic, stream type, risk class, bounds, active
 disclosure wording, model-boundary warning, and revocation behavior before approval.

@@ -219,6 +219,9 @@ Implemented:
 - added `soma sensorium status`, a read-only operator CLI surface that filters active Sensorium
   disclosure to bounded status summaries without creating grants, starting subscriptions, or
   exposing raw payload bytes
+- added producer-profile disclosure to bounded status summaries: Soma can now surface Sensorium's
+  native color/depth profile metadata, such as `1280x720 @ 30fps`, while keeping capture control on
+  the producer side and delivery bounds in Soma grants
 - drafted the first higher-risk Sensorium stream contract for color: allowed summary fields are
   schema version, frame number, dimensions, format, and payload size; image bytes, screenshots,
   raw frames, timestamps, and cross-stream fields are contract violations

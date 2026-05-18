@@ -16,6 +16,23 @@ test("summarizeSensoriumStatusPayload returns only the bounded status summary", 
       uptime_seconds: 12.5,
       node_version: "0.1.0",
       enabled_streams: ["realsense/color", "realsense/depth"],
+      stream_profiles: [
+        {
+          stream: "realsense/color",
+          width: 1280,
+          height: 720,
+          fps: 30,
+          format: "jpeg",
+          jpeg_quality: 85,
+        },
+        {
+          stream: "realsense/depth",
+          width: 848,
+          height: 480,
+          fps: 30,
+          format: "png",
+        },
+      ],
     }),
   );
 
@@ -27,6 +44,23 @@ test("summarizeSensoriumStatusPayload returns only the bounded status summary", 
     uptime_seconds: 12.5,
     node_version: "0.1.0",
     enabled_streams: ["realsense/color", "realsense/depth"],
+    stream_profiles: [
+      {
+        stream: "realsense/color",
+        width: 1280,
+        height: 720,
+        fps: 30,
+        format: "jpeg",
+        jpeg_quality: 85,
+      },
+      {
+        stream: "realsense/depth",
+        width: 848,
+        height: 480,
+        fps: 30,
+        format: "png",
+      },
+    ],
   });
   assert.equal("timestamp" in summary, false);
 });
@@ -64,5 +98,14 @@ test("summarizeSensoriumStatusPayload rejects malformed payloads", () => {
         }),
       ),
     { code: "sensorium_status_uptime_invalid" },
+  );
+  assert.throws(
+    () =>
+      summarizeSensoriumStatusPayload(
+        encodeStatusPayload({
+          stream_profiles: [{ stream: "realsense/color", width: 0 }],
+        }),
+      ),
+    { code: "sensorium_status_profile_number_invalid" },
   );
 });

@@ -974,9 +974,26 @@ function sensoriumStatusSummary(response) {
     lines.push(`    uptime seconds: ${observed.uptime_seconds ?? "unknown"}`);
     const streams = Array.isArray(observed.enabled_streams) ? observed.enabled_streams : [];
     lines.push(`    enabled streams: ${streams.length > 0 ? streams.join(", ") : "none"}`);
+    const profiles = Array.isArray(observed.stream_profiles) ? observed.stream_profiles : [];
+    if (profiles.length > 0) {
+      lines.push(`    native profiles: ${profiles.map(formatSensoriumProfile).join("; ")}`);
+    }
   }
 
   return lines.join("\n");
+}
+
+function formatSensoriumProfile(profile) {
+  const stream = profile.stream ?? "unknown";
+  const dimensions = Number.isInteger(profile.width) && Number.isInteger(profile.height)
+    ? `${profile.width}x${profile.height}`
+    : "unknown-size";
+  const fps = Number.isInteger(profile.fps) ? `${profile.fps}fps` : "unknown-fps";
+  const format = profile.format ? ` ${profile.format}` : "";
+  const jpegQuality = Number.isInteger(profile.jpeg_quality)
+    ? ` q${profile.jpeg_quality}`
+    : "";
+  return `${stream} ${dimensions} @ ${fps}${format}${jpegQuality}`;
 }
 
 function sensoriumConstraintSummary(review) {

@@ -250,6 +250,9 @@ Implemented:
 - wired automatic Sensorium subscription endings into app provenance through a bounded callback:
   timeout end summaries are whitelisted before logging and remain inspectable through the existing
   provenance query surface
+- ran post-hardening Sensorium live smoke regression against `jetsorano`: status smoke observed two
+  samples, explicitly acknowledged color smoke observed eight bounded samples, manual color metadata
+  remained `320x180` JPEG, and cleanup returned to zero active subscriptions
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -263,25 +266,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Run a post-hardening Sensorium live smoke regression.
+Design the Sensorium depth metadata contract before any depth live smoke.
 
 Target:
 
 ```text
-sensorium live regression after hardening
-  -> run status smoke against the configured jetsorano endpoint
-  -> run acknowledged color metadata smoke with downsample and max_fps bounds
-  -> confirm timeout/error/provenance hardening did not regress live cleanup
-  -> preserve the no-default-grant and metadata-only boundaries
+sensorium depth metadata contract
+  -> define allowed depth summary fields before subscribing to depth frames
+  -> preserve producer-owned capture settings and Soma-owned delivery bounds
+  -> reject raw depth arrays, image bytes, screenshots, timestamps, and text
+  -> keep live depth validation explicitly acknowledged and metadata-first
   -> leave model-facing visual delivery out of scope
 ```
 
 Expected work:
 
-- start Soma with `SOMA_SENSORIUM_ENABLED=1` and the pinned Zenoh config
-- run guarded status and color live smoke workflows only with explicit operator acknowledgement
-- record observed counts, bounded metadata, and cleanup result in a review or runbook addendum
-- keep live camera validation explicitly acknowledged and metadata-first
+- document the depth stream minimization boundary alongside the color boundary
+- add schema/validator tests for allowed depth metadata and prohibited overreach
+- extend the guarded smoke wrapper only after the depth contract is reviewed
+- keep depth payload bytes and raw arrays out of Node-visible state
 
 Constraints:
 
@@ -292,6 +295,7 @@ Constraints:
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
+- no live depth subscription until the metadata contract and acknowledgement path are in place
 
 ## Near-Term
 

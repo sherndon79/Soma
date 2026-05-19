@@ -100,6 +100,10 @@ default.
 - [Sensorium Color Live Metadata Verification](./2026-05-18_sensorium_color_live_metadata.md)
   - review after an explicitly acknowledged live color metadata smoke; documents helper-side
     `max_fps` enforcement, live helper-side color downsampling, metadata-only summaries, and cleanup
+- [Sensorium Post-Hardening Live Regression](./2026-05-18_sensorium_post_hardening_live_regression.md)
+  - review after status and acknowledged color live smoke were rerun against `jetsorano` following
+    helper stream-error metadata, timeout enforcement, automatic ending provenance, and current-state
+    documentation cleanup
 
 ## Remote Graphical Session Thread
 

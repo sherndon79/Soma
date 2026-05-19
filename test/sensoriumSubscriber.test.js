@@ -3,7 +3,7 @@ import test from "node:test";
 import { EventEmitter } from "node:events";
 
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
-import { encodeColorPayload, encodeStatusPayload } from "./support/msgpackStatus.js";
+import { encodeColorPayload, encodeDepthPayload, encodeStatusPayload } from "./support/msgpackStatus.js";
 
 // ── fake manager ───────────────────────────────────────────────────────────
 // A small EventEmitter that records sent requests and lets tests
@@ -222,6 +222,36 @@ test("subscriber.start passes optional Zenoh config path to the helper", async (
     format_required: "jpeg",
     zenoh_config_path: "/tmp/soma-sensorium-zenoh.json5",
   });
+});
+
+test("subscriber.start passes depth transform constraints to the helper", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-depth",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({ manager });
+  await subscriber.start({
+    capability: "perception.sensorium.depth.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    grantId: "grant-depth",
+    scope: "session",
+    body: {
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: {
+        max_seconds: 30,
+        max_fps: 1,
+        format_required: "png",
+        downsample_to: [320, 240],
+      },
+    },
+  });
+
+  assert.equal(manager.calls[0].method, "sensorium.subscribe.start");
+  assert.deepEqual(manager.calls[0].params.downsample_to, [320, 240]);
+  assert.equal(manager.calls[0].params.format_required, "png");
 });
 
 // ── stop ───────────────────────────────────────────────────────────────────
@@ -667,6 +697,112 @@ test("color samples with unexpected schema record mismatch without stream summar
   assert.equal(endSummary.schema_mismatches, 1);
   assert.equal(endSummary.first_frame_number, null);
   assert.equal(endSummary.last_frame_number, null);
+  assert.equal("stream_summary_observed" in endSummary, false);
+});
+
+test("depth samples decode to bounded stream metadata without retaining depth bytes", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-depth",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start({
+    capability: "perception.sensorium.depth.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    grantId: "grant-depth",
+    scope: "session",
+    body: {
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: {
+        max_seconds: 30,
+        max_fps: 1,
+        format_required: "png",
+        downsample_to: [320, 240],
+      },
+    },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      timestamp: 1_779_000_001.25,
+      frame_number: 77,
+      width: 320,
+      height: 180,
+      format: "png",
+      depth_units: 0.001,
+      data: [0x89, 0x50, 0x4e, 0x47, 0x01, 0x02],
+    }),
+  });
+
+  const expected = {
+    schema_version: 1,
+    frame_number: 77,
+    width: 320,
+    height: 180,
+    format: "png",
+    depth_units: 0.001,
+    payload_size: 6,
+  };
+  const disclosure = subscriber.describeActive();
+  assert.deepEqual(disclosure.streams[0].stream_summary_observed, expected);
+
+  nowMs += 5_000;
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, 1);
+  assert.equal(endSummary.schema_mismatches, 0);
+  assert.equal(endSummary.first_frame_number, 77);
+  assert.equal(endSummary.last_frame_number, 77);
+  assert.deepEqual(endSummary.stream_summary_observed, expected);
+
+  const serialized = JSON.stringify(endSummary);
+  assert.equal(serialized.includes("data"), false);
+  assert.equal(serialized.includes("payload_bytes"), false);
+  assert.equal(serialized.includes("depth_array"), false);
+  assert.equal(serialized.includes("raw_depth"), false);
+  assert.equal(serialized.includes("point_cloud"), false);
+  assert.equal(serialized.includes("screenshot"), false);
+  assert.equal("timestamp" in endSummary.stream_summary_observed, false);
+});
+
+test("depth samples with malformed payloads count schema mismatches only", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-depth-bad",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start({
+    capability: "perception.sensorium.depth.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    grantId: "grant-depth",
+    scope: "session",
+    body: {
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: {
+        max_seconds: 30,
+        max_fps: 1,
+        format_required: "png",
+        downsample_to: [320, 240],
+      },
+    },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/depth", {
+    payloadBytes: [0xc1],
+  });
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, null);
+  assert.equal(endSummary.schema_mismatches, 1);
   assert.equal("stream_summary_observed" in endSummary, false);
 });
 

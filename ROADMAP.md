@@ -258,6 +258,9 @@ Implemented:
   raw depth arrays, geometry, screenshots, text, and model-facing delivery remain excluded
 - added a standalone Sensorium depth payload summarizer and bounded disclosure/provenance copying
   for `depth_units`; live depth activation remains blocked on helper-side depth minimization
+- implemented helper-side depth PNG minimization: `soma-sensor-broker` can downsample Sensorium
+  depth payloads to requested bounds, fail closed on malformed MessagePack/PNG/units, and Node now
+  forwards depth camera-class transform constraints before recording bounded depth metadata
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -271,25 +274,26 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement helper-side Sensorium depth minimization before any live depth smoke.
+Run an explicitly acknowledged Sensorium depth metadata live smoke.
 
 Target:
 
 ```text
-sensorium depth helper minimization
-  -> add helper-side depth PNG transform support for requested downsample bounds
-  -> reject unsupported or mismatched depth format before opening or forwarding samples
-  -> fail closed on malformed MessagePack, invalid PNG, or transform failure
-  -> keep Node-visible state metadata-only
+sensorium depth live metadata smoke
+  -> start Soma with the pinned Sensorium Zenoh config
+  -> request depth only with explicit camera-class acknowledgement
+  -> verify bounded `png` metadata with `depth_units` and downsample dimensions
+  -> confirm runtime cleanup returns to zero active subscriptions
   -> leave model-facing visual delivery out of scope
 ```
 
 Expected work:
 
-- add Rust helper fixture tests for PNG depth payload validation and downsampling
-- forward depth `format_required=png` and `downsample_to` only once the helper can enforce them
-- wire active depth sample metadata only after helper minimization is test-backed
-- extend the guarded smoke wrapper after the helper boundary is reviewed
+- run guarded status smoke first if the producer state is uncertain
+- run guarded depth smoke with `--acknowledge-camera-stream`, `--format png`, `--max-fps`, and
+  `--downsample`
+- record observed counts, depth metadata, `depth_units`, and cleanup result in a review note
+- keep the verification metadata-only
 
 Constraints:
 
@@ -300,7 +304,7 @@ Constraints:
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
-- no live depth subscription until helper-side minimization and acknowledgement path are in place
+- no live depth subscription without explicit camera-class acknowledgement
 
 ## Near-Term
 

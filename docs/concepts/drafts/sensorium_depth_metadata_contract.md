@@ -22,11 +22,14 @@ Implemented before live depth smoke:
 - the stream-summary contract accepts only bounded depth metadata
 - the standalone depth payload summarizer decodes MessagePack only into bounded metadata
 - disclosure and provenance copy `depth_units` only when it is a positive finite number
+- `soma-sensor-broker` can downsample depth PNG payloads to requested `downsample_to` bounds before
+  sample bytes cross into Node-visible state
+- Node forwards depth `format_required=png` and `downsample_to` only through the camera-class
+  subscription path
 
 Still not implemented:
 
 - live depth smoke
-- helper-side depth PNG minimization
 - depth map delivery to model context
 - depth recording, screenshots, point clouds, meshes, or derived scene geometry
 
@@ -85,19 +88,20 @@ Before any live depth smoke:
 - active disclosure and end provenance must expose only `stream_summary_observed`
 - cleanup must return to zero active subscriptions
 
-Live depth smoke remains out of scope for this contract slice. This document only defines the
-minimum acceptable metadata surface.
+Live depth smoke remains out of scope for the contract and helper-minimization slices. The next
+step is a guarded live verification run using the same runtime-grant, acknowledgement, and cleanup
+posture as color.
 
-The standalone Node summarizer is intentionally not treated as live activation by itself. Depth
-subscription activation still depends on helper-side minimization so Soma does not silently consume
-full-resolution depth maps while reporting bounded intent.
+The standalone Node summarizer was intentionally not treated as live activation by itself. Depth
+subscription activation became acceptable only after helper-side minimization existed so Soma would
+not silently consume full-resolution depth maps while reporting bounded intent.
 
-## Future Helper Boundary
+## Helper Boundary
 
-If depth minimization becomes active, it should happen in `soma-sensor-broker` before payload bytes
-cross into Node-visible state, matching the color minimization posture.
+Depth minimization happens in `soma-sensor-broker` before payload bytes cross into Node-visible
+state, matching the color minimization posture.
 
-The helper-side depth transform must fail closed for:
+The helper-side depth transform fails closed for:
 
 - malformed MessagePack
 - unsupported schema version

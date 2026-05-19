@@ -10,7 +10,7 @@ name = "soma-sensor-broker"
 path = "src/main.rs"
 
 [dependencies]
-image      = { version = "0.25", default-features = false, features = ["jpeg"] }
+image      = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 rmp-serde  = "1"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"

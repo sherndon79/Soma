@@ -224,12 +224,13 @@ Excluded depth fields:
 The expected depth schema version is `1` and the only allowed depth format is `png`.
 `depth_units` must be a positive finite number. A standalone depth payload summarizer can decode
 MessagePack into this metadata shape, and disclosure/provenance can copy the bounded `depth_units`
-field. Live depth smoke remains blocked until helper-side depth minimization exists so Soma does
-not silently consume full-resolution depth maps while reporting bounded intent.
+field. `soma-sensor-broker` enforces depth PNG downsampling before sample bytes cross into
+Node-visible state, so a live depth smoke can be attempted only as an explicitly acknowledged,
+metadata-only verification run.
 
 The depth boundary is specified separately in
 [Sensorium Depth Metadata Contract](./sensorium_depth_metadata_contract.md). That document is the
-review target before any live depth subscription attempt.
+review target for the pre-live depth minimization boundary.
 
 If the helper cannot decode, validate, or transform a stream sample, it emits a bounded
 `sensorium.subscription.error` notification with `subscription_id`, `topic`, and `error_class`. Node

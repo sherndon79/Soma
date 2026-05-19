@@ -31,6 +31,7 @@ import {
   createSensoriumSubscriptionStartSummary,
 } from "./sensoriumSubscriptionProvenance.js";
 import { summarizeSensoriumColorPayload } from "./sensoriumColorPayload.js";
+import { summarizeSensoriumDepthPayload } from "./sensoriumDepthPayload.js";
 import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
@@ -87,8 +88,8 @@ export class SensoriumSubscriber {
         topic: validated.topic,
         zenoh_config_path: this.#zenohConfigPath,
         max_fps: validated.constraints?.max_fps,
-        downsample_to: colorOnly(capability, validated.constraints?.downsample_to),
-        format_required: colorOnly(capability, validated.constraints?.format_required),
+        downsample_to: cameraClassOnly(capability, validated.constraints?.downsample_to),
+        format_required: cameraClassOnly(capability, validated.constraints?.format_required),
       }),
     );
 
@@ -293,6 +294,10 @@ export class SensoriumSubscriber {
       this.#recordColorSample(sub, msg.params?.payload_bytes);
       return;
     }
+    if (sub.capability === "perception.sensorium.depth.subscribe") {
+      this.#recordDepthSample(sub, msg.params?.payload_bytes);
+      return;
+    }
     if (sub.capability !== "perception.sensorium.status.subscribe") {
       return;
     }
@@ -398,6 +403,32 @@ export class SensoriumSubscriber {
       sub._stats.schemaMismatches += 1;
     }
   }
+
+  #recordDepthSample(sub, payloadBytes) {
+    try {
+      const summary = summarizeSensoriumDepthPayload(payloadBytes);
+      sub._stats.schemaVersionObserved = summary.schema_version;
+      if (!summary.schema_matches_expected) {
+        sub._stats.schemaMismatches += 1;
+        return;
+      }
+      if (sub._stats.firstFrameNumber === null) {
+        sub._stats.firstFrameNumber = summary.frame_number;
+      }
+      sub._stats.lastFrameNumber = summary.frame_number;
+      sub._stats.streamSummaryObserved = {
+        schema_version: summary.schema_version,
+        frame_number: summary.frame_number,
+        width: summary.width,
+        height: summary.height,
+        format: summary.format,
+        depth_units: summary.depth_units,
+        payload_size: summary.payload_size,
+      };
+    } catch {
+      sub._stats.schemaMismatches += 1;
+    }
+  }
 }
 
 function computeExpiresAtISO({ startedAtUnix, maxSeconds }) {
@@ -428,8 +459,11 @@ function stripEmpty(object) {
   );
 }
 
-function colorOnly(capability, value) {
-  return capability === "perception.sensorium.color.subscribe" ? value : undefined;
+function cameraClassOnly(capability, value) {
+  return capability === "perception.sensorium.color.subscribe" ||
+    capability === "perception.sensorium.depth.subscribe"
+    ? value
+    : undefined;
 }
 
 function sanitizeHelperErrorClass(value) {

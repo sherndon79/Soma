@@ -34,7 +34,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use image::GenericImageView;
+use image::{GenericImageView, ImageFormat};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -69,6 +69,19 @@ struct ColorTransformConfig {
     format_required: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DepthTransformConfig {
+    max_width: u32,
+    max_height: u32,
+    format_required: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SampleTransformConfig {
+    Color(ColorTransformConfig),
+    Depth(DepthTransformConfig),
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct ColorFrame {
     schema_version: u32,
@@ -77,6 +90,18 @@ struct ColorFrame {
     width: u32,
     height: u32,
     format: String,
+    data: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DepthFrame {
+    schema_version: u32,
+    timestamp: f64,
+    frame_number: u64,
+    width: u32,
+    height: u32,
+    format: String,
+    depth_units: f64,
     data: Vec<u8>,
 }
 
@@ -339,7 +364,7 @@ async fn handle_subscribe_start(
             return error_response(id, INVALID_PARAMS, "invalid_params", &message);
         }
     };
-    let color_transform = match parse_optional_color_transform(&params) {
+    let sample_transform = match parse_optional_sample_transform(&params, &topic) {
         Ok(value) => value,
         Err(message) => {
             return error_response(id, INVALID_PARAMS, "invalid_params", &message);
@@ -409,7 +434,7 @@ async fn handle_subscribe_start(
                         last_delivered = Some(Instant::now());
                     }
                     let original = sample.payload().to_bytes().to_vec();
-                    let bytes = match transform_sample_payload(&original, color_transform.as_ref())
+                    let bytes = match transform_sample_payload(&original, sample_transform.as_ref())
                     {
                         Ok(bytes) => bytes,
                         Err(error_class) => {
@@ -483,7 +508,10 @@ fn parse_optional_max_fps(params: &Value) -> Result<Option<u32>, String> {
     }
 }
 
-fn parse_optional_color_transform(params: &Value) -> Result<Option<ColorTransformConfig>, String> {
+fn parse_optional_sample_transform(
+    params: &Value,
+    topic: &str,
+) -> Result<Option<SampleTransformConfig>, String> {
     let downsample = match params.get("downsample_to") {
         None | Some(Value::Null) => None,
         Some(value) => Some(parse_downsample_to(value)?),
@@ -491,12 +519,35 @@ fn parse_optional_color_transform(params: &Value) -> Result<Option<ColorTransfor
     let format_required = match params.get("format_required") {
         None | Some(Value::Null) => None,
         Some(value) => match value.as_str() {
-            Some("jpeg") => Some("jpeg".to_string()),
+            Some("jpeg") => {
+                if !topic.ends_with("/realsense/color") {
+                    return Err(
+                        "subscribe.start params.format_required must be png for depth transforms"
+                            .to_string(),
+                    );
+                }
+                Some("jpeg".to_string())
+            }
+            Some("png") => {
+                if !topic.ends_with("/realsense/depth") {
+                    return Err(
+                        "subscribe.start params.format_required must be jpeg for color transforms"
+                            .to_string(),
+                    );
+                }
+                Some("png".to_string())
+            }
             Some(_) => {
+                if topic.ends_with("/realsense/depth") {
+                    return Err(
+                        "subscribe.start params.format_required must be png for depth transforms"
+                            .to_string(),
+                    );
+                }
                 return Err(
                     "subscribe.start params.format_required must be jpeg for color transforms"
                         .to_string(),
-                )
+                );
             }
             None => {
                 return Err(
@@ -508,11 +559,21 @@ fn parse_optional_color_transform(params: &Value) -> Result<Option<ColorTransfor
 
     match (downsample, format_required) {
         (None, None) => Ok(None),
-        (Some((max_width, max_height)), Some(format_required)) => Ok(Some(ColorTransformConfig {
-            max_width,
-            max_height,
-            format_required,
-        })),
+        (Some((max_width, max_height)), Some(format_required)) => {
+            if topic.ends_with("/realsense/depth") {
+                Ok(Some(SampleTransformConfig::Depth(DepthTransformConfig {
+                    max_width,
+                    max_height,
+                    format_required,
+                })))
+            } else {
+                Ok(Some(SampleTransformConfig::Color(ColorTransformConfig {
+                    max_width,
+                    max_height,
+                    format_required,
+                })))
+            }
+        }
         (Some(_), None) => {
             Err("subscribe.start params.format_required is required with downsample_to".to_string())
         }
@@ -545,11 +606,12 @@ fn parse_dimension(value: &Value, label: &str) -> Result<u32, String> {
 
 fn transform_sample_payload(
     payload: &[u8],
-    color_transform: Option<&ColorTransformConfig>,
+    sample_transform: Option<&SampleTransformConfig>,
 ) -> Result<Vec<u8>, &'static str> {
-    match color_transform {
+    match sample_transform {
         None => Ok(payload.to_vec()),
-        Some(config) => transform_color_payload(payload, config),
+        Some(SampleTransformConfig::Color(config)) => transform_color_payload(payload, config),
+        Some(SampleTransformConfig::Depth(config)) => transform_depth_payload(payload, config),
     }
 }
 
@@ -606,6 +668,62 @@ fn transform_color_payload(
     rmp_serde::to_vec_named(&frame).map_err(|_| "color_msgpack_encode_failed")
 }
 
+fn transform_depth_payload(
+    payload: &[u8],
+    config: &DepthTransformConfig,
+) -> Result<Vec<u8>, &'static str> {
+    let mut frame: DepthFrame =
+        rmp_serde::from_slice(payload).map_err(|_| "depth_msgpack_decode_failed")?;
+    if frame.schema_version != 1 {
+        return Err("depth_schema_unsupported");
+    }
+    if frame.format != config.format_required {
+        return Err("depth_format_mismatch");
+    }
+    if frame.format != "png" {
+        return Err("depth_format_unsupported");
+    }
+    if !frame.depth_units.is_finite() || frame.depth_units <= 0.0 {
+        return Err("depth_units_invalid");
+    }
+
+    let image = image::load_from_memory_with_format(&frame.data, ImageFormat::Png)
+        .map_err(|_| "depth_png_decode_failed")?;
+    let (source_width, source_height) = image.dimensions();
+    if source_width == 0 || source_height == 0 {
+        return Err("depth_image_dimensions_invalid");
+    }
+
+    let (target_width, target_height) = bounded_dimensions(
+        source_width,
+        source_height,
+        config.max_width,
+        config.max_height,
+    );
+    if target_width == source_width && target_height == source_height {
+        frame.width = source_width;
+        frame.height = source_height;
+    } else {
+        let resized = image.resize(target_width, target_height, FilterType::Triangle);
+        let mut encoded = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut encoded);
+            resized
+                .write_to(&mut cursor, ImageFormat::Png)
+                .map_err(|_| "depth_png_encode_failed")?;
+        }
+        frame.width = target_width;
+        frame.height = target_height;
+        frame.data = encoded;
+    }
+
+    if frame.width > config.max_width || frame.height > config.max_height {
+        return Err("depth_downsample_bounds_exceeded");
+    }
+
+    rmp_serde::to_vec_named(&frame).map_err(|_| "depth_msgpack_encode_failed")
+}
+
 fn bounded_dimensions(
     source_width: u32,
     source_height: u32,
@@ -640,7 +758,7 @@ fn error_response(id: Value, code: i64, code_name: &str, message: &str) -> Value
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{DynamicImage, ImageBuffer, Rgb};
+    use image::{DynamicImage, ImageBuffer, Luma, Rgb};
     use std::fs;
     use std::path::PathBuf;
 
@@ -696,6 +814,33 @@ mod tests {
             data: jpeg_bytes(width, height),
         })
         .expect("encode color frame")
+    }
+
+    fn png_depth_bytes(width: u32, height: u32) -> Vec<u8> {
+        let image = ImageBuffer::from_fn(width, height, |x, y| {
+            Luma([((x + y) % u32::from(u16::MAX)) as u16])
+        });
+        let dyn_image = DynamicImage::ImageLuma16(image);
+        let mut encoded = Vec::new();
+        let mut cursor = Cursor::new(&mut encoded);
+        dyn_image
+            .write_to(&mut cursor, ImageFormat::Png)
+            .expect("encode fixture png");
+        encoded
+    }
+
+    fn depth_payload(width: u32, height: u32) -> Vec<u8> {
+        rmp_serde::to_vec_named(&DepthFrame {
+            schema_version: 1,
+            timestamp: 1_779_000_001.25,
+            frame_number: 42,
+            width,
+            height,
+            format: "png".to_string(),
+            depth_units: 0.001,
+            data: png_depth_bytes(width, height),
+        })
+        .expect("encode depth frame")
     }
 
     #[tokio::test]
@@ -923,6 +1068,37 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn start_rejects_invalid_depth_transform_params_before_opening_subscription() {
+        let (tx, _rx) = make_output();
+        let cases = [
+            json!({"downsample_to":[320,240]}),
+            json!({"format_required":"png"}),
+            json!({"downsample_to":[0,240],"format_required":"png"}),
+            json!({"downsample_to":[320,240],"format_required":"jpeg"}),
+        ];
+        for params in cases {
+            let resp = handle_line(
+                &json!({
+                    "jsonrpc": "2.0",
+                    "method": "sensorium.subscribe.start",
+                    "params": {
+                        "topic": "sensor/test/realsense/depth",
+                        "downsample_to": params.get("downsample_to").cloned().unwrap_or(Value::Null),
+                        "format_required": params.get("format_required").cloned().unwrap_or(Value::Null),
+                    },
+                    "id": "bad-depth-transform",
+                })
+                .to_string(),
+                make_state(),
+                tx.clone(),
+            )
+            .await;
+            assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS), "{resp}");
+            assert_eq!(resp["error"]["code_name"], "invalid_params");
+        }
+    }
+
     #[test]
     fn color_transform_downsamples_jpeg_payload_without_passthrough() {
         let payload = color_payload(1280, 720);
@@ -994,6 +1170,99 @@ mod tests {
             )
             .unwrap_err(),
             "color_jpeg_decode_failed",
+        );
+    }
+
+    #[test]
+    fn depth_transform_downsamples_png_payload_without_passthrough() {
+        let payload = depth_payload(1280, 720);
+        let transformed = transform_depth_payload(
+            &payload,
+            &DepthTransformConfig {
+                max_width: 320,
+                max_height: 240,
+                format_required: "png".to_string(),
+            },
+        )
+        .expect("transform depth payload");
+        assert_ne!(transformed, payload);
+
+        let frame: DepthFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
+        assert_eq!(frame.schema_version, 1);
+        assert_eq!(frame.frame_number, 42);
+        assert_eq!(frame.format, "png");
+        assert_eq!(frame.depth_units, 0.001);
+        assert!(frame.width <= 320, "width was {}", frame.width);
+        assert!(frame.height <= 240, "height was {}", frame.height);
+        assert_eq!((frame.width, frame.height), (320, 180));
+
+        let decoded =
+            image::load_from_memory_with_format(&frame.data, ImageFormat::Png).expect("decode png");
+        assert_eq!(decoded.dimensions(), (320, 180));
+    }
+
+    #[test]
+    fn depth_transform_never_enlarges_small_frames() {
+        let payload = depth_payload(160, 90);
+        let transformed = transform_depth_payload(
+            &payload,
+            &DepthTransformConfig {
+                max_width: 320,
+                max_height: 240,
+                format_required: "png".to_string(),
+            },
+        )
+        .expect("transform depth payload");
+        let frame: DepthFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
+        assert_eq!((frame.width, frame.height), (160, 90));
+    }
+
+    #[test]
+    fn depth_transform_rejects_malformed_payloads_instead_of_passthrough() {
+        assert_eq!(
+            transform_depth_payload(
+                &[0xc1],
+                &DepthTransformConfig {
+                    max_width: 320,
+                    max_height: 240,
+                    format_required: "png".to_string(),
+                },
+            )
+            .unwrap_err(),
+            "depth_msgpack_decode_failed",
+        );
+
+        let mut frame: DepthFrame = rmp_serde::from_slice(&depth_payload(1280, 720)).unwrap();
+        frame.data = vec![1, 2, 3, 4];
+        let malformed_png = rmp_serde::to_vec_named(&frame).unwrap();
+        assert_eq!(
+            transform_depth_payload(
+                &malformed_png,
+                &DepthTransformConfig {
+                    max_width: 320,
+                    max_height: 240,
+                    format_required: "png".to_string(),
+                },
+            )
+            .unwrap_err(),
+            "depth_png_decode_failed",
+        );
+
+        let mut invalid_units: DepthFrame =
+            rmp_serde::from_slice(&depth_payload(1280, 720)).unwrap();
+        invalid_units.depth_units = 0.0;
+        let invalid_units_payload = rmp_serde::to_vec_named(&invalid_units).unwrap();
+        assert_eq!(
+            transform_depth_payload(
+                &invalid_units_payload,
+                &DepthTransformConfig {
+                    max_width: 320,
+                    max_height: 240,
+                    format_required: "png".to_string(),
+                },
+            )
+            .unwrap_err(),
+            "depth_units_invalid",
         );
     }
 

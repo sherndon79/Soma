@@ -110,6 +110,9 @@ default.
 - [Sensorium Depth Payload Summarizer](./2026-05-18_sensorium_depth_payload_summarizer.md)
   - review after a standalone depth payload summarizer and bounded `depth_units`
     disclosure/provenance copying landed while live depth activation remained blocked
+- [Sensorium Depth Helper Minimization](./2026-05-18_sensorium_depth_helper_minimization.md)
+  - review after helper-side depth PNG downsampling and Node depth transform forwarding landed
+    before any live depth smoke
 
 ## Remote Graphical Session Thread
 

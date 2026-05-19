@@ -54,6 +54,37 @@ export function encodeColorPayload({
   ];
 }
 
+export function encodeDepthPayload({
+  schema_version = 1,
+  timestamp = 1_779_000_001.25,
+  frame_number = 42,
+  width = 1280,
+  height = 720,
+  format = "png",
+  depth_units = 0.001,
+  data = [0x89, 0x50, 0x4e, 0x47],
+} = {}) {
+  return [
+    ...mapHeader(8),
+    ...str("schema_version"),
+    ...uint(schema_version),
+    ...str("timestamp"),
+    ...float64(timestamp),
+    ...str("frame_number"),
+    ...uint(frame_number),
+    ...str("width"),
+    ...uint(width),
+    ...str("height"),
+    ...uint(height),
+    ...str("format"),
+    ...str(format),
+    ...str("depth_units"),
+    ...float64(depth_units),
+    ...str("data"),
+    ...bin(data),
+  ];
+}
+
 function mapHeader(length) {
   if (length <= 15) return [0x80 | length];
   return [0xde, (length >> 8) & 0xff, length & 0xff];

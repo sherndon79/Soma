@@ -196,6 +196,48 @@ test("subscription end summary defaults counters to zero/null", () => {
   assert.equal(endSummary.error_class, "helper_unreachable");
 });
 
+test("subscription end summary preserves bounded depth_units without raw depth content", () => {
+  const startSummary = createSensoriumSubscriptionStartSummary({
+    ...VALID_START_INPUT,
+    capability: "perception.sensorium.depth.subscribe",
+    topic: "sensor/jetsorano/realsense/depth",
+    constraints: {
+      max_seconds: 60,
+      max_fps: 1,
+      format_required: "png",
+      downsample_to: [320, 240],
+    },
+  });
+  const endSummary = createSensoriumSubscriptionEndSummary({
+    startSummary,
+    startedAt: "2026-05-15T07:00:00.000Z",
+    endedAt: "2026-05-15T07:00:30.000Z",
+    terminationReason: "clean_stop",
+    framesConsumed: 1,
+    streamSummaryObserved: {
+      schema_version: 1,
+      frame_number: 77,
+      width: 320,
+      height: 180,
+      format: "png",
+      depth_units: 0.001,
+      payload_size: 6,
+      raw_depth: [1, 2, 3],
+    },
+  });
+
+  assert.deepEqual(endSummary.stream_summary_observed, {
+    schema_version: 1,
+    frame_number: 77,
+    width: 320,
+    height: 180,
+    format: "png",
+    payload_size: 6,
+    depth_units: 0.001,
+  });
+  assert.equal(JSON.stringify(endSummary).includes("raw_depth"), false);
+});
+
 test("subscription end summary sanitizes malformed error classes", () => {
   const startSummary = createSensoriumSubscriptionStartSummary(VALID_START_INPUT);
   const endSummary = createSensoriumSubscriptionEndSummary({

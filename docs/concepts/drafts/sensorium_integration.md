@@ -222,8 +222,10 @@ Excluded depth fields:
   location data
 
 The expected depth schema version is `1` and the only allowed depth format is `png`.
-`depth_units` must be a positive finite number. Live depth smoke remains blocked until this
-contract is reviewed and a metadata-only depth decoder/minimizer path is in place.
+`depth_units` must be a positive finite number. A standalone depth payload summarizer can decode
+MessagePack into this metadata shape, and disclosure/provenance can copy the bounded `depth_units`
+field. Live depth smoke remains blocked until helper-side depth minimization exists so Soma does
+not silently consume full-resolution depth maps while reporting bounded intent.
 
 The depth boundary is specified separately in
 [Sensorium Depth Metadata Contract](./sensorium_depth_metadata_contract.md). That document is the

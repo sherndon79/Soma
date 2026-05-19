@@ -281,7 +281,7 @@ function copyStreamSummary(summary) {
   ) {
     return null;
   }
-  return {
+  const out = {
     schema_version: schemaVersion,
     frame_number: frameNumber,
     width,
@@ -289,6 +289,11 @@ function copyStreamSummary(summary) {
     format,
     payload_size: payloadSize,
   };
+  const depthUnits = numberOrNull(summary.depth_units);
+  if (depthUnits !== null && depthUnits > 0) {
+    out.depth_units = depthUnits;
+  }
+  return out;
 }
 
 function isoDurationSeconds(startISO, endISO) {

@@ -20,11 +20,12 @@ Implemented before live depth smoke:
   and `downsample_to`
 - the only allowed depth format is `png`
 - the stream-summary contract accepts only bounded depth metadata
+- the standalone depth payload summarizer decodes MessagePack only into bounded metadata
+- disclosure and provenance copy `depth_units` only when it is a positive finite number
 
 Still not implemented:
 
 - live depth smoke
-- depth payload decoding in Node
 - helper-side depth PNG minimization
 - depth map delivery to model context
 - depth recording, screenshots, point clouds, meshes, or derived scene geometry
@@ -86,6 +87,10 @@ Before any live depth smoke:
 
 Live depth smoke remains out of scope for this contract slice. This document only defines the
 minimum acceptable metadata surface.
+
+The standalone Node summarizer is intentionally not treated as live activation by itself. Depth
+subscription activation still depends on helper-side minimization so Soma does not silently consume
+full-resolution depth maps while reporting bounded intent.
 
 ## Future Helper Boundary
 

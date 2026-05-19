@@ -256,6 +256,8 @@ Implemented:
 - added the first Sensorium depth metadata contract: allowed summaries are limited to schema,
   frame number, dimensions, `png` format, positive finite `depth_units`, and payload size, while
   raw depth arrays, geometry, screenshots, text, and model-facing delivery remain excluded
+- added a standalone Sensorium depth payload summarizer and bounded disclosure/provenance copying
+  for `depth_units`; live depth activation remains blocked on helper-side depth minimization
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -269,25 +271,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the Sensorium depth metadata contract before any depth live smoke.
+Implement helper-side Sensorium depth minimization before any live depth smoke.
 
 Target:
 
 ```text
-sensorium depth metadata contract
-  -> define allowed depth summary fields before subscribing to depth frames
-  -> preserve producer-owned capture settings and Soma-owned delivery bounds
-  -> reject raw depth arrays, image bytes, screenshots, timestamps, and text
-  -> keep live depth validation explicitly acknowledged and metadata-first
+sensorium depth helper minimization
+  -> add helper-side depth PNG transform support for requested downsample bounds
+  -> reject unsupported or mismatched depth format before opening or forwarding samples
+  -> fail closed on malformed MessagePack, invalid PNG, or transform failure
+  -> keep Node-visible state metadata-only
   -> leave model-facing visual delivery out of scope
 ```
 
 Expected work:
 
-- document the depth stream minimization boundary alongside the color boundary
-- add schema/validator tests for allowed depth metadata and prohibited overreach
-- extend the guarded smoke wrapper only after the depth contract is reviewed
-- keep depth payload bytes and raw arrays out of Node-visible state
+- add Rust helper fixture tests for PNG depth payload validation and downsampling
+- forward depth `format_required=png` and `downsample_to` only once the helper can enforce them
+- wire active depth sample metadata only after helper minimization is test-backed
+- extend the guarded smoke wrapper after the helper boundary is reviewed
 
 Constraints:
 
@@ -298,7 +300,7 @@ Constraints:
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
-- no live depth subscription until the metadata contract and acknowledgement path are in place
+- no live depth subscription until helper-side minimization and acknowledgement path are in place
 
 ## Near-Term
 

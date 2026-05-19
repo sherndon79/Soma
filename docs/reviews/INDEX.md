@@ -107,6 +107,9 @@ default.
 - [Sensorium Depth Metadata Contract](./2026-05-18_sensorium_depth_metadata_contract.md)
   - review after the depth stream contract was defined as metadata-only before any live depth smoke
     or model-facing spatial-scene delivery
+- [Sensorium Depth Payload Summarizer](./2026-05-18_sensorium_depth_payload_summarizer.md)
+  - review after a standalone depth payload summarizer and bounded `depth_units`
+    disclosure/provenance copying landed while live depth activation remained blocked
 
 ## Remote Graphical Session Thread
 

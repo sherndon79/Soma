@@ -315,6 +315,39 @@ test("disclosure omits malformed stream summaries", () => {
   assert.equal(disclosure.streams[0].stream_summary_observed, null);
 });
 
+test("disclosure preserves bounded depth_units in stream summaries", () => {
+  const disclosure = describeActiveSensoriumSubscriptions(
+    [
+      activeSubscription({
+        capability: "perception.sensorium.depth.subscribe",
+        topic: "sensor/jetsorano/realsense/depth",
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 320,
+          height: 180,
+          format: "png",
+          depth_units: 0.001,
+          payload_size: 6,
+          raw_depth: [1, 2, 3],
+        },
+      }),
+    ],
+    { now: NOW },
+  );
+
+  assert.deepEqual(disclosure.streams[0].stream_summary_observed, {
+    schema_version: 1,
+    frame_number: 42,
+    width: 320,
+    height: 180,
+    format: "png",
+    payload_size: 6,
+    depth_units: 0.001,
+  });
+  assert.equal(JSON.stringify(disclosure).includes("raw_depth"), false);
+});
+
 test("disclosure rejects non-array input", () => {
   assert.throws(() => describeActiveSensoriumSubscriptions(null), {
     message: /must be an array/,

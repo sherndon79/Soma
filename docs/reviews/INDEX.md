@@ -136,6 +136,9 @@ default.
 - [Model Visual Review Surface](./2026-05-19_model_visual_review_surface.md)
   - review after pure operator-facing proposal/candidate review text landed without routes, payload
     bytes, or model delivery
+- [Model Visual Request Refusal Scaffold](./2026-05-19_model_visual_request_refusal_scaffold.md)
+  - review after a pure fail-closed visual attach request validator landed without route wiring or
+    payload handling
 
 ## Current Review Triggers
 

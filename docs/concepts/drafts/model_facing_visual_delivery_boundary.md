@@ -27,6 +27,8 @@ Implemented:
 - A pure operator-facing review text helper summarizes visual proposal/candidate source identity,
   model target, preview state, retention posture, and non-delivery flags without accepting payload
   fields.
+- A pure runtime request validator scaffold refuses visual attachment requests without an active
+  visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
 
 Not implemented:
 
@@ -34,6 +36,7 @@ Not implemented:
 - model-facing depth delivery
 - multimodal prompt assembly
 - model-facing visual grant mutation or runtime validator behavior
+- HTTP or CLI route wiring for the visual attach request validator
 - model-facing visual payload provenance append at runtime
 - HTTP or CLI commands for visual attach review
 - frame recording

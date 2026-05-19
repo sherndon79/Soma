@@ -281,25 +281,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a fail-closed runtime validator scaffold for model-facing visual attachment requests.
+Design transformed visual preview acknowledgement without model delivery.
 
 Target:
 
 ```text
-model-facing visual request refusal scaffold
-  -> validate the intended request envelope before any payload handling
-  -> refuse missing visual attach grant, missing preview acknowledgement, and payload-shaped fields
-  -> prove Sensorium subscription grants are still insufficient for attachment
+visual preview acknowledgement design
+  -> define the preview artifact metadata needed before visual attach request validation can pass
+  -> keep preview rendering separate from proposal approval and model attachment
+  -> define cleanup expectations for ephemeral preview bytes
   -> leave route wiring, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure visual attach request validator with no runtime route
-- add tests for missing visual grant, subscription-only authority, preview refusal, retention drift,
-  model target mismatch, and payload-field rejection
-- preserve the existing Sensorium subscription flow and model visual review helpers
-- keep all payload bytes and preview-rendering implementation out of scope
+- document preview artifact lifecycle and acknowledgement fields
+- add pure metadata validation tests if the shape is concrete enough
+- preserve the existing Sensorium subscription flow and model visual request validator
+- keep model-facing payload delivery and durable retention out of scope
 
 Constraints:
 

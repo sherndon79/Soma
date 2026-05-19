@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a pure future visual attachment provenance summary builder.
+Expose future visual attachment provenance preview in accepted dry-runs.
 
 Target:
 
 ```text
-visual attachment provenance builder
-  -> build model.context.visual.attached summaries from validated metadata-only attach requests
-  -> validate against the future provenance fixture
-  -> reject payload-shaped fields before summary creation
-  -> leave routes, prompt assembly, payload handling, and live model delivery out of scope
+visual attachment provenance dry-run preview
+  -> include optional future provenance summary in accepted visual attach dry-run responses
+  -> keep the event preview byte-free and clearly non-appended
+  -> preserve dry-run refusal behavior before summary creation
+  -> leave prompt assembly, payload handling, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure helper and tests for future attachment provenance summaries
+- thread the pure provenance helper into accepted dry-run responses as a preview only
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

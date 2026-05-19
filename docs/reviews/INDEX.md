@@ -163,6 +163,9 @@ default.
 - [Model Visual Attachment Provenance Fixture](./2026-05-19_model_visual_attachment_provenance_fixture.md)
   - review after a future byte-free `model.context.visual.attached` provenance fixture landed
     without activating delivery
+- [Model Visual Attachment Provenance Builder](./2026-05-19_model_visual_attachment_provenance_builder.md)
+  - review after a pure future provenance summary helper landed disconnected from routes and model
+    delivery
 
 ## Current Review Triggers
 

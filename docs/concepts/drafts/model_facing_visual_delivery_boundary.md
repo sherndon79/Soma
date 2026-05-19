@@ -164,6 +164,10 @@ The future live attachment fixture at
 `docs/fixtures/future-model-visual-attachment-provenance-summary.json` documents this shape without
 activating delivery.
 
+The pure helper in `src/modelVisualAttachmentProvenance.js` can build this future summary from a
+validated metadata-only attach request and rejects payload-shaped fields before summary creation. It
+is intentionally disconnected from routes, prompt assembly, model invocation, and payload handling.
+
 ## Retention
 
 Default retention mode: `none`.

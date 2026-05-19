@@ -44,14 +44,28 @@ export class SensoriumSubscriber {
   #notificationHandlerInstalled = false;
   #now;
   #zenohConfigPath;
+  #setTimeout;
+  #clearTimeout;
+  #onSubscriptionEnded;
 
-  constructor({ manager, now = () => new Date(), zenohConfigPath = "" } = {}) {
+  constructor({
+    manager,
+    now = () => new Date(),
+    zenohConfigPath = "",
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout,
+    onSubscriptionEnded = null,
+  } = {}) {
     if (!manager) {
       throw new TypeError("SensoriumSubscriber requires a manager");
     }
     this.#manager = manager;
     this.#now = now;
     this.#zenohConfigPath = String(zenohConfigPath ?? "").trim();
+    this.#setTimeout = setTimeoutFn;
+    this.#clearTimeout = clearTimeoutFn;
+    this.#onSubscriptionEnded =
+      typeof onSubscriptionEnded === "function" ? onSubscriptionEnded : null;
   }
 
   /**
@@ -111,6 +125,7 @@ export class SensoriumSubscriber {
       started_at: startedAtUnix,
       started_at_iso: startedAtISO,
       expires_at_iso: expiresAtISO,
+      _timeoutHandle: null,
       _startSummary: startSummary,
       _stats: {
         framesConsumed: 0,
@@ -124,6 +139,7 @@ export class SensoriumSubscriber {
       },
     };
     this.#active.set(subscriptionId, record);
+    this.#scheduleTimeout(record, validated.constraints?.max_seconds);
 
     return {
       subscription_id: subscriptionId,
@@ -150,6 +166,7 @@ export class SensoriumSubscriber {
     await this.#manager.send("sensorium.subscribe.stop", {
       subscription_id: subscriptionId,
     });
+    this.#clearTimeoutForRecord(record);
 
     const endedAtISO = this.#now().toISOString();
     const effectiveErrorClass = errorClass || record._stats.helperErrorClass;
@@ -171,6 +188,7 @@ export class SensoriumSubscriber {
     });
 
     this.#active.delete(subscriptionId);
+    this.#notifySubscriptionEnded(subscriptionId, endSummary);
 
     return { endSummary };
   }
@@ -274,6 +292,51 @@ export class SensoriumSubscriber {
       return;
     }
     sub._stats.helperErrorClass = sanitizeHelperErrorClass(msg.params?.error_class);
+  }
+
+  #scheduleTimeout(record, maxSeconds) {
+    if (!Number.isInteger(maxSeconds) || maxSeconds <= 0) {
+      return;
+    }
+    record._timeoutHandle = this.#setTimeout(() => {
+      void this.#handleTimeout(record.subscription_id);
+    }, maxSeconds * 1000);
+    if (typeof record._timeoutHandle?.unref === "function") {
+      record._timeoutHandle.unref();
+    }
+  }
+
+  async #handleTimeout(subscriptionId) {
+    if (!this.#active.has(subscriptionId)) {
+      return;
+    }
+    try {
+      await this.stop(subscriptionId, {
+        terminationReason: "timeout",
+      });
+    } catch {
+      const record = this.#active.get(subscriptionId);
+      if (record) {
+        record._stats.helperErrorClass = "timeout_stop_failed";
+      }
+    }
+  }
+
+  #clearTimeoutForRecord(record) {
+    if (record?._timeoutHandle) {
+      this.#clearTimeout(record._timeoutHandle);
+      record._timeoutHandle = null;
+    }
+  }
+
+  #notifySubscriptionEnded(subscriptionId, endSummary) {
+    if (!this.#onSubscriptionEnded) {
+      return;
+    }
+    this.#onSubscriptionEnded({
+      subscription_id: subscriptionId,
+      endSummary,
+    });
   }
 
   #recordStatusSample(sub, payloadBytes) {

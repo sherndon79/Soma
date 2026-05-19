@@ -97,6 +97,30 @@ class FakeManager extends EventEmitter {
   }
 }
 
+function makeFakeTimers() {
+  const scheduled = [];
+  const cleared = [];
+  return {
+    scheduled,
+    cleared,
+    setTimeoutFn(callback, delayMs) {
+      const handle = { callback, delayMs, cleared: false };
+      scheduled.push(handle);
+      return handle;
+    },
+    clearTimeoutFn(handle) {
+      if (handle) {
+        handle.cleared = true;
+        cleared.push(handle);
+      }
+    },
+  };
+}
+
+function flushAsync() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 const COMMON_START = {
   capability: "perception.sensorium.color.subscribe",
   provider: "soma.provider.sensorium.jetsorano",
@@ -300,6 +324,90 @@ test("subscriber.stop honors a custom termination reason and error class", async
   });
   assert.equal(endSummary.termination_reason, "error");
   assert.equal(endSummary.error_class, "channel_closed_unexpectedly");
+});
+
+test("subscriber schedules max_seconds timeout and stops with timeout summary", async () => {
+  const manager = new FakeManager();
+  const timers = makeFakeTimers();
+  const ended = [];
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-timeout",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn,
+    onSubscriptionEnded: (summary) => ended.push(summary),
+  });
+
+  await subscriber.start(COMMON_START);
+
+  assert.equal(timers.scheduled.length, 1);
+  assert.equal(timers.scheduled[0].delayMs, 60_000);
+
+  timers.scheduled[0].callback();
+  await flushAsync();
+
+  assert.equal(subscriber.activeCount, 0);
+  assert.equal(timers.cleared.length, 1);
+  assert.equal(manager.calls.at(-1).method, "sensorium.subscribe.stop");
+  assert.deepEqual(manager.calls.at(-1).params, { subscription_id: "sub-timeout" });
+  assert.equal(ended.length, 1);
+  assert.equal(ended[0].subscription_id, "sub-timeout");
+  assert.equal(ended[0].endSummary.termination_reason, "timeout");
+  assert.equal(ended[0].endSummary.error_class, "");
+  assert.equal(ended[0].endSummary.frames_recorded, false);
+  assert.equal(ended[0].endSummary.text_content_included, false);
+});
+
+test("subscriber manual stop clears pending max_seconds timeout", async () => {
+  const manager = new FakeManager();
+  const timers = makeFakeTimers();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-manual-timeout-clear",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn,
+  });
+
+  const { subscription_id } = await subscriber.start(COMMON_START);
+  await subscriber.stop(subscription_id);
+
+  assert.equal(timers.scheduled.length, 1);
+  assert.equal(timers.cleared.length, 1);
+  assert.equal(timers.scheduled[0].cleared, true);
+});
+
+test("subscriber revocation stop clears pending max_seconds timeout", async () => {
+  const manager = new FakeManager();
+  const timers = makeFakeTimers();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-revoke-timeout-clear",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn,
+  });
+
+  await subscriber.start(COMMON_START);
+  const result = await subscriber.stopByGrantId("grant-test-1", {
+    terminationReason: "revoked",
+    errorClass: "grant_revoked",
+  });
+
+  assert.equal(result.stopped_count, 1);
+  assert.equal(timers.scheduled.length, 1);
+  assert.equal(timers.cleared.length, 1);
+  assert.equal(timers.scheduled[0].cleared, true);
 });
 
 test("subscriber records helper stream errors as bounded metadata", async () => {

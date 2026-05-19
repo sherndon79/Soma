@@ -244,6 +244,9 @@ Implemented:
 - surfaced helper stream errors as bounded metadata: `sensorium.subscription.error` notifications
   record only sanitized `error_class` in active disclosure and subscription-ended provenance, with
   no payload or helper diagnostic content copied into Node-visible state
+- enforced Sensorium `max_seconds` duration bounds in `SensoriumSubscriber`: declared timeouts stop
+  helper subscriptions with `termination_reason: "timeout"`, and manual stop/revocation clear
+  pending timeout handles
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -257,23 +260,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Enforce Sensorium subscription `max_seconds` expiration in the Node subscriber.
+Add timeout provenance integration for automatically ended Sensorium subscriptions.
 
 Target:
 
 ```text
-sensorium subscription timeout enforcement
-  -> schedule bounded session subscriptions to stop when max_seconds elapses
-  -> record termination_reason: timeout in end provenance
+sensorium automatic end provenance
+  -> wire SensoriumSubscriber timeout end summaries into the app provenance log
+  -> expose a bounded way to inspect recently automatic-ended subscriptions
   -> preserve metadata-only status/color smoke paths
-  -> avoid leaving helper subscriptions open after the grant's declared duration
+  -> avoid durable writes until the grant lifecycle explicitly supports them
 ```
 
 Expected work:
 
-- add injectable timer coverage for timeout stop behavior
-- ensure manual stop/revocation clears pending timeout handles
-- document the duration-enforcement boundary in the Sensorium integration draft
+- decide whether timeout end summaries are emitted via callback, queue, or explicit poll surface
+- add app-level tests proving timeout summaries are provenance-shaped and content-free
+- keep automatic timeout handling independent from model-facing visual delivery
 - keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:

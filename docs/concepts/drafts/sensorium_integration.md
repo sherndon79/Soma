@@ -292,11 +292,14 @@ A few that matter for the camera path:
   helper applies this at the delivery boundary before serializing sample
   payload bytes back to Node.
 - `max_seconds` — bounded session length matches Soma's scoping model.
+  `SensoriumSubscriber` schedules a local timeout when this is declared and
+  stops the helper subscription with `termination_reason: "timeout"` when the
+  bound elapses.
 - `downsample_to` — frame size at the Soma-side decoder before handing
   to the model. Gemma's vision encoder has fixed input resolution; sending
-  full-res frames is wasted decoding. This is not yet an active image
-  transform in the metadata-only smoke path; it must be implemented before
-  any model-facing visual delivery.
+  full-res frames is wasted decoding. For color JPEG subscriptions, the helper
+  now enforces this before sample bytes are serialized back to Node; model-facing
+  visual delivery still remains out of scope.
 - `format_required` — pin the expected encoding; reject if Sensorium
   starts publishing something else.
 
@@ -513,7 +516,9 @@ These commands do not create grants. Start requests still require an already
 active grant and still pass through route-time provider, topic, exact-topic,
 and bounded-constraint enforcement. Disclosure and stop summaries remain
 metadata-only. Helper stream failures surface only as sanitized `error_class`
-metadata on active disclosure and the eventual subscription end summary.
+metadata on active disclosure and the eventual subscription end summary. Manual
+stop and grant revocation clear any pending `max_seconds` timeout so a stale
+timer cannot produce a second stop.
 
 `test/sensoriumCliIntegration.test.js` exercises the CLI command shapes against
 `createRequestHandler` instead of a mocked request function. It covers:
@@ -861,6 +866,10 @@ Completed Soma-side slices:
     may appear in active disclosure and end provenance, but helper error
     handling must not copy payload bytes, image contents, screenshots, raw
     frames, or free-form content-bearing diagnostics into Node-visible state.
+20. `SensoriumSubscriber` enforces declared `max_seconds` duration bounds with
+    local timers. Timeout stops use `termination_reason: "timeout"`, manual
+    stops and revocation clear pending timers, and timer handles are unref'ed so
+    inactive test or CLI processes are not kept alive by future expirations.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

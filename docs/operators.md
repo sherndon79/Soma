@@ -406,6 +406,25 @@ grant candidate, appends an in-memory session grant, and returns `activation_per
 `subscription_activated: false`, and `file_written: false`. It does not mutate
 `config/grants.json` and does not start a subscription.
 
+## Model Visual Attach Review
+
+Model-facing visual attachment is separate from Sensorium subscription authority. The current
+implementation has pure review helpers only; there is no HTTP route, CLI command, prompt assembly,
+model invocation, payload attachment, or visual grant mutation for this path.
+
+The first review helper summarizes:
+
+- source subscription, source capability, source provider/topic, and source grant
+- model target
+- payload type, transformed dimensions, format, frame count, and max frame age
+- preview required/available/acknowledged state
+- retention mode and memory-write posture
+- non-delivery flags: grant written, subscription activated, model delivery performed, payload
+  attached, and payload bytes included
+
+Proposal approval is not preview acknowledgement. A future delivery path must keep those actions
+separate so an approved capability proposal cannot silently become visual model context.
+
 To revoke a runtime Sensorium session grant:
 
 ```bash

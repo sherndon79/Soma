@@ -24,6 +24,9 @@ Implemented:
   target fields without activating delivery.
 - A pure grant-candidate scaffold validates approved visual attach proposals after preview
   acknowledgement and emits byte-free candidate provenance without writing grants.
+- A pure operator-facing review text helper summarizes visual proposal/candidate source identity,
+  model target, preview state, retention posture, and non-delivery flags without accepting payload
+  fields.
 
 Not implemented:
 
@@ -32,6 +35,7 @@ Not implemented:
 - multimodal prompt assembly
 - model-facing visual grant mutation or runtime validator behavior
 - model-facing visual payload provenance append at runtime
+- HTTP or CLI commands for visual attach review
 - frame recording
 - screenshot capture
 - point clouds, meshes, or derived scene geometry

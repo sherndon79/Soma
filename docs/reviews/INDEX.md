@@ -133,6 +133,9 @@ default.
 - [Model Visual Grant Candidate Scaffold](./2026-05-19_model_visual_grant_candidate_scaffold.md)
   - review after approved visual attach proposals gained a non-writing grant-candidate validator
     and byte-free provenance fixture
+- [Model Visual Review Surface](./2026-05-19_model_visual_review_surface.md)
+  - review after pure operator-facing proposal/candidate review text landed without routes, payload
+    bytes, or model delivery
 
 ## Current Review Triggers
 

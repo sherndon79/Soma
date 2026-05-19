@@ -281,23 +281,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add an operator-facing, non-delivering visual attach review surface.
+Add a fail-closed runtime validator scaffold for model-facing visual attachment requests.
 
 Target:
 
 ```text
-model-facing visual review surface
-  -> expose visual attach proposal/candidate review data without payload bytes
-  -> keep proposal approval separate from preview acknowledgement
-  -> show source, model target, retention, and irreversible model-boundary warning
-  -> leave runtime grant mutation, prompt assembly, and live model delivery out of scope
+model-facing visual request refusal scaffold
+  -> validate the intended request envelope before any payload handling
+  -> refuse missing visual attach grant, missing preview acknowledgement, and payload-shaped fields
+  -> prove Sensorium subscription grants are still insufficient for attachment
+  -> leave route wiring, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- decide whether the first surface is CLI-only, HTTP-only, or pure formatting helper
-- add review formatting tests that summarize source identity, preview state, retention, and target
-- preserve the separate Sensorium subscription grant flow
+- add a pure visual attach request validator with no runtime route
+- add tests for missing visual grant, subscription-only authority, preview refusal, retention drift,
+  model target mismatch, and payload-field rejection
+- preserve the existing Sensorium subscription flow and model visual review helpers
 - keep all payload bytes and preview-rendering implementation out of scope
 
 Constraints:

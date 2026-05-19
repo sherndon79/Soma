@@ -142,6 +142,9 @@ default.
 - [Model Visual Preview Acknowledgement](./2026-05-19_model_visual_preview_acknowledgement.md)
   - review after byte-free transformed preview artifact and user acknowledgement metadata validation
     landed without rendering or delivery
+- [Model Visual Preview Threading](./2026-05-19_model_visual_preview_threading.md)
+  - review after preview artifact and acknowledgement metadata were threaded through visual grant
+    candidates and request validation as byte-free constraints
 
 ## Current Review Triggers
 

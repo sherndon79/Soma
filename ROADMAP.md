@@ -281,23 +281,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Thread preview acknowledgement metadata into visual grant and request constraints.
+Expose preview acknowledgement metadata in the operator review helpers.
 
 Target:
 
 ```text
-visual preview metadata threading
-  -> require preview artifact and acknowledgement ids in visual grant candidates
-  -> require matching preview acknowledgement metadata in visual attach request validation
-  -> keep preview rendering and cleanup as metadata-only expectations
+visual preview review formatting
+  -> show preview artifact and acknowledgement ids in proposal and candidate review text
+  -> show acknowledgement actor, timestamp, and cleanup requirement
+  -> keep review formatting byte-free
   -> leave route wiring, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- extend pure visual grant-candidate validation to carry preview artifact/acknowledgement ids
-- extend pure visual attach request validation to require matching preview acknowledgement metadata
-- preserve the existing Sensorium subscription flow and review helpers
+- extend pure visual review helper output and tests for preview metadata
+- preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 
 Constraints:

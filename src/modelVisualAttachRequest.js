@@ -15,7 +15,12 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "max_frame_age_ms",
   "transformed_dimensions",
   "format_required",
+  "preview_artifact_id",
+  "preview_acknowledgement_id",
+  "preview_acknowledged_by",
+  "preview_acknowledged_at",
   "preview_acknowledged",
+  "preview_cleanup_required",
   "retention_mode",
 ]);
 
@@ -70,7 +75,12 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
       ? [...body.transformed_dimensions]
       : [],
     format_required: stringValue(body.format_required),
+    preview_artifact_id: stringValue(body.preview_artifact_id),
+    preview_acknowledgement_id: stringValue(body.preview_acknowledgement_id),
+    preview_acknowledged_by: stringValue(body.preview_acknowledged_by),
+    preview_acknowledged_at: stringValue(body.preview_acknowledged_at),
     preview_acknowledged: body.preview_acknowledged,
+    preview_cleanup_required: body.preview_cleanup_required,
     retention_mode: stringValue(body.retention_mode),
   };
 
@@ -121,6 +131,20 @@ function validateRequestShape(request, errors) {
   if (request.preview_acknowledged !== true) {
     errors.push("preview_acknowledged must be true");
   }
+  for (const field of ["preview_artifact_id", "preview_acknowledgement_id", "preview_acknowledged_by", "preview_acknowledged_at"]) {
+    if (!request[field]) {
+      errors.push(`${field} is required`);
+    }
+  }
+  if (request.preview_acknowledged_by !== "user") {
+    errors.push("preview_acknowledged_by must be user");
+  }
+  if (!isIsoTimestamp(request.preview_acknowledged_at)) {
+    errors.push("preview_acknowledged_at must be an ISO timestamp");
+  }
+  if (request.preview_cleanup_required !== true) {
+    errors.push("preview_cleanup_required must be true");
+  }
   if (request.retention_mode !== "none") {
     errors.push("retention_mode must be none");
   }
@@ -161,6 +185,10 @@ function validateGrantAuthority({ request, grant, errors }) {
     "model_target",
     "payload_type",
     "format_required",
+    "preview_artifact_id",
+    "preview_acknowledgement_id",
+    "preview_acknowledged_by",
+    "preview_acknowledged_at",
     "retention_mode",
   ]) {
     if (request[field] !== stringValue(constraints[field])) {
@@ -169,6 +197,9 @@ function validateGrantAuthority({ request, grant, errors }) {
   }
   if (constraints.preview_acknowledged !== true) {
     errors.push("grant constraints must record preview_acknowledged=true");
+  }
+  if (constraints.preview_cleanup_required !== true) {
+    errors.push("grant constraints must record preview_cleanup_required=true");
   }
   if (request.max_frame_count !== constraints.max_frame_count) {
     errors.push("max_frame_count must match grant constraints");
@@ -246,6 +277,15 @@ function normalizeStringList(value) {
 
 function stringValue(value) {
   return String(value ?? "").trim();
+}
+
+function isIsoTimestamp(value) {
+  const normalized = stringValue(value);
+  if (!normalized) {
+    return false;
+  }
+  const timestamp = Date.parse(normalized);
+  return !Number.isNaN(timestamp) && new Date(timestamp).toISOString() === normalized;
 }
 
 function isPlainObject(value) {

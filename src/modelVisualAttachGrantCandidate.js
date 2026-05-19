@@ -63,7 +63,12 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
     source_grant_id: review.source.grant_id,
     model_target: intent.model_target,
     payload_type: intent.payload_type,
+    preview_artifact_id: intent.preview_artifact_id,
+    preview_acknowledgement_id: intent.preview_acknowledgement_id,
+    preview_acknowledged_by: intent.preview_acknowledged_by,
+    preview_acknowledged_at: intent.preview_acknowledged_at,
     preview_acknowledged: true,
+    preview_cleanup_required: true,
     retention_mode: "none",
   };
 
@@ -130,6 +135,10 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
     source_grant_id: stringValue(review.source?.grant_id),
     model_target: stringValue(intent.model_target),
     payload_type: stringValue(intent.payload_type),
+    preview_artifact_id: stringValue(intent.preview_artifact_id),
+    preview_acknowledgement_id: stringValue(intent.preview_acknowledgement_id),
+    preview_acknowledged_by: stringValue(intent.preview_acknowledged_by),
+    preview_acknowledged_at: stringValue(intent.preview_acknowledged_at),
     frame_count: review.frame_count ?? null,
     max_frame_age_ms: review.max_frame_age_ms ?? null,
     transformed_dimensions: Array.isArray(review.transformed_dimensions)
@@ -189,6 +198,21 @@ function validateReviewAndIntent({ proposal, review, intent, errors }) {
   }
   if (intent.preview_required !== true) {
     errors.push("grant_intent.preview_required must be true");
+  }
+  if (!stringValue(intent.preview_artifact_id) || review.preview?.artifact_id !== intent.preview_artifact_id) {
+    errors.push("review_context.preview.artifact_id must match grant_intent.preview_artifact_id");
+  }
+  if (!stringValue(intent.preview_acknowledgement_id) || review.preview?.acknowledgement_id !== intent.preview_acknowledgement_id) {
+    errors.push("review_context.preview.acknowledgement_id must match grant_intent.preview_acknowledgement_id");
+  }
+  if (intent.preview_acknowledged_by !== "user" || review.preview?.acknowledged_by !== "user") {
+    errors.push("preview acknowledgement must be by user");
+  }
+  if (!isIsoTimestamp(intent.preview_acknowledged_at) || review.preview?.acknowledged_at !== intent.preview_acknowledged_at) {
+    errors.push("review_context.preview.acknowledged_at must match grant_intent.preview_acknowledged_at");
+  }
+  if (review.preview?.cleanup_required !== true || intent.preview_cleanup_required !== true) {
+    errors.push("preview cleanup_required must be true");
   }
   if (review.retention?.mode !== "none" || intent.retention_mode !== "none") {
     errors.push("review_context and grant_intent retention_mode must be none");
@@ -314,6 +338,15 @@ function plainObjectOrNull(value) {
 
 function stringValue(value) {
   return String(value ?? "").trim();
+}
+
+function isIsoTimestamp(value) {
+  const normalized = stringValue(value);
+  if (!normalized) {
+    return false;
+  }
+  const timestamp = Date.parse(normalized);
+  return !Number.isNaN(timestamp) && new Date(timestamp).toISOString() === normalized;
 }
 
 function throwModelVisualAttachGrantCandidateError(

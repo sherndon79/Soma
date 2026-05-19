@@ -70,6 +70,11 @@ const approvedProposal = {
       available: true,
       acknowledgement_required: true,
       acknowledged: true,
+      artifact_id: "preview-color-1",
+      acknowledgement_id: "ack-preview-color-1",
+      acknowledged_by: "user",
+      acknowledged_at: "2026-05-19T12:00:00.000Z",
+      cleanup_required: true,
     },
     retention: {
       mode: "none",
@@ -98,6 +103,11 @@ const approvedProposal = {
       format_required: "jpeg",
     },
     preview_required: true,
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+    preview_cleanup_required: true,
     retention_mode: "none",
     reason: "Need one reviewed color frame for this turn.",
     activation_performed: false,
@@ -143,7 +153,12 @@ test("buildModelVisualAttachGrantCandidateFromProposal returns validated input w
     source_grant_id: "grant-color-1",
     model_target: "local.gemma4",
     payload_type: "color",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
     preview_acknowledged: true,
+    preview_cleanup_required: true,
     retention_mode: "none",
   });
 });
@@ -164,6 +179,10 @@ test("model visual grant candidate emits byte-free provenance summary", () => {
     source_grant_id: "grant-color-1",
     model_target: "local.gemma4",
     payload_type: "color",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
     frame_count: 1,
     max_frame_age_ms: 5_000,
     transformed_dimensions: [384, 384],
@@ -193,6 +212,23 @@ test("model visual grant candidate rejects preview refusal before delivery", () 
     }, context),
     "invalid_model_visual_attach_grant_candidate",
     "review_context.preview.acknowledged must be true before candidate creation",
+  );
+});
+
+test("model visual grant candidate rejects preview acknowledgement metadata drift", () => {
+  assertModelVisualCandidateError(
+    () => buildModelVisualAttachGrantCandidateFromProposal({
+      ...approvedProposal,
+      review_context: {
+        ...approvedProposal.review_context,
+        preview: {
+          ...approvedProposal.review_context.preview,
+          acknowledgement_id: "ack-other",
+        },
+      },
+    }, context),
+    "invalid_model_visual_attach_grant_candidate",
+    "review_context.preview.acknowledgement_id must match grant_intent.preview_acknowledgement_id",
   );
 });
 

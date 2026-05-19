@@ -73,6 +73,10 @@ preview bytes.
 
 ## Relationship To Request Validation
 
-The current model visual request validator still consumes a compact `preview_acknowledged` boolean.
-Before any live route or payload path exists, that validator should be extended to require the
-preview artifact and acknowledgement metadata defined here.
+The current model visual grant candidate and request validators require the preview artifact id,
+acknowledgement id, user actor, acknowledgement timestamp, and cleanup requirement as byte-free
+constraints. The compact `preview_acknowledged=true` flag remains present, but it is no longer the
+only preview prerequisite.
+
+This is still metadata-only. It does not render previews, retain preview bytes, clean up preview
+artifacts, wire routes, assemble prompts, invoke models, or deliver visual payloads.

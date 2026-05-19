@@ -31,6 +31,8 @@ Implemented:
   visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
 - A pure preview artifact/acknowledgement validator defines byte-free transformed preview metadata,
   operator acknowledgement fields, and cleanup expectations.
+- Preview artifact and acknowledgement metadata are now threaded through the pure visual grant
+  candidate and visual attach request validators as byte-free constraints.
 
 Not implemented:
 
@@ -175,6 +177,7 @@ Before delivery implementation:
 - tests prove preview refusal prevents model delivery
 - tests prove memory writes require a distinct memory grant
 - preview artifact acknowledgement metadata is threaded into grant and request constraints
+  (done as pure metadata scaffolding)
 
 Before any live test:
 

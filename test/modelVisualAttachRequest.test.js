@@ -21,7 +21,12 @@ const visualGrant = {
     source_grant_id: "grant-color-1",
     model_target: "local.gemma4",
     payload_type: "color",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
     preview_acknowledged: true,
+    preview_cleanup_required: true,
     retention_mode: "none",
   },
 };
@@ -51,7 +56,12 @@ const request = {
   max_frame_age_ms: 5_000,
   transformed_dimensions: [384, 384],
   format_required: "jpeg",
+  preview_artifact_id: "preview-color-1",
+  preview_acknowledgement_id: "ack-preview-color-1",
+  preview_acknowledged_by: "user",
+  preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
   preview_acknowledged: true,
+  preview_cleanup_required: true,
   retention_mode: "none",
 };
 
@@ -113,6 +123,16 @@ test("validateModelVisualAttachRequest rejects preview refusal and retention dri
       retention_mode: "turn_only",
     }, { grants: [visualGrant] }),
     "retention_mode must be none",
+  );
+});
+
+test("validateModelVisualAttachRequest rejects preview acknowledgement metadata drift", () => {
+  assertVisualRequestError(
+    () => validateModelVisualAttachRequest({
+      ...request,
+      preview_acknowledgement_id: "ack-other",
+    }, { grants: [visualGrant] }),
+    "preview_acknowledgement_id must match grant constraints",
   );
 });
 

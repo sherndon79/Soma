@@ -231,6 +231,17 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "model-visual" && subcommand === "attach-dry-run") {
+    const response = await request(
+      baseUrl,
+      "POST",
+      "/model-visual/attach-requests/dry-run",
+      modelVisualAttachDryRunRequestFromFlags(flags),
+    );
+    writeOutput(stdout, response, jsonOutput, modelVisualAttachDryRunSummary(response));
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -475,6 +486,20 @@ function modelVisualReviewTextRequestFromFlags(flags) {
     kind,
     review_response: reviewResponse,
   };
+}
+
+function modelVisualAttachDryRunRequestFromFlags(flags) {
+  const requestJson = requiredFlag(flags["request-json"], "--request-json", "model-visual attach-dry-run");
+  let requestBody;
+  try {
+    requestBody = JSON.parse(requestJson);
+  } catch {
+    throw usageError("model-visual attach-dry-run --request-json must be valid JSON.");
+  }
+  if (!isPlainObject(requestBody)) {
+    throw usageError("model-visual attach-dry-run --request-json must decode to an object.");
+  }
+  return requestBody;
 }
 
 function requiredFlag(value, flagName, commandName) {
@@ -777,6 +802,13 @@ function joinList(value) {
   return Array.isArray(value) && value.length > 0 ? value.join(", ") : "none";
 }
 
+function dimensionsText(value) {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return "dimensions=unknown";
+  }
+  return `dimensions=${value[0]}x${value[1]}`;
+}
+
 function grantListSummary(response) {
   const grants = Array.isArray(response.grants) ? response.grants : [];
   const lines = [
@@ -819,6 +851,26 @@ function grantListSummary(response) {
     }
   }
 
+  return lines.join("\n");
+}
+
+function modelVisualAttachDryRunSummary(response) {
+  const request = response.request ?? {};
+  const lines = [
+    "Model visual attach dry-run",
+    `  accepted: ${booleanText(response.accepted)}`,
+    `  dry run: ${booleanText(response.dry_run)}`,
+    `  capability: ${request.capability ?? "unknown"}`,
+    `  grant: ${request.grant_id ?? "unknown"}`,
+    `  provider: ${request.provider ?? "unknown"}`,
+    `  model target: ${request.model_target ?? "unknown"}`,
+    `  payload: ${request.payload_type ?? "unknown"} ${dimensionsText(request.transformed_dimensions)} ${request.format_required ?? "unknown"}`,
+    `  preview acknowledgement: ${request.preview_acknowledgement_id ?? "unknown"}`,
+    `  retention: ${request.retention_mode ?? "unknown"}`,
+    `  model delivery performed: ${booleanText(response.model_delivery_performed)}`,
+    `  payload attached: ${booleanText(response.payload_attached)}`,
+    `  payload bytes included: ${booleanText(response.payload_bytes_included)}`,
+  ];
   return lines.join("\n");
 }
 
@@ -1113,6 +1165,7 @@ Usage:
   soma sensorium subscriptions [--json]
   soma sensorium status [--json]
   soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
+  soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

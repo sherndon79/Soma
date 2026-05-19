@@ -346,6 +346,110 @@ test("runCli model-visual review validates kind and review JSON before request",
   );
 });
 
+test("runCli model-visual attach-dry-run requests non-delivering validation", async () => {
+  let captured;
+  const writes = [];
+  const requestBody = modelVisualAttachRequestFixture();
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "model-visual",
+    "attach-dry-run",
+    "--request-json",
+    JSON.stringify(requestBody),
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        request: {
+          ...requestBody,
+          provider: "soma.provider.local-model",
+          scope: "once",
+        },
+        dry_run: true,
+        accepted: true,
+        activation_performed: false,
+        grant_written: false,
+        subscription_activated: false,
+        model_delivery_performed: false,
+        payload_attached: false,
+        payload_bytes_included: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/model-visual/attach-requests/dry-run");
+  assert.equal(captured.body.grant_id, "grant-visual-color");
+  assert.equal(captured.body.preview_acknowledgement_id, "ack-preview-color-1");
+  assert.match(writes.join(""), /Model visual attach dry-run/);
+  assert.match(writes.join(""), /accepted: yes/);
+  assert.match(writes.join(""), /payload: color dimensions=384x384 jpeg/);
+  assert.match(writes.join(""), /model delivery performed: no/);
+  assert.match(writes.join(""), /payload bytes included: no/);
+});
+
+test("runCli model-visual attach-dry-run validates request JSON before request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "model-visual",
+      "attach-dry-run",
+      "--request-json",
+      "[1]",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    { code: "usage_error", statusCode: 2 },
+  );
+
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "model-visual",
+      "attach-dry-run",
+      "--request-json",
+      "{",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    { code: "usage_error", statusCode: 2 },
+  );
+});
+
+function modelVisualAttachRequestFixture() {
+  return {
+    capability: "model.context.visual.color.attach",
+    grant_id: "grant-visual-color",
+    source_subscription_ids: ["sub-color-1"],
+    source_capabilities: ["perception.sensorium.color.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/color",
+    source_grant_id: "grant-color-1",
+    model_target: "local.gemma4",
+    payload_type: "color",
+    max_frame_count: 1,
+    max_frame_age_ms: 5_000,
+    transformed_dimensions: [384, 384],
+    format_required: "jpeg",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+    preview_acknowledged: true,
+    preview_cleanup_required: true,
+    retention_mode: "none",
+  };
+}
+
 test("runCli proposals list prints pending proposals", async () => {
   let capturedPath = "";
   const writes = [];

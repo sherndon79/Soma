@@ -445,6 +445,13 @@ To validate a visual attach request without delivery, post the metadata-only req
 active visual attach grant, not that anything was delivered. The response returns `dry_run=true`,
 `model_delivery_performed=false`, `payload_attached=false`, and `payload_bytes_included=false`.
 
+The CLI wrapper uses the same dry-run route:
+
+```bash
+npm run cli -- model-visual attach-dry-run \
+  --request-json '{"capability":"model.context.visual.color.attach"}'
+```
+
 To revoke a runtime Sensorium session grant:
 
 ```bash

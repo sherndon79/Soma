@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a CLI wrapper for model visual attach request dry-runs.
+Document byte-free visual attachment provenance for future live delivery.
 
 Target:
 
 ```text
-visual attach dry-run cli
-  -> call the dry-run visual attach request route from the CLI
-  -> accept a metadata-only request JSON object
-  -> print acceptance/refusal without handling visual payload bytes
-  -> leave prompt assembly and live model delivery out of scope
+visual attachment provenance design
+  -> define a future model.context.visual.attached provenance summary shape
+  -> include grant, source, preview acknowledgement, retention, and non-memory flags
+  -> explicitly exclude frame bytes, screenshots, OCR, scene descriptions, geometry, and prompts
+  -> leave prompt assembly, payload handling, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add a narrow CLI command for visual attach dry-run validation
+- add design documentation and fixture/tests for byte-free future attachment provenance
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

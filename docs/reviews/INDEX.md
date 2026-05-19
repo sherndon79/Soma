@@ -157,6 +157,9 @@ default.
 - [Model Visual Attach Dry-Run Route](./2026-05-19_model_visual_attach_dry_run_route.md)
   - review after the visual attach request validator became available through a dry-run HTTP route
     that accepts/refuses metadata-only requests without delivery
+- [Model Visual Attach Dry-Run CLI](./2026-05-19_model_visual_attach_dry_run_cli.md)
+  - review after a CLI wrapper started calling the visual attach dry-run route and printing
+    non-delivery acceptance/refusal summaries
 
 ## Current Review Triggers
 

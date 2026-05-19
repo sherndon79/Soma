@@ -281,23 +281,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design transformed visual preview acknowledgement without model delivery.
+Thread preview acknowledgement metadata into visual grant and request constraints.
 
 Target:
 
 ```text
-visual preview acknowledgement design
-  -> define the preview artifact metadata needed before visual attach request validation can pass
-  -> keep preview rendering separate from proposal approval and model attachment
-  -> define cleanup expectations for ephemeral preview bytes
+visual preview metadata threading
+  -> require preview artifact and acknowledgement ids in visual grant candidates
+  -> require matching preview acknowledgement metadata in visual attach request validation
+  -> keep preview rendering and cleanup as metadata-only expectations
   -> leave route wiring, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- document preview artifact lifecycle and acknowledgement fields
-- add pure metadata validation tests if the shape is concrete enough
-- preserve the existing Sensorium subscription flow and model visual request validator
+- extend pure visual grant-candidate validation to carry preview artifact/acknowledgement ids
+- extend pure visual attach request validation to require matching preview acknowledgement metadata
+- preserve the existing Sensorium subscription flow and review helpers
 - keep model-facing payload delivery and durable retention out of scope
 
 Constraints:

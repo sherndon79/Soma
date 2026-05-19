@@ -139,6 +139,9 @@ default.
 - [Model Visual Request Refusal Scaffold](./2026-05-19_model_visual_request_refusal_scaffold.md)
   - review after a pure fail-closed visual attach request validator landed without route wiring or
     payload handling
+- [Model Visual Preview Acknowledgement](./2026-05-19_model_visual_preview_acknowledgement.md)
+  - review after byte-free transformed preview artifact and user acknowledgement metadata validation
+    landed without rendering or delivery
 
 ## Current Review Triggers
 

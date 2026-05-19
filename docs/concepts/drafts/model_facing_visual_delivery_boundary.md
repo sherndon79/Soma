@@ -29,6 +29,8 @@ Implemented:
   fields.
 - A pure runtime request validator scaffold refuses visual attachment requests without an active
   visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
+- A pure preview artifact/acknowledgement validator defines byte-free transformed preview metadata,
+  operator acknowledgement fields, and cleanup expectations.
 
 Not implemented:
 
@@ -39,6 +41,7 @@ Not implemented:
 - HTTP or CLI route wiring for the visual attach request validator
 - model-facing visual payload provenance append at runtime
 - HTTP or CLI commands for visual attach review
+- preview rendering or cleanup implementation
 - frame recording
 - screenshot capture
 - point clouds, meshes, or derived scene geometry
@@ -171,6 +174,7 @@ Before delivery implementation:
 - tests prove subscription grants alone cannot attach visual payloads to model context
 - tests prove preview refusal prevents model delivery
 - tests prove memory writes require a distinct memory grant
+- preview artifact acknowledgement metadata is threaded into grant and request constraints
 
 Before any live test:
 

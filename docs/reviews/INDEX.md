@@ -122,6 +122,12 @@ default.
 - [Remote Graphical Session Provider Note](./2026-05-17_remote_graphical_session_provider_note.md)
   - review after Sunshine/Moonlight was captured as a possible governed visual session provider
 
+## Model Context Thread
+
+- [Model-Facing Visual Delivery Boundary](./2026-05-19_model_facing_visual_delivery_boundary.md)
+  - review after the visual payload delivery boundary was documented as separate from Sensorium
+    subscription grants and left implementation out of scope
+
 ## Current Review Triggers
 
 - Run a focused review after the next traversal behavior change.

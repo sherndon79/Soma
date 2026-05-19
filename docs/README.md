@@ -68,6 +68,7 @@ should inform implementation.
 - [Grant Lifecycle](./concepts/drafts/grant_lifecycle.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)
 - [Memory Control Surface](./concepts/drafts/memory_control_surface.md)
+- [Model-Facing Visual Delivery Boundary](./concepts/drafts/model_facing_visual_delivery_boundary.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Session Provider](./concepts/drafts/remote_graphical_session_provider.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)

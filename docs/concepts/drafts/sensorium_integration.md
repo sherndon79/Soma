@@ -760,6 +760,11 @@ This is the same discipline as [Provider Invocation
 Contract](./capability_catalog_and_providers.md#provider-invocation-contract):
 provenance records the shape of consumption, not the consumed content.
 
+Model-facing visual delivery is a separate boundary, not an automatic consequence of a Sensorium
+subscription. The draft [Model-Facing Visual Delivery Boundary](./model_facing_visual_delivery_boundary.md)
+defines the capability, preview, provenance, and retention requirements that must exist before
+transformed color or depth payloads can enter model context.
+
 ## Open Questions
 
 - **Where do agent-authored preprocessing capabilities run?** In the Soma

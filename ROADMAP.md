@@ -265,6 +265,9 @@ Implemented:
   `format=png` depth summaries included positive `depth_units`, downsampled dimensions stayed within
   `320x240`, runtime cleanup returned to zero active subscriptions, and model-facing delivery
   remained unavailable
+- documented the model-facing visual delivery boundary: visual payload attachment requires a
+  separate capability/grant, participant-visible preview, no default retention, byte-free
+  provenance, and metadata-only Sensorium subscriptions remain the default posture
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -278,24 +281,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the model-facing visual delivery boundary before any camera/depth payload reaches a model.
+Add non-activating model-facing visual capability catalog entries and proposal template scaffolding.
 
 Target:
 
 ```text
-model-facing visual delivery boundary
-  -> define a separate capability/grant for transformed visual payload delivery
-  -> require disclosure preview before payloads can enter model context
-  -> specify retention, provenance, and redaction rules for color and depth
-  -> preserve metadata-only Sensorium subscriptions as the default posture
+model-facing visual proposal scaffold
+  -> add disabled/requestable catalog entries for visual attach capabilities
+  -> add review-only proposal template shape with preview and retention fields
+  -> prove subscription grants alone cannot authorize model visual delivery
+  -> leave prompt assembly and live model delivery out of scope
 ```
 
 Expected work:
 
-- document the proposed visual-delivery capability names and grant constraints
-- define what transformed payloads may be shown to the user before model delivery
-- define provenance fields without storing frame bytes
-- leave implementation and live model delivery out of scope
+- add catalog/provider metadata without activation
+- add pure validation/template tests for one-shot visual attach proposals
+- reject missing preview, retention, source subscription, and model target fields
+- keep all payload bytes out of fixtures and provenance
 
 Constraints:
 

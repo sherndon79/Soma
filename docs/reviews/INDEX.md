@@ -130,6 +130,9 @@ default.
 - [Model Visual Proposal Scaffold](./2026-05-19_model_visual_proposal_scaffold.md)
   - review after disabled/requestable model visual attach metadata and a byte-free, review-only
     proposal template scaffold landed
+- [Model Visual Grant Candidate Scaffold](./2026-05-19_model_visual_grant_candidate_scaffold.md)
+  - review after approved visual attach proposals gained a non-writing grant-candidate validator
+    and byte-free provenance fixture
 
 ## Current Review Triggers
 

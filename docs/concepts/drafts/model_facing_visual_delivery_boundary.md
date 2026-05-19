@@ -22,6 +22,8 @@ Implemented:
 - Catalog/provider metadata now exposes disabled/requestable model-facing visual attach capabilities.
 - A pure proposal-template scaffold can validate preview, retention, source subscription, and model
   target fields without activating delivery.
+- A pure grant-candidate scaffold validates approved visual attach proposals after preview
+  acknowledgement and emits byte-free candidate provenance without writing grants.
 
 Not implemented:
 
@@ -29,6 +31,7 @@ Not implemented:
 - model-facing depth delivery
 - multimodal prompt assembly
 - model-facing visual grant mutation or runtime validator behavior
+- model-facing visual payload provenance append at runtime
 - frame recording
 - screenshot capture
 - point clouds, meshes, or derived scene geometry
@@ -153,8 +156,11 @@ Before delivery implementation:
   requestable metadata)
 - grant proposal templates include preview, retention, and memory-write fields (done as pure
   review-only scaffolding)
+- approved visual attach proposals can be checked into non-writing grant candidates after preview
+  acknowledgement (done as pure scaffolding)
 - request validators reject payload classes not explicitly granted
-- provenance schema is documented and tested without storing bytes
+- provenance schema is documented and tested without storing bytes (done for the candidate event;
+  runtime attachment event still pending)
 - tests prove subscription grants alone cannot attach visual payloads to model context
 - tests prove preview refusal prevents model delivery
 - tests prove memory writes require a distinct memory grant

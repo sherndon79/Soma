@@ -281,24 +281,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add non-delivering model-facing visual grant-candidate and provenance schema scaffolding.
+Add an operator-facing, non-delivering visual attach review surface.
 
 Target:
 
 ```text
-model-facing visual grant candidate scaffold
-  -> validate approved visual attach proposals into non-writing grant candidates
-  -> define byte-free provenance event shape for future visual attachment
-  -> prove preview refusal and retention mismatch fail before delivery
+model-facing visual review surface
+  -> expose visual attach proposal/candidate review data without payload bytes
+  -> keep proposal approval separate from preview acknowledgement
+  -> show source, model target, retention, and irreversible model-boundary warning
   -> leave runtime grant mutation, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure approved-proposal-to-grant-candidate builder for `model.context.visual.*.attach`
-- add tests for preview refusal, retention mismatch, source identity mismatch, and model target drift
-- add provenance fixture validation that records visual intent without image/depth bytes
-- keep the candidate separate from Sensorium subscription grants and runtime delivery
+- decide whether the first surface is CLI-only, HTTP-only, or pure formatting helper
+- add review formatting tests that summarize source identity, preview state, retention, and target
+- preserve the separate Sensorium subscription grant flow
+- keep all payload bytes and preview-rendering implementation out of scope
 
 Constraints:
 

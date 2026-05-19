@@ -154,6 +154,17 @@ export class SensoriumSubscriber {
    * summary built from the tracked counters.
    */
   async stop(subscriptionId, { terminationReason = "", errorClass = "" } = {}) {
+    return this.#stop(subscriptionId, { terminationReason, errorClass, notifyEnded: false });
+  }
+
+  onSubscriptionEnded(handler) {
+    this.#onSubscriptionEnded = typeof handler === "function" ? handler : null;
+  }
+
+  async #stop(
+    subscriptionId,
+    { terminationReason = "", errorClass = "", notifyEnded = false } = {},
+  ) {
     const record = this.#active.get(subscriptionId);
     if (!record) {
       const err = new Error(
@@ -188,7 +199,9 @@ export class SensoriumSubscriber {
     });
 
     this.#active.delete(subscriptionId);
-    this.#notifySubscriptionEnded(subscriptionId, endSummary);
+    if (notifyEnded) {
+      this.#notifySubscriptionEnded(subscriptionId, endSummary);
+    }
 
     return { endSummary };
   }
@@ -311,8 +324,9 @@ export class SensoriumSubscriber {
       return;
     }
     try {
-      await this.stop(subscriptionId, {
+      await this.#stop(subscriptionId, {
         terminationReason: "timeout",
+        notifyEnded: true,
       });
     } catch {
       const record = this.#active.get(subscriptionId);

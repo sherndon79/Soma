@@ -520,6 +520,14 @@ metadata on active disclosure and the eventual subscription end summary. Manual
 stop and grant revocation clear any pending `max_seconds` timeout so a stale
 timer cannot produce a second stop.
 
+Automatic timeout stops are routed back into the app provenance log through the
+subscriber's end-summary callback. The app applies a subscription-summary
+allowlist before appending provenance, so callback payloads cannot add
+`payload_bytes`, image contents, screenshots, raw frames, or other unexpected
+fields. Recent automatic endings can be inspected through the existing bounded
+provenance query surface, for example
+`/provenance?event_type=perception.sensorium.subscription_ended&limit=5`.
+
 `test/sensoriumCliIntegration.test.js` exercises the CLI command shapes against
 `createRequestHandler` instead of a mocked request function. It covers:
 
@@ -870,6 +878,10 @@ Completed Soma-side slices:
     local timers. Timeout stops use `termination_reason: "timeout"`, manual
     stops and revocation clear pending timers, and timer handles are unref'ed so
     inactive test or CLI processes are not kept alive by future expirations.
+21. Automatic subscription endings are written to the app provenance log through
+    a bounded callback path. The app whitelists subscription summary fields
+    before logging, and the existing provenance query route provides bounded
+    inspection without introducing durable writes.
 
 The HTTP seam is still fail-closed in the default service posture. If no
 `sensoriumSubscriber` is configured, Sensorium routes return

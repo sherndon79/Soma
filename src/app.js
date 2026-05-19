@@ -92,6 +92,23 @@ export function createRequestHandler({
     throw new Error("createRequestHandler requires a modelClient.");
   }
   let activeModules = [];
+  if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
+    sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
+      if (!endSummary) {
+        return;
+      }
+      const event = provenanceLog.append(createSensoriumProvenanceEvent({
+        summary: endSummary,
+        caller: "soma.sensorium.automatic-end",
+      }));
+      logger.info?.("soma.provenance", event);
+      logger.info?.("soma.sensorium.subscription_ended", {
+        subscription_id: subscription_id ?? "",
+        provenance_id: event.id,
+        termination_reason: endSummary.termination_reason ?? "",
+      });
+    });
+  }
 
   return async (req, res) => {
     try {
@@ -1393,8 +1410,56 @@ function createSensoriumProvenanceEvent({ summary, caller }) {
   return {
     id: randomUUID(),
     caller_identity: typeof caller === "string" ? caller : "",
-    ...summary,
+    ...copySensoriumSubscriptionSummary(summary),
   };
+}
+
+function copySensoriumSubscriptionSummary(summary = {}) {
+  const allowedByEvent = {
+    "perception.sensorium.subscription_started": [
+      "event_type",
+      "timestamp",
+      "capability",
+      "provider",
+      "grant_id",
+      "scope",
+      "topic",
+      "constraints_declared",
+      "text_content_included",
+      "frames_recorded",
+    ],
+    "perception.sensorium.subscription_ended": [
+      "event_type",
+      "timestamp",
+      "capability",
+      "provider",
+      "grant_id",
+      "scope",
+      "topic",
+      "started_at",
+      "ended_at",
+      "duration_seconds",
+      "termination_reason",
+      "frames_consumed",
+      "schema_version_observed",
+      "schema_mismatches",
+      "first_frame_number",
+      "last_frame_number",
+      "error_class",
+      "status_summary_observed",
+      "stream_summary_observed",
+      "text_content_included",
+      "frames_recorded",
+    ],
+  };
+  const allowed = allowedByEvent[summary?.event_type] ?? [];
+  const out = {};
+  for (const key of allowed) {
+    if (summary[key] !== undefined) {
+      out[key] = summary[key];
+    }
+  }
+  return out;
 }
 
 function findProvider(providerRegistry = {}, providerId = "") {

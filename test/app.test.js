@@ -2267,9 +2267,16 @@ async function invoke({
 function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 1_700_000_000 } = {}) {
   const calls = [];
   const active = new Map();
+  let automaticEndHandler = null;
   return {
     calls,
     activeCount: 0,
+    onSubscriptionEnded(handler) {
+      automaticEndHandler = typeof handler === "function" ? handler : null;
+    },
+    emitAutomaticEnd({ endSummary, subscription_id = subscriptionId } = {}) {
+      automaticEndHandler?.({ subscription_id, endSummary });
+    },
     async start({ capability, provider, grantId, scope, body }) {
       calls.push({ method: "start", args: { capability, provider, grantId, scope, body } });
       this.activeCount++;
@@ -2841,6 +2848,71 @@ test("POST /sensorium/grants/:id/revoke rejects non-Sensorium grants", async () 
 
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "sensorium_grant_revoke_requires_sensorium_grant");
+});
+
+test("Sensorium automatic subscription endings are recorded in provenance", async () => {
+  const subscriber = makeFakeSensoriumSubscriber({ subscriptionId: "sub-timeout-app" });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  subscriber.emitAutomaticEnd({
+    subscription_id: "sub-timeout-app",
+    endSummary: {
+      event_type: "perception.sensorium.subscription_ended",
+      timestamp: "2026-05-18T22:00:00.000Z",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      grant_id: "grant-sensorium-color-test",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      started_at: "2026-05-18T21:59:00.000Z",
+      ended_at: "2026-05-18T22:00:00.000Z",
+      duration_seconds: 60,
+      termination_reason: "timeout",
+      frames_consumed: 3,
+      schema_version_observed: 1,
+      schema_mismatches: 0,
+      first_frame_number: 10,
+      last_frame_number: 12,
+      stream_summary_observed: {
+        schema_version: 1,
+        frame_number: 12,
+        width: 320,
+        height: 180,
+        format: "jpeg",
+        payload_size: 12345,
+      },
+      text_content_included: false,
+      frames_recorded: false,
+      payload_bytes: "must not be present in canonical summaries",
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=perception.sensorium.subscription_ended",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  const event = response.body.entries[0];
+  assert.equal(event.caller_identity, "soma.sensorium.automatic-end");
+  assert.equal(event.termination_reason, "timeout");
+  assert.equal(event.frames_consumed, 3);
+  assert.equal(event.frames_recorded, false);
+  assert.equal(event.text_content_included, false);
+  assert.deepEqual(event.stream_summary_observed, {
+    schema_version: 1,
+    frame_number: 12,
+    width: 320,
+    height: 180,
+    format: "jpeg",
+    payload_size: 12345,
+  });
+  assert.equal(JSON.stringify(event).includes("payload_bytes"), false);
 });
 
 test("POST /sensorium/subscriptions enforces exact grant topic when present", async () => {

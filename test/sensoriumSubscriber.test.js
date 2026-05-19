@@ -362,6 +362,25 @@ test("subscriber schedules max_seconds timeout and stops with timeout summary", 
   assert.equal(ended[0].endSummary.text_content_included, false);
 });
 
+test("subscriber does not notify automatic-end handler for manual stop", async () => {
+  const manager = new FakeManager();
+  const ended = [];
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-manual-no-callback",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    onSubscriptionEnded: (summary) => ended.push(summary),
+  });
+
+  const { subscription_id } = await subscriber.start(COMMON_START);
+  await subscriber.stop(subscription_id);
+
+  assert.deepEqual(ended, []);
+});
+
 test("subscriber manual stop clears pending max_seconds timeout", async () => {
   const manager = new FakeManager();
   const timers = makeFakeTimers();

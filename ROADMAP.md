@@ -247,6 +247,9 @@ Implemented:
 - enforced Sensorium `max_seconds` duration bounds in `SensoriumSubscriber`: declared timeouts stop
   helper subscriptions with `termination_reason: "timeout"`, and manual stop/revocation clear
   pending timeout handles
+- wired automatic Sensorium subscription endings into app provenance through a bounded callback:
+  timeout end summaries are whitelisted before logging and remain inspectable through the existing
+  provenance query surface
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -260,23 +263,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add timeout provenance integration for automatically ended Sensorium subscriptions.
+Review the Sensorium activation thread and close stale documentation language.
 
 Target:
 
 ```text
-sensorium automatic end provenance
-  -> wire SensoriumSubscriber timeout end summaries into the app provenance log
-  -> expose a bounded way to inspect recently automatic-ended subscriptions
-  -> preserve metadata-only status/color smoke paths
-  -> avoid durable writes until the grant lifecycle explicitly supports them
+sensorium activation documentation cleanup
+  -> identify stale disabled-first / pending-helper language after activation
+  -> keep historical review notes intact but align canonical docs
+  -> preserve the no-default-grant and metadata-only boundaries
+  -> leave model-facing visual delivery out of scope
 ```
 
 Expected work:
 
-- decide whether timeout end summaries are emitted via callback, queue, or explicit poll surface
-- add app-level tests proving timeout summaries are provenance-shaped and content-free
-- keep automatic timeout handling independent from model-facing visual delivery
+- scan canonical docs, operator docs, runbooks, and roadmap for stale Sensorium state
+- update only current-state documents, not historical review snapshots
+- keep tests focused on behavior, not wording, unless a stale claim is load-bearing
 - keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:

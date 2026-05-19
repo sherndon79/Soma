@@ -27,6 +27,40 @@ const CONTRACTS = {
     content_retention: "forbidden",
     model_delivery_without_further_grant: false,
   },
+  "perception.sensorium.depth.subscribe": {
+    capability: "perception.sensorium.depth.subscribe",
+    stream_type: "depth",
+    expected_schema_version: 1,
+    risk_class: "restricted",
+    allowed_summary_fields: [
+      "schema_version",
+      "frame_number",
+      "width",
+      "height",
+      "format",
+      "depth_units",
+      "payload_size",
+    ],
+    excluded_fields: [
+      "data",
+      "payload_bytes",
+      "depth_bytes",
+      "depth_array",
+      "raw_depth",
+      "raw_frame",
+      "point_cloud",
+      "mesh",
+      "image_bytes",
+      "image_content",
+      "screenshot",
+      "text_content",
+      "timestamp",
+    ],
+    allowed_formats: ["png"],
+    requires_constraints: ["max_seconds", "max_fps", "format_required", "downsample_to"],
+    content_retention: "forbidden",
+    model_delivery_without_further_grant: false,
+  },
 };
 
 export function getSensoriumStreamContract(capability) {
@@ -95,6 +129,16 @@ export function assertSensoriumSummaryWithinContract(capability, summary) {
   ) {
     errors.push("summary.payload_size must be a non-negative integer");
   }
+  if (
+    "depth_units" in summary &&
+    (
+      typeof summary.depth_units !== "number" ||
+      !Number.isFinite(summary.depth_units) ||
+      summary.depth_units <= 0
+    )
+  ) {
+    errors.push("summary.depth_units must be a positive finite number");
+  }
 
   if (errors.length > 0) {
     throwContractError(
@@ -135,4 +179,8 @@ function throwContractError(code, message, validationErrors = []) {
 
 export const SENSORIUM_COLOR_STREAM_CONTRACT = Object.freeze(
   getSensoriumStreamContract("perception.sensorium.color.subscribe"),
+);
+
+export const SENSORIUM_DEPTH_STREAM_CONTRACT = Object.freeze(
+  getSensoriumStreamContract("perception.sensorium.depth.subscribe"),
 );

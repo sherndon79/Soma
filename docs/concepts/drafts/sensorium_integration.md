@@ -187,6 +187,48 @@ subscriptions, `soma-sensor-broker` enforces that boundary before sample payload
 back to Node. The disclosure/provenance path remains metadata-only and still does not deliver image
 bytes to model context.
 
+### Depth Stream Contract
+
+The first depth contract is also metadata-only. Depth is camera-class restricted because it can
+reveal room geometry, body presence, posture, motion, and spatial relationships even without color
+texture.
+
+Allowed depth summary fields:
+
+- `schema_version`
+- `frame_number`
+- `width`
+- `height`
+- `format`
+- `depth_units`
+- `payload_size`
+
+Excluded depth fields:
+
+- `data`
+- `payload_bytes`
+- `depth_bytes`
+- `depth_array`
+- `raw_depth`
+- `raw_frame`
+- `point_cloud`
+- `mesh`
+- `image_bytes`
+- `image_content`
+- `screenshot`
+- `text_content`
+- `timestamp`
+- cross-stream fields such as `uptime_seconds`, `enabled_streams`, color image content, or
+  location data
+
+The expected depth schema version is `1` and the only allowed depth format is `png`.
+`depth_units` must be a positive finite number. Live depth smoke remains blocked until this
+contract is reviewed and a metadata-only depth decoder/minimizer path is in place.
+
+The depth boundary is specified separately in
+[Sensorium Depth Metadata Contract](./sensorium_depth_metadata_contract.md). That document is the
+review target before any live depth subscription attempt.
+
 If the helper cannot decode, validate, or transform a stream sample, it emits a bounded
 `sensorium.subscription.error` notification with `subscription_id`, `topic`, and `error_class`. Node
 copies only a sanitized `error_class` into active disclosure and subscription-ended provenance. It

@@ -104,6 +104,9 @@ default.
   - review after status and acknowledged color live smoke were rerun against `jetsorano` following
     helper stream-error metadata, timeout enforcement, automatic ending provenance, and current-state
     documentation cleanup
+- [Sensorium Depth Metadata Contract](./2026-05-18_sensorium_depth_metadata_contract.md)
+  - review after the depth stream contract was defined as metadata-only before any live depth smoke
+    or model-facing spatial-scene delivery
 
 ## Remote Graphical Session Thread
 

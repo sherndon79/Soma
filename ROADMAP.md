@@ -253,6 +253,9 @@ Implemented:
 - ran post-hardening Sensorium live smoke regression against `jetsorano`: status smoke observed two
   samples, explicitly acknowledged color smoke observed eight bounded samples, manual color metadata
   remained `320x180` JPEG, and cleanup returned to zero active subscriptions
+- added the first Sensorium depth metadata contract: allowed summaries are limited to schema,
+  frame number, dimensions, `png` format, positive finite `depth_units`, and payload size, while
+  raw depth arrays, geometry, screenshots, text, and model-facing delivery remain excluded
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 

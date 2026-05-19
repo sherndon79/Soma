@@ -41,6 +41,11 @@ const proposalTemplate = {
       available: true,
       acknowledgement_required: true,
       acknowledged: false,
+      artifact_id: "preview-color-1",
+      acknowledgement_id: "ack-preview-color-1",
+      acknowledged_by: "user",
+      acknowledged_at: "2026-05-19T12:00:00.000Z",
+      cleanup_required: true,
     },
     retention: {
       mode: "none",
@@ -79,7 +84,12 @@ const candidate = {
       source_grant_id: "grant-color-1",
       model_target: "local.gemma4",
       payload_type: "color",
+      preview_artifact_id: "preview-color-1",
+      preview_acknowledgement_id: "ack-preview-color-1",
+      preview_acknowledged_by: "user",
+      preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
       preview_acknowledged: true,
+      preview_cleanup_required: true,
       retention_mode: "none",
     },
   },
@@ -99,7 +109,12 @@ const candidate = {
     max_frame_age_ms: 5_000,
     transformed_dimensions: [384, 384],
     format_required: "jpeg",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
     preview_acknowledged: true,
+    preview_cleanup_required: true,
     retention_mode: "none",
     payload_retained: false,
     memory_write_authorized: false,
@@ -120,6 +135,7 @@ test("model visual proposal review text summarizes source target preview and ret
   assert.match(text, /model target: local\.gemma4/);
   assert.match(text, /payload: color dimensions=384x384 jpeg/);
   assert.match(text, /preview: required=yes available=yes acknowledgement_required=yes acknowledged=no/);
+  assert.match(text, /preview acknowledgement: artifact=preview-color-1 acknowledgement=ack-preview-color-1 actor=user at=2026-05-19T12:00:00\.000Z cleanup_required=yes/);
   assert.match(text, /retention: mode=none payload_retained=no memory_write=no/);
   assert.match(text, /approval boundary: proposal approval is not preview acknowledgement or model delivery/);
   assert.match(text, /model delivery performed: no/);
@@ -135,6 +151,7 @@ test("model visual candidate review text summarizes acknowledged non-delivery st
   assert.match(text, /source capabilities: perception\.sensorium\.color\.subscribe/);
   assert.match(text, /model target: local\.gemma4/);
   assert.match(text, /preview acknowledged: yes/);
+  assert.match(text, /preview acknowledgement: artifact=preview-color-1 acknowledgement=ack-preview-color-1 actor=user at=2026-05-19T12:00:00\.000Z cleanup_required=yes/);
   assert.match(text, /retention: mode=none payload_retained=no memory_write=no/);
   assert.match(text, /grant written: no/);
   assert.match(text, /subscription activated: no/);

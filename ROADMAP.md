@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose preview acknowledgement metadata in the operator review helpers.
+Expose model visual review text through an operator-facing route or CLI surface.
 
 Target:
 
 ```text
-visual preview review formatting
-  -> show preview artifact and acknowledgement ids in proposal and candidate review text
-  -> show acknowledgement actor, timestamp, and cleanup requirement
-  -> keep review formatting byte-free
-  -> leave route wiring, prompt assembly, and live model delivery out of scope
+visual review surface exposure
+  -> expose proposal/candidate review text without accepting payload-shaped fields
+  -> keep the route or CLI review-only and non-activating
+  -> preserve preview artifact and acknowledgement metadata in the displayed review
+  -> leave visual attach request handling, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- extend pure visual review helper output and tests for preview metadata
+- add the smallest review-only operator surface for existing visual review helper output
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

@@ -418,6 +418,7 @@ The first review helper summarizes:
 - model target
 - payload type, transformed dimensions, format, frame count, and max frame age
 - preview required/available/acknowledged state
+- preview artifact id, acknowledgement id, actor, timestamp, and cleanup requirement
 - retention mode and memory-write posture
 - non-delivery flags: grant written, subscription activated, model delivery performed, payload
   attached, and payload bytes included

@@ -145,6 +145,9 @@ default.
 - [Model Visual Preview Threading](./2026-05-19_model_visual_preview_threading.md)
   - review after preview artifact and acknowledgement metadata were threaded through visual grant
     candidates and request validation as byte-free constraints
+- [Model Visual Preview Review Formatting](./2026-05-19_model_visual_preview_review_formatting.md)
+  - review after proposal and candidate review text started surfacing preview artifact and
+    acknowledgement metadata without carrying visual payload bytes
 
 ## Current Review Triggers
 

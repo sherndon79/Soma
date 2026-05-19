@@ -36,6 +36,13 @@ export function modelVisualAttachProposalReviewText(response = {}) {
     `  payload: ${review.payload_type ?? "unknown"} ${dimensionsText(review.transformed_dimensions)} ${review.format_required ?? "unknown"}`,
     `  frame bound: count=${review.frame_count ?? "unknown"} max_age_ms=${review.max_frame_age_ms ?? "unknown"}`,
     `  preview: required=${booleanText(preview.required)} available=${booleanText(preview.available)} acknowledgement_required=${booleanText(preview.acknowledgement_required)} acknowledged=${booleanText(preview.acknowledged)}`,
+    `  preview acknowledgement: ${previewAcknowledgementText({
+      artifactId: preview.artifact_id,
+      acknowledgementId: preview.acknowledgement_id,
+      actor: preview.acknowledged_by,
+      acknowledgedAt: preview.acknowledged_at,
+      cleanupRequired: preview.cleanup_required,
+    })}`,
     `  retention: mode=${retention.mode ?? "unknown"} payload_retained=${booleanText(retention.payload_retained)} memory_write=${booleanText(retention.memory_write_authorized ?? review.memory_write_authorized)}`,
     `  model boundary: ${review.model_boundary_warning ?? "Visual payload attachment is irreversible inside a model turn."}`,
     "  approval boundary: proposal approval is not preview acknowledgement or model delivery",
@@ -68,6 +75,13 @@ export function modelVisualAttachGrantCandidateReviewText(response = {}) {
     `  payload: ${constraints.payload_type ?? provenance.payload_type ?? "unknown"} ${dimensionsText(constraints.transformed_dimensions ?? provenance.transformed_dimensions)} ${constraints.format_required ?? provenance.format_required ?? "unknown"}`,
     `  frame bound: count=${constraints.max_frame_count ?? provenance.frame_count ?? "unknown"} max_age_ms=${constraints.max_frame_age_ms ?? provenance.max_frame_age_ms ?? "unknown"}`,
     `  preview acknowledged: ${booleanText(constraints.preview_acknowledged ?? provenance.preview_acknowledged)}`,
+    `  preview acknowledgement: ${previewAcknowledgementText({
+      artifactId: constraints.preview_artifact_id ?? provenance.preview_artifact_id,
+      acknowledgementId: constraints.preview_acknowledgement_id ?? provenance.preview_acknowledgement_id,
+      actor: constraints.preview_acknowledged_by ?? provenance.preview_acknowledged_by,
+      acknowledgedAt: constraints.preview_acknowledged_at ?? provenance.preview_acknowledged_at,
+      cleanupRequired: constraints.preview_cleanup_required ?? provenance.preview_cleanup_required,
+    })}`,
     `  retention: mode=${constraints.retention_mode ?? provenance.retention_mode ?? "unknown"} payload_retained=${booleanText(provenance.payload_retained)} memory_write=${booleanText(provenance.memory_write_authorized)}`,
     "  model boundary: grant candidate is not model delivery; attachment remains irreversible once implemented",
     `  grant written: ${booleanText(response.grant_written)}`,
@@ -117,6 +131,22 @@ function dimensionsText(value) {
 
 function joinList(value) {
   return Array.isArray(value) && value.length > 0 ? value.join(", ") : "unknown";
+}
+
+function previewAcknowledgementText({
+  artifactId,
+  acknowledgementId,
+  actor,
+  acknowledgedAt,
+  cleanupRequired,
+}) {
+  return [
+    `artifact=${artifactId ?? "unknown"}`,
+    `acknowledgement=${acknowledgementId ?? "unknown"}`,
+    `actor=${actor ?? "unknown"}`,
+    `at=${acknowledgedAt ?? "unknown"}`,
+    `cleanup_required=${booleanText(cleanupRequired)}`,
+  ].join(" ");
 }
 
 function booleanText(value) {

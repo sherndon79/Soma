@@ -25,8 +25,8 @@ Implemented:
 - A pure grant-candidate scaffold validates approved visual attach proposals after preview
   acknowledgement and emits byte-free candidate provenance without writing grants.
 - A pure operator-facing review text helper summarizes visual proposal/candidate source identity,
-  model target, preview state, retention posture, and non-delivery flags without accepting payload
-  fields.
+  model target, preview artifact and acknowledgement metadata, retention posture, and non-delivery
+  flags without accepting payload fields.
 - A pure runtime request validator scaffold refuses visual attachment requests without an active
   visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
 - A pure preview artifact/acknowledgement validator defines byte-free transformed preview metadata,

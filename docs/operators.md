@@ -409,8 +409,9 @@ grant candidate, appends an in-memory session grant, and returns `activation_per
 ## Model Visual Attach Review
 
 Model-facing visual attachment is separate from Sensorium subscription authority. The current
-implementation has pure review helpers only; there is no HTTP route, CLI command, prompt assembly,
-model invocation, payload attachment, or visual grant mutation for this path.
+implementation has a review-only HTTP text formatter; there is no CLI command, visual attach
+request route, prompt assembly, model invocation, payload attachment, or visual grant mutation for
+this path.
 
 The first review helper summarizes:
 
@@ -425,6 +426,11 @@ The first review helper summarizes:
 
 Proposal approval is not preview acknowledgement. A future delivery path must keep those actions
 separate so an approved capability proposal cannot silently become visual model context.
+
+To format an already-built visual proposal or grant-candidate review object, post it to
+`POST /model-visual/review-text` with `kind=proposal` or `kind=grant_candidate` and
+`review_response`. The response is text-only and returns `activation_performed=false`,
+`grant_written=false`, `subscription_activated=false`, and `model_delivery_performed=false`.
 
 To revoke a runtime Sensorium session grant:
 

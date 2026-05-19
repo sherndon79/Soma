@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose model visual review text through an operator-facing route or CLI surface.
+Add a CLI wrapper for the model visual review text route.
 
 Target:
 
 ```text
-visual review surface exposure
-  -> expose proposal/candidate review text without accepting payload-shaped fields
-  -> keep the route or CLI review-only and non-activating
-  -> preserve preview artifact and acknowledgement metadata in the displayed review
+visual review cli exposure
+  -> call the review-only model visual review text route from the CLI
+  -> require kind=proposal or kind=grant_candidate
+  -> keep the CLI text/json output byte-free and non-activating
   -> leave visual attach request handling, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add the smallest review-only operator surface for existing visual review helper output
+- add a narrow CLI command for review-only visual review text formatting
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

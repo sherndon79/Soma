@@ -148,6 +148,9 @@ default.
 - [Model Visual Preview Review Formatting](./2026-05-19_model_visual_preview_review_formatting.md)
   - review after proposal and candidate review text started surfacing preview artifact and
     acknowledgement metadata without carrying visual payload bytes
+- [Model Visual Review Text Route](./2026-05-19_model_visual_review_text_route.md)
+  - review after the review-only HTTP formatter route exposed proposal/candidate review text
+    without grant writes, subscription activation, model invocation, or payload delivery
 
 ## Current Review Triggers
 

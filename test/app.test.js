@@ -298,6 +298,47 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(sensoriumColor.status, "requestable");
 });
 
+test("POST /model-visual/review-text formats proposal review without activation", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/review-text",
+    body: {
+      kind: "proposal",
+      review_response: modelVisualProposalReviewFixture(),
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.kind, "proposal");
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.match(response.body.text, /Model visual attach proposal/);
+  assert.match(response.body.text, /preview acknowledgement: artifact=preview-color-1/);
+});
+
+test("POST /model-visual/review-text rejects payload-shaped fields before formatting", async () => {
+  const fixture = modelVisualProposalReviewFixture();
+  fixture.review.preview.image_bytes = "base64-not-allowed";
+
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/review-text",
+    body: {
+      kind: "proposal",
+      review_response: fixture,
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "model_visual_attach_review_payload_field");
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.review.preview.image_bytes")));
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -2225,6 +2266,61 @@ test("POST /chat fails closed when remote profile is requested without remote ca
   assert.equal(response.statusCode, 403);
   assert.equal(response.body.error, "capability_not_allowed");
 });
+
+function modelVisualProposalReviewFixture() {
+  return {
+    type: "model_visual_attach_proposal_template",
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+    payload_attached: false,
+    payload_bytes_included: false,
+    proposal: {
+      capability: "model.context.visual.color.attach",
+      reason: "Need one reviewed color frame for this turn.",
+      requested_scope: "once",
+    },
+    review: {
+      capability: "model.context.visual.color.attach",
+      provider: "soma.provider.local-model",
+      source: {
+        subscription_id: "sub-color-1",
+        subscription_ids: ["sub-color-1"],
+        capability: "perception.sensorium.color.subscribe",
+        capabilities: ["perception.sensorium.color.subscribe"],
+        provider: "soma.provider.sensorium.jetsorano",
+        topic: "sensor/jetsorano/realsense/color",
+        grant_id: "grant-color-1",
+      },
+      model_target: "local.gemma4",
+      payload_type: "color",
+      frame_count: 1,
+      max_frame_age_ms: 5_000,
+      transformed_dimensions: [384, 384],
+      format_required: "jpeg",
+      preview: {
+        required: true,
+        available: true,
+        acknowledgement_required: true,
+        acknowledged: false,
+        artifact_id: "preview-color-1",
+        acknowledgement_id: "ack-preview-color-1",
+        acknowledged_by: "user",
+        acknowledged_at: "2026-05-19T12:00:00.000Z",
+        cleanup_required: true,
+      },
+      retention: {
+        mode: "none",
+        payload_retained: false,
+        memory_write_authorized: false,
+      },
+      memory_write_authorized: false,
+      model_delivery_performed: false,
+      payload_attached: false,
+      payload_bytes_included: false,
+    },
+  };
+}
 
 async function invoke({
   method,

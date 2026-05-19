@@ -33,6 +33,10 @@ import {
 } from "./sensoriumGrantCreateCandidate.js";
 import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
+import {
+  modelVisualAttachGrantCandidateReviewText,
+  modelVisualAttachProposalReviewText,
+} from "./modelVisualAttachReviewSurface.js";
 import { SessionMemory } from "./sessionMemory.js";
 
 export function createApp({
@@ -134,6 +138,36 @@ export function createRequestHandler({
           providerRegistry,
           harness: effectiveHarness,
         }));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/model-visual/review-text") {
+        const body = await readJson(req);
+        const kind = String(body?.kind ?? "").trim();
+        const reviewResponse = body?.review_response ?? body?.response;
+        if (!["proposal", "grant_candidate"].includes(kind) || !isPlainObject(reviewResponse)) {
+          writeError(res, {
+            statusCode: 400,
+            code: "model_visual_review_request_invalid",
+            message: "Model visual review text requires kind=proposal or kind=grant_candidate and a review_response object.",
+          });
+          return;
+        }
+
+        const text = kind === "proposal"
+          ? modelVisualAttachProposalReviewText(reviewResponse)
+          : modelVisualAttachGrantCandidateReviewText(reviewResponse);
+        writeJson(res, 200, {
+          kind,
+          text,
+          review_only: true,
+          activation_performed: false,
+          grant_written: false,
+          subscription_activated: false,
+          model_delivery_performed: false,
+          payload_attached: false,
+          payload_bytes_included: false,
+        });
         return;
       }
 

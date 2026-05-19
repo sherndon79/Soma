@@ -139,8 +139,10 @@ Any derived visual artifact should be treated as a new payload class, not as har
 Provenance should record the shape of model-facing delivery without storing frame bytes:
 
 - event type, such as `model.context.visual.attached`
+- visual attach grant id
 - source subscription id
 - source provider and topic
+- source grant id
 - visual capability used
 - model/provider receiving the payload
 - payload type
@@ -149,11 +151,18 @@ Provenance should record the shape of model-facing delivery without storing fram
 - depth units presence, when relevant
 - max frame age
 - retention mode
+- preview artifact id and acknowledgement id
 - preview acknowledged by whom and when
+- preview cleanup requirement
 - whether memory write was separately authorized
+- whether visual memory or training use was separately authorized
 
 Provenance must not store image bytes, depth bytes, screenshots, raw arrays, point clouds, meshes, or
 model-generated scene descriptions unless a later explicit retention capability exists.
+
+The future live attachment fixture at
+`docs/fixtures/future-model-visual-attachment-provenance-summary.json` documents this shape without
+activating delivery.
 
 ## Retention
 
@@ -180,7 +189,7 @@ Before delivery implementation:
   acknowledgement (done as pure scaffolding)
 - request validators reject payload classes not explicitly granted
 - provenance schema is documented and tested without storing bytes (done for the candidate event;
-  runtime attachment event still pending)
+  future runtime attachment fixture also exists without activation)
 - tests prove subscription grants alone cannot attach visual payloads to model context
 - tests prove preview refusal prevents model delivery
 - tests prove memory writes require a distinct memory grant

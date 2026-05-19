@@ -160,6 +160,9 @@ default.
 - [Model Visual Attach Dry-Run CLI](./2026-05-19_model_visual_attach_dry_run_cli.md)
   - review after a CLI wrapper started calling the visual attach dry-run route and printing
     non-delivery acceptance/refusal summaries
+- [Model Visual Attachment Provenance Fixture](./2026-05-19_model_visual_attachment_provenance_fixture.md)
+  - review after a future byte-free `model.context.visual.attached` provenance fixture landed
+    without activating delivery
 
 ## Current Review Triggers
 

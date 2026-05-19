@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Document byte-free visual attachment provenance for future live delivery.
+Add a pure future visual attachment provenance summary builder.
 
 Target:
 
 ```text
-visual attachment provenance design
-  -> define a future model.context.visual.attached provenance summary shape
-  -> include grant, source, preview acknowledgement, retention, and non-memory flags
-  -> explicitly exclude frame bytes, screenshots, OCR, scene descriptions, geometry, and prompts
-  -> leave prompt assembly, payload handling, and live model delivery out of scope
+visual attachment provenance builder
+  -> build model.context.visual.attached summaries from validated metadata-only attach requests
+  -> validate against the future provenance fixture
+  -> reject payload-shaped fields before summary creation
+  -> leave routes, prompt assembly, payload handling, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add design documentation and fixture/tests for byte-free future attachment provenance
+- add a pure helper and tests for future attachment provenance summaries
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

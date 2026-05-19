@@ -261,6 +261,10 @@ Implemented:
 - implemented helper-side depth PNG minimization: `soma-sensor-broker` can downsample Sensorium
   depth payloads to requested bounds, fail closed on malformed MessagePack/PNG/units, and Node now
   forwards depth camera-class transform constraints before recording bounded depth metadata
+- verified explicitly acknowledged live depth metadata smoke against `jetsorano`: bounded
+  `format=png` depth summaries included positive `depth_units`, downsampled dimensions stayed within
+  `320x240`, runtime cleanup returned to zero active subscriptions, and model-facing delivery
+  remained unavailable
 - documented implementation guide and component review scope
 - CI for Node tests and Rust helper build
 
@@ -274,26 +278,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Run an explicitly acknowledged Sensorium depth metadata live smoke.
+Design the model-facing visual delivery boundary before any camera/depth payload reaches a model.
 
 Target:
 
 ```text
-sensorium depth live metadata smoke
-  -> start Soma with the pinned Sensorium Zenoh config
-  -> request depth only with explicit camera-class acknowledgement
-  -> verify bounded `png` metadata with `depth_units` and downsample dimensions
-  -> confirm runtime cleanup returns to zero active subscriptions
-  -> leave model-facing visual delivery out of scope
+model-facing visual delivery boundary
+  -> define a separate capability/grant for transformed visual payload delivery
+  -> require disclosure preview before payloads can enter model context
+  -> specify retention, provenance, and redaction rules for color and depth
+  -> preserve metadata-only Sensorium subscriptions as the default posture
 ```
 
 Expected work:
 
-- run guarded status smoke first if the producer state is uncertain
-- run guarded depth smoke with `--acknowledge-camera-stream`, `--format png`, `--max-fps`, and
-  `--downsample`
-- record observed counts, depth metadata, `depth_units`, and cleanup result in a review note
-- keep the verification metadata-only
+- document the proposed visual-delivery capability names and grant constraints
+- define what transformed payloads may be shown to the user before model delivery
+- define provenance fields without storing frame bytes
+- leave implementation and live model delivery out of scope
 
 Constraints:
 
@@ -304,7 +306,7 @@ Constraints:
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
-- no live depth subscription without explicit camera-class acknowledgement
+- no model-facing visual payload delivery in this slice
 
 ## Near-Term
 

@@ -221,6 +221,62 @@ test("sensorium live smoke validates color metadata-only end summaries", () => {
   );
 });
 
+test("sensorium live smoke validates depth metadata includes units", () => {
+  const options = parseSensoriumLiveSmokeArgs([
+    "--capability", "perception.sensorium.depth.subscribe",
+    "--provider", "soma.provider.sensorium.jetsorano",
+    "--topic", "sensor/jetsorano/realsense/depth",
+    "--max-seconds", "15",
+    "--max-fps", "1",
+    "--format", "png",
+    "--downsample", "320x240",
+    "--acknowledge-camera-stream",
+  ]);
+
+  assert.doesNotThrow(() =>
+    validateCameraSmokeEndSummary({
+      stream_summary_observed: {
+        schema_version: 1,
+        frame_number: 42,
+        width: 320,
+        height: 181,
+        format: "png",
+        depth_units: 0.001,
+        payload_size: 62143,
+      },
+    }, options),
+  );
+  assert.throws(
+    () =>
+      validateCameraSmokeEndSummary({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 320,
+          height: 181,
+          format: "png",
+          payload_size: 62143,
+        },
+      }, options),
+    /missing positive finite depth_units/,
+  );
+  assert.throws(
+    () =>
+      validateCameraSmokeEndSummary({
+        stream_summary_observed: {
+          schema_version: 1,
+          frame_number: 42,
+          width: 320,
+          height: 181,
+          format: "jpeg",
+          depth_units: 0.001,
+          payload_size: 62143,
+        },
+      }, options),
+    /expected png/,
+  );
+});
+
 test("sensorium live smoke rejects camera sample counts far beyond max_fps", () => {
   const options = parseSensoriumLiveSmokeArgs([
     "--capability", "perception.sensorium.color.subscribe",

@@ -12,6 +12,10 @@ const FORBIDDEN_STREAM_CONTENT_FIELDS = [
   "screenshot",
   "text_content",
   "raw_frame",
+  "raw_depth",
+  "depth_array",
+  "point_cloud",
+  "mesh",
   "timestamp",
 ];
 
@@ -321,7 +325,7 @@ export function validateCameraSmokeDisclosure(disclosure, options = DEFAULT_SENS
       continue;
     }
     if (stream.stream_summary_observed) {
-      assertMetadataOnlySummary(stream.stream_summary_observed, "active color disclosure");
+      assertCameraSmokeSummary(stream.stream_summary_observed, options, "active camera disclosure");
     }
   }
 }
@@ -337,8 +341,8 @@ export function validateCameraSmokeEndSummary(endSummary, options = DEFAULT_SENS
       "missing_stream_summary",
     );
   }
-  assertMetadataOnlySummary(streamSummary, "ended color subscription");
-  assertDownsampleBound(streamSummary, options, "ended color subscription");
+  assertCameraSmokeSummary(streamSummary, options, "ended camera subscription");
+  assertDownsampleBound(streamSummary, options, "ended camera subscription");
 }
 
 export function validateCameraSmokeFrameBound(framesConsumed, options = DEFAULT_SENSORIUM_SMOKE) {
@@ -371,6 +375,28 @@ function assertMetadataOnlySummary(summary, label) {
     if (!(field in summary)) {
       throw new SensoriumLiveSmokeError(
         `${label} missing bounded metadata field: ${field}`,
+        "malformed_stream_summary",
+      );
+    }
+  }
+}
+
+function assertCameraSmokeSummary(summary, options, label) {
+  assertMetadataOnlySummary(summary, label);
+  if (options.format && summary.format !== options.format) {
+    throw new SensoriumLiveSmokeError(
+      `${label} reported format ${summary.format}, expected ${options.format}`,
+      "format_mismatch",
+    );
+  }
+  if (options.capability === "perception.sensorium.depth.subscribe") {
+    if (
+      typeof summary.depth_units !== "number" ||
+      !Number.isFinite(summary.depth_units) ||
+      summary.depth_units <= 0
+    ) {
+      throw new SensoriumLiveSmokeError(
+        `${label} missing positive finite depth_units`,
         "malformed_stream_summary",
       );
     }

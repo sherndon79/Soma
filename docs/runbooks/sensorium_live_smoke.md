@@ -105,12 +105,14 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
   --observe-seconds 8
 ```
 
-Camera-class targets such as `perception.sensorium.color.subscribe` require an additional explicit
-acknowledgement. Provide `--acknowledge-camera-stream` or set
-`SOMA_SENSORIUM_CAMERA_SMOKE=1`. The wrapper also requires tight video constraints for camera-class
-targets: `--max-fps`, `--format`, and `--downsample`. For color, the smoke path validates that the
-ended subscription contains only bounded `stream_summary_observed` metadata and fails if image
-bytes, screenshots, raw frames, timestamps, or text-like content fields appear.
+Camera-class targets such as `perception.sensorium.color.subscribe` and
+`perception.sensorium.depth.subscribe` require an additional explicit acknowledgement. Provide
+`--acknowledge-camera-stream` or set `SOMA_SENSORIUM_CAMERA_SMOKE=1`. The wrapper also requires
+tight video constraints for camera-class targets: `--max-fps`, `--format`, and `--downsample`.
+For color, the smoke path validates that the ended subscription contains only bounded
+`stream_summary_observed` metadata and fails if image bytes, screenshots, raw frames, timestamps,
+or text-like content fields appear. For depth, it additionally requires positive finite
+`depth_units` and rejects raw depth arrays, point clouds, meshes, screenshots, timestamps, and text.
 
 Example color metadata smoke:
 
@@ -122,6 +124,21 @@ SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- 
   --max-seconds 15 \
   --max-fps 1 \
   --format jpeg \
+  --downsample 320x240 \
+  --observe-seconds 8 \
+  --acknowledge-camera-stream
+```
+
+Example depth metadata smoke:
+
+```bash
+SOMA_SENSORIUM_ENABLED=1 SOMA_SENSORIUM_LIVE_SMOKE=1 npm run sensorium:smoke -- \
+  --capability perception.sensorium.depth.subscribe \
+  --provider soma.provider.sensorium.jetsorano \
+  --topic sensor/jetsorano/realsense/depth \
+  --max-seconds 15 \
+  --max-fps 1 \
+  --format png \
   --downsample 320x240 \
   --observe-seconds 8 \
   --acknowledge-camera-stream

@@ -113,6 +113,9 @@ default.
 - [Sensorium Depth Helper Minimization](./2026-05-18_sensorium_depth_helper_minimization.md)
   - review after helper-side depth PNG downsampling and Node depth transform forwarding landed
     before any live depth smoke
+- [Sensorium Depth Live Metadata Verification](./2026-05-19_sensorium_depth_live_metadata.md)
+  - review after an explicitly acknowledged live depth metadata smoke verified bounded PNG
+    summaries, positive `depth_units`, and cleanup against `jetsorano`
 
 ## Remote Graphical Session Thread
 

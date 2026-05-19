@@ -11,9 +11,9 @@
 #   - VLLM_IMAGE: pin/override inference image
 #   - LLM_MODEL: model id
 #   - LLM_PORT: host port, default 8000
-#   - VLLM_MAX_MODEL_LEN: context length, default 4096
-#   - VLLM_GPU_MEMORY_UTILIZATION: default 0.50
-#   - VLLM_MAX_CONCURRENCY: default 4
+#   - VLLM_MAX_MODEL_LEN: context length, default 65536
+#   - VLLM_GPU_MEMORY_UTILIZATION: default 0.80
+#   - VLLM_MAX_CONCURRENCY: default 1
 #   - VLLM_TOOL_CALL_PARSER: default gemma4
 #   - VLLM_EXTRA_ARGS: append additional vLLM flags
 
@@ -25,9 +25,9 @@ services:
       --model ${LLM_MODEL:-ciocan/gemma-4-E4B-it-W4A16}
       --host 0.0.0.0
       --port 8000
-      --max-model-len ${VLLM_MAX_MODEL_LEN:-4096}
-      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.50}
-      --max-num-seqs ${VLLM_MAX_CONCURRENCY:-4}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-65536}
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.80}
+      --max-num-seqs ${VLLM_MAX_CONCURRENCY:-1}
       --enable-auto-tool-choice
       --tool-call-parser ${VLLM_TOOL_CALL_PARSER:-gemma4}
       --trust-remote-code
@@ -39,6 +39,7 @@ services:
       - VLLM_WORKER_MULTIPROC_METHOD=spawn
       - HF_HOME=/models/cache
       - HF_TOKEN=${HF_TOKEN:-}
+    restart: unless-stopped
     ports:
       - "${LLM_PORT:-8000}:8000"
     volumes:

@@ -127,6 +127,9 @@ default.
 - [Model-Facing Visual Delivery Boundary](./2026-05-19_model_facing_visual_delivery_boundary.md)
   - review after the visual payload delivery boundary was documented as separate from Sensorium
     subscription grants and left implementation out of scope
+- [Model Visual Proposal Scaffold](./2026-05-19_model_visual_proposal_scaffold.md)
+  - review after disabled/requestable model visual attach metadata and a byte-free, review-only
+    proposal template scaffold landed
 
 ## Current Review Triggers
 

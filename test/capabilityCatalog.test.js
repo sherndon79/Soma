@@ -152,3 +152,43 @@ test("Sensorium catalog exposes subscriptions without model-facing visual delive
     assert.equal(capability.harness_status, "disabled");
   }
 });
+
+const MODEL_VISUAL_ATTACH_CAPABILITIES = [
+  {
+    key: "model.context.visual.color.attach",
+    contract: "soma.model.context.visual.color.attach.v1",
+  },
+  {
+    key: "model.context.visual.depth.attach",
+    contract: "soma.model.context.visual.depth.attach.v1",
+  },
+  {
+    key: "model.context.visual.composite.attach",
+    contract: "soma.model.context.visual.composite.attach.v1",
+  },
+];
+
+test("model-facing visual attach capabilities are requestable without activating delivery", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  for (const want of MODEL_VISUAL_ATTACH_CAPABILITIES) {
+    const cap = view.capabilities.find((c) => c.key === want.key);
+    assert.ok(cap, `expected capability ${want.key} to be present in catalog`);
+    assert.equal(cap.category, "model");
+    assert.equal(cap.risk_class, "high");
+    assert.equal(cap.harness_status, "disabled");
+    assert.equal(cap.status, "requestable");
+    assert.equal(cap.support_status, "supported");
+    assert.deepEqual(cap.allowed_scopes, ["once"]);
+    assert.equal(cap.activation_policy, "explicit_grant");
+    assert.equal(cap.reversible, false);
+    assert.equal(cap.provider_contract, want.contract);
+    assert.equal(cap.providers.length, 1);
+    assert.equal(cap.providers[0].id, "soma.provider.local-model");
+    assert.equal(cap.providers[0].provider_contract, want.contract);
+    assert.equal(cap.providers[0].output_schema, "soma.model.context.visual.attach.proposal.v1");
+    assert.ok(cap.excluded_by_default.includes("background delivery without preview"));
+  }
+});

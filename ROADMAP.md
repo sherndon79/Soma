@@ -281,24 +281,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add non-activating model-facing visual capability catalog entries and proposal template scaffolding.
+Add non-delivering model-facing visual grant-candidate and provenance schema scaffolding.
 
 Target:
 
 ```text
-model-facing visual proposal scaffold
-  -> add disabled/requestable catalog entries for visual attach capabilities
-  -> add review-only proposal template shape with preview and retention fields
-  -> prove subscription grants alone cannot authorize model visual delivery
-  -> leave prompt assembly and live model delivery out of scope
+model-facing visual grant candidate scaffold
+  -> validate approved visual attach proposals into non-writing grant candidates
+  -> define byte-free provenance event shape for future visual attachment
+  -> prove preview refusal and retention mismatch fail before delivery
+  -> leave runtime grant mutation, prompt assembly, and live model delivery out of scope
 ```
 
 Expected work:
 
-- add catalog/provider metadata without activation
-- add pure validation/template tests for one-shot visual attach proposals
-- reject missing preview, retention, source subscription, and model target fields
-- keep all payload bytes out of fixtures and provenance
+- add a pure approved-proposal-to-grant-candidate builder for `model.context.visual.*.attach`
+- add tests for preview refusal, retention mismatch, source identity mismatch, and model target drift
+- add provenance fixture validation that records visual intent without image/depth bytes
+- keep the candidate separate from Sensorium subscription grants and runtime delivery
 
 Constraints:
 

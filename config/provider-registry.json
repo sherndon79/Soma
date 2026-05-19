@@ -13,6 +13,21 @@
           "key": "model.local.chat",
           "provider_contract": "soma.model.chat.v1",
           "output_schema": "soma.model.chat.response.v1"
+        },
+        {
+          "key": "model.context.visual.color.attach",
+          "provider_contract": "soma.model.context.visual.color.attach.v1",
+          "output_schema": "soma.model.context.visual.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.depth.attach",
+          "provider_contract": "soma.model.context.visual.depth.attach.v1",
+          "output_schema": "soma.model.context.visual.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.composite.attach",
+          "provider_contract": "soma.model.context.visual.composite.attach.v1",
+          "output_schema": "soma.model.context.visual.attach.proposal.v1"
         }
       ]
     },

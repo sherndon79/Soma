@@ -67,6 +67,89 @@
       "description": "Escalate a task to a remote model for structured planning. Each plan step is validated against the active harness before local execution. Distinct from model.remote.chat because the planner influences local execution paths, not only the user-facing response."
     },
     {
+      "key": "model.context.visual.color.attach",
+      "name": "Model Context Color Frame Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once"],
+      "data_exposed": [
+        "one transformed color frame from an approved Sensorium subscription",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed frames",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.color.attach.v1",
+      "description": "Review-only scaffold for attaching a single helper-minimized color frame to one model turn. A Sensorium subscription grant alone does not authorize this capability."
+    },
+    {
+      "key": "model.context.visual.depth.attach",
+      "name": "Model Context Depth Frame Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once"],
+      "data_exposed": [
+        "one transformed depth frame from an approved Sensorium subscription",
+        "depth units metadata",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed depth arrays",
+        "point clouds",
+        "meshes",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.depth.attach.v1",
+      "description": "Review-only scaffold for attaching a single helper-minimized depth map to one model turn. A Sensorium subscription grant alone does not authorize this capability."
+    },
+    {
+      "key": "model.context.visual.composite.attach",
+      "name": "Model Context Composite Visual Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once"],
+      "data_exposed": [
+        "one bounded fused color/depth visual payload from approved Sensorium subscriptions",
+        "depth units metadata when present",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed depth arrays",
+        "point clouds",
+        "meshes",
+        "OCR or text extraction",
+        "scene descriptions generated before preview",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.composite.attach.v1",
+      "description": "Review-only scaffold for attaching a bounded fused color/depth visual payload to one model turn. Composite delivery remains inactive until a later validator and prompt-assembly slice."
+    },
+    {
       "key": "memory.session.read",
       "name": "Session Memory Read",
       "category": "memory",

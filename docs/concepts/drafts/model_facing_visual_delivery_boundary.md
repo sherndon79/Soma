@@ -19,12 +19,16 @@ Implemented:
 - Helper-side color JPEG and depth PNG minimization can enforce `downsample_to` before sample bytes
   cross into Node-visible state.
 - Active disclosure and provenance record bounded metadata summaries only.
+- Catalog/provider metadata now exposes disabled/requestable model-facing visual attach capabilities.
+- A pure proposal-template scaffold can validate preview, retention, source subscription, and model
+  target fields without activating delivery.
 
 Not implemented:
 
 - model-facing image delivery
 - model-facing depth delivery
 - multimodal prompt assembly
+- model-facing visual grant mutation or runtime validator behavior
 - frame recording
 - screenshot capture
 - point clouds, meshes, or derived scene geometry
@@ -143,10 +147,12 @@ must never be implied by model-facing delivery.
 
 ## Activation Gates
 
-Before implementation:
+Before delivery implementation:
 
-- capability catalog entries exist for model-facing visual attach operations
-- grant proposal templates include preview, retention, and memory-write fields
+- capability catalog entries exist for model-facing visual attach operations (done as disabled,
+  requestable metadata)
+- grant proposal templates include preview, retention, and memory-write fields (done as pure
+  review-only scaffolding)
 - request validators reject payload classes not explicitly granted
 - provenance schema is documented and tested without storing bytes
 - tests prove subscription grants alone cannot attach visual payloads to model context

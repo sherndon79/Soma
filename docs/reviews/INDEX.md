@@ -151,6 +151,9 @@ default.
 - [Model Visual Review Text Route](./2026-05-19_model_visual_review_text_route.md)
   - review after the review-only HTTP formatter route exposed proposal/candidate review text
     without grant writes, subscription activation, model invocation, or payload delivery
+- [Model Visual Review CLI](./2026-05-19_model_visual_review_cli.md)
+  - review after a CLI wrapper started calling the review-only formatter route for byte-free
+    proposal/candidate review text
 
 ## Current Review Triggers
 

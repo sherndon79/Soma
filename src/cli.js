@@ -220,6 +220,17 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     return 0;
   }
 
+  if (command === "model-visual" && subcommand === "review") {
+    const response = await request(
+      baseUrl,
+      "POST",
+      "/model-visual/review-text",
+      modelVisualReviewTextRequestFromFlags(flags),
+    );
+    writeOutput(stdout, response, jsonOutput, response.text);
+    return 0;
+  }
+
   if (command === "memory") {
     if (subcommand === "list" || !subcommand) {
       writeOutput(stdout, await request(baseUrl, "GET", "/session-memory"), jsonOutput);
@@ -443,6 +454,29 @@ function sensoriumSubscribeStartRequestFromFlags(flags) {
   });
 }
 
+function modelVisualReviewTextRequestFromFlags(flags) {
+  const kind = requiredFlag(flags.kind, "--kind", "model-visual review");
+  if (!["proposal", "grant_candidate"].includes(kind)) {
+    throw usageError("model-visual review --kind must be proposal or grant_candidate.");
+  }
+
+  const reviewJson = requiredFlag(flags["review-json"], "--review-json", "model-visual review");
+  let reviewResponse;
+  try {
+    reviewResponse = JSON.parse(reviewJson);
+  } catch {
+    throw usageError("model-visual review --review-json must be valid JSON.");
+  }
+  if (!isPlainObject(reviewResponse)) {
+    throw usageError("model-visual review --review-json must decode to an object.");
+  }
+
+  return {
+    kind,
+    review_response: reviewResponse,
+  };
+}
+
 function requiredFlag(value, flagName, commandName) {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -480,6 +514,10 @@ function dimensionFlag(value, flagName, commandName = "sensorium proposal-templa
 
 function stripUndefined(value) {
   return Object.fromEntries(Object.entries(value).filter(([, entryValue]) => entryValue !== undefined));
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function writeOutput(stdout, payload, jsonOutput, textOutput = "") {
@@ -1074,6 +1112,7 @@ Usage:
   soma sensorium subscribe-stop subscription-id [--json]
   soma sensorium subscriptions [--json]
   soma sensorium status [--json]
+  soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
   soma proposals approve proposal-id [--scope once|session] [--by user] [--json]

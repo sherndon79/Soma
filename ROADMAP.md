@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a CLI wrapper for the model visual review text route.
+Add a dry-run model visual attach request refusal surface.
 
 Target:
 
 ```text
-visual review cli exposure
-  -> call the review-only model visual review text route from the CLI
-  -> require kind=proposal or kind=grant_candidate
-  -> keep the CLI text/json output byte-free and non-activating
-  -> leave visual attach request handling, prompt assembly, and live model delivery out of scope
+visual attach request dry-run
+  -> expose the existing visual attach request validator through a dry-run route
+  -> return validation acceptance/refusal without accepting payload-shaped fields
+  -> keep accepted dry-runs non-delivering and non-retaining
+  -> leave prompt assembly and live model delivery out of scope
 ```
 
 Expected work:
 
-- add a narrow CLI command for review-only visual review text formatting
+- add the smallest dry-run operator surface for visual attach request validation
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

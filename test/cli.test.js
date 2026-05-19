@@ -236,6 +236,116 @@ test("runCli capabilities prints grouped capability view", async () => {
   assert.match(writes.join(""), /model: 1 \(active=1\)/);
 });
 
+test("runCli model-visual review requests non-activating review text", async () => {
+  let captured;
+  const writes = [];
+  const reviewResponse = {
+    type: "model_visual_attach_proposal_template",
+    activation_performed: false,
+    proposal: {
+      capability: "model.context.visual.color.attach",
+    },
+    review: {
+      capability: "model.context.visual.color.attach",
+      provider: "soma.provider.local-model",
+      source: {
+        subscription_id: "sub-color-1",
+        provider: "soma.provider.sensorium.jetsorano",
+        topic: "sensor/jetsorano/realsense/color",
+        grant_id: "grant-color-1",
+        capability: "perception.sensorium.color.subscribe",
+      },
+      model_target: "local.gemma4",
+      payload_type: "color",
+      transformed_dimensions: [384, 384],
+      format_required: "jpeg",
+      preview: {
+        required: true,
+        available: true,
+        acknowledgement_required: true,
+        acknowledged: false,
+        artifact_id: "preview-color-1",
+        acknowledgement_id: "ack-preview-color-1",
+        acknowledged_by: "user",
+        acknowledged_at: "2026-05-19T12:00:00.000Z",
+        cleanup_required: true,
+      },
+      retention: {
+        mode: "none",
+        payload_retained: false,
+        memory_write_authorized: false,
+      },
+    },
+  };
+
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "model-visual",
+    "review",
+    "--kind",
+    "proposal",
+    "--review-json",
+    JSON.stringify(reviewResponse),
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        text: "Model visual attach proposal\n  preview acknowledgement: artifact=preview-color-1",
+        review_only: true,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/model-visual/review-text");
+  assert.equal(captured.body.kind, "proposal");
+  assert.equal(captured.body.review_response.review.preview.artifact_id, "preview-color-1");
+  assert.match(writes.join(""), /Model visual attach proposal/);
+  assert.match(writes.join(""), /artifact=preview-color-1/);
+});
+
+test("runCli model-visual review validates kind and review JSON before request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "model-visual",
+      "review",
+      "--kind",
+      "stream",
+      "--review-json",
+      "{}",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    { code: "usage_error", statusCode: 2 },
+  );
+
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "model-visual",
+      "review",
+      "--kind",
+      "proposal",
+      "--review-json",
+      "{",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    { code: "usage_error", statusCode: 2 },
+  );
+});
+
 test("runCli proposals list prints pending proposals", async () => {
   let capturedPath = "";
   const writes = [];

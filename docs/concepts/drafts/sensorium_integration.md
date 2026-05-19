@@ -801,9 +801,11 @@ provenance records the shape of consumption, not the consumed content.
 ## Current Implementation Status
 
 Sensorium is shipping as a separate node (Phase 3 publishers complete,
-Phase 5 hardening mostly complete, payload versioning live). Soma now has
-the first integration path implemented through the disabled-first sequence
-from the Implementation Guide.
+Phase 5 hardening mostly complete, payload versioning live). Soma now has a
+runtime-gated integration path implemented through the Disabled-First Capability
+Pattern from the Implementation Guide: catalog/provider support can exist, but
+no subscription starts without explicit runtime opt-in and an active session
+grant.
 
 Completed Soma-side slices:
 
@@ -811,22 +813,22 @@ Completed Soma-side slices:
    `default_status: "disabled"` and `activation_policy: "explicit_grant"`.
    Lowest-risk (status) and Restricted (color, depth) all enter the
    catalog at the same time, all disabled.
-2. Provider registry entry for the local Sensorium instance, declared
-   non-active. Records the hostname-scoped topic namespace and the
-   pinned `schema_versions` block but does not authorize anything.
+2. Provider registry entry for the local Sensorium instance. It records the
+   hostname-scoped topic namespace, runtime shape, and pinned `schema_versions`
+   block, but provider availability does not authorize anything.
 3. Request-shape validators in the Node service plane that recognize
-   `perception.sensorium.*.subscribe` capability keys and refuse them
-   (no active grant, no helper) with stable error codes.
+   `perception.sensorium.*.subscribe` capability keys and reject malformed,
+   over-broad, or unauthorized requests before the helper is reached.
 4. Overreach tests proving that requests with broader-than-declared
    constraints, unknown topic names, or future-shaped payloads are
    rejected before any helper is reached.
 5. Provenance summary shape designed for subscription lifecycle
    (start/stop/error, counters, schema_version observed, schema
    mismatches) without recording frame content.
-6. Disclosure surfaces ready: `GET /capability-view` shows the new
-   capability keys as `requestable` (status) or `unsupported`/`forbidden`
-   (camera) until grants exist; active-subscription disclosure shape
-   sketched even though nothing can yet activate.
+6. Disclosure surfaces ready: `GET /capability-view` shows Sensorium
+   subscription capability keys as requestable when a provider claims support,
+   while `harness_status` remains disabled until explicit grant-backed
+   activation. Active-subscription disclosure remains metadata-only.
 7. Rust sensor-broker scaffold built behind tests — JSON-RPC method
    support for `sensorium.subscribe.start` / `.stop` / `.status`.
 8. Public capability path remained fail-closed while helper and Node-side
@@ -851,8 +853,9 @@ Completed Soma-side slices:
     active-subscription disclosure, subscription stop, and runtime grant
     revocation.
 14. A live smoke runbook documents the helper-backed workflow for bounded
-    status-topic verification without recording payloads, decoding frames, or
-    writing durable grants.
+    status-topic verification without recording payloads or writing durable
+    grants. Status/color payloads are decoded only into bounded metadata
+    summaries.
 15. Soma decodes status payloads only into the bounded status observation
     summary: schema version, hostname, uptime, node version, and enabled stream
     tails. Raw payload bytes are not retained or surfaced; malformed or

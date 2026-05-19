@@ -6,8 +6,9 @@ Soma can already subscribe to Sensorium color frames under an explicit grant, bu
 path is metadata-only: it decodes enough MessagePack to record bounded frame metadata and deliberately
 does not deliver image bytes to model context.
 
-The next visual step is not "send frames to the model." The next step is a content-minimization
-boundary that can enforce `downsample_to` before any model-facing visual payload exists.
+The visual step captured here is not "send frames to the model." It is the
+content-minimization boundary that enforces `downsample_to` before any
+model-facing visual payload exists.
 
 ## Current State
 
@@ -122,7 +123,7 @@ The existing color live smoke remains metadata-only. It asserts that the observe
 `stream_summary_observed.width` and `.height` fit within the requested `downsample_to` bound while
 still refusing image bytes, screenshots, text content, recordings, or model-facing visual payloads.
 
-## Test Requirements
+## Covered Test Requirements
 
 Unit tests:
 

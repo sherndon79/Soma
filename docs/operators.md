@@ -286,16 +286,18 @@ Full proposal JSON:
 npm run cli -- proposals list --json
 ```
 
-Approval and denial write provenance decision records. Revocation and capability activation are not
-implemented yet.
+Approval and denial write provenance decision records. Approval alone does not activate a
+capability. Sensorium has a separate runtime session grant path described below; general durable
+grant mutation remains unavailable.
 
-Proposal approval records intent. Grants record authority. Activation remains a separate future
+Proposal approval records intent. Grants record authority. Activation remains a separate explicit
 step and is not implied by either proposal creation or proposal approval.
 
 ## Inspect Grants
 
-The current grant store is file-backed and read-only. It records the intended shape of grants, but
-runtime writes and grant-based activation are not implemented.
+The file-backed grant store is read-only. It records durable grant shape and examples. Sensorium
+session grants are process-local runtime grants created through the Sensorium-specific flow below;
+they do not mutate `config/grants.json`.
 
 List grants:
 
@@ -324,10 +326,10 @@ npm run cli -- grants list --json
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 
-Writable grant mutation remains blocked until the grant lifecycle prerequisites are implemented:
-exact capability and provider validation, explicit user decision provenance, atomic grant-store
-writes, revocation auditability, migration behavior, and tests for create, revoke, supersede,
-expire, and failed-write behavior.
+Durable writable grant mutation remains blocked until the grant lifecycle prerequisites are
+implemented: exact capability and provider validation, explicit user decision provenance, atomic
+grant-store writes, revocation auditability, migration behavior, and tests for create, revoke,
+supersede, expire, and failed-write behavior.
 
 ## Inspect Sensorium Subscriptions
 

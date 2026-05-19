@@ -234,8 +234,8 @@ Implemented:
 - verified an explicitly acknowledged live color metadata smoke against `jetsorano`; the run found
   and fixed missing helper-side `max_fps` delivery throttling, then passed with nine metadata-only
   samples over eight seconds and clean runtime grant/subscription cleanup
-- documented the Sensorium color minimization boundary for future `downsample_to` enforcement before
-  any model-facing visual delivery
+- documented the Sensorium color minimization boundary for `downsample_to` enforcement before any
+  model-facing visual delivery
 - implemented helper-side color JPEG minimization: `soma-sensor-broker` can downsample Sensorium
   `ColorFrame` MessagePack payloads to the requested bounds before notifying Node, and the live
   smoke wrapper checks observed dimensions
@@ -263,23 +263,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Review the Sensorium activation thread and close stale documentation language.
+Run a post-hardening Sensorium live smoke regression.
 
 Target:
 
 ```text
-sensorium activation documentation cleanup
-  -> identify stale disabled-first / pending-helper language after activation
-  -> keep historical review notes intact but align canonical docs
+sensorium live regression after hardening
+  -> run status smoke against the configured jetsorano endpoint
+  -> run acknowledged color metadata smoke with downsample and max_fps bounds
+  -> confirm timeout/error/provenance hardening did not regress live cleanup
   -> preserve the no-default-grant and metadata-only boundaries
   -> leave model-facing visual delivery out of scope
 ```
 
 Expected work:
 
-- scan canonical docs, operator docs, runbooks, and roadmap for stale Sensorium state
-- update only current-state documents, not historical review snapshots
-- keep tests focused on behavior, not wording, unless a stale claim is load-bearing
+- start Soma with `SOMA_SENSORIUM_ENABLED=1` and the pinned Zenoh config
+- run guarded status and color live smoke workflows only with explicit operator acknowledgement
+- record observed counts, bounded metadata, and cleanup result in a review or runbook addendum
 - keep live camera validation explicitly acknowledged and metadata-first
 
 Constraints:
@@ -290,7 +291,7 @@ Constraints:
 - no live camera subscription without explicit operator assent
 - no loss of operator narrowing controls
 - no change to the current runtime validator behavior
-- no default sensor subscription, frame decoding, recording, or preprocessing
+- no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
 
 ## Near-Term
 

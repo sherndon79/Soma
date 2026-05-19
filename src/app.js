@@ -37,6 +37,7 @@ import {
   modelVisualAttachGrantCandidateReviewText,
   modelVisualAttachProposalReviewText,
 } from "./modelVisualAttachReviewSurface.js";
+import { validateModelVisualAttachRequest } from "./modelVisualAttachRequest.js";
 import { SessionMemory } from "./sessionMemory.js";
 
 export function createApp({
@@ -161,6 +162,25 @@ export function createRequestHandler({
           kind,
           text,
           review_only: true,
+          activation_performed: false,
+          grant_written: false,
+          subscription_activated: false,
+          model_delivery_performed: false,
+          payload_attached: false,
+          payload_bytes_included: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/model-visual/attach-requests/dry-run") {
+        const body = await readJson(req);
+        const request = validateModelVisualAttachRequest(body, {
+          grants: grantStore.grants ?? [],
+        });
+        writeJson(res, 200, {
+          request,
+          dry_run: true,
+          accepted: true,
           activation_performed: false,
           grant_written: false,
           subscription_activated: false,

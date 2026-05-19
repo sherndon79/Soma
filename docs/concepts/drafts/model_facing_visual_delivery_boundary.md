@@ -31,6 +31,8 @@ Implemented:
   grants, activating subscriptions, invoking models, or accepting payload-shaped fields.
 - A review-only CLI wrapper calls the same formatter route and returns byte-free operator text or
   JSON without activating delivery.
+- A dry-run visual attach request route runs the existing metadata-only validator against active
+  grants and returns acceptance/refusal without prompt assembly or visual payload delivery.
 - A pure runtime request validator scaffold refuses visual attachment requests without an active
   visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
 - A pure preview artifact/acknowledgement validator defines byte-free transformed preview metadata,
@@ -46,7 +48,7 @@ Not implemented:
 - model-facing visual grant mutation or runtime validator behavior
 - HTTP or CLI route wiring for the visual attach request validator
 - model-facing visual payload provenance append at runtime
-- visual attach request routes or CLI commands
+- live visual attach request routes or CLI commands
 - preview rendering or cleanup implementation
 - frame recording
 - screenshot capture

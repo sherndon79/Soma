@@ -339,6 +339,50 @@ test("POST /model-visual/review-text rejects payload-shaped fields before format
   assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.review.preview.image_bytes")));
 });
 
+test("POST /model-visual/attach-requests/dry-run validates active visual grant without delivery", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/attach-requests/dry-run",
+    grantStore: {
+      schema_version: 1,
+      grants: [modelVisualGrantFixture()],
+    },
+    body: modelVisualAttachRequestFixture(),
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.dry_run, true);
+  assert.equal(response.body.accepted, true);
+  assert.equal(response.body.request.grant_id, "grant-visual-color");
+  assert.equal(response.body.request.preview_acknowledgement_id, "ack-preview-color-1");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+});
+
+test("POST /model-visual/attach-requests/dry-run rejects missing grant and payload fields", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/attach-requests/dry-run",
+    grantStore: {
+      schema_version: 1,
+      grants: [],
+    },
+    body: {
+      ...modelVisualAttachRequestFixture(),
+      image_bytes: "base64-not-allowed",
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_model_visual_attach_request");
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("an active model visual attach grant is required")));
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("request.image_bytes is forbidden")));
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -2319,6 +2363,61 @@ function modelVisualProposalReviewFixture() {
       payload_attached: false,
       payload_bytes_included: false,
     },
+  };
+}
+
+function modelVisualGrantFixture() {
+  return {
+    id: "grant-visual-color",
+    status: "active",
+    capability: "model.context.visual.color.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      max_frame_count: 1,
+      max_frame_age_ms: 5_000,
+      transformed_dimensions: [384, 384],
+      format_required: "jpeg",
+      source_subscription_ids: ["sub-color-1"],
+      source_capabilities: ["perception.sensorium.color.subscribe"],
+      source_provider: "soma.provider.sensorium.jetsorano",
+      source_topic: "sensor/jetsorano/realsense/color",
+      source_grant_id: "grant-color-1",
+      model_target: "local.gemma4",
+      payload_type: "color",
+      preview_artifact_id: "preview-color-1",
+      preview_acknowledgement_id: "ack-preview-color-1",
+      preview_acknowledged_by: "user",
+      preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+      preview_acknowledged: true,
+      preview_cleanup_required: true,
+      retention_mode: "none",
+    },
+  };
+}
+
+function modelVisualAttachRequestFixture() {
+  return {
+    capability: "model.context.visual.color.attach",
+    grant_id: "grant-visual-color",
+    source_subscription_ids: ["sub-color-1"],
+    source_capabilities: ["perception.sensorium.color.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/color",
+    source_grant_id: "grant-color-1",
+    model_target: "local.gemma4",
+    payload_type: "color",
+    max_frame_count: 1,
+    max_frame_age_ms: 5_000,
+    transformed_dimensions: [384, 384],
+    format_required: "jpeg",
+    preview_artifact_id: "preview-color-1",
+    preview_acknowledgement_id: "ack-preview-color-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+    preview_acknowledged: true,
+    preview_cleanup_required: true,
+    retention_mode: "none",
   };
 }
 

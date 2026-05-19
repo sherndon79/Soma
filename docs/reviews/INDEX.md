@@ -154,6 +154,9 @@ default.
 - [Model Visual Review CLI](./2026-05-19_model_visual_review_cli.md)
   - review after a CLI wrapper started calling the review-only formatter route for byte-free
     proposal/candidate review text
+- [Model Visual Attach Dry-Run Route](./2026-05-19_model_visual_attach_dry_run_route.md)
+  - review after the visual attach request validator became available through a dry-run HTTP route
+    that accepts/refuses metadata-only requests without delivery
 
 ## Current Review Triggers
 

@@ -409,9 +409,9 @@ grant candidate, appends an in-memory session grant, and returns `activation_per
 ## Model Visual Attach Review
 
 Model-facing visual attachment is separate from Sensorium subscription authority. The current
-implementation has review-only HTTP and CLI text formatters; there is no visual attach request
-route, prompt assembly, model invocation, payload attachment, or visual grant mutation for this
-path.
+implementation has review-only HTTP and CLI text formatters plus a dry-run visual attach request
+validator route; there is no prompt assembly, model invocation, payload attachment, or visual grant
+mutation for this path.
 
 The first review helper summarizes:
 
@@ -439,6 +439,11 @@ npm run cli -- model-visual review \
   --kind proposal \
   --review-json '{"type":"model_visual_attach_proposal_template","review":{}}'
 ```
+
+To validate a visual attach request without delivery, post the metadata-only request to
+`POST /model-visual/attach-requests/dry-run`. A successful response means the request matches an
+active visual attach grant, not that anything was delivered. The response returns `dry_run=true`,
+`model_delivery_performed=false`, `payload_attached=false`, and `payload_bytes_included=false`.
 
 To revoke a runtime Sensorium session grant:
 

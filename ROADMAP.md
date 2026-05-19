@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a dry-run model visual attach request refusal surface.
+Add a CLI wrapper for model visual attach request dry-runs.
 
 Target:
 
 ```text
-visual attach request dry-run
-  -> expose the existing visual attach request validator through a dry-run route
-  -> return validation acceptance/refusal without accepting payload-shaped fields
-  -> keep accepted dry-runs non-delivering and non-retaining
+visual attach dry-run cli
+  -> call the dry-run visual attach request route from the CLI
+  -> accept a metadata-only request JSON object
+  -> print acceptance/refusal without handling visual payload bytes
   -> leave prompt assembly and live model delivery out of scope
 ```
 
 Expected work:
 
-- add the smallest dry-run operator surface for visual attach request validation
+- add a narrow CLI command for visual attach dry-run validation
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

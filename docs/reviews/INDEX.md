@@ -187,6 +187,9 @@ default.
 - [Grant Mutation Recovery Inspector](./2026-05-20_grant_mutation_recovery_inspector.md)
   - review after adding pure recovery inspection for missing or mismatched grant mutation
     provenance and documenting append-only durable provenance as the retention direction
+- [Grant Mutation Provenance File Adapter](./2026-05-20_grant_mutation_provenance_file_adapter.md)
+  - review after adding an append-only NDJSON provenance adapter for metadata-only grant mutation
+    events without enabling public durable mutation
 
 ## Current Review Triggers
 

@@ -16,15 +16,16 @@ A pure injectable grant-store writer scaffold now exists under `src/grantStoreWr
 Mutation-specific wrappers for create, revoke, supersede, and expire now exist under
 `src/grantMutationStoreWriters.js`. A concrete filesystem adapter and sibling lock-file strategy
 now exist under `src/grantStoreFileAdapters.js`. A pure recovery inspector exists under
-`src/grantMutationRecovery.js`. They are not connected to app routes, CLI mutation,
+`src/grantMutationRecovery.js`. An append-only durable provenance file adapter exists under
+`src/grantMutationProvenanceFile.js`. They are not connected to app routes, CLI mutation,
 `config/grants.json`, provider invocation, or runtime write enablement.
 
 The durable write path is still blocked until Soma has:
 
-- an append-only durable provenance file adapter for grant mutation events
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure
+- internal end-to-end composition tests for store write, provenance append, and recovery inspection
 - route and CLI tests proving failed writes do not create misleading authority
 
 ## Write Unit
@@ -84,6 +85,10 @@ Decision: grant mutation should use an append-only durable provenance event log 
 audit artifact. Mutation receipts are still returned by the writer and may support recovery, but
 receipts are not the primary audit store. This keeps the grant authority record and the provenance
 record as the two durable facts that must reconcile before a grant is trusted.
+
+The first durable provenance adapter stores one metadata-only grant mutation event per line as
+newline-delimited JSON. It validates events before append, rejects payload-like and unexpected
+fields, writes one line in append mode, and syncs the file handle before returning.
 
 ## Ordering
 

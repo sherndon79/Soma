@@ -473,3 +473,27 @@ from concept framing into an implementation slice. At that point, the
 threat model, capability catalog, provider registry, and roadmap should
 be updated in the same disabled-first slice rather than pre-committed
 from this draft alone.
+
+---
+
+## Addendum: `soma-agent-desktop` Graphical Lab Baseline — 2026-05-20
+
+The first concrete remote graphical node is `soma-agent-desktop`, hosted on `primus`. It is a
+GPU-passthrough Ubuntu desktop VM with Sunshine as the stream host and Moonlight as the attended
+operator client. The node exists to provide a rollback-capable graphical lab for applications that
+need a real desktop, GPU rendering, browser surfaces, or future visual-control experiments.
+
+Current baseline details live in the
+[Graphical Node Smoke Workflow](../../runbooks/graphical_node_smoke.md). The durable base snapshot
+is a ZFS dataset snapshot of `storage/vms/soma-agent-desktop`; it is an operator reset point, not a
+capability grant.
+
+This concrete node reinforces the draft's boundary:
+
+- the remote stream is a substrate, not authorization
+- Moonlight connection success does not imply model permission to observe or act
+- browser state, user keyrings, screenshots, frames, and input traces are not base-image artifacts
+- the base snapshot makes experimentation reversible at the VM level, but disclosure still matters
+  because viewed content and external side effects cannot be un-seen or un-done
+- local host control should still prefer semantic local interfaces; this VM is the safer place to
+  test graphical agent behavior that would be too invasive on the workstation

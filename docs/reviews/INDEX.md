@@ -178,6 +178,9 @@ default.
 - [Grant Store Writer Scaffold](./2026-05-20_grant_store_writer_scaffold.md)
   - review after adding a pure injectable grant-store writer with ordering and partial-failure
     tests while keeping routes, CLI mutation, and runtime writes disabled
+- [Grant Mutation Store Writers](./2026-05-20_grant_mutation_store_writers.md)
+  - review after adding internal create/revoke/supersede/expire wrappers around the grant-store
+    writer without adding public mutation surfaces
 
 ## Current Review Triggers
 

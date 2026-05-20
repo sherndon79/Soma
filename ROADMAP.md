@@ -172,6 +172,9 @@ Implemented:
   provenance ordering, explicit success/degraded/failure receipts, and tests for temp-write,
   rename, provenance-append, stale-schema, lock, and corrupted-store failures while leaving writable
   routes, CLI mutation, and runtime writes disabled
+- internal grant mutation store writer wrappers added for create, revoke, supersede, and expire,
+  composing pure grant helpers, metadata-only provenance constructors, and the grant-store writer
+  while leaving writable routes, CLI mutation, runtime writes, and activation disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -291,22 +294,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add mutation-specific durable grant writer wrappers without public mutation surfaces.
+Add a real filesystem adapter and lock strategy for durable grant-store writer tests.
 
 Target:
 
 ```text
-grant mutation durable writer wrappers
-  -> compose create/revoke/supersede/expire helpers with the grant-store writer
-  -> compose metadata-only provenance constructors per mutation kind
-  -> preserve explicit recovery/degraded writer receipts without public routes
+grant-store filesystem adapter and lock strategy
+  -> implement an injectable Node fs adapter for temp-write, fsync, rename, directory fsync, cleanup
+  -> implement or document a narrow lock-file strategy for single-writer exclusion
+  -> test against temporary directories without touching config/grants.json
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add pure mutation-specific wrapper functions around the existing writer
-- add tests proving each wrapper passes the affected grant and matching provenance event
+- add a concrete adapter module for the existing writer
+- add temp-directory tests for successful write, cleanup, and lock contention behavior
 - do not point the app or CLI at the writer yet
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 

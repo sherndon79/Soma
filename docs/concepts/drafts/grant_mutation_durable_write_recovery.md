@@ -12,14 +12,15 @@ provenance constructors. It does not enable `POST /grants`, grant mutation CLI c
 The current grant file remains read-only at runtime. Existing mutation helpers operate on in-memory
 objects only. Existing grant mutation provenance constructors produce metadata-only events only.
 
-A pure injectable grant-store writer scaffold now exists under `src/grantStoreWriter.js`. It is not
-connected to app routes, CLI mutation, `config/grants.json`, provider invocation, or runtime write
-enablement.
+A pure injectable grant-store writer scaffold now exists under `src/grantStoreWriter.js`.
+Mutation-specific wrappers for create, revoke, supersede, and expire now exist under
+`src/grantMutationStoreWriters.js`. They are not connected to app routes, CLI mutation,
+`config/grants.json`, provider invocation, or runtime write enablement.
 
 The durable write path is still blocked until Soma has:
 
-- mutation-specific wrappers around the atomic grant-store writer
 - durable provenance retention or an explicitly documented retention posture
+- a real filesystem adapter and lock strategy for the atomic grant-store writer
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure

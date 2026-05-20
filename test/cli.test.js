@@ -375,6 +375,13 @@ test("runCli model-visual attach-dry-run requests non-delivering validation", as
         model_delivery_performed: false,
         payload_attached: false,
         payload_bytes_included: false,
+        future_provenance_preview: {
+          event_type: "model.context.visual.attached",
+          grant_id: "grant-visual-color",
+          payload_bytes_included: false,
+          visual_memory_written: false,
+        },
+        future_provenance_appended: false,
       };
     },
   });
@@ -389,6 +396,9 @@ test("runCli model-visual attach-dry-run requests non-delivering validation", as
   assert.match(writes.join(""), /payload: color dimensions=384x384 jpeg/);
   assert.match(writes.join(""), /model delivery performed: no/);
   assert.match(writes.join(""), /payload bytes included: no/);
+  assert.match(writes.join(""), /future provenance preview: preview only/);
+  assert.match(writes.join(""), /future provenance event: model\.context\.visual\.attached/);
+  assert.match(writes.join(""), /future provenance appended: no/);
 });
 
 test("runCli model-visual attach-dry-run validates request JSON before request", async () => {

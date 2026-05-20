@@ -856,6 +856,7 @@ function grantListSummary(response) {
 
 function modelVisualAttachDryRunSummary(response) {
   const request = response.request ?? {};
+  const futurePreview = response.future_provenance_preview ?? {};
   const lines = [
     "Model visual attach dry-run",
     `  accepted: ${booleanText(response.accepted)}`,
@@ -871,6 +872,13 @@ function modelVisualAttachDryRunSummary(response) {
     `  payload attached: ${booleanText(response.payload_attached)}`,
     `  payload bytes included: ${booleanText(response.payload_bytes_included)}`,
   ];
+  if (futurePreview.event_type || response.future_provenance_appended !== undefined) {
+    lines.push(
+      "  future provenance preview: preview only",
+      `  future provenance event: ${futurePreview.event_type ?? "unknown"}`,
+      `  future provenance appended: ${booleanText(response.future_provenance_appended)}`,
+    );
+  }
   return lines.join("\n");
 }
 

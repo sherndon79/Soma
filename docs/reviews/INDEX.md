@@ -175,6 +175,9 @@ default.
 - [Grant Mutation Durable Write Recovery Design](./2026-05-20_grant_mutation_durable_write_recovery_design.md)
   - review after documenting atomic grant-store writes, provenance/write ordering, and recovery
     behavior without enabling writable routes or durable mutation
+- [Grant Store Writer Scaffold](./2026-05-20_grant_store_writer_scaffold.md)
+  - review after adding a pure injectable grant-store writer with ordering and partial-failure
+    tests while keeping routes, CLI mutation, and runtime writes disabled
 
 ## Current Review Triggers
 

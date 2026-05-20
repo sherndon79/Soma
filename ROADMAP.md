@@ -168,6 +168,10 @@ Implemented:
 - durable grant mutation write/recovery design documented with atomic file replacement,
   provenance/write ordering, schema-version checks, concurrent-write posture, and fail-closed
   recovery cases while leaving writable routes, CLI mutation, and runtime writes disabled
+- pure injectable grant-store writer scaffold added with lock/read/schema/mutate/temp-write/rename/
+  provenance ordering, explicit success/degraded/failure receipts, and tests for temp-write,
+  rename, provenance-append, stale-schema, lock, and corrupted-store failures while leaving writable
+  routes, CLI mutation, and runtime writes disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -287,22 +291,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Scaffold a pure durable grant-store writer with injectable file operations.
+Add mutation-specific durable grant writer wrappers without public mutation surfaces.
 
 Target:
 
 ```text
-grant store writer scaffold
-  -> implement an injectable atomic write pipeline for grant-store JSON
-  -> simulate temp-write, rename, provenance-append, stale-schema, and lock failures
-  -> return explicit recovery/degraded states without public routes
+grant mutation durable writer wrappers
+  -> compose create/revoke/supersede/expire helpers with the grant-store writer
+  -> compose metadata-only provenance constructors per mutation kind
+  -> preserve explicit recovery/degraded writer receipts without public routes
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add a pure grant-store writer module with mockable filesystem/provenance adapters
-- add tests for write ordering and partial failure behavior
+- add pure mutation-specific wrapper functions around the existing writer
+- add tests proving each wrapper passes the affected grant and matching provenance event
 - do not point the app or CLI at the writer yet
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 

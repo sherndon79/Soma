@@ -1,6 +1,6 @@
 # Grant Mutation Durable Write Recovery
 
-Status: design draft, no writable grant routes or durable writes implemented
+Status: design draft, pure writer scaffold implemented, no writable grant routes or runtime writes
 
 This draft defines the write and recovery posture required before Soma enables durable grant
 mutation. It complements the grant lifecycle draft and the pure grant mutation validator and
@@ -12,9 +12,13 @@ provenance constructors. It does not enable `POST /grants`, grant mutation CLI c
 The current grant file remains read-only at runtime. Existing mutation helpers operate on in-memory
 objects only. Existing grant mutation provenance constructors produce metadata-only events only.
 
+A pure injectable grant-store writer scaffold now exists under `src/grantStoreWriter.js`. It is not
+connected to app routes, CLI mutation, `config/grants.json`, provider invocation, or runtime write
+enablement.
+
 The durable write path is still blocked until Soma has:
 
-- an atomic grant-store writer
+- mutation-specific wrappers around the atomic grant-store writer
 - durable provenance retention or an explicitly documented retention posture
 - schema-version checks before write
 - concurrent write exclusion

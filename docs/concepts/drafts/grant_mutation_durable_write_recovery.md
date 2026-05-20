@@ -14,13 +14,13 @@ objects only. Existing grant mutation provenance constructors produce metadata-o
 
 A pure injectable grant-store writer scaffold now exists under `src/grantStoreWriter.js`.
 Mutation-specific wrappers for create, revoke, supersede, and expire now exist under
-`src/grantMutationStoreWriters.js`. They are not connected to app routes, CLI mutation,
-`config/grants.json`, provider invocation, or runtime write enablement.
+`src/grantMutationStoreWriters.js`. A concrete filesystem adapter and sibling lock-file strategy
+now exist under `src/grantStoreFileAdapters.js`. They are not connected to app routes, CLI
+mutation, `config/grants.json`, provider invocation, or runtime write enablement.
 
 The durable write path is still blocked until Soma has:
 
 - durable provenance retention or an explicitly documented retention posture
-- a real filesystem adapter and lock strategy for the atomic grant-store writer
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure

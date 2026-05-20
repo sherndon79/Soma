@@ -181,6 +181,9 @@ default.
 - [Grant Mutation Store Writers](./2026-05-20_grant_mutation_store_writers.md)
   - review after adding internal create/revoke/supersede/expire wrappers around the grant-store
     writer without adding public mutation surfaces
+- [Grant Store File Adapter](./2026-05-20_grant_store_file_adapter.md)
+  - review after adding a concrete filesystem adapter and sibling lock-file strategy for the
+    grant-store writer without enabling durable mutation
 
 ## Current Review Triggers
 

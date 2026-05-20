@@ -190,6 +190,9 @@ default.
 - [Grant Mutation Provenance File Adapter](./2026-05-20_grant_mutation_provenance_file_adapter.md)
   - review after adding an append-only NDJSON provenance adapter for metadata-only grant mutation
     events without enabling public durable mutation
+- [Grant Mutation Durable Composition](./2026-05-20_grant_mutation_durable_composition.md)
+  - review after proving internal durable create/revoke composition with store writes,
+    append-only provenance, and recovery inspection in temporary directories
 
 ## Current Review Triggers
 

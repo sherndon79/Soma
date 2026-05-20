@@ -185,6 +185,9 @@ Implemented:
 - append-only durable grant mutation provenance file adapter added, validating metadata-only events
   before NDJSON append, syncing each append, failing closed on malformed reads, and preserving writer
   degraded recovery receipts when provenance append rejects after grant-store commit
+- internal durable grant mutation composition tests added for create, revoke, and degraded
+  grant-store-committed/provenance-missing recovery, using temporary grant/provenance files only and
+  no public route or CLI mutation wiring
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -304,22 +307,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add internal end-to-end durable grant mutation composition tests.
+Add pure policy-gateway recovery gating for grant authorization.
 
 Target:
 
 ```text
-internal durable grant mutation composition
-  -> compose mutation wrappers with grant-store file adapter and provenance file adapter
-  -> run recovery inspection over temp grant/provenance files after success and degraded failure
-  -> keep tests temporary-directory only and do not touch config/grants.json
+grant authorization recovery gating
+  -> add pure helper that combines grant status checks with recovery inspection findings
+  -> refuse authorization when mutation provenance is missing or mismatched
+  -> keep tests pure or temp-directory only and do not wire public mutation yet
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add internal integration tests for successful create/revoke flows
-- add degraded-path integration test for grant-store committed/provenance missing recovery
+- add pure policy-gateway helper for recovery-aware grant authorization
+- add tests proving degraded grants cannot authorize capability use
 - do not point the app or CLI at the writer yet
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 

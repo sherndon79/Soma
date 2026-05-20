@@ -17,15 +17,17 @@ Mutation-specific wrappers for create, revoke, supersede, and expire now exist u
 `src/grantMutationStoreWriters.js`. A concrete filesystem adapter and sibling lock-file strategy
 now exist under `src/grantStoreFileAdapters.js`. A pure recovery inspector exists under
 `src/grantMutationRecovery.js`. An append-only durable provenance file adapter exists under
-`src/grantMutationProvenanceFile.js`. They are not connected to app routes, CLI mutation,
-`config/grants.json`, provider invocation, or runtime write enablement.
+`src/grantMutationProvenanceFile.js`. Internal composition tests prove create/revoke store writes,
+provenance appends, and recovery inspection in temporary directories. They are not connected to app
+routes, CLI mutation, `config/grants.json`, provider invocation, or runtime write enablement.
 
 The durable write path is still blocked until Soma has:
 
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure
-- internal end-to-end composition tests for store write, provenance append, and recovery inspection
+- policy-gateway checks that fail closed when recovery inspection reports degraded grants
+- operator-facing recovery inspection
 - route and CLI tests proving failed writes do not create misleading authority
 
 ## Write Unit
@@ -248,6 +250,11 @@ The inspector should mark a grant unsafe when it finds:
 
 Every recovery finding is non-authorizing. Future policy code may use this signal to fail closed,
 but the inspector itself must not convert a malformed grant into authority.
+
+Internal temporary-directory tests now prove that the writer, grant-store file adapter, append-only
+provenance adapter, mutation wrappers, and recovery inspector compose for create and revoke. They
+also prove that a grant-store commit followed by provenance append failure creates a degraded state
+that recovery inspection can detect.
 
 ## Policy Gateway Requirement
 

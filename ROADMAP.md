@@ -179,6 +179,9 @@ Implemented:
   tests for successful temp-write/rename/provenance, stale-temp cleanup, and lock contention before
   read/write/provenance while leaving writable routes, CLI mutation, runtime writes, and activation
   disabled
+- pure grant mutation recovery inspector added for missing creation provenance, missing terminal
+  provenance, metadata mismatch, activation claims, and unknown grant statuses; append-only durable
+  provenance is documented as the retention direction while public mutation remains disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -298,22 +301,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Design durable provenance retention and recovery inspection for grant mutation.
+Add append-only durable provenance file adapter for grant mutation events.
 
 Target:
 
 ```text
-grant mutation durable provenance and recovery posture
-  -> decide whether grant mutation provenance appends to a durable log or receipt store
-  -> define recovery inspection for grant-store committed/provenance missing cases
-  -> keep tests local and do not wire app or CLI mutation yet
+grant mutation durable provenance file adapter
+  -> append metadata-only grant mutation events to an append-only file
+  -> fsync appended events and reject malformed event records
+  -> test temporary-directory append/read/error behavior without touching config/grants.json
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add design or pure scaffolding for durable provenance retention/reconciliation
-- add tests for detecting missing mutation provenance without trusting malformed authority
+- add a concrete durable provenance adapter for grant mutation events
+- add tests proving payload-like fields are rejected before append
 - do not point the app or CLI at the writer yet
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 

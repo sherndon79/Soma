@@ -1,6 +1,6 @@
 # Grant Mutation Durable Write Recovery
 
-Status: design draft, pure writer scaffold implemented, no writable grant routes or runtime writes
+Status: design draft, pure writer/recovery scaffolds implemented, no writable grant routes or runtime writes
 
 This draft defines the write and recovery posture required before Soma enables durable grant
 mutation. It complements the grant lifecycle draft and the pure grant mutation validator and
@@ -15,12 +15,13 @@ objects only. Existing grant mutation provenance constructors produce metadata-o
 A pure injectable grant-store writer scaffold now exists under `src/grantStoreWriter.js`.
 Mutation-specific wrappers for create, revoke, supersede, and expire now exist under
 `src/grantMutationStoreWriters.js`. A concrete filesystem adapter and sibling lock-file strategy
-now exist under `src/grantStoreFileAdapters.js`. They are not connected to app routes, CLI
-mutation, `config/grants.json`, provider invocation, or runtime write enablement.
+now exist under `src/grantStoreFileAdapters.js`. A pure recovery inspector exists under
+`src/grantMutationRecovery.js`. They are not connected to app routes, CLI mutation,
+`config/grants.json`, provider invocation, or runtime write enablement.
 
 The durable write path is still blocked until Soma has:
 
-- durable provenance retention or an explicitly documented retention posture
+- an append-only durable provenance file adapter for grant mutation events
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure
@@ -78,6 +79,11 @@ Suggested grant-store write strategy:
 If the final durable provenance mechanism is append-only, the append must itself use an atomic or
 recoverable strategy. If the provenance log remains process-local, durable grant mutation must stay
 disabled.
+
+Decision: grant mutation should use an append-only durable provenance event log as the canonical
+audit artifact. Mutation receipts are still returned by the writer and may support recovery, but
+receipts are not the primary audit store. This keeps the grant authority record and the provenance
+record as the two durable facts that must reconcile before a grant is trusted.
 
 ## Ordering
 
@@ -221,6 +227,22 @@ The receipt should not contain capability payloads or provider outputs. It shoul
 
 If a receipt store is not implemented, the grant file itself must carry enough mutation metadata to
 rebuild or reconcile missing provenance.
+
+## Recovery Inspection
+
+Pure recovery inspection is available before route activation. It compares grant records against
+grant mutation provenance events and reports degraded state without authorizing anything.
+
+The inspector should mark a grant unsafe when it finds:
+
+- missing `grant.created` provenance
+- missing terminal provenance for revoked, superseded, or expired grants
+- mismatched capability, provider, scope, actor, reason, timestamp, or replacement id
+- grant or provenance records that claim mutation-time activation
+- unknown grant status
+
+Every recovery finding is non-authorizing. Future policy code may use this signal to fail closed,
+but the inspector itself must not convert a malformed grant into authority.
 
 ## Policy Gateway Requirement
 

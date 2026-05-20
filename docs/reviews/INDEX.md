@@ -184,6 +184,9 @@ default.
 - [Grant Store File Adapter](./2026-05-20_grant_store_file_adapter.md)
   - review after adding a concrete filesystem adapter and sibling lock-file strategy for the
     grant-store writer without enabling durable mutation
+- [Grant Mutation Recovery Inspector](./2026-05-20_grant_mutation_recovery_inspector.md)
+  - review after adding pure recovery inspection for missing or mismatched grant mutation
+    provenance and documenting append-only durable provenance as the retention direction
 
 ## Current Review Triggers
 

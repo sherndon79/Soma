@@ -165,6 +165,9 @@ Implemented:
 - grant mutation provenance constructors added for future `grant.created`, `grant.revoked`,
   `grant.superseded`, and `grant.expired` events, with authority metadata only and no constraints,
   payloads, route, CLI, file-write, or activation path
+- durable grant mutation write/recovery design documented with atomic file replacement,
+  provenance/write ordering, schema-version checks, concurrent-write posture, and fail-closed
+  recovery cases while leaving writable routes, CLI mutation, and runtime writes disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -284,23 +287,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Design atomic durable grant mutation write and recovery posture without enabling writes.
+Scaffold a pure durable grant-store writer with injectable file operations.
 
 Target:
 
 ```text
-grant mutation durable write design
-  -> define write ordering for grant records and provenance events
-  -> define recovery behavior for partial write/provenance failures
-  -> include schema-version and concurrent-write failure posture
+grant store writer scaffold
+  -> implement an injectable atomic write pipeline for grant-store JSON
+  -> simulate temp-write, rename, provenance-append, stale-schema, and lock failures
+  -> return explicit recovery/degraded states without public routes
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- document atomic grant-store write strategy
-- document provenance append ordering and failure handling
-- document stale schema and concurrent mutation behavior
+- add a pure grant-store writer module with mockable filesystem/provenance adapters
+- add tests for write ordering and partial failure behavior
+- do not point the app or CLI at the writer yet
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 
 Constraints:

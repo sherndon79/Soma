@@ -173,6 +173,10 @@ directly to the central request handler. Route and CLI handlers should parse req
 to the grant module; the grant module should own validation, state transition rules, persistence,
 and provenance event construction.
 
+The durable write and recovery posture is defined separately in
+[Grant Mutation Durable Write Recovery](./grant_mutation_durable_write_recovery.md). Writable grant
+routes should not be enabled until that recovery posture has executable tests.
+
 ## Mutation Tests Required
 
 Writable grant mutation is not ready until tests prove:

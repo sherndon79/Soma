@@ -66,6 +66,7 @@ should inform implementation.
 - [Escalation and Planning](./concepts/drafts/escalation_and_planning.md)
 - [Focused Desktop Inspection](./concepts/drafts/focused_desktop_inspection.md)
 - [Grant Lifecycle](./concepts/drafts/grant_lifecycle.md)
+- [Grant Mutation Durable Write Recovery](./concepts/drafts/grant_mutation_durable_write_recovery.md)
 - [Local AI Service Plane](./concepts/drafts/local_ai_service_plane.md)
 - [Memory Control Surface](./concepts/drafts/memory_control_surface.md)
 - [Model-Facing Visual Delivery Boundary](./concepts/drafts/model_facing_visual_delivery_boundary.md)

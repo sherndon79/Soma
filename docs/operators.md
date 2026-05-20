@@ -444,6 +444,8 @@ To validate a visual attach request without delivery, post the metadata-only req
 `POST /model-visual/attach-requests/dry-run`. A successful response means the request matches an
 active visual attach grant, not that anything was delivered. The response returns `dry_run=true`,
 `model_delivery_performed=false`, `payload_attached=false`, and `payload_bytes_included=false`.
+Accepted dry-runs include a byte-free `future_provenance_preview` for the future
+`model.context.visual.attached` event and `future_provenance_appended=false`.
 
 The CLI wrapper uses the same dry-run route:
 

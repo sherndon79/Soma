@@ -35,6 +35,8 @@ Implemented:
   grants and returns acceptance/refusal without prompt assembly or visual payload delivery.
 - A CLI wrapper calls the dry-run route and prints acceptance/refusal without handling visual
   payload bytes.
+- Accepted dry-run responses include a byte-free future provenance preview for
+  `model.context.visual.attached` with `future_provenance_appended=false`.
 - A pure runtime request validator scaffold refuses visual attachment requests without an active
   visual attach grant, preview acknowledgement, `retention_mode=none`, and byte-free metadata.
 - A pure preview artifact/acknowledgement validator defines byte-free transformed preview metadata,

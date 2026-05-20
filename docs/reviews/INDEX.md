@@ -166,6 +166,9 @@ default.
 - [Model Visual Attachment Provenance Builder](./2026-05-19_model_visual_attachment_provenance_builder.md)
   - review after a pure future provenance summary helper landed disconnected from routes and model
     delivery
+- [Model Visual Dry-Run Provenance Preview](./2026-05-19_model_visual_dry_run_provenance_preview.md)
+  - review after accepted visual attach dry-runs started returning a byte-free future provenance
+    preview without appending provenance or delivering payloads
 
 ## Current Review Triggers
 

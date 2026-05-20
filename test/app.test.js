@@ -355,6 +355,12 @@ test("POST /model-visual/attach-requests/dry-run validates active visual grant w
   assert.equal(response.body.accepted, true);
   assert.equal(response.body.request.grant_id, "grant-visual-color");
   assert.equal(response.body.request.preview_acknowledgement_id, "ack-preview-color-1");
+  assert.equal(response.body.future_provenance_appended, false);
+  assert.equal(response.body.future_provenance_preview.event_type, "model.context.visual.attached");
+  assert.equal(response.body.future_provenance_preview.grant_id, "grant-visual-color");
+  assert.equal(response.body.future_provenance_preview.preview_acknowledgement_id, "ack-preview-color-1");
+  assert.equal(response.body.future_provenance_preview.payload_bytes_included, false);
+  assert.equal(response.body.future_provenance_preview.visual_memory_written, false);
   assert.equal(response.body.activation_performed, false);
   assert.equal(response.body.grant_written, false);
   assert.equal(response.body.subscription_activated, false);

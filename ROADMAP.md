@@ -281,21 +281,21 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose future visual attachment provenance preview in accepted dry-runs.
+Surface visual dry-run provenance preview in the CLI summary.
 
 Target:
 
 ```text
-visual attachment provenance dry-run preview
-  -> include optional future provenance summary in accepted visual attach dry-run responses
-  -> keep the event preview byte-free and clearly non-appended
-  -> preserve dry-run refusal behavior before summary creation
+visual dry-run provenance cli summary
+  -> print future provenance preview event type and appended status in CLI dry-run output
+  -> keep JSON output unchanged and byte-free
+  -> preserve request validation and refusal behavior
   -> leave prompt assembly, payload handling, and live model delivery out of scope
 ```
 
 Expected work:
 
-- thread the pure provenance helper into accepted dry-run responses as a preview only
+- update CLI dry-run summary and tests for future provenance preview fields
 - preserve the existing Sensorium subscription flow and request validators
 - keep model-facing payload delivery and durable retention out of scope
 

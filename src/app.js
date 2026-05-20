@@ -38,6 +38,7 @@ import {
   modelVisualAttachProposalReviewText,
 } from "./modelVisualAttachReviewSurface.js";
 import { validateModelVisualAttachRequest } from "./modelVisualAttachRequest.js";
+import { createModelVisualAttachmentProvenanceSummary } from "./modelVisualAttachmentProvenance.js";
 import { SessionMemory } from "./sessionMemory.js";
 
 export function createApp({
@@ -177,8 +178,13 @@ export function createRequestHandler({
         const request = validateModelVisualAttachRequest(body, {
           grants: grantStore.grants ?? [],
         });
+        const futureProvenancePreview = createModelVisualAttachmentProvenanceSummary({
+          request,
+        });
         writeJson(res, 200, {
           request,
+          future_provenance_preview: futureProvenancePreview,
+          future_provenance_appended: false,
           dry_run: true,
           accepted: true,
           activation_performed: false,

@@ -162,6 +162,9 @@ Implemented:
 - grant mutation validator scaffold added with pure create/revoke/supersede/expire state
   transitions, exact catalog/provider checks, explicit user-decision requirements, idempotent
   revocation tests, and no route, CLI, file-write, or activation path
+- grant mutation provenance constructors added for future `grant.created`, `grant.revoked`,
+  `grant.superseded`, and `grant.expired` events, with authority metadata only and no constraints,
+  payloads, route, CLI, file-write, or activation path
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -281,23 +284,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Surface visual dry-run provenance preview in the CLI summary.
+Design atomic durable grant mutation write and recovery posture without enabling writes.
 
 Target:
 
 ```text
-visual dry-run provenance cli summary
-  -> print future provenance preview event type and appended status in CLI dry-run output
-  -> keep JSON output unchanged and byte-free
-  -> preserve request validation and refusal behavior
-  -> leave prompt assembly, payload handling, and live model delivery out of scope
+grant mutation durable write design
+  -> define write ordering for grant records and provenance events
+  -> define recovery behavior for partial write/provenance failures
+  -> include schema-version and concurrent-write failure posture
+  -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- update CLI dry-run summary and tests for future provenance preview fields
-- preserve the existing Sensorium subscription flow and request validators
-- keep model-facing payload delivery and durable retention out of scope
+- document atomic grant-store write strategy
+- document provenance append ordering and failure handling
+- document stale schema and concurrent mutation behavior
+- preserve current read-only grant inspection and pure in-memory mutation helpers
 
 Constraints:
 
@@ -309,6 +313,7 @@ Constraints:
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
 - no model-facing visual payload delivery in this slice
+- no writable grant routes, CLI mutation commands, durable grant writes, or runtime write enablement
 
 ## Near-Term
 

@@ -169,6 +169,9 @@ default.
 - [Model Visual Dry-Run Provenance Preview](./2026-05-19_model_visual_dry_run_provenance_preview.md)
   - review after accepted visual attach dry-runs started returning a byte-free future provenance
     preview without appending provenance or delivering payloads
+- [Grant Mutation Provenance Constructors](./2026-05-20_grant_mutation_provenance_constructors.md)
+  - review after pure metadata-only `grant.created`, `grant.revoked`, `grant.superseded`, and
+    `grant.expired` event constructors landed without route, CLI, file-write, or activation paths
 
 ## Current Review Triggers
 

@@ -234,6 +234,8 @@ default.
   - review after reserving durable grant mutation route names with explicit disabled refusals
 - [Durable Mutation CLI Denial Stubs](./2026-05-22_durable_mutation_cli_denial_stubs.md)
   - review after reserving durable grant mutation CLI names with local disabled errors
+- [Grant Mutation Preview Review Endpoint](./2026-05-22_grant_mutation_preview_review_endpoint.md)
+  - review after exposing grant mutation preview review formatting through a route
 
 ## Current Review Triggers
 

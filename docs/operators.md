@@ -384,6 +384,13 @@ when the raw preview response is needed for inspection or tests.
 Dry-run preview refusals from the route are rendered through the same review surface even when the
 HTTP status is a refusal; unrelated HTTP failures still fail the CLI command.
 
+`POST /grants/mutation-preview-review-text` exposes that review formatter as a route for an already
+created preview response. It accepts `review_response`, `response`, or `preview` as the supplied
+preview object and returns only formatted review text plus explicit non-write flags. It does not
+create previews, write grants, append provenance, activate capabilities, start subscriptions, repair
+recovery findings, or deliver model context. Payload-shaped and mismatch-value fields are rejected
+before formatting.
+
 Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
 `grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
 request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`

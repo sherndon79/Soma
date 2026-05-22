@@ -865,6 +865,86 @@ test("POST /grants/mutation-previews rejects malformed create inputs without wri
   assert.equal(response.body.model_delivery_performed, false);
 });
 
+test("POST /grants/mutation-preview-review-text formats an existing preview without writes", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-preview-review-text",
+    body: {
+      review_response: {
+        ok: true,
+        dry_run: true,
+        mutation_kind: "grant.created",
+        grant: {
+          id: "grant-preview",
+          status: "active",
+          capability: "desktop.inspect.focus",
+          provider: "soma.provider.desktop-broker",
+          scope: "session",
+          constraints: { include_text: false },
+        },
+        event: { event_type: "grant.created" },
+        receipt_preview: { status: "preview" },
+        next_store_summary: { grant_count: 3, changed: true },
+        durable: false,
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+        subscription_activated: false,
+        model_delivery_performed: false,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.dry_run, true);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.match(response.body.text, /Grant mutation preview/);
+  assert.match(response.body.text, /mutation: grant\.created/);
+  assert.match(response.body.text, /durable write: no/);
+  assert.doesNotMatch(response.body.text, /include_text/);
+});
+
+test("POST /grants/mutation-preview-review-text rejects forbidden preview review fields", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-preview-review-text",
+    body: {
+      review_response: {
+        ok: true,
+        event_value: "sensitive event body",
+        grant: {
+          id: "grant-preview",
+          payload_bytes: "not allowed",
+        },
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "grant_mutation_preview_review_forbidden_field");
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.event_value")));
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.grant.payload_bytes")));
+});
+
+test("POST /grants/mutation-preview-review-text rejects missing preview objects", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-preview-review-text",
+    body: {
+      review_response: null,
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "grant_mutation_preview_review_request_invalid");
+});
+
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {
   const response = await invoke({
     method: "POST",

@@ -12,6 +12,7 @@ import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { authorizeGrantUse } from "./grantAuthorization.js";
 import { previewGrantMutation } from "./grantMutationPreview.js";
+import { grantMutationPreviewReviewText } from "./grantMutationPreviewReviewSurface.js";
 import { createGrant, listGrants, revokeGrant, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
@@ -784,6 +785,33 @@ export function createRequestHandler({
           },
         });
         writeJson(res, preview.ok ? 200 : 400, preview);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/grants/mutation-preview-review-text") {
+        const body = await readJson(req);
+        const reviewResponse = body?.review_response ?? body?.response ?? body?.preview;
+        if (!isPlainObject(reviewResponse)) {
+          writeError(res, {
+            statusCode: 400,
+            code: "grant_mutation_preview_review_request_invalid",
+            message: "Grant mutation preview review text requires a review_response object.",
+          });
+          return;
+        }
+
+        const text = grantMutationPreviewReviewText(reviewResponse);
+        writeJson(res, 200, {
+          text,
+          review_only: true,
+          dry_run: true,
+          durable: false,
+          grant_written: false,
+          provenance_appended: false,
+          activation_performed: false,
+          subscription_activated: false,
+          model_delivery_performed: false,
+        });
         return;
       }
 

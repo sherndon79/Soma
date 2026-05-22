@@ -235,6 +235,9 @@ Implemented:
 - durable mutation CLI denial stubs added for reserved `grants create`, `grants revoke`, and
   `grants supersede`, failing locally before HTTP or filesystem mutation and pointing operators to
   dry-run previews and activation policy
+- grant mutation preview review endpoint added at `POST /grants/mutation-preview-review-text`,
+  exposing pure review formatting for supplied preview responses while rejecting payload-shaped
+  fields and preserving non-write/non-activation flags
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -354,24 +357,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review endpoint.
+Add grant mutation preview review CLI wrapper.
 
 Target:
 
 ```text
-grant mutation preview review endpoint
-  -> expose pure review text formatting through an HTTP route
-  -> keep it separate from preview creation and durable commit routes
-  -> reject payload-shaped or mismatch-value fields before formatting
+grant mutation preview review CLI wrapper
+  -> expose the review-only endpoint from the CLI for saved preview JSON
+  -> keep direct preview-create and preview-revoke behavior unchanged
+  -> validate local JSON before any request is sent
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a review-only endpoint over `grantMutationPreviewReviewText`
-- add route tests for accepted preview and forbidden review fields
-- wire no durable writer, grant mutation, or preview generation into the route
-- document the endpoint as formatting-only
+- add a `grants review-preview` CLI command over `/grants/mutation-preview-review-text`
+- accept preview JSON from an explicit flag or stdin without writing files
+- add CLI tests for accepted formatting and local malformed JSON rejection
+- document the command as formatting-only
 
 Constraints:
 

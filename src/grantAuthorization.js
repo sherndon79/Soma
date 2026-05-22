@@ -4,6 +4,7 @@ const SUPPORTED_GRANT_SCHEMA_VERSION = 1;
 
 export function authorizeGrantUse({
   store,
+  grantId = "",
   capability = "",
   provider = "",
   scope = "session",
@@ -12,6 +13,7 @@ export function authorizeGrantUse({
   providerRegistry = null,
 } = {}) {
   const requested = {
+    grant_id: String(grantId ?? "").trim(),
     capability: String(capability ?? "").trim(),
     provider: String(provider ?? "").trim(),
     scope: String(scope ?? "session").trim() || "session",
@@ -77,7 +79,8 @@ export function recoveryFindingsForGrant(recoveryReport = null, grantId = "") {
 }
 
 function grantMatchesRequest(grant, requested) {
-  return grant.status === "active"
+  return (!requested.grant_id || grant.id === requested.grant_id)
+    && grant.status === "active"
     && grant.capability === requested.capability
     && (!requested.provider || grant.provider === requested.provider)
     && (grant.scope || "session") === requested.scope;

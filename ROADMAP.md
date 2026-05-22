@@ -195,6 +195,10 @@ Implemented:
 - Sensorium subscription authorization now consumes the pure grant authorization helper with an
   optional injected recovery report, failing closed on degraded matching grants before subscriber
   invocation while leaving durable writes, public grant mutation, and runtime writes disabled
+- model visual attach dry-run now checks exact grant-id recovery state through the pure grant
+  authorization helper, failing closed on degraded matching visual grants before future provenance
+  preview creation while keeping payload delivery, durable writes, public grant mutation, and
+  runtime writes disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP

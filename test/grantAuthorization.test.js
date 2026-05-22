@@ -160,6 +160,26 @@ test("grant authorization rejects newer grant-store schema versions", () => {
   assert.equal(decision.details.supported_schema_version, 1);
 });
 
+test("grant authorization can target a specific grant id", () => {
+  const replacementGrant = {
+    ...activeGrant,
+    id: "grant-other",
+  };
+  const decision = authorizeGrantUse({
+    store: {
+      schema_version: 1,
+      grants: [replacementGrant, activeGrant],
+    },
+    grantId: "grant-active",
+    capability: "desktop.inspect.focus",
+    provider: "soma.provider.desktop-broker",
+    scope: "session",
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.grant.id, "grant-active");
+});
+
 test("grant authorization checks catalog and provider support when supplied", () => {
   const cleanRecovery = inspectGrantMutationRecovery({
     store: { schema_version: 1, grants: [activeGrant] },

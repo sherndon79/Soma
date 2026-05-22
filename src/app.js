@@ -179,6 +179,29 @@ export function createRequestHandler({
 
       if (req.method === "POST" && url.pathname === "/model-visual/attach-requests/dry-run") {
         const body = await readJson(req);
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: body?.grant_id,
+          capability: body?.capability,
+          scope: "once",
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+        });
+        if (authorization.code === "grant_recovery_degraded") {
+          writeJson(res, 403, {
+            error: "model_visual_attach_grant_recovery_required",
+            message: `Grant ${authorization.details.grant_id} requires recovery inspection before it can authorize model visual attachment.`,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        if (authorization.code === "grant_store_schema_unsupported") {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_attach_grant_store_schema_unsupported",
+            message: "Model visual attachment requires a supported grant-store schema.",
+          });
+          return;
+        }
         const request = validateModelVisualAttachRequest(body, {
           grants: grantStore.grants ?? [],
         });

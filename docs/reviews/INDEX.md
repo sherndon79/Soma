@@ -199,6 +199,9 @@ default.
 - [Sensorium Recovery-Aware Authorization](./2026-05-21_sensorium_recovery_aware_authorization.md)
   - review after wiring the helper into Sensorium subscription authorization with an injected
     recovery report while preserving durable-write and mutation-disabled boundaries
+- [Model Visual Recovery-Aware Dry Run](./2026-05-21_model_visual_recovery_aware_dry_run.md)
+  - review after adding exact grant-id recovery gating to the visual attach dry-run route without
+    enabling payload delivery, provenance append, durable writes, or grant mutation
 
 ## Current Review Triggers
 

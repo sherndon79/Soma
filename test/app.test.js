@@ -389,6 +389,36 @@ test("POST /model-visual/attach-requests/dry-run rejects missing grant and paylo
   assert.ok(response.body.validation_errors.some((entry) => entry.includes("request.image_bytes is forbidden")));
 });
 
+test("POST /model-visual/attach-requests/dry-run fails closed on degraded visual grant recovery", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/attach-requests/dry-run",
+    grantStore: {
+      schema_version: 1,
+      grants: [modelVisualGrantFixture()],
+    },
+    grantRecoveryReport: {
+      ok: false,
+      degraded: true,
+      findings: [
+        {
+          code: "missing_grant_created_provenance",
+          grant_id: "grant-visual-color",
+          capability: "model.context.visual.color.attach",
+          provider: "soma.provider.local-model",
+          scope: "once",
+          authorizing_safe: false,
+        },
+      ],
+    },
+    body: modelVisualAttachRequestFixture(),
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_visual_attach_grant_recovery_required");
+  assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -2447,6 +2477,7 @@ async function invoke({
     },
   },
   grantStore: grants,
+  grantRecoveryReport,
   body,
 } = {}) {
   return invokeHandler(makeHandler({
@@ -2456,6 +2487,7 @@ async function invoke({
     runtimeProfiles: profiles,
     modelClient,
     grantStore: grants,
+    grantRecoveryReport,
   }), {
     method,
     url,

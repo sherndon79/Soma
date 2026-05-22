@@ -725,9 +725,17 @@ export function createRequestHandler({
         const recoveryReport = resolveGrantRecoveryReport(grantRecoveryReport, { grantStore });
         if (recoveryReport?.degraded === true) {
           writeJson(res, 403, {
+            ok: false,
+            dry_run: true,
             error: "grant_mutation_preview_recovery_required",
             message: "Grant mutation preview requires recovery inspection before previewing durable authority changes.",
             findings: summarizeGrantRecoveryInspection(recoveryReport, { grantStore }).findings,
+            durable: false,
+            grant_written: false,
+            provenance_appended: false,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
           });
           return;
         }

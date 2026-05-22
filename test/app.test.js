@@ -697,8 +697,84 @@ test("POST /grants/mutation-previews rejects degraded recovery before preview", 
   });
 
   assert.equal(response.statusCode, 403);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.dry_run, true);
   assert.equal(response.body.error, "grant_mutation_preview_recovery_required");
   assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+});
+
+test("POST /grants/mutation-previews rejects unsupported kinds without writes", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-previews",
+    harness: allowedHarness,
+    grantStore,
+    grantRecoveryReport: { ok: true, degraded: false, grant_count: 2, finding_count: 0, findings: [] },
+    body: {
+      kind: "grant.superseded",
+      mutation_id: "mutation-preview-unsupported",
+      input: {},
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.dry_run, true);
+  assert.equal(response.body.code, "grant_mutation_preview_unsupported_kind");
+  assert.equal(response.body.mutation_kind, "grant.superseded");
+  assert.equal(response.body.receipt_preview.status, "failed");
+  assert.equal(response.body.receipt_preview.grant_store_committed, false);
+  assert.equal(response.body.receipt_preview.provenance_appended, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+});
+
+test("POST /grants/mutation-previews rejects malformed create inputs without writes", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-previews",
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+    grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+    body: {
+      kind: "grant.created",
+      mutation_id: "mutation-preview-invalid",
+      input: {
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: [],
+        approved_by: "user",
+        direct_user_action: true,
+        reason: "Preview a focused desktop inspection grant.",
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.dry_run, true);
+  assert.equal(response.body.code, "invalid_constraints");
+  assert.equal(response.body.mutation_kind, "grant.created");
+  assert.equal(response.body.receipt_preview.status, "failed");
+  assert.equal(response.body.receipt_preview.grant_store_committed, false);
+  assert.equal(response.body.receipt_preview.provenance_appended, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
 });
 
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {

@@ -359,6 +359,8 @@ The preview route validates the requested create/revoke mutation and returns the
 metadata-only grant event and receipt shape with `dry_run: true`, `durable: false`,
 `grant_written: false`, and `provenance_appended: false`. It refuses degraded grant recovery before
 previewing authority changes. It is not the future active `POST /grants` route.
+Unsupported preview kinds and malformed preview inputs return bounded refusal responses while still
+reporting dry-run, non-writing, and non-activation flags.
 
 CLI wrappers are available for the same dry-run route:
 

@@ -219,6 +219,9 @@ Implemented:
   `/grants/mutation-previews`, including local JSON validation and no direct filesystem mutation
 - grant mutation preview review surface added for operator-facing create/revoke preview text,
   keeping CLI human formatting pure, dry-run explicit, non-activating, non-writing, and bounded
+- grant mutation preview route failure coverage added for degraded recovery, unsupported mutation
+  kinds, and malformed create inputs, preserving dry-run, non-writing, and non-activation refusal
+  flags
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -338,24 +341,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Harden grant mutation preview route failure coverage.
+Add grant mutation preview CLI failure coverage.
 
 Target:
 
 ```text
-grant mutation preview route failures
-  -> prove unsupported mutation kinds fail closed through the HTTP route
-  -> prove malformed preview bodies return bounded validation errors
-  -> preserve dry-run/non-writing guarantees on failed previews
+grant mutation preview CLI failures
+  -> prove preview-create and preview-revoke human output renders route refusals clearly
+  -> preserve --json raw refusal output for operator inspection
+  -> keep CLI wrappers pointed only at /grants/mutation-previews
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add focused route tests for unsupported kinds and malformed inputs
-- verify failures keep grant_written, provenance_appended, and activation_performed false
-- document any new operator-facing refusal codes if exposed
-- avoid adding writable mutation commands or enabling runtime writes
+- add focused CLI tests for preview refusal text and JSON refusal output
+- verify refusal text keeps dry-run/non-writing/non-activation boundaries visible
+- avoid adding direct filesystem writes or active mutation command aliases
+- document any CLI-facing refusal behavior that changes
 
 Constraints:
 

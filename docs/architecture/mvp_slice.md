@@ -201,6 +201,9 @@ preview, and next-store summary with `dry_run: true`.
 The route is intentionally distinct from the reserved active mutation routes. It refuses degraded
 recovery state before previewing authority changes and always reports `durable: false`,
 `grant_written: false`, `provenance_appended: false`, and `activation_performed: false`.
+Unsupported mutation kinds and malformed preview inputs fail as dry-run refusals with the same
+non-writing and non-activation flags. Degraded recovery refusals also include those flags before
+returning bounded recovery findings.
 
 Reserved future mutation routes are documented in the grant lifecycle draft, but are not
 implemented in the MVP.

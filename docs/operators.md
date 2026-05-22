@@ -360,6 +360,21 @@ metadata-only grant event and receipt shape with `dry_run: true`, `durable: fals
 `grant_written: false`, and `provenance_appended: false`. It refuses degraded grant recovery before
 previewing authority changes. It is not the future active `POST /grants` route.
 
+CLI wrappers are available for the same dry-run route:
+
+```bash
+npm run cli -- grants preview-create \
+  --capability desktop.inspect.focus \
+  --provider soma.provider.desktop-broker \
+  --reason "Preview focused inspection authority." \
+  --constraints-json '{"include_text":false}'
+
+npm run cli -- grants preview-revoke grant-id \
+  --reason "No longer needed."
+```
+
+These commands call only `/grants/mutation-previews`; they do not write durable grants.
+
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 

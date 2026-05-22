@@ -750,6 +750,136 @@ test("runCli grants recovery returns JSON when requested", async () => {
   assert.equal(parsed.ok, null);
 });
 
+test("runCli grants preview-create calls dry-run preview route", async () => {
+  let capturedBody;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "preview-create",
+    "--capability",
+    "desktop.inspect.focus",
+    "--provider",
+    "desktop-broker",
+    "--reason",
+    "Preview focused inspection authority.",
+    "--constraints-json",
+    "{\"include_text\":false}",
+    "--mutation-id",
+    "mutation-preview-create",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/grants/mutation-previews");
+      capturedBody = body;
+      return {
+        ok: true,
+        dry_run: true,
+        mutation_kind: "grant.created",
+        grant: { id: "grant-preview", capability: "desktop.inspect.focus" },
+        event: { event_type: "grant.created" },
+        receipt_preview: {
+          mutation_id: "mutation-preview-create",
+          mutation_kind: "grant.created",
+          grant_id: "grant-preview",
+          event_type: "grant.created",
+          status: "preview",
+        },
+        next_store_summary: { grant_count: 1, changed: true },
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.equal(capturedBody.kind, "grant.created");
+  assert.equal(capturedBody.mutation_id, "mutation-preview-create");
+  assert.equal(capturedBody.input.provider, "desktop-broker");
+  assert.deepEqual(capturedBody.input.constraints, { include_text: false });
+  assert.equal(capturedBody.input.direct_user_action, true);
+  assert.match(output, /Grant mutation preview/);
+  assert.match(output, /dry run: yes/);
+  assert.match(output, /grant written: no/);
+  assert.match(output, /provenance appended: no/);
+});
+
+test("runCli grants preview-revoke calls dry-run preview route", async () => {
+  let capturedBody;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "preview-revoke",
+    "grant-active",
+    "--reason",
+    "Preview revocation.",
+    "--mutation-id",
+    "mutation-preview-revoke",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/grants/mutation-previews");
+      capturedBody = body;
+      return {
+        ok: true,
+        dry_run: true,
+        mutation_kind: "grant.revoked",
+        grant: { id: "grant-active", status: "revoked" },
+        event: { event_type: "grant.revoked" },
+        receipt_preview: {
+          mutation_id: "mutation-preview-revoke",
+          mutation_kind: "grant.revoked",
+          grant_id: "grant-active",
+          event_type: "grant.revoked",
+          status: "preview",
+        },
+        next_store_summary: { grant_count: 1, changed: true },
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(capturedBody.kind, "grant.revoked");
+  assert.equal(capturedBody.input.id, "grant-active");
+  assert.equal(capturedBody.input.actor, "user");
+  assert.equal(capturedBody.input.reason, "Preview revocation.");
+  assert.match(writes.join(""), /mutation: grant\.revoked/);
+});
+
+test("runCli grants preview-create validates constraints JSON before request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "grants",
+      "preview-create",
+      "--capability",
+      "desktop.inspect.focus",
+      "--provider",
+      "desktop-broker",
+      "--reason",
+      "Preview focused inspection authority.",
+      "--constraints-json",
+      "[]",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    /grants preview-create --constraints-json must decode to an object/,
+  );
+});
+
 test("runCli sensorium proposal-template requests non-activating review context", async () => {
   let captured;
   const writes = [];

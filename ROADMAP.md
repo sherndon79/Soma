@@ -215,6 +215,8 @@ Implemented:
 - pure durable grant mutation preview helper and non-mutating `POST /grants/mutation-previews`
   route added for create/revoke metadata previews, refusing degraded recovery and returning dry-run
   receipt/event shapes without grant writes or provenance append
+- CLI `grants preview-create` and `grants preview-revoke` added as dry-run wrappers over
+  `/grants/mutation-previews`, including local JSON validation and no direct filesystem mutation
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -334,24 +336,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a CLI wrapper for durable grant mutation previews.
+Add grant mutation preview operator review text.
 
 Target:
 
 ```text
-durable grant mutation preview CLI
-  -> expose POST /grants/mutation-previews through a clearly dry-run CLI command
-  -> print receipt/event preview without implying mutation success
-  -> preserve HTTP route as the authority source for validation
+grant mutation preview review text
+  -> format create/revoke preview payloads into concise operator-facing review text
+  -> emphasize dry-run status, non-activation, and no durable writes
+  -> keep review formatting separate from mutation execution
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add a `grants preview-create` and/or `grants preview-revoke` CLI wrapper
-- support `--json` for exact route payloads
-- add tests proving CLI wrappers call only `/grants/mutation-previews`
-- document preview commands as dry-run only
+- add a pure formatter for grant mutation preview responses
+- wire CLI human output to the formatter if useful
+- add tests for create, revoke, and failure formatting
+- avoid exposing constraints beyond bounded summary fields
 
 Constraints:
 

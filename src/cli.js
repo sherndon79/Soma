@@ -142,6 +142,30 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
       writeOutput(stdout, response, jsonOutput, grantRecoverySummary(response));
       return 0;
     }
+    if (subcommand === "preview-create") {
+      const response = await request(
+        baseUrl,
+        "POST",
+        "/grants/mutation-previews",
+        grantPreviewCreateRequestFromFlags(flags),
+      );
+      writeOutput(stdout, response, jsonOutput, grantMutationPreviewSummary(response));
+      return 0;
+    }
+    if (subcommand === "preview-revoke") {
+      const grantId = rest[0];
+      if (!grantId) {
+        throw usageError("grants preview-revoke requires a grant id.");
+      }
+      const response = await request(
+        baseUrl,
+        "POST",
+        "/grants/mutation-previews",
+        grantPreviewRevokeRequestFromFlags(grantId, flags),
+      );
+      writeOutput(stdout, response, jsonOutput, grantMutationPreviewSummary(response));
+      return 0;
+    }
     if (subcommand === "list" || !subcommand) {
       const query = new URLSearchParams();
       if (flags.status) {
@@ -505,6 +529,51 @@ function modelVisualAttachDryRunRequestFromFlags(flags) {
     throw usageError("model-visual attach-dry-run --request-json must decode to an object.");
   }
   return requestBody;
+}
+
+function grantPreviewCreateRequestFromFlags(flags) {
+  return {
+    kind: "grant.created",
+    mutation_id: flags["mutation-id"],
+    input: stripUndefined({
+      capability: requiredFlag(flags.capability, "--capability", "grants preview-create"),
+      provider: requiredFlag(flags.provider, "--provider", "grants preview-create"),
+      scope: flags.scope ?? "session",
+      constraints: jsonObjectFlag(flags["constraints-json"], "--constraints-json", "grants preview-create") ?? {},
+      approved_by: flags.by ?? "user",
+      approval_provenance_id: flags["approval-provenance-id"],
+      direct_user_action: flags["approval-provenance-id"] ? undefined : true,
+      reason: requiredFlag(flags.reason, "--reason", "grants preview-create"),
+    }),
+  };
+}
+
+function grantPreviewRevokeRequestFromFlags(grantId, flags) {
+  return {
+    kind: "grant.revoked",
+    mutation_id: flags["mutation-id"],
+    input: {
+      id: grantId,
+      actor: flags.by ?? "user",
+      reason: requiredFlag(flags.reason, "--reason", "grants preview-revoke"),
+    },
+  };
+}
+
+function jsonObjectFlag(value, flagName, commandName) {
+  if (value === undefined) {
+    return undefined;
+  }
+  let decoded;
+  try {
+    decoded = JSON.parse(String(value));
+  } catch {
+    throw usageError(`${commandName} ${flagName} must be valid JSON.`);
+  }
+  if (!isPlainObject(decoded)) {
+    throw usageError(`${commandName} ${flagName} must decode to an object.`);
+  }
+  return decoded;
 }
 
 function requiredFlag(value, flagName, commandName) {
@@ -906,6 +975,38 @@ function grantRecoverySummary(response) {
   return lines.join("\n");
 }
 
+function grantMutationPreviewSummary(response) {
+  const receipt = response.receipt_preview ?? {};
+  const event = response.event ?? {};
+  const grant = response.grant ?? {};
+  const lines = [
+    "Grant mutation preview",
+    `  ok: ${booleanText(response.ok)}`,
+    `  dry run: ${booleanText(response.dry_run)}`,
+    `  mutation: ${response.mutation_kind ?? receipt.mutation_kind ?? "unknown"}`,
+    `  grant: ${grant.id ?? receipt.grant_id ?? "unknown"}`,
+    `  event: ${event.event_type ?? receipt.event_type ?? "none"}`,
+    `  receipt status: ${receipt.status ?? "unknown"}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  provenance appended: ${booleanText(response.provenance_appended)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ];
+
+  if (response.ok === false) {
+    lines.push(`  error: ${response.code ?? receipt.error_code ?? "unknown"}`);
+    if (response.message) {
+      lines.push(`  message: ${response.message}`);
+    }
+  }
+
+  if (response.next_store_summary) {
+    lines.push(`  next grant count: ${response.next_store_summary.grant_count ?? "unknown"}`);
+    lines.push(`  changed: ${booleanText(response.next_store_summary.changed)}`);
+  }
+
+  return lines.join("\n");
+}
+
 function modelVisualAttachDryRunSummary(response) {
   const request = response.request ?? {};
   const futurePreview = response.future_provenance_preview ?? {};
@@ -1217,6 +1318,8 @@ Usage:
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
   soma grants recovery [--json]
+  soma grants preview-create --capability key --provider id --reason text [--scope session] [--constraints-json json] [--approval-provenance-id id] [--mutation-id id] [--json]
+  soma grants preview-revoke grant-id --reason text [--by user] [--mutation-id id] [--json]
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]

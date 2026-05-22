@@ -218,6 +218,8 @@ default.
     mutation commands are implemented
 - [Grant Mutation Preview Route](./2026-05-21_grant_mutation_preview_route.md)
   - review after adding a non-mutating create/revoke grant mutation preview helper and HTTP route
+- [Grant Mutation Preview CLI](./2026-05-21_grant_mutation_preview_cli.md)
+  - review after adding dry-run CLI wrappers over the grant mutation preview route
 
 ## Current Review Triggers
 

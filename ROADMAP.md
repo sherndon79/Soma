@@ -244,6 +244,9 @@ Implemented:
 - grant mutation preview review fixture coverage added under
   `docs/fixtures/grant-mutation-preview-review-cases.json`, documenting the forbidden review key
   set and proving nested payload/value fields are rejected by formatter and route surfaces
+- grant mutation preview review CLI integration smoke added, running `grants review-preview --stdin`
+  through a real local HTTP handler with the accepted fixture while asserting review-only
+  non-write/non-activation flags and an unchanged grant store
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -363,23 +366,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review CLI integration smoke.
+Add grant mutation preview review CLI refusal integration smoke.
 
 Target:
 
 ```text
-grant mutation preview review CLI integration smoke
-  -> exercise `grants review-preview` against a real request handler
-  -> reuse the accepted fixture through the route and CLI together
-  -> keep the command formatting-only and non-mutating
+grant mutation preview review CLI refusal integration smoke
+  -> exercise forbidden fixture input through `grants review-preview` and a real handler
+  -> preserve route refusal code and validation paths through CLI HTTP errors
+  -> prove refused review formatting does not mutate grants
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a CLI integration test that starts `createRequestHandler`
-- pipe fixture preview JSON through `grants review-preview --stdin`
-- assert formatted output and non-write flags without mocking `request`
+- add a CLI integration test using one rejected fixture case
+- assert the CLI surfaces `grant_mutation_preview_review_forbidden_field`
+- assert validation path detail is preserved enough for operator review
 - keep preview generation, durable commit routes, and runtime writes out of scope
 
 Constraints:

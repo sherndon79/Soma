@@ -240,6 +240,8 @@ default.
   - review after adding a CLI wrapper for grant mutation preview review formatting
 - [Grant Mutation Preview Review Fixtures](./2026-05-22_grant_mutation_preview_review_fixtures.md)
   - review after adding fixture coverage for grant mutation preview review forbidden fields
+- [Grant Mutation Preview Review CLI Integration](./2026-05-22_grant_mutation_preview_review_cli_integration.md)
+  - review after adding a real-handler smoke test for the grant preview review CLI
 
 ## Current Review Triggers
 

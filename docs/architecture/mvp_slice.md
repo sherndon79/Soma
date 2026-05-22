@@ -184,8 +184,13 @@ absence as a clean recovery state.
 
 Recovery findings are bounded operator metadata: code, grant id, status, capability, provider,
 scope, authorizing safety, and small mismatch descriptors such as event type or field name. The
-route does not expose mismatch values, grant reason text, payloads, activate capabilities, or mutate
-the grant store.
+route may also report durable provenance read failure class. It does not expose mismatch values,
+grant reason text, payloads, activate capabilities, or mutate the grant store.
+
+The server startup path composes the read-only grant store with append-only grant mutation
+provenance inspection. Missing provenance for active durable grants produces degraded recovery
+findings; unreadable provenance produces non-authorizing findings instead of silently authorizing
+durable grants.
 
 Reserved future mutation routes are documented in the grant lifecycle draft, but are not
 implemented in the MVP.

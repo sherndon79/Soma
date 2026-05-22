@@ -205,6 +205,9 @@ Implemented:
 - read-only `GET /grants/recovery` added for operator-facing grant mutation recovery inspection,
   reporting absent inspection as `ok: null` and exposing bounded degraded findings without mismatch
   values, payloads, grant writes, or activation
+- server startup now composes the read-only grant store with append-only grant mutation provenance
+  through `loadGrantAuthority`, passing a recovery report into policy gates and returning
+  non-authorizing findings when provenance is missing or unreadable
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -324,24 +327,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Extend recovery-aware authorization coverage to remaining grant-dependent runtime paths.
+Add an operator CLI wrapper for grant recovery inspection.
 
 Target:
 
 ```text
-runtime grant authorization coverage
-  -> reuse the recovery-aware helper at additional grant authorization boundaries
-  -> preserve existing fail-closed behavior when no durable provenance report is available
-  -> keep durable provenance/recovery input explicit before durable grants can authorize
+grant recovery operator inspection
+  -> expose GET /grants/recovery through npm run cli -- grants recovery
+  -> summarize absent inspection, clean inspection, and degraded findings without mismatch values
+  -> keep the HTTP route as the authority source for the CLI wrapper
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- identify the next grant-dependent route or validator that should consume the helper
-- preserve existing route-specific denial codes where they are already part of the contract
-- add route-level tests for degraded matching grants before downstream invocation
-- preserve current read-only grant inspection and pure in-memory mutation helpers
+- add CLI parsing and output formatting for `grants recovery`
+- add JSON and human-readable CLI tests
+- document the command under operator grant inspection
+- preserve the read-only inspection posture
 
 Constraints:
 

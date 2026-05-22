@@ -332,8 +332,13 @@ curl http://127.0.0.1:8765/grants/recovery
 When no recovery inspection is available, the route reports
 `recovery_inspection_available: false` and `ok: null` rather than declaring the authority clean.
 When degraded findings exist, the route returns bounded finding metadata such as grant id,
-capability, provider, scope, event type, and mismatched field name; it does not copy mismatch
-values or grant reason text into the response.
+capability, provider, scope, event type, mismatched field name, or durable provenance read failure
+class; it does not copy mismatch values or grant reason text into the response.
+
+At server startup, Soma loads `config/grants.json` together with the append-only grant mutation
+provenance log and supplies the resulting recovery report to policy gates and this inspection route.
+The provenance log path defaults to `config/grant-mutations.ndjson` and can be overridden with
+`SOMA_GRANT_MUTATION_PROVENANCE_PATH`.
 
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.

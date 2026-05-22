@@ -1625,6 +1625,8 @@ function publicGrantRecoveryFinding(finding = {}) {
     ...(finding.event_type ? { event_type: String(finding.event_type) } : {}),
     ...(finding.expected_event_type ? { expected_event_type: String(finding.expected_event_type) } : {}),
     ...(finding.field ? { field: String(finding.field) } : {}),
+    ...(finding.provenance_stage ? { provenance_stage: String(finding.provenance_stage) } : {}),
+    ...(finding.provenance_error_code ? { provenance_error_code: String(finding.provenance_error_code) } : {}),
   };
 }
 

@@ -21,13 +21,18 @@ now exist under `src/grantStoreFileAdapters.js`. A pure recovery inspector exist
 provenance appends, and recovery inspection in temporary directories. They are not connected to app
 routes, CLI mutation, `config/grants.json`, provider invocation, or runtime write enablement.
 
+The server startup path now uses `src/grantAuthority.js` to load the read-only grant store together
+with append-only grant mutation provenance and supplies the resulting recovery report to runtime
+policy gates. The default provenance path is `config/grant-mutations.ndjson`; operators may override
+it with `SOMA_GRANT_MUTATION_PROVENANCE_PATH`. This is still read-only. It does not enable durable
+mutation, but it prevents durable grants from being treated as authorizing without matching recovery
+inspection.
+
 The durable write path is still blocked until Soma has:
 
 - schema-version checks before write
 - concurrent write exclusion
 - recovery behavior for partial failure
-- policy-gateway checks that fail closed when recovery inspection reports degraded grants
-- operator-facing recovery inspection
 - route and CLI tests proving failed writes do not create misleading authority
 
 ## Write Unit

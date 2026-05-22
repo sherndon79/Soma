@@ -208,6 +208,9 @@ default.
 - [Grant Recovery Inspection Route](./2026-05-21_grant_recovery_inspection_route.md)
   - review after adding a read-only operator route for bounded grant recovery inspection without
     enabling durable mutation or repair
+- [Grant Authority Startup Loader](./2026-05-21_grant_authority_startup_loader.md)
+  - review after server startup began loading grant mutation provenance and passing recovery
+    inspection into policy gates without enabling mutation
 
 ## Current Review Triggers
 

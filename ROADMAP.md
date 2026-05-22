@@ -192,6 +192,9 @@ Implemented:
   active grants when recovery inspection reports non-authorizing findings, newer grant-store schema
   versions, or catalog/provider mismatches while leaving app routes, CLI mutation, durable writes,
   runtime writes, and activation disabled
+- Sensorium subscription authorization now consumes the pure grant authorization helper with an
+  optional injected recovery report, failing closed on degraded matching grants before subscriber
+  invocation while leaving durable writes, public grant mutation, and runtime writes disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -311,13 +314,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Wire recovery-aware grant authorization into a non-mutating runtime authorization path.
+Extend recovery-aware authorization coverage to remaining grant-dependent runtime paths.
 
 Target:
 
 ```text
-runtime grant authorization seam
-  -> use the pure recovery-aware helper at selected grant authorization boundaries
+runtime grant authorization coverage
+  -> reuse the recovery-aware helper at additional grant authorization boundaries
   -> preserve existing fail-closed behavior when no durable provenance report is available
   -> keep durable provenance/recovery input explicit before durable grants can authorize
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
@@ -325,9 +328,9 @@ runtime grant authorization seam
 
 Expected work:
 
-- add an injected/non-mutating recovery report seam for routes that currently inspect grants
-- update one grant-dependent authorization path to consume the helper
-- prove current no-grant fail-closed behavior remains unchanged
+- identify the next grant-dependent route or validator that should consume the helper
+- preserve existing route-specific denial codes where they are already part of the contract
+- add route-level tests for degraded matching grants before downstream invocation
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 
 Constraints:

@@ -10,6 +10,7 @@ import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.j
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
+import { authorizeGrantUse } from "./grantAuthorization.js";
 import { createGrant, listGrants, revokeGrant, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
@@ -51,6 +52,7 @@ export function createApp({
   sessionMemory,
   capabilityProposals,
   grantStore,
+  grantRecoveryReport,
   provenanceLog,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
@@ -66,6 +68,7 @@ export function createApp({
     sessionMemory,
     capabilityProposals,
     grantStore,
+    grantRecoveryReport,
     provenanceLog,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
@@ -83,6 +86,7 @@ export function createRequestHandler({
   sessionMemory = new SessionMemory(),
   capabilityProposals = new CapabilityProposalStore(),
   grantStore = { schema_version: 1, grants: [] },
+  grantRecoveryReport = null,
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
   sensoriumSubscriber = null,
@@ -518,18 +522,21 @@ export function createRequestHandler({
             return;
           }
 
-          // Grant lookup. A subscription is authorized only when an
-          // ACTIVE grant exists for the requested capability. With the
-          // default file-backed grant store (no Sensorium grants), this
-          // is the fail-closed point.
-          const grant = (grantStore.grants ?? []).find(
-            (g) => (
-              g.status === "active" &&
-              g.capability === capability &&
-              (g.scope ?? "session") === scope
-            ),
-          );
-          if (!grant) {
+          const authorization = authorizeGrantUse({
+            store: grantStore,
+            capability,
+            scope,
+            recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          });
+          if (!authorization.allowed) {
+            if (authorization.code === "grant_recovery_degraded") {
+              writeJson(res, 403, {
+                error: "sensorium_subscription_grant_recovery_required",
+                message: `Grant ${authorization.details.grant_id} requires recovery inspection before it can authorize ${capability}.`,
+                findings: authorization.findings,
+              });
+              return;
+            }
             writeError(res, {
               statusCode: 403,
               code: "sensorium_subscription_no_grant",
@@ -537,6 +544,7 @@ export function createRequestHandler({
             });
             return;
           }
+          const grant = authorization.grant;
 
           const provider = findProvider(providerRegistry, grant.provider);
           if (!provider || !providerSupportsCapability(provider, capability)) {
@@ -1535,6 +1543,13 @@ function providerSupportsCapability(provider = {}, capability = "") {
     }
     return entry?.key === capability;
   });
+}
+
+function resolveGrantRecoveryReport(grantRecoveryReport, context) {
+  if (typeof grantRecoveryReport === "function") {
+    return grantRecoveryReport(context);
+  }
+  return grantRecoveryReport;
 }
 
 function providerHostMatchesTopic(provider = {}, topic = "") {

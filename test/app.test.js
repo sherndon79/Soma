@@ -3185,6 +3185,43 @@ test("POST /sensorium/subscriptions returns 403 when no active grant exists", as
   assert.equal(subscriber.calls.length, 0);
 });
 
+test("POST /sensorium/subscriptions fails closed when grant recovery is degraded", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    grantRecoveryReport: {
+      ok: false,
+      degraded: true,
+      findings: [
+        {
+          code: "missing_grant_created_provenance",
+          grant_id: "grant-sensorium-color-test",
+          capability: "perception.sensorium.color.subscribe",
+          provider: "soma.provider.sensorium.jetsorano",
+          scope: "session",
+          authorizing_safe: false,
+        },
+      ],
+    },
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_grant_recovery_required");
+  assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
+  assert.equal(subscriber.calls.length, 0);
+});
+
 test("POST /sensorium/subscriptions returns 400 when capability is missing", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -3496,6 +3533,7 @@ function makeHandler({
     },
   },
   grantStore: grants,
+  grantRecoveryReport,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
 } = {}) {
@@ -3507,6 +3545,7 @@ function makeHandler({
     runtimeProfiles: profiles,
     modelClient,
     grantStore: grants,
+    grantRecoveryReport,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
     logger: { info() {} },

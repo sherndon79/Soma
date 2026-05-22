@@ -196,6 +196,9 @@ default.
 - [Grant Authorization Recovery Gate](./2026-05-21_grant_authorization_recovery_gate.md)
   - review after adding a pure policy-gateway helper that denies degraded matching grants without
     wiring public mutation, durable writes, runtime writes, or route activation
+- [Sensorium Recovery-Aware Authorization](./2026-05-21_sensorium_recovery_aware_authorization.md)
+  - review after wiring the helper into Sensorium subscription authorization with an injected
+    recovery report while preserving durable-write and mutation-disabled boundaries
 
 ## Current Review Triggers
 

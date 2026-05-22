@@ -560,6 +560,14 @@ export function createRequestHandler({
               });
               return;
             }
+            if (authorization.code === "grant_store_schema_unsupported") {
+              writeError(res, {
+                statusCode: 403,
+                code: "sensorium_subscription_grant_store_schema_unsupported",
+                message: "Sensorium subscription requires a supported grant-store schema.",
+              });
+              return;
+            }
             writeError(res, {
               statusCode: 403,
               code: "sensorium_subscription_no_grant",

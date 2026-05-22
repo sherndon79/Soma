@@ -419,6 +419,21 @@ test("POST /model-visual/attach-requests/dry-run fails closed on degraded visual
   assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
 });
 
+test("POST /model-visual/attach-requests/dry-run fails closed on unsupported grant-store schema", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/model-visual/attach-requests/dry-run",
+    grantStore: {
+      schema_version: 2,
+      grants: [modelVisualGrantFixture()],
+    },
+    body: modelVisualAttachRequestFixture(),
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_visual_attach_grant_store_schema_unsupported");
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -3251,6 +3266,31 @@ test("POST /sensorium/subscriptions fails closed when grant recovery is degraded
   assert.equal(response.statusCode, 403);
   assert.equal(response.body.error, "sensorium_subscription_grant_recovery_required");
   assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
+  assert.equal(subscriber.calls.length, 0);
+});
+
+test("POST /sensorium/subscriptions fails closed on unsupported grant-store schema", async () => {
+  const subscriber = makeFakeSensoriumSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 2,
+      grants: SENSORIUM_TEST_GRANT_STORE.grants,
+    },
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      topic: "sensor/jetsorano/realsense/color",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "sensorium_subscription_grant_store_schema_unsupported");
   assert.equal(subscriber.calls.length, 0);
 });
 

@@ -232,6 +232,8 @@ default.
   - review after exposing requested/default runtime write posture in read-only status surfaces
 - [Durable Mutation Route Denial Stubs](./2026-05-22_durable_mutation_route_denial_stubs.md)
   - review after reserving durable grant mutation route names with explicit disabled refusals
+- [Durable Mutation CLI Denial Stubs](./2026-05-22_durable_mutation_cli_denial_stubs.md)
+  - review after reserving durable grant mutation CLI names with local disabled errors
 
 ## Current Review Triggers
 

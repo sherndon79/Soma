@@ -384,8 +384,10 @@ when the raw preview response is needed for inspection or tests.
 Dry-run preview refusals from the route are rendered through the same review surface even when the
 HTTP status is a refusal; unrelated HTTP failures still fail the CLI command.
 
-Future grant mutation command names are reserved in the design docs, but commands such as
-`grants create`, `grants revoke`, and `grants supersede` are not implemented.
+Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
+`grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
+request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`
+for dry-run review.
 
 The reserved HTTP commit routes `POST /grants` and `POST /grants/:id/revoke` return
 `durable_grant_mutation_not_enabled`. The refusal includes runtime write posture and explicit

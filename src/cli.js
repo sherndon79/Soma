@@ -141,6 +141,9 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "grants") {
+    if (subcommand === "create" || subcommand === "revoke" || subcommand === "supersede") {
+      throw durableGrantMutationCliDisabledError(subcommand);
+    }
     if (subcommand === "recovery") {
       const response = await request(baseUrl, "GET", "/grants/recovery");
       writeOutput(stdout, response, jsonOutput, grantRecoverySummary(response));
@@ -1294,6 +1297,17 @@ function usageError(message) {
   return error;
 }
 
+function durableGrantMutationCliDisabledError(subcommand) {
+  const previewCommand = subcommand === "revoke" ? "grants preview-revoke" : "grants preview-create";
+  const error = usageError(
+    `grants ${subcommand} is reserved for future durable grant mutation and is not enabled. `
+      + `Use ${previewCommand} for dry-run review. `
+      + "Activation policy: docs/concepts/drafts/durable_grant_mutation_activation_policy.md",
+  );
+  error.code = "durable_grant_mutation_cli_not_enabled";
+  return error;
+}
+
 function helpText() {
   return `Soma CLI
 
@@ -1307,6 +1321,9 @@ Usage:
   soma grants recovery [--json]
   soma grants preview-create --capability key --provider id --reason text [--scope session] [--constraints-json json] [--approval-provenance-id id] [--mutation-id id] [--json]
   soma grants preview-revoke grant-id --reason text [--by user] [--mutation-id id] [--json]
+  # reserved durable mutation commands fail locally until activation policy is satisfied:
+  # soma grants create
+  # soma grants revoke
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]

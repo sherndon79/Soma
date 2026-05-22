@@ -232,6 +232,9 @@ Implemented:
 - durable mutation route denial stubs added for reserved `POST /grants` and
   `POST /grants/:id/revoke`, returning explicit not-enabled refusals with runtime write posture and
   no durable writes, provenance append, repair, activation, subscription stop, or model delivery
+- durable mutation CLI denial stubs added for reserved `grants create`, `grants revoke`, and
+  `grants supersede`, failing locally before HTTP or filesystem mutation and pointing operators to
+  dry-run previews and activation policy
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -351,24 +354,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add durable mutation CLI denial stubs.
+Add grant mutation preview review endpoint.
 
 Target:
 
 ```text
-durable mutation CLI denial stubs
-  -> reserve CLI mutation command names with explicit local not-enabled errors
-  -> point operators to preview commands and activation policy
-  -> prove commands do not call HTTP mutation routes or filesystem writers
+grant mutation preview review endpoint
+  -> expose pure review text formatting through an HTTP route
+  -> keep it separate from preview creation and durable commit routes
+  -> reject payload-shaped or mismatch-value fields before formatting
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add `grants create` and `grants revoke` usage/error stubs if useful
-- return stable CLI usage/error codes before any request is sent
-- add focused CLI tests for no request invocation
-- document the CLI refusal contract without implementing mutation
+- add a review-only endpoint over `grantMutationPreviewReviewText`
+- add route tests for accepted preview and forbidden review fields
+- wire no durable writer, grant mutation, or preview generation into the route
+- document the endpoint as formatting-only
 
 Constraints:
 

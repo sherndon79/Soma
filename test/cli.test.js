@@ -985,6 +985,56 @@ test("runCli grants preview-create validates constraints JSON before request", a
   );
 });
 
+test("runCli grants create fails locally before any request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "grants",
+      "create",
+      "--capability",
+      "desktop.inspect.focus",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, "durable_grant_mutation_cli_not_enabled");
+      assert.equal(error.statusCode, 2);
+      assert.match(error.message, /grants create is reserved/);
+      assert.match(error.message, /grants preview-create/);
+      assert.match(error.message, /durable_grant_mutation_activation_policy\.md/);
+      return true;
+    },
+  );
+});
+
+test("runCli grants revoke fails locally before any request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "grants",
+      "revoke",
+      "grant-1",
+      "--reason",
+      "No longer needed.",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, "durable_grant_mutation_cli_not_enabled");
+      assert.equal(error.statusCode, 2);
+      assert.match(error.message, /grants revoke is reserved/);
+      assert.match(error.message, /grants preview-revoke/);
+      return true;
+    },
+  );
+});
+
 test("runCli still throws non-preview HTTP failures", async () => {
   const { baseUrl, close } = await createJsonServer((_req, res) => {
     res.writeHead(500, { "content-type": "application/json" });

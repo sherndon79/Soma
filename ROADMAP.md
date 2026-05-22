@@ -188,6 +188,10 @@ Implemented:
 - internal durable grant mutation composition tests added for create, revoke, and degraded
   grant-store-committed/provenance-missing recovery, using temporary grant/provenance files only and
   no public route or CLI mutation wiring
+- pure grant authorization helper added for policy-gateway recovery gating, rejecting matching
+  active grants when recovery inspection reports non-authorizing findings, newer grant-store schema
+  versions, or catalog/provider mismatches while leaving app routes, CLI mutation, durable writes,
+  runtime writes, and activation disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -307,23 +311,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add pure policy-gateway recovery gating for grant authorization.
+Wire recovery-aware grant authorization into a non-mutating runtime authorization path.
 
 Target:
 
 ```text
-grant authorization recovery gating
-  -> add pure helper that combines grant status checks with recovery inspection findings
-  -> refuse authorization when mutation provenance is missing or mismatched
-  -> keep tests pure or temp-directory only and do not wire public mutation yet
+runtime grant authorization seam
+  -> use the pure recovery-aware helper at selected grant authorization boundaries
+  -> preserve existing fail-closed behavior when no durable provenance report is available
+  -> keep durable provenance/recovery input explicit before durable grants can authorize
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add pure policy-gateway helper for recovery-aware grant authorization
-- add tests proving degraded grants cannot authorize capability use
-- do not point the app or CLI at the writer yet
+- add an injected/non-mutating recovery report seam for routes that currently inspect grants
+- update one grant-dependent authorization path to consume the helper
+- prove current no-grant fail-closed behavior remains unchanged
 - preserve current read-only grant inspection and pure in-memory mutation helpers
 
 Constraints:

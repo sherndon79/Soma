@@ -193,6 +193,9 @@ default.
 - [Grant Mutation Durable Composition](./2026-05-20_grant_mutation_durable_composition.md)
   - review after proving internal durable create/revoke composition with store writes,
     append-only provenance, and recovery inspection in temporary directories
+- [Grant Authorization Recovery Gate](./2026-05-21_grant_authorization_recovery_gate.md)
+  - review after adding a pure policy-gateway helper that denies degraded matching grants without
+    wiring public mutation, durable writes, runtime writes, or route activation
 
 ## Current Review Triggers
 

@@ -406,6 +406,11 @@ npm run cli -- grants preview-create \
 `grants review-preview` validates the supplied JSON locally before sending the request. It does not
 create a preview or mutate grants; it only asks Soma to format an existing preview object.
 
+The review boundary fixture at `docs/fixtures/grant-mutation-preview-review-cases.json` documents the
+current forbidden review keys. Payloads, provider output, raw payloads, screenshots, image/frame/audio
+bytes, text content, and raw grant/event values must remain outside the review surface, including when
+they are nested under otherwise valid preview objects.
+
 Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
 `grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
 request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`

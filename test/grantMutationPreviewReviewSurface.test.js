@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { grantMutationPreviewReviewText } from "../src/grantMutationPreviewReviewSurface.js";
+
+const REVIEW_CASES_URL = new URL(
+  "../docs/fixtures/grant-mutation-preview-review-cases.json",
+  import.meta.url,
+);
 
 test("grantMutationPreviewReviewText formats accepted create preview as non-writing review", () => {
   const text = grantMutationPreviewReviewText({
@@ -94,4 +100,38 @@ test("grantMutationPreviewReviewText rejects payload and mismatch value fields",
     }),
     /response.event_value, response.payload_bytes/,
   );
+});
+
+test("grantMutationPreviewReviewText accepts the fixture summary-only case", async () => {
+  const fixture = JSON.parse(await readFile(REVIEW_CASES_URL, "utf8"));
+  const text = grantMutationPreviewReviewText(fixture.accepted_case.preview);
+
+  assert.equal(fixture.status, "active_review_boundary_fixture");
+  assert.match(text, /Grant mutation preview/);
+  assert.match(text, /result: accepted for preview/);
+  assert.match(text, /mutation: grant\.created/);
+  assert.match(text, /durable write: no/);
+  for (const value of fixture.accepted_case.must_not_render) {
+    assert.doesNotMatch(text, new RegExp(value));
+  }
+});
+
+test("grantMutationPreviewReviewText rejects every forbidden fixture key when nested", async () => {
+  const fixture = JSON.parse(await readFile(REVIEW_CASES_URL, "utf8"));
+  assert.deepEqual(
+    fixture.rejected_cases.map((entry) => entry.forbidden_key).sort(),
+    [...fixture.forbidden_review_keys].sort(),
+  );
+
+  for (const rejectedCase of fixture.rejected_cases) {
+    assert.throws(
+      () => grantMutationPreviewReviewText(rejectedCase.preview),
+      (error) => {
+        assert.equal(error.code, "grant_mutation_preview_review_forbidden_field");
+        assert.equal(error.statusCode, 400);
+        assert.ok(error.validation_errors.includes(rejectedCase.expected_path), rejectedCase.name);
+        return true;
+      },
+    );
+  }
 });

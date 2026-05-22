@@ -13,6 +13,10 @@ const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
   import.meta.url,
 );
+const grantMutationPreviewReviewCasesPath = new URL(
+  "../docs/fixtures/grant-mutation-preview-review-cases.json",
+  import.meta.url,
+);
 
 const allowedHarness = {
   capabilities: [
@@ -866,32 +870,12 @@ test("POST /grants/mutation-previews rejects malformed create inputs without wri
 });
 
 test("POST /grants/mutation-preview-review-text formats an existing preview without writes", async () => {
+  const fixture = JSON.parse(await readFile(grantMutationPreviewReviewCasesPath, "utf8"));
   const response = await invoke({
     method: "POST",
     url: "/grants/mutation-preview-review-text",
     body: {
-      review_response: {
-        ok: true,
-        dry_run: true,
-        mutation_kind: "grant.created",
-        grant: {
-          id: "grant-preview",
-          status: "active",
-          capability: "desktop.inspect.focus",
-          provider: "soma.provider.desktop-broker",
-          scope: "session",
-          constraints: { include_text: false },
-        },
-        event: { event_type: "grant.created" },
-        receipt_preview: { status: "preview" },
-        next_store_summary: { grant_count: 3, changed: true },
-        durable: false,
-        grant_written: false,
-        provenance_appended: false,
-        activation_performed: false,
-        subscription_activated: false,
-        model_delivery_performed: false,
-      },
+      review_response: fixture.accepted_case.preview,
     },
   });
 
@@ -907,29 +891,25 @@ test("POST /grants/mutation-preview-review-text formats an existing preview with
   assert.match(response.body.text, /Grant mutation preview/);
   assert.match(response.body.text, /mutation: grant\.created/);
   assert.match(response.body.text, /durable write: no/);
-  assert.doesNotMatch(response.body.text, /include_text/);
+  for (const value of fixture.accepted_case.must_not_render) {
+    assert.doesNotMatch(response.body.text, new RegExp(value));
+  }
 });
 
 test("POST /grants/mutation-preview-review-text rejects forbidden preview review fields", async () => {
+  const fixture = JSON.parse(await readFile(grantMutationPreviewReviewCasesPath, "utf8"));
+  const rejectedCase = fixture.rejected_cases.find((entry) => entry.forbidden_key === "event_value");
   const response = await invoke({
     method: "POST",
     url: "/grants/mutation-preview-review-text",
     body: {
-      review_response: {
-        ok: true,
-        event_value: "sensitive event body",
-        grant: {
-          id: "grant-preview",
-          payload_bytes: "not allowed",
-        },
-      },
+      review_response: rejectedCase.preview,
     },
   });
 
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "grant_mutation_preview_review_forbidden_field");
-  assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.event_value")));
-  assert.ok(response.body.validation_errors.some((entry) => entry.includes("response.grant.payload_bytes")));
+  assert.ok(response.body.validation_errors.includes(rejectedCase.expected_path));
 });
 
 test("POST /grants/mutation-preview-review-text rejects missing preview objects", async () => {

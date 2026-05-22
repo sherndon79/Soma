@@ -241,6 +241,9 @@ Implemented:
 - grant mutation preview review CLI wrapper added as `grants review-preview`, accepting explicit
   preview JSON or stdin, validating locally before requests, and preserving formatting-only
   non-write behavior
+- grant mutation preview review fixture coverage added under
+  `docs/fixtures/grant-mutation-preview-review-cases.json`, documenting the forbidden review key
+  set and proving nested payload/value fields are rejected by formatter and route surfaces
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -360,24 +363,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review forbidden-key fixture coverage.
+Add grant mutation preview review CLI integration smoke.
 
 Target:
 
 ```text
-grant mutation preview review forbidden-key fixture coverage
-  -> document the current forbidden review key set in fixtures
-  -> prove nested payload/value fields are rejected consistently
-  -> keep formatter output summary-only
+grant mutation preview review CLI integration smoke
+  -> exercise `grants review-preview` against a real request handler
+  -> reuse the accepted fixture through the route and CLI together
+  -> keep the command formatting-only and non-mutating
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add accepted/rejected review fixture cases for grant mutation previews
-- extend route or surface tests to use those fixtures
-- document the forbidden-key boundary without widening review output
-- keep route and CLI behavior unchanged
+- add a CLI integration test that starts `createRequestHandler`
+- pipe fixture preview JSON through `grants review-preview --stdin`
+- assert formatted output and non-write flags without mocking `request`
+- keep preview generation, durable commit routes, and runtime writes out of scope
 
 Constraints:
 

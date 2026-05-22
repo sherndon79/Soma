@@ -1,0 +1,210 @@
+{
+  "status": "active_review_boundary_fixture",
+  "purpose": "Document accepted and rejected grant mutation preview review inputs for the formatting-only review surface.",
+  "forbidden_review_keys": [
+    "payload",
+    "payload_bytes",
+    "provider_output",
+    "raw_payload",
+    "screenshot",
+    "image_bytes",
+    "frame_bytes",
+    "audio_bytes",
+    "text_content",
+    "grant_value",
+    "event_value"
+  ],
+  "accepted_case": {
+    "description": "Accepted create preview with summary-only fields and omitted constraint details.",
+    "preview": {
+      "ok": true,
+      "dry_run": true,
+      "mutation_kind": "grant.created",
+      "grant": {
+        "id": "grant-preview",
+        "status": "active",
+        "capability": "desktop.inspect.focus",
+        "provider": "soma.provider.desktop-broker",
+        "scope": "session",
+        "constraints": {
+          "include_text": false
+        }
+      },
+      "event": {
+        "event_type": "grant.created"
+      },
+      "receipt_preview": {
+        "status": "preview"
+      },
+      "next_store_summary": {
+        "grant_count": 3,
+        "changed": true
+      },
+      "durable": false,
+      "grant_written": false,
+      "provenance_appended": false,
+      "activation_performed": false,
+      "subscription_activated": false,
+      "model_delivery_performed": false
+    },
+    "must_not_render": [
+      "include_text"
+    ]
+  },
+  "rejected_cases": [
+    {
+      "name": "nested_payload",
+      "forbidden_key": "payload",
+      "expected_path": "response.grant.audit.payload",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "payload": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_payload_bytes",
+      "forbidden_key": "payload_bytes",
+      "expected_path": "response.grant.audit.payload_bytes",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "payload_bytes": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_provider_output",
+      "forbidden_key": "provider_output",
+      "expected_path": "response.grant.audit.provider_output",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "provider_output": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_raw_payload",
+      "forbidden_key": "raw_payload",
+      "expected_path": "response.grant.audit.raw_payload",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "raw_payload": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_screenshot",
+      "forbidden_key": "screenshot",
+      "expected_path": "response.grant.audit.screenshot",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "screenshot": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_image_bytes",
+      "forbidden_key": "image_bytes",
+      "expected_path": "response.grant.audit.image_bytes",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "image_bytes": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_frame_bytes",
+      "forbidden_key": "frame_bytes",
+      "expected_path": "response.grant.audit.frame_bytes",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "frame_bytes": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_audio_bytes",
+      "forbidden_key": "audio_bytes",
+      "expected_path": "response.grant.audit.audio_bytes",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "audio_bytes": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_text_content",
+      "forbidden_key": "text_content",
+      "expected_path": "response.grant.audit.text_content",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "text_content": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_grant_value",
+      "forbidden_key": "grant_value",
+      "expected_path": "response.grant.audit.grant_value",
+      "preview": {
+        "ok": true,
+        "grant": {
+          "id": "grant-preview",
+          "audit": {
+            "grant_value": "forbidden"
+          }
+        }
+      }
+    },
+    {
+      "name": "nested_event_value",
+      "forbidden_key": "event_value",
+      "expected_path": "response.event.audit.event_value",
+      "preview": {
+        "ok": true,
+        "event": {
+          "event_type": "grant.created",
+          "audit": {
+            "event_value": "forbidden"
+          }
+        }
+      }
+    }
+  ]
+}

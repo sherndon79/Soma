@@ -220,6 +220,8 @@ default.
   - review after adding a non-mutating create/revoke grant mutation preview helper and HTTP route
 - [Grant Mutation Preview CLI](./2026-05-21_grant_mutation_preview_cli.md)
   - review after adding dry-run CLI wrappers over the grant mutation preview route
+- [Grant Mutation Preview Review Text](./2026-05-22_grant_mutation_preview_review_text.md)
+  - review after adding pure operator-facing preview text for dry-run grant mutation previews
 
 ## Current Review Triggers
 

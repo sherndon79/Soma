@@ -373,7 +373,10 @@ npm run cli -- grants preview-revoke grant-id \
   --reason "No longer needed."
 ```
 
-These commands call only `/grants/mutation-previews`; they do not write durable grants.
+These commands call only `/grants/mutation-previews`; they do not write durable grants. Human
+output is formatted through the grant mutation preview review surface, which emphasizes dry-run
+status, non-activation, no durable writes, and bounded planned-state summary fields. Use `--json`
+when the raw preview response is needed for inspection or tests.
 
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.

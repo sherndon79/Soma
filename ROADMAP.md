@@ -217,6 +217,8 @@ Implemented:
   receipt/event shapes without grant writes or provenance append
 - CLI `grants preview-create` and `grants preview-revoke` added as dry-run wrappers over
   `/grants/mutation-previews`, including local JSON validation and no direct filesystem mutation
+- grant mutation preview review surface added for operator-facing create/revoke preview text,
+  keeping CLI human formatting pure, dry-run explicit, non-activating, non-writing, and bounded
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -336,24 +338,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview operator review text.
+Harden grant mutation preview route failure coverage.
 
 Target:
 
 ```text
-grant mutation preview review text
-  -> format create/revoke preview payloads into concise operator-facing review text
-  -> emphasize dry-run status, non-activation, and no durable writes
-  -> keep review formatting separate from mutation execution
+grant mutation preview route failures
+  -> prove unsupported mutation kinds fail closed through the HTTP route
+  -> prove malformed preview bodies return bounded validation errors
+  -> preserve dry-run/non-writing guarantees on failed previews
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add a pure formatter for grant mutation preview responses
-- wire CLI human output to the formatter if useful
-- add tests for create, revoke, and failure formatting
-- avoid exposing constraints beyond bounded summary fields
+- add focused route tests for unsupported kinds and malformed inputs
+- verify failures keep grant_written, provenance_appended, and activation_performed false
+- document any new operator-facing refusal codes if exposed
+- avoid adding writable mutation commands or enabling runtime writes
 
 Constraints:
 

@@ -2,6 +2,8 @@
 
 import { pathToFileURL } from "node:url";
 
+import { grantMutationPreviewReviewText } from "./grantMutationPreviewReviewSurface.js";
+
 const DEFAULT_SOMA_URL = "http://127.0.0.1:8765";
 
 export function parseCli(argv) {
@@ -976,35 +978,7 @@ function grantRecoverySummary(response) {
 }
 
 function grantMutationPreviewSummary(response) {
-  const receipt = response.receipt_preview ?? {};
-  const event = response.event ?? {};
-  const grant = response.grant ?? {};
-  const lines = [
-    "Grant mutation preview",
-    `  ok: ${booleanText(response.ok)}`,
-    `  dry run: ${booleanText(response.dry_run)}`,
-    `  mutation: ${response.mutation_kind ?? receipt.mutation_kind ?? "unknown"}`,
-    `  grant: ${grant.id ?? receipt.grant_id ?? "unknown"}`,
-    `  event: ${event.event_type ?? receipt.event_type ?? "none"}`,
-    `  receipt status: ${receipt.status ?? "unknown"}`,
-    `  grant written: ${booleanText(response.grant_written)}`,
-    `  provenance appended: ${booleanText(response.provenance_appended)}`,
-    `  activation performed: ${booleanText(response.activation_performed)}`,
-  ];
-
-  if (response.ok === false) {
-    lines.push(`  error: ${response.code ?? receipt.error_code ?? "unknown"}`);
-    if (response.message) {
-      lines.push(`  message: ${response.message}`);
-    }
-  }
-
-  if (response.next_store_summary) {
-    lines.push(`  next grant count: ${response.next_store_summary.grant_count ?? "unknown"}`);
-    lines.push(`  changed: ${booleanText(response.next_store_summary.changed)}`);
-  }
-
-  return lines.join("\n");
+  return grantMutationPreviewReviewText(response);
 }
 
 function modelVisualAttachDryRunSummary(response) {

@@ -712,6 +712,14 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/grants/recovery") {
+        writeJson(res, 200, summarizeGrantRecoveryInspection(
+          resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          { grantStore },
+        ));
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/capability-proposals") {
         const body = await readJson(req);
         const proposal = capabilityProposals.create(body);
@@ -1581,6 +1589,43 @@ function resolveGrantRecoveryReport(grantRecoveryReport, context) {
     return grantRecoveryReport(context);
   }
   return grantRecoveryReport;
+}
+
+function summarizeGrantRecoveryInspection(report, { grantStore } = {}) {
+  const recoveryInspectionAvailable = report && typeof report === "object";
+  const findings = Array.isArray(report?.findings)
+    ? report.findings.map(publicGrantRecoveryFinding)
+    : [];
+  return {
+    recovery_inspection_available: Boolean(recoveryInspectionAvailable),
+    ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
+    degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    grant_count: Number.isInteger(report?.grant_count)
+      ? report.grant_count
+      : (Array.isArray(grantStore?.grants) ? grantStore.grants.length : 0),
+    finding_count: Number.isInteger(report?.finding_count)
+      ? report.finding_count
+      : findings.length,
+    findings,
+    durable: false,
+    activation_performed: false,
+    runtime_writes_enabled: false,
+  };
+}
+
+function publicGrantRecoveryFinding(finding = {}) {
+  return {
+    code: String(finding.code ?? "unknown_grant_recovery_finding"),
+    grant_id: String(finding.grant_id ?? ""),
+    status: String(finding.status ?? ""),
+    capability: String(finding.capability ?? ""),
+    provider: String(finding.provider ?? ""),
+    scope: String(finding.scope ?? ""),
+    authorizing_safe: finding.authorizing_safe !== false,
+    ...(finding.event_type ? { event_type: String(finding.event_type) } : {}),
+    ...(finding.expected_event_type ? { expected_event_type: String(finding.expected_event_type) } : {}),
+    ...(finding.field ? { field: String(finding.field) } : {}),
+  };
 }
 
 function providerHostMatchesTopic(provider = {}, topic = "") {

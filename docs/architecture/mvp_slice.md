@@ -176,6 +176,17 @@ grant records have an inspectable shape before any widening path can depend on t
 Revoked grant records may include `revoked_at`, `revoked_by`, `revocation_reason`, and
 `replacement_grant_id`.
 
+### `GET /grants/recovery`
+
+Returns the current grant mutation recovery inspection summary when one is provided to the request
+handler. If no recovery inspection is available, the route reports `ok: null` instead of treating
+absence as a clean recovery state.
+
+Recovery findings are bounded operator metadata: code, grant id, status, capability, provider,
+scope, authorizing safety, and small mismatch descriptors such as event type or field name. The
+route does not expose mismatch values, grant reason text, payloads, activate capabilities, or mutate
+the grant store.
+
 Reserved future mutation routes are documented in the grant lifecycle draft, but are not
 implemented in the MVP.
 

@@ -202,6 +202,9 @@ Implemented:
 - grant-dependent runtime route denials now distinguish unsupported grant-store schemas from
   absent active grants, returning route-specific fail-closed schema errors for Sensorium
   subscriptions and model visual attach dry-runs before downstream invocation
+- read-only `GET /grants/recovery` added for operator-facing grant mutation recovery inspection,
+  reporting absent inspection as `ok: null` and exposing bounded degraded findings without mismatch
+  values, payloads, grant writes, or activation
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP

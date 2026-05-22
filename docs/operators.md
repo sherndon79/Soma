@@ -323,6 +323,18 @@ npm run cli -- grants list --json
 
 `GET /grants` does not create, approve, revoke, or activate capabilities.
 
+Grant recovery state is inspectable through the read-only HTTP route:
+
+```bash
+curl http://127.0.0.1:8765/grants/recovery
+```
+
+When no recovery inspection is available, the route reports
+`recovery_inspection_available: false` and `ok: null` rather than declaring the authority clean.
+When degraded findings exist, the route returns bounded finding metadata such as grant id,
+capability, provider, scope, event type, and mismatched field name; it does not copy mismatch
+values or grant reason text into the response.
+
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 

@@ -205,6 +205,9 @@ default.
 - [Unsupported Grant Schema Route Codes](./2026-05-21_unsupported_grant_schema_route_codes.md)
   - review after grant-dependent runtime routes gained explicit unsupported-schema denial codes
     instead of collapsing those cases into generic no-grant errors
+- [Grant Recovery Inspection Route](./2026-05-21_grant_recovery_inspection_route.md)
+  - review after adding a read-only operator route for bounded grant recovery inspection without
+    enabling durable mutation or repair
 
 ## Current Review Triggers
 

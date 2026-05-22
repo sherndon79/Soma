@@ -560,6 +560,73 @@ test("GET /grants exposes revoked grant metadata without activation", async () =
   assert.equal(response.body.grants[0].activation_performed, false);
 });
 
+test("GET /grants/recovery reports absent inspection without declaring authority clean", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/grants/recovery",
+    harness: allowedHarness,
+    grantStore,
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.recovery_inspection_available, false);
+  assert.equal(response.body.ok, null);
+  assert.equal(response.body.degraded, false);
+  assert.equal(response.body.grant_count, 2);
+  assert.equal(response.body.finding_count, 0);
+  assert.deepEqual(response.body.findings, []);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.runtime_writes_enabled, false);
+});
+
+test("GET /grants/recovery exposes bounded degraded findings", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/grants/recovery",
+    harness: allowedHarness,
+    grantStore,
+    grantRecoveryReport: {
+      ok: false,
+      degraded: true,
+      grant_count: 2,
+      finding_count: 1,
+      findings: [
+        {
+          code: "grant_provenance_metadata_mismatch",
+          grant_id: "grant-1",
+          status: "active",
+          capability: "desktop.inspect.focus",
+          provider: "soma.provider.desktop.local",
+          scope: "session",
+          authorizing_safe: false,
+          event_type: "grant.created",
+          field: "reason",
+          grant_value: "operator-facing sensitive reason",
+          event_value: "mismatched sensitive reason",
+        },
+      ],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.recovery_inspection_available, true);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.degraded, true);
+  assert.equal(response.body.finding_count, 1);
+  assert.deepEqual(response.body.findings[0], {
+    code: "grant_provenance_metadata_mismatch",
+    grant_id: "grant-1",
+    status: "active",
+    capability: "desktop.inspect.focus",
+    provider: "soma.provider.desktop.local",
+    scope: "session",
+    authorizing_safe: false,
+    event_type: "grant.created",
+    field: "reason",
+  });
+});
+
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {
   const response = await invoke({
     method: "POST",

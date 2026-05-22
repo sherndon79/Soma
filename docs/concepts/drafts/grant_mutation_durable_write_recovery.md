@@ -34,6 +34,8 @@ The durable write path is still blocked until Soma has:
 - concurrent write exclusion
 - recovery behavior for partial failure
 - route and CLI tests proving failed writes do not create misleading authority
+- the route-readiness checklist in
+  [Durable Grant Mutation Route Readiness](./durable_grant_mutation_route_readiness.md)
 
 ## Write Unit
 
@@ -304,3 +306,8 @@ Durable grant writes are not ready until tests cover:
 - no Sensorium subscription activation
 - no desktop traversal authority expansion
 - no model-facing visual payload delivery
+
+## Related Drafts
+
+- [Grant Lifecycle](./grant_lifecycle.md)
+- [Durable Grant Mutation Route Readiness](./durable_grant_mutation_route_readiness.md)

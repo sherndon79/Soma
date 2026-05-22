@@ -213,6 +213,9 @@ default.
     inspection into policy gates without enabling mutation
 - [Grant Recovery CLI](./2026-05-21_grant_recovery_cli.md)
   - review after adding a read-only `grants recovery` CLI wrapper over the recovery inspection route
+- [Durable Grant Route Readiness](./2026-05-21_durable_grant_route_readiness.md)
+  - review after documenting the activation checklist before durable grant mutation routes or CLI
+    mutation commands are implemented
 
 ## Current Review Triggers
 

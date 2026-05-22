@@ -177,6 +177,10 @@ The durable write and recovery posture is defined separately in
 [Grant Mutation Durable Write Recovery](./grant_mutation_durable_write_recovery.md). Writable grant
 routes should not be enabled until that recovery posture has executable tests.
 
+The route activation gate is narrowed in
+[Durable Grant Mutation Route Readiness](./durable_grant_mutation_route_readiness.md). That checklist
+must be satisfied before reserved route names or CLI mutation commands are implemented.
+
 ## Mutation Tests Required
 
 Writable grant mutation is not ready until tests prove:
@@ -220,6 +224,9 @@ npm run cli -- grants supersede grant-id --replacement replacement-grant-id --re
 
 Reserved names should not be implemented until the policy, provenance, review, and failure-mode
 requirements in this document are satisfied.
+
+They should also satisfy the route-readiness checklist in
+[Durable Grant Mutation Route Readiness](./durable_grant_mutation_route_readiness.md).
 
 When these names are implemented, they should remain non-activating by default. Creating a grant is
 not the same operation as using the granted capability.

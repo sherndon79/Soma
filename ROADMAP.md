@@ -210,6 +210,8 @@ Implemented:
   non-authorizing findings when provenance is missing or unreadable
 - CLI `grants recovery` added as a read-only wrapper over `GET /grants/recovery`, with human and
   JSON output for absent inspection, clean inspection, and bounded degraded findings
+- durable grant mutation route-readiness checklist documented, defining the gate before `POST
+  /grants`, durable revocation routes, or CLI mutation commands can use the durable writer
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -329,24 +331,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Define the durable grant mutation route readiness checklist.
+Add a dry-run durable grant mutation preview surface.
 
 Target:
 
 ```text
-durable grant mutation route readiness
-  -> identify the minimum route and CLI mutation surfaces that can safely use the durable writer
-  -> preserve recovery inspection before authorization and after mutation
-  -> keep revocation/disable paths available as safety controls
+durable grant mutation dry-run preview
+  -> validate a create/revoke request against catalog/provider/grant state without writing
+  -> return the planned grant mutation event and receipt shape as metadata-only preview
+  -> keep mutation writes disabled and route names distinct from future active mutation routes
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- write the route-readiness checklist before enabling any writable route
-- distinguish durable grant authority from process-local Sensorium session grants
-- decide how mutation receipts are returned without implying activation
-- identify rollback/retry behavior for failed response and degraded recovery cases
+- add pure preview helper or route under an explicitly non-mutating path
+- add tests proving no grant-store mutation and no provenance append
+- preserve recovery-aware fail-closed checks before previewing authority
+- document that preview is review-only and non-authorizing
 
 Constraints:
 

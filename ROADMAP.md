@@ -212,6 +212,9 @@ Implemented:
   JSON output for absent inspection, clean inspection, and bounded degraded findings
 - durable grant mutation route-readiness checklist documented, defining the gate before `POST
   /grants`, durable revocation routes, or CLI mutation commands can use the durable writer
+- pure durable grant mutation preview helper and non-mutating `POST /grants/mutation-previews`
+  route added for create/revoke metadata previews, refusing degraded recovery and returning dry-run
+  receipt/event shapes without grant writes or provenance append
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -331,24 +334,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a dry-run durable grant mutation preview surface.
+Add a CLI wrapper for durable grant mutation previews.
 
 Target:
 
 ```text
-durable grant mutation dry-run preview
-  -> validate a create/revoke request against catalog/provider/grant state without writing
-  -> return the planned grant mutation event and receipt shape as metadata-only preview
-  -> keep mutation writes disabled and route names distinct from future active mutation routes
+durable grant mutation preview CLI
+  -> expose POST /grants/mutation-previews through a clearly dry-run CLI command
+  -> print receipt/event preview without implying mutation success
+  -> preserve HTTP route as the authority source for validation
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add pure preview helper or route under an explicitly non-mutating path
-- add tests proving no grant-store mutation and no provenance append
-- preserve recovery-aware fail-closed checks before previewing authority
-- document that preview is review-only and non-authorizing
+- add a `grants preview-create` and/or `grants preview-revoke` CLI wrapper
+- support `--json` for exact route payloads
+- add tests proving CLI wrappers call only `/grants/mutation-previews`
+- document preview commands as dry-run only
 
 Constraints:
 

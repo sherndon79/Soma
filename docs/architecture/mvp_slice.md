@@ -192,6 +192,16 @@ provenance inspection. Missing provenance for active durable grants produces deg
 findings; unreadable provenance produces non-authorizing findings instead of silently authorizing
 durable grants.
 
+### `POST /grants/mutation-previews`
+
+Validates a future durable grant creation or revocation request without writing the grant store or
+appending provenance. The route returns a metadata-only grant mutation event preview, receipt
+preview, and next-store summary with `dry_run: true`.
+
+The route is intentionally distinct from the reserved active mutation routes. It refuses degraded
+recovery state before previewing authority changes and always reports `durable: false`,
+`grant_written: false`, `provenance_appended: false`, and `activation_performed: false`.
+
 Reserved future mutation routes are documented in the grant lifecycle draft, but are not
 implemented in the MVP.
 

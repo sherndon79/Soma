@@ -11,6 +11,7 @@ import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { authorizeGrantUse } from "./grantAuthorization.js";
+import { previewGrantMutation } from "./grantMutationPreview.js";
 import { createGrant, listGrants, revokeGrant, summarizeGrants } from "./grants.js";
 import { requireCapability } from "./harness.js";
 import {
@@ -717,6 +718,34 @@ export function createRequestHandler({
           resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
           { grantStore },
         ));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/grants/mutation-previews") {
+        const recoveryReport = resolveGrantRecoveryReport(grantRecoveryReport, { grantStore });
+        if (recoveryReport?.degraded === true) {
+          writeJson(res, 403, {
+            error: "grant_mutation_preview_recovery_required",
+            message: "Grant mutation preview requires recovery inspection before previewing durable authority changes.",
+            findings: summarizeGrantRecoveryInspection(recoveryReport, { grantStore }).findings,
+          });
+          return;
+        }
+
+        const body = await readJson(req);
+        const preview = previewGrantMutation({
+          store: grantStore,
+          kind: body?.kind,
+          input: body?.input ?? {},
+          mutationId: body?.mutation_id,
+          context: {
+            catalog: capabilityCatalog,
+            providerRegistry,
+            now: () => new Date().toISOString(),
+            createId: () => `grant-dry-run-${cryptoRandomId()}`,
+          },
+        });
+        writeJson(res, preview.ok ? 200 : 400, preview);
         return;
       }
 

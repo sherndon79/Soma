@@ -216,6 +216,8 @@ default.
 - [Durable Grant Route Readiness](./2026-05-21_durable_grant_route_readiness.md)
   - review after documenting the activation checklist before durable grant mutation routes or CLI
     mutation commands are implemented
+- [Grant Mutation Preview Route](./2026-05-21_grant_mutation_preview_route.md)
+  - review after adding a non-mutating create/revoke grant mutation preview helper and HTTP route
 
 ## Current Review Triggers
 

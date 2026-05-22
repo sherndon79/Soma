@@ -627,6 +627,80 @@ test("GET /grants/recovery exposes bounded degraded findings", async () => {
   });
 });
 
+test("POST /grants/mutation-previews previews creation without writes or activation", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-previews",
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+    grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+    body: {
+      kind: "grant.created",
+      mutation_id: "mutation-preview-create",
+      input: {
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: { include_text: false },
+        approved_by: "user",
+        direct_user_action: true,
+        reason: "Preview a focused desktop inspection grant.",
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.dry_run, true);
+  assert.equal(response.body.mutation_kind, "grant.created");
+  assert.equal(response.body.event.event_type, "grant.created");
+  assert.equal(response.body.receipt_preview.status, "preview");
+  assert.equal(response.body.receipt_preview.grant_store_committed, false);
+  assert.equal(response.body.receipt_preview.provenance_appended, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.activation_performed, false);
+});
+
+test("POST /grants/mutation-previews rejects degraded recovery before preview", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/mutation-previews",
+    harness: allowedHarness,
+    grantStore,
+    grantRecoveryReport: {
+      ok: false,
+      degraded: true,
+      grant_count: 2,
+      finding_count: 1,
+      findings: [
+        {
+          code: "missing_grant_created_provenance",
+          grant_id: "grant-1",
+          status: "active",
+          capability: "desktop.inspect.focus",
+          provider: "soma.provider.desktop.local",
+          scope: "session",
+          authorizing_safe: false,
+        },
+      ],
+    },
+    body: {
+      kind: "grant.revoked",
+      mutation_id: "mutation-preview-revoke",
+      input: {
+        id: "grant-1",
+        actor: "user",
+        reason: "Preview revocation.",
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "grant_mutation_preview_recovery_required");
+  assert.equal(response.body.findings[0].code, "missing_grant_created_provenance");
+});
+
 test("capability proposal creation requires reason scope risk exposure and fallback", async () => {
   const response = await invoke({
     method: "POST",

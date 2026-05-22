@@ -347,6 +347,19 @@ provenance log and supplies the resulting recovery report to policy gates and th
 The provenance log path defaults to `config/grant-mutations.ndjson` and can be overridden with
 `SOMA_GRANT_MUTATION_PROVENANCE_PATH`.
 
+Durable grant mutation can be previewed without writing authority:
+
+```bash
+curl -X POST http://127.0.0.1:8765/grants/mutation-previews \
+  -H 'content-type: application/json' \
+  -d '{"kind":"grant.revoked","mutation_id":"preview-1","input":{"id":"grant-id","actor":"user","reason":"No longer needed."}}'
+```
+
+The preview route validates the requested create/revoke mutation and returns the planned
+metadata-only grant event and receipt shape with `dry_run: true`, `durable: false`,
+`grant_written: false`, and `provenance_appended: false`. It refuses degraded grant recovery before
+previewing authority changes. It is not the future active `POST /grants` route.
+
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 

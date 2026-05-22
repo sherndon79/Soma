@@ -731,6 +731,26 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/grants") {
+        writeJson(res, 403, durableGrantMutationNotEnabledResponse({
+          route: "POST /grants",
+          mutationKind: "grant.created",
+          runtimeWritePosture: writePosture,
+        }));
+        return;
+      }
+
+      const durableGrantRevokeMatch = url.pathname.match(/^\/grants\/([^/]+)\/revoke$/);
+      if (req.method === "POST" && durableGrantRevokeMatch) {
+        writeJson(res, 403, durableGrantMutationNotEnabledResponse({
+          route: "POST /grants/:id/revoke",
+          mutationKind: "grant.revoked",
+          grantId: decodeURIComponent(durableGrantRevokeMatch[1] ?? ""),
+          runtimeWritePosture: writePosture,
+        }));
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/grants/mutation-previews") {
         const recoveryReport = resolveGrantRecoveryReport(grantRecoveryReport, { grantStore });
         if (recoveryReport?.degraded === true) {
@@ -1636,6 +1656,35 @@ function resolveGrantRecoveryReport(grantRecoveryReport, context) {
     return grantRecoveryReport(context);
   }
   return grantRecoveryReport;
+}
+
+function durableGrantMutationNotEnabledResponse({
+  route,
+  mutationKind,
+  grantId = "",
+  runtimeWritePosture,
+} = {}) {
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  return {
+    ok: false,
+    error: "durable_grant_mutation_not_enabled",
+    code: "durable_grant_mutation_not_enabled",
+    message: "Durable grant mutation routes are reserved but not enabled.",
+    route,
+    mutation_kind: mutationKind,
+    grant_id: grantId,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
+    activation_policy: "docs/concepts/drafts/durable_grant_mutation_activation_policy.md",
+    route_readiness: "docs/concepts/drafts/durable_grant_mutation_route_readiness.md",
+    durable: false,
+    grant_written: false,
+    provenance_appended: false,
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+    repair_performed: false,
+  };
 }
 
 function summarizeGrantRecoveryInspection(report, { grantStore, runtimeWritePosture } = {}) {

@@ -652,6 +652,69 @@ test("GET /grants/recovery exposes bounded degraded findings", async () => {
   });
 });
 
+test("POST /grants returns explicit durable mutation disabled refusal without writing", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants",
+    harness: allowedHarness,
+    grantStore,
+    runtimeWritePosture: {
+      requested: true,
+      source: "test",
+    },
+    body: {
+      capability: "desktop.inspect.focus",
+      provider: "desktop-broker",
+      scope: "session",
+      reason: "Attempt durable creation.",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.error, "durable_grant_mutation_not_enabled");
+  assert.equal(response.body.route, "POST /grants");
+  assert.equal(response.body.mutation_kind, "grant.created");
+  assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "requested_but_disabled");
+  assert.equal(response.body.activation_policy, "docs/concepts/drafts/durable_grant_mutation_activation_policy.md");
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.repair_performed, false);
+  assert.equal(grantStore.grants.length, 2);
+});
+
+test("POST /grants/:id/revoke returns explicit durable mutation disabled refusal without writing", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/grants/grant-1/revoke",
+    harness: allowedHarness,
+    grantStore,
+    body: {
+      actor: "user",
+      reason: "Attempt durable revocation.",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.error, "durable_grant_mutation_not_enabled");
+  assert.equal(response.body.route, "POST /grants/:id/revoke");
+  assert.equal(response.body.mutation_kind, "grant.revoked");
+  assert.equal(response.body.grant_id, "grant-1");
+  assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(grantStore.grants.find((grant) => grant.id === "grant-1").status, "active");
+});
+
 test("POST /grants/mutation-previews previews creation without writes or activation", async () => {
   const response = await invoke({
     method: "POST",

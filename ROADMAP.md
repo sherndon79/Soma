@@ -229,6 +229,9 @@ Implemented:
 - runtime write posture status reporting added to health, grant inspection, recovery inspection,
   and CLI status, treating `SOMA_RUNTIME_WRITES_ENABLED` as a visible request only while effective
   runtime writes remain false
+- durable mutation route denial stubs added for reserved `POST /grants` and
+  `POST /grants/:id/revoke`, returning explicit not-enabled refusals with runtime write posture and
+  no durable writes, provenance append, repair, activation, subscription stop, or model delivery
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -348,24 +351,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add durable mutation route denial stubs.
+Add durable mutation CLI denial stubs.
 
 Target:
 
 ```text
-durable mutation route denial stubs
-  -> reserve writable grant mutation route names with explicit not-enabled refusals
-  -> include runtime write posture and activation policy pointers in refusals
-  -> prove stubs do not call durable writers or mutate grant state
-  -> keep CLI mutation commands and runtime_writes_enabled activation out of scope
+durable mutation CLI denial stubs
+  -> reserve CLI mutation command names with explicit local not-enabled errors
+  -> point operators to preview commands and activation policy
+  -> prove commands do not call HTTP mutation routes or filesystem writers
+  -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add explicit refusal handlers for reserved durable mutation routes if useful
-- return stable not-enabled codes with no write/activation flags
-- add route tests for create/revoke denial behavior
-- document the refusal contract without implementing mutation
+- add `grants create` and `grants revoke` usage/error stubs if useful
+- return stable CLI usage/error codes before any request is sent
+- add focused CLI tests for no request invocation
+- document the CLI refusal contract without implementing mutation
 
 Constraints:
 

@@ -387,6 +387,10 @@ HTTP status is a refusal; unrelated HTTP failures still fail the CLI command.
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.
 
+The reserved HTTP commit routes `POST /grants` and `POST /grants/:id/revoke` return
+`durable_grant_mutation_not_enabled`. The refusal includes runtime write posture and explicit
+non-write flags; it does not create, revoke, repair, activate, or append provenance.
+
 Durable writable grant mutation remains blocked until the grant lifecycle prerequisites are
 implemented: exact capability and provider validation, explicit user decision provenance, atomic
 grant-store writes, revocation auditability, migration behavior, and tests for create, revoke,

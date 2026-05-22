@@ -203,6 +203,20 @@ provenance inspection. Missing provenance for active durable grants produces deg
 findings; unreadable provenance produces non-authorizing findings instead of silently authorizing
 durable grants.
 
+### `POST /grants`
+
+Reserved for future durable grant creation. In the MVP, this route returns
+`durable_grant_mutation_not_enabled` with `durable: false`, `grant_written: false`,
+`provenance_appended: false`, `activation_performed: false`, and the runtime write posture. It does
+not parse the request into authority or call durable writer helpers.
+
+### `POST /grants/:id/revoke`
+
+Reserved for future durable grant revocation. In the MVP, this route returns
+`durable_grant_mutation_not_enabled` with the requested grant id and the same non-writing,
+non-activation flags as durable create denial. It does not mutate the grant store, append
+provenance, stop subscriptions, or repair recovery.
+
 ### `POST /grants/mutation-previews`
 
 Validates a future durable grant creation or revocation request without writing the grant store or

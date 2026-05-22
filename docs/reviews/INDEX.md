@@ -230,6 +230,8 @@ default.
   - review after documenting the operator decision boundary for future durable grant mutation
 - [Runtime Write Posture Status](./2026-05-22_runtime_write_posture_status.md)
   - review after exposing requested/default runtime write posture in read-only status surfaces
+- [Durable Mutation Route Denial Stubs](./2026-05-22_durable_mutation_route_denial_stubs.md)
+  - review after reserving durable grant mutation route names with explicit disabled refusals
 
 ## Current Review Triggers
 

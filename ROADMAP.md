@@ -199,6 +199,9 @@ Implemented:
   authorization helper, failing closed on degraded matching visual grants before future provenance
   preview creation while keeping payload delivery, durable writes, public grant mutation, and
   runtime writes disabled
+- grant-dependent runtime route denials now distinguish unsupported grant-store schemas from
+  absent active grants, returning route-specific fail-closed schema errors for Sensorium
+  subscriptions and model visual attach dry-runs before downstream invocation
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP

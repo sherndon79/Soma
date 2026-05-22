@@ -202,6 +202,9 @@ default.
 - [Model Visual Recovery-Aware Dry Run](./2026-05-21_model_visual_recovery_aware_dry_run.md)
   - review after adding exact grant-id recovery gating to the visual attach dry-run route without
     enabling payload delivery, provenance append, durable writes, or grant mutation
+- [Unsupported Grant Schema Route Codes](./2026-05-21_unsupported_grant_schema_route_codes.md)
+  - review after grant-dependent runtime routes gained explicit unsupported-schema denial codes
+    instead of collapsing those cases into generic no-grant errors
 
 ## Current Review Triggers
 

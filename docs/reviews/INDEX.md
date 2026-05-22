@@ -226,6 +226,8 @@ default.
   - review after hardening dry-run route refusals for unsupported and malformed preview requests
 - [Grant Mutation Preview CLI Failures](./2026-05-22_grant_mutation_preview_cli_failures.md)
   - review after rendering dry-run preview refusals in CLI human output while preserving raw JSON
+- [Durable Grant Mutation Activation Policy](./2026-05-22_durable_grant_mutation_activation_policy.md)
+  - review after documenting the operator decision boundary for future durable grant mutation
 
 ## Current Review Triggers
 

@@ -5,6 +5,8 @@ Status: readiness checklist, no writable grant routes or CLI mutation commands e
 This note defines the gate before Soma may expose durable grant mutation routes such as
 `POST /grants`, `POST /grants/:id/revoke`, `POST /grants/:id/supersede`, or matching CLI
 commands. It narrows the larger lifecycle and recovery drafts into implementation conditions.
+The companion [Durable Grant Mutation Activation Policy](./durable_grant_mutation_activation_policy.md)
+defines the operator decision boundary and runtime controls for flipping those routes on.
 
 ## Current Boundary
 
@@ -180,3 +182,4 @@ Before any route is enabled, tests must prove:
 
 - [Grant Lifecycle](./grant_lifecycle.md)
 - [Grant Mutation Durable Write Recovery](./grant_mutation_durable_write_recovery.md)
+- [Durable Grant Mutation Activation Policy](./durable_grant_mutation_activation_policy.md)

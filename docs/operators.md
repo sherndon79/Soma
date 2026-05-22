@@ -389,6 +389,10 @@ Durable writable grant mutation remains blocked until the grant lifecycle prereq
 implemented: exact capability and provider validation, explicit user decision provenance, atomic
 grant-store writes, revocation auditability, migration behavior, and tests for create, revoke,
 supersede, expire, and failed-write behavior.
+The activation boundary is captured in
+[Durable Grant Mutation Activation Policy](./concepts/drafts/durable_grant_mutation_activation_policy.md):
+preview and review surfaces are not commit surfaces, runtime writes require an explicit operator
+decision, and repair remains a separate operator-controlled workflow.
 
 ## Inspect Sensorium Subscriptions
 

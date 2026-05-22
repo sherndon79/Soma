@@ -224,6 +224,8 @@ Implemented:
   flags
 - grant mutation preview CLI failure coverage added so dry-run route refusals render as human
   review text, raw `--json` refusals remain inspectable, and unrelated HTTP failures still throw
+- durable grant mutation activation policy documented, separating preview/review surfaces from
+  future commit surfaces and naming explicit operator controls for runtime writes and repair
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -343,24 +345,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Document durable grant mutation activation policy.
+Add runtime write flag status reporting.
 
 Target:
 
 ```text
-durable grant mutation activation policy
-  -> define what must be true before writable grant mutation routes can exist
-  -> separate preview/review surfaces from durable commit surfaces
-  -> name operator controls for runtime_writes_enabled and recovery repair
-  -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
+runtime write flag status reporting
+  -> expose configured runtime write posture in read-only status surfaces
+  -> keep the flag false by default and non-authorizing
+  -> do not wire the flag to durable grant mutation routes
+  -> keep POST /grants, CLI mutation, and runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a concise architecture/policy note for activating durable grant mutation later
-- capture the invariants preview work established before any write path exists
-- identify remaining implementation gates and review triggers
-- avoid implementing writable routes, CLI mutation commands, or runtime write enablement
+- add a read-only runtime write posture helper if needed
+- surface the posture in health/status or grant inspection without enabling writes
+- add tests proving default false and no mutation path
+- document the operator-facing status field
 
 Constraints:
 

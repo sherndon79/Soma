@@ -22,6 +22,8 @@ read-only:
 Those fields are part of the safety boundary. A future implementation may only change them after
 the mutation path has explicit user approval, revocation auditability, fail-closed validation,
 durable provenance, and tests for create, revoke, supersede, expire, and migration behavior.
+The operator decision boundary for enabling those runtime writes is defined in
+[Durable Grant Mutation Activation Policy](./durable_grant_mutation_activation_policy.md).
 
 Capability proposals remain intent records. Provider manifests remain implementation claims. The
 grant store remains authority records. None of those records should silently collapse into another.

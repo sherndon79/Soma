@@ -44,7 +44,7 @@ export function grantMutationPreviewReviewText(response = {}) {
   ];
 
   if (response.ok === false) {
-    lines.push(`  refusal code: ${response.code ?? receipt.error_code ?? "unknown"}`);
+    lines.push(`  refusal code: ${response.code ?? response.error ?? receipt.error_code ?? "unknown"}`);
     if (response.message) {
       lines.push(`  refusal message: ${response.message}`);
     }

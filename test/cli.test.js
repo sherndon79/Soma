@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import test from "node:test";
 
 import { parseCli, runCli } from "../src/cli.js";
@@ -856,6 +857,101 @@ test("runCli grants preview-revoke calls dry-run preview route", async () => {
   assert.match(writes.join(""), /mutation: grant\.revoked/);
 });
 
+test("runCli grants preview-create renders dry-run refusal text from HTTP 400", async () => {
+  const { baseUrl, close } = await createJsonServer((req, res) => {
+    assert.equal(req.method, "POST");
+    assert.equal(req.url, "/grants/mutation-previews");
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      ok: false,
+      dry_run: true,
+      error: "grant_mutation_preview_recovery_required",
+      message: "Grant mutation preview requires recovery inspection before previewing durable authority changes.",
+      findings: [{ code: "missing_grant_created_provenance", grant_id: "grant-1" }],
+      durable: false,
+      grant_written: false,
+      provenance_appended: false,
+      activation_performed: false,
+      subscription_activated: false,
+      model_delivery_performed: false,
+    }));
+  });
+
+  try {
+    const writes = [];
+    const code = await runCli(parseCli([
+      "node",
+      "soma",
+      "grants",
+      "preview-create",
+      "--capability",
+      "desktop.inspect.focus",
+      "--provider",
+      "desktop-broker",
+      "--reason",
+      "Preview focused inspection authority.",
+      "--url",
+      baseUrl,
+    ]), {
+      stdout: { write: (value) => writes.push(value) },
+    });
+
+    const output = writes.join("");
+    assert.equal(code, 0);
+    assert.match(output, /Grant mutation preview/);
+    assert.match(output, /result: not accepted/);
+    assert.match(output, /dry run: yes/);
+    assert.match(output, /refusal code: grant_mutation_preview_recovery_required/);
+    assert.match(output, /grant written: no/);
+    assert.match(output, /provenance appended: no/);
+    assert.match(output, /activation performed: no/);
+  } finally {
+    await close();
+  }
+});
+
+test("runCli grants preview-revoke preserves raw JSON refusal output", async () => {
+  const refusal = {
+    ok: false,
+    dry_run: true,
+    code: "grant_mutation_preview_unsupported_kind",
+    mutation_kind: "grant.superseded",
+    receipt_preview: {
+      status: "failed",
+      error_code: "grant_mutation_preview_unsupported_kind",
+      grant_store_committed: false,
+      provenance_appended: false,
+    },
+    durable: false,
+    grant_written: false,
+    provenance_appended: false,
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+  };
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "preview-revoke",
+    "grant-active",
+    "--reason",
+    "Preview revocation.",
+    "--json",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/grants/mutation-previews");
+      return refusal;
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.deepEqual(JSON.parse(writes.join("")), refusal);
+});
+
 test("runCli grants preview-create validates constraints JSON before request", async () => {
   await assert.rejects(
     () => runCli(parseCli([
@@ -878,6 +974,30 @@ test("runCli grants preview-create validates constraints JSON before request", a
     }),
     /grants preview-create --constraints-json must decode to an object/,
   );
+});
+
+test("runCli still throws non-preview HTTP failures", async () => {
+  const { baseUrl, close } = await createJsonServer((_req, res) => {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      error: "server_unavailable",
+      message: "Server unavailable.",
+    }));
+  });
+
+  try {
+    await assert.rejects(
+      () => runCli(parseCli(["node", "soma", "grants", "recovery", "--url", baseUrl]), {
+        stdout: { write: () => {} },
+      }),
+      Object.assign(new Error("Server unavailable."), {
+        code: "server_unavailable",
+        statusCode: 500,
+      }),
+    );
+  } finally {
+    await close();
+  }
 });
 
 test("runCli sensorium proposal-template requests non-activating review context", async () => {
@@ -1616,3 +1736,18 @@ test("runCli desktop focus sends include-text to server refusal path", async () 
   assert.equal(captured.requestPath, "/desktop/inspect/focus");
   assert.deepEqual(captured.body, { include_text: true });
 });
+
+async function createJsonServer(handler) {
+  const server = http.createServer(handler);
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    }),
+  };
+}

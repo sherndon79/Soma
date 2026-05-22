@@ -222,6 +222,8 @@ Implemented:
 - grant mutation preview route failure coverage added for degraded recovery, unsupported mutation
   kinds, and malformed create inputs, preserving dry-run, non-writing, and non-activation refusal
   flags
+- grant mutation preview CLI failure coverage added so dry-run route refusals render as human
+  review text, raw `--json` refusals remain inspectable, and unrelated HTTP failures still throw
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -341,24 +343,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview CLI failure coverage.
+Document durable grant mutation activation policy.
 
 Target:
 
 ```text
-grant mutation preview CLI failures
-  -> prove preview-create and preview-revoke human output renders route refusals clearly
-  -> preserve --json raw refusal output for operator inspection
-  -> keep CLI wrappers pointed only at /grants/mutation-previews
+durable grant mutation activation policy
+  -> define what must be true before writable grant mutation routes can exist
+  -> separate preview/review surfaces from durable commit surfaces
+  -> name operator controls for runtime_writes_enabled and recovery repair
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add focused CLI tests for preview refusal text and JSON refusal output
-- verify refusal text keeps dry-run/non-writing/non-activation boundaries visible
-- avoid adding direct filesystem writes or active mutation command aliases
-- document any CLI-facing refusal behavior that changes
+- add a concise architecture/policy note for activating durable grant mutation later
+- capture the invariants preview work established before any write path exists
+- identify remaining implementation gates and review triggers
+- avoid implementing writable routes, CLI mutation commands, or runtime write enablement
 
 Constraints:
 

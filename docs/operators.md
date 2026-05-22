@@ -379,6 +379,8 @@ These commands call only `/grants/mutation-previews`; they do not write durable 
 output is formatted through the grant mutation preview review surface, which emphasizes dry-run
 status, non-activation, no durable writes, and bounded planned-state summary fields. Use `--json`
 when the raw preview response is needed for inspection or tests.
+Dry-run preview refusals from the route are rendered through the same review surface even when the
+HTTP status is a refusal; unrelated HTTP failures still fail the CLI command.
 
 Future grant mutation command names are reserved in the design docs, but commands such as
 `grants create`, `grants revoke`, and `grants supersede` are not implemented.

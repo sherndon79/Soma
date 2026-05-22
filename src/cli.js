@@ -386,6 +386,9 @@ async function apiRequest(baseUrl, method, path, body) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (path === "/grants/mutation-previews" && isDryRunPreviewRefusal(payload)) {
+      return payload;
+    }
     const error = new Error(payload.message ?? `Soma request failed with HTTP ${response.status}.`);
     error.code = payload.error ?? "request_failed";
     error.statusCode = response.status;
@@ -627,6 +630,14 @@ function writeOutput(stdout, payload, jsonOutput, textOutput = "") {
     return;
   }
   stdout.write(`${textOutput}\n`);
+}
+
+function isDryRunPreviewRefusal(payload) {
+  return payload?.ok === false
+    && payload?.dry_run === true
+    && payload?.grant_written === false
+    && payload?.provenance_appended === false
+    && payload?.activation_performed === false;
 }
 
 function desktopInspectionSummary(response) {

@@ -224,6 +224,8 @@ default.
   - review after adding pure operator-facing preview text for dry-run grant mutation previews
 - [Grant Mutation Preview Route Failures](./2026-05-22_grant_mutation_preview_route_failures.md)
   - review after hardening dry-run route refusals for unsupported and malformed preview requests
+- [Grant Mutation Preview CLI Failures](./2026-05-22_grant_mutation_preview_cli_failures.md)
+  - review after rendering dry-run preview refusals in CLI human output while preserving raw JSON
 
 ## Current Review Triggers
 

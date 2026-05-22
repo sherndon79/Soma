@@ -208,6 +208,8 @@ Implemented:
 - server startup now composes the read-only grant store with append-only grant mutation provenance
   through `loadGrantAuthority`, passing a recovery report into policy gates and returning
   non-authorizing findings when provenance is missing or unreadable
+- CLI `grants recovery` added as a read-only wrapper over `GET /grants/recovery`, with human and
+  JSON output for absent inspection, clean inspection, and bounded degraded findings
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -327,24 +329,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add an operator CLI wrapper for grant recovery inspection.
+Define the durable grant mutation route readiness checklist.
 
 Target:
 
 ```text
-grant recovery operator inspection
-  -> expose GET /grants/recovery through npm run cli -- grants recovery
-  -> summarize absent inspection, clean inspection, and degraded findings without mismatch values
-  -> keep the HTTP route as the authority source for the CLI wrapper
+durable grant mutation route readiness
+  -> identify the minimum route and CLI mutation surfaces that can safely use the durable writer
+  -> preserve recovery inspection before authorization and after mutation
+  -> keep revocation/disable paths available as safety controls
   -> keep POST /grants, CLI mutation, and runtime_writes_enabled out of scope
 ```
 
 Expected work:
 
-- add CLI parsing and output formatting for `grants recovery`
-- add JSON and human-readable CLI tests
-- document the command under operator grant inspection
-- preserve the read-only inspection posture
+- write the route-readiness checklist before enabling any writable route
+- distinguish durable grant authority from process-local Sensorium session grants
+- decide how mutation receipts are returned without implying activation
+- identify rollback/retry behavior for failed response and degraded recovery cases
 
 Constraints:
 

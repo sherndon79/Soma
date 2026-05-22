@@ -211,6 +211,8 @@ default.
 - [Grant Authority Startup Loader](./2026-05-21_grant_authority_startup_loader.md)
   - review after server startup began loading grant mutation provenance and passing recovery
     inspection into policy gates without enabling mutation
+- [Grant Recovery CLI](./2026-05-21_grant_recovery_cli.md)
+  - review after adding a read-only `grants recovery` CLI wrapper over the recovery inspection route
 
 ## Current Review Triggers
 

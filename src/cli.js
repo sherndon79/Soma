@@ -137,6 +137,11 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
   }
 
   if (command === "grants") {
+    if (subcommand === "recovery") {
+      const response = await request(baseUrl, "GET", "/grants/recovery");
+      writeOutput(stdout, response, jsonOutput, grantRecoverySummary(response));
+      return 0;
+    }
     if (subcommand === "list" || !subcommand) {
       const query = new URLSearchParams();
       if (flags.status) {
@@ -854,6 +859,53 @@ function grantListSummary(response) {
   return lines.join("\n");
 }
 
+function grantRecoverySummary(response) {
+  const findings = Array.isArray(response.findings) ? response.findings : [];
+  const lines = [
+    "Grant recovery",
+    `  inspection available: ${booleanText(response.recovery_inspection_available)}`,
+    `  ok: ${response.ok === null ? "not inspected" : booleanText(response.ok)}`,
+    `  degraded: ${booleanText(response.degraded)}`,
+    `  grants inspected: ${response.grant_count ?? 0}`,
+    `  findings: ${response.finding_count ?? findings.length}`,
+    `  runtime writes enabled: ${booleanText(response.runtime_writes_enabled)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ];
+
+  if (findings.length === 0) {
+    lines.push("  none");
+    return lines.join("\n");
+  }
+
+  for (const finding of findings) {
+    const details = [
+      `grant=${finding.grant_id ?? "unknown"}`,
+      `capability=${finding.capability ?? "unknown"}`,
+      `provider=${finding.provider ?? "unknown"}`,
+      `scope=${finding.scope ?? "unknown"}`,
+      `safe=${booleanText(finding.authorizing_safe)}`,
+    ];
+    if (finding.event_type) {
+      details.push(`event=${finding.event_type}`);
+    }
+    if (finding.expected_event_type) {
+      details.push(`expected=${finding.expected_event_type}`);
+    }
+    if (finding.field) {
+      details.push(`field=${finding.field}`);
+    }
+    if (finding.provenance_stage) {
+      details.push(`stage=${finding.provenance_stage}`);
+    }
+    if (finding.provenance_error_code) {
+      details.push(`error=${finding.provenance_error_code}`);
+    }
+    lines.push(`  ${finding.code ?? "unknown_grant_recovery_finding"} ${details.join(" ")}`);
+  }
+
+  return lines.join("\n");
+}
+
 function modelVisualAttachDryRunSummary(response) {
   const request = response.request ?? {};
   const futurePreview = response.future_provenance_preview ?? {};
@@ -1164,6 +1216,7 @@ Usage:
   soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
+  soma grants recovery [--json]
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]

@@ -680,6 +680,76 @@ test("runCli grants list prints revocation metadata", async () => {
   assert.match(writes.join(""), /replacement grant: grant-3/);
 });
 
+test("runCli grants recovery prints bounded recovery summary", async () => {
+  let capturedPath;
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "grants", "recovery"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      capturedPath = path;
+      return {
+        recovery_inspection_available: true,
+        ok: false,
+        degraded: true,
+        grant_count: 1,
+        finding_count: 1,
+        findings: [
+          {
+            code: "grant_provenance_metadata_mismatch",
+            grant_id: "grant-1",
+            capability: "desktop.inspect.focus",
+            provider: "soma.provider.desktop.local",
+            scope: "session",
+            authorizing_safe: false,
+            event_type: "grant.created",
+            field: "reason",
+          },
+        ],
+        runtime_writes_enabled: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.equal(capturedPath, "/grants/recovery");
+  assert.match(output, /Grant recovery/);
+  assert.match(output, /inspection available: yes/);
+  assert.match(output, /ok: no/);
+  assert.match(output, /degraded: yes/);
+  assert.match(output, /grant_provenance_metadata_mismatch/);
+  assert.match(output, /field=reason/);
+  assert.doesNotMatch(output, /grant_value/);
+});
+
+test("runCli grants recovery returns JSON when requested", async () => {
+  const writes = [];
+  const code = await runCli(parseCli(["node", "soma", "grants", "recovery", "--json"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path) => {
+      assert.equal(method, "GET");
+      assert.equal(path, "/grants/recovery");
+      return {
+        recovery_inspection_available: false,
+        ok: null,
+        degraded: false,
+        grant_count: 0,
+        finding_count: 0,
+        findings: [],
+        runtime_writes_enabled: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(writes.join(""));
+  assert.equal(parsed.recovery_inspection_available, false);
+  assert.equal(parsed.ok, null);
+});
+
 test("runCli sensorium proposal-template requests non-activating review context", async () => {
   let captured;
   const writes = [];

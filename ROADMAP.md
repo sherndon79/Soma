@@ -226,6 +226,9 @@ Implemented:
   review text, raw `--json` refusals remain inspectable, and unrelated HTTP failures still throw
 - durable grant mutation activation policy documented, separating preview/review surfaces from
   future commit surfaces and naming explicit operator controls for runtime writes and repair
+- runtime write posture status reporting added to health, grant inspection, recovery inspection,
+  and CLI status, treating `SOMA_RUNTIME_WRITES_ENABLED` as a visible request only while effective
+  runtime writes remain false
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -345,24 +348,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add runtime write flag status reporting.
+Add durable mutation route denial stubs.
 
 Target:
 
 ```text
-runtime write flag status reporting
-  -> expose configured runtime write posture in read-only status surfaces
-  -> keep the flag false by default and non-authorizing
-  -> do not wire the flag to durable grant mutation routes
-  -> keep POST /grants, CLI mutation, and runtime_writes_enabled activation out of scope
+durable mutation route denial stubs
+  -> reserve writable grant mutation route names with explicit not-enabled refusals
+  -> include runtime write posture and activation policy pointers in refusals
+  -> prove stubs do not call durable writers or mutate grant state
+  -> keep CLI mutation commands and runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a read-only runtime write posture helper if needed
-- surface the posture in health/status or grant inspection without enabling writes
-- add tests proving default false and no mutation path
-- document the operator-facing status field
+- add explicit refusal handlers for reserved durable mutation routes if useful
+- return stable not-enabled codes with no write/activation flags
+- add route tests for create/revoke denial behavior
+- document the refusal contract without implementing mutation
 
 Constraints:
 

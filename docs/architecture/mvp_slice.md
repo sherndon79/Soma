@@ -84,13 +84,21 @@ chat, memory, file reads, stewardship assessment, and desktop inspection.
 
 ### `GET /health`
 
-Returns service health.
+Returns service health and the read-only runtime write posture.
 
 Minimum response:
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "runtime_writes_enabled": false,
+  "runtime_write_posture": {
+    "runtime_writes_enabled": false,
+    "durable_grant_mutation_enabled": false,
+    "activation_supported": false,
+    "requested": false,
+    "status": "disabled"
+  }
 }
 ```
 
@@ -175,6 +183,7 @@ The MVP grant route does not write grants, revoke grants, or activate capabiliti
 grant records have an inspectable shape before any widening path can depend on them.
 Revoked grant records may include `revoked_at`, `revoked_by`, `revocation_reason`, and
 `replacement_grant_id`.
+The response also includes the same non-authorizing runtime write posture surfaced by health.
 
 ### `GET /grants/recovery`
 
@@ -186,6 +195,8 @@ Recovery findings are bounded operator metadata: code, grant id, status, capabil
 scope, authorizing safety, and small mismatch descriptors such as event type or field name. The
 route may also report durable provenance read failure class. It does not expose mismatch values,
 grant reason text, payloads, activate capabilities, or mutate the grant store.
+The response includes `runtime_writes_enabled: false` and the runtime write posture so recovery
+inspection can show whether runtime writes were requested without treating that request as authority.
 
 The server startup path composes the read-only grant store with append-only grant mutation
 provenance inspection. Missing provenance for active durable grants produces degraded recovery

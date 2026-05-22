@@ -40,6 +40,8 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     const proposalSummaries = pendingProposalSummaries(pendingProposals.proposals);
     writeOutput(stdout, {
       health,
+      runtime_write_posture: health.runtime_write_posture,
+      runtime_writes_enabled: health.runtime_writes_enabled,
       harness_id: harness.harness_id,
       mode: harness.mode,
       default_runtime_profile: harness.runtime_profiles?.default_profile,

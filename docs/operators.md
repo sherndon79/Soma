@@ -322,6 +322,8 @@ npm run cli -- grants list --json
 ```
 
 `GET /grants` does not create, approve, revoke, or activate capabilities.
+It also reports `runtime_writes_enabled` and `runtime_write_posture`. A requested runtime write
+configuration is visible as posture only; it does not enable durable grant mutation.
 
 Grant recovery state is inspectable through the read-only HTTP route:
 

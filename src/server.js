@@ -5,6 +5,7 @@ import { loadHarness } from "./harness.js";
 import { loadHarnessModules } from "./harnessModules.js";
 import { ModelClient } from "./modelClient.js";
 import { loadRuntimeProfiles } from "./runtimeProfiles.js";
+import { runtimeWritePostureFromEnv } from "./runtimeWritePosture.js";
 import { createSensoriumRuntime } from "./sensoriumRuntime.js";
 
 const port = Number.parseInt(process.env.SOMA_PORT ?? "8765", 10);
@@ -19,6 +20,7 @@ const {
 });
 const moduleRegistry = await loadHarnessModules();
 const runtimeProfiles = await loadRuntimeProfiles();
+const runtimeWritePosture = runtimeWritePostureFromEnv(process.env);
 const modelClient = new ModelClient();
 const sensoriumRuntime = await createSensoriumRuntime({ logger: console });
 const app = createApp({
@@ -27,6 +29,7 @@ const app = createApp({
   providerRegistry,
   grantStore,
   grantRecoveryReport,
+  runtimeWritePosture,
   moduleRegistry,
   runtimeProfiles,
   modelClient,

@@ -228,6 +228,8 @@ default.
   - review after rendering dry-run preview refusals in CLI human output while preserving raw JSON
 - [Durable Grant Mutation Activation Policy](./2026-05-22_durable_grant_mutation_activation_policy.md)
   - review after documenting the operator decision boundary for future durable grant mutation
+- [Runtime Write Posture Status](./2026-05-22_runtime_write_posture_status.md)
+  - review after exposing requested/default runtime write posture in read-only status surfaces
 
 ## Current Review Triggers
 

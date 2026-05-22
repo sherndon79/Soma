@@ -30,7 +30,14 @@ test("runCli status gathers operator summary", async () => {
     stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, _method, path) => {
       if (path === "/health") {
-        return { status: "ok" };
+        return {
+          status: "ok",
+          runtime_writes_enabled: false,
+          runtime_write_posture: {
+            runtime_writes_enabled: false,
+            status: "disabled",
+          },
+        };
       }
       if (path === "/harness") {
         return {
@@ -72,6 +79,8 @@ test("runCli status gathers operator summary", async () => {
   assert.equal(code, 0);
   const payload = JSON.parse(writes.join(""));
   assert.equal(payload.health.status, "ok");
+  assert.equal(payload.runtime_writes_enabled, false);
+  assert.equal(payload.runtime_write_posture.status, "disabled");
   assert.equal(payload.harness_id, "soma.base");
   assert.deepEqual(payload.active_modules, ["pause-local-chat"]);
   assert.equal(payload.pending_capability_proposals, 2);

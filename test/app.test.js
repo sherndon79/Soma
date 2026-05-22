@@ -263,7 +263,29 @@ const grantStore = {
 test("GET /health returns ok", async () => {
   const response = await invoke({ method: "GET", url: "/health" });
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { status: "ok" });
+  assert.equal(response.body.status, "ok");
+  assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
+  assert.equal(response.body.runtime_write_posture.requested, false);
+  assert.equal(response.body.runtime_write_posture.activation_supported, false);
+});
+
+test("GET /health reports requested runtime writes as disabled posture", async () => {
+  const response = await invoke({
+    method: "GET",
+    url: "/health",
+    runtimeWritePosture: {
+      requested: true,
+      source: "test",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "requested_but_disabled");
+  assert.equal(response.body.runtime_write_posture.requested, true);
+  assert.equal(response.body.runtime_write_posture.source, "test");
+  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
 });
 
 test("GET /harness returns active harness", async () => {
@@ -538,6 +560,8 @@ test("GET /grants lists file-backed grants without activation", async () => {
   assert.equal(response.body.file_backed, true);
   assert.equal(response.body.writable, false);
   assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
+  assert.equal(response.body.runtime_write_posture.activation_supported, false);
   assert.equal(response.body.activation_performed, false);
 });
 
@@ -578,6 +602,7 @@ test("GET /grants/recovery reports absent inspection without declaring authority
   assert.equal(response.body.durable, false);
   assert.equal(response.body.activation_performed, false);
   assert.equal(response.body.runtime_writes_enabled, false);
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
 });
 
 test("GET /grants/recovery exposes bounded degraded findings", async () => {
@@ -2710,6 +2735,7 @@ async function invoke({
   },
   grantStore: grants,
   grantRecoveryReport,
+  runtimeWritePosture,
   body,
 } = {}) {
   return invokeHandler(makeHandler({
@@ -2720,6 +2746,7 @@ async function invoke({
     modelClient,
     grantStore: grants,
     grantRecoveryReport,
+    runtimeWritePosture,
   }), {
     method,
     url,
@@ -3823,6 +3850,7 @@ function makeHandler({
   },
   grantStore: grants,
   grantRecoveryReport,
+  runtimeWritePosture,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
 } = {}) {
@@ -3835,6 +3863,7 @@ function makeHandler({
     modelClient,
     grantStore: grants,
     grantRecoveryReport,
+    runtimeWritePosture,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
     logger: { info() {} },

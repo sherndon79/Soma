@@ -29,6 +29,7 @@ import {
   publicRuntimeProfiles,
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
+import { resolveRuntimeWritePosture } from "./runtimeWritePosture.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
   buildSensoriumGrantCreateCandidateFromProposal,
@@ -54,6 +55,7 @@ export function createApp({
   capabilityProposals,
   grantStore,
   grantRecoveryReport,
+  runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
@@ -70,6 +72,7 @@ export function createApp({
     capabilityProposals,
     grantStore,
     grantRecoveryReport,
+    runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
@@ -88,6 +91,7 @@ export function createRequestHandler({
   capabilityProposals = new CapabilityProposalStore(),
   grantStore = { schema_version: 1, grants: [] },
   grantRecoveryReport = null,
+  runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
   sensoriumSubscriber = null,
@@ -103,6 +107,7 @@ export function createRequestHandler({
     throw new Error("createRequestHandler requires a modelClient.");
   }
   let activeModules = [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
       if (!endSummary) {
@@ -127,7 +132,11 @@ export function createRequestHandler({
       const effectiveHarness = applyActiveModules(harness, activeModules);
 
       if (req.method === "GET" && url.pathname === "/health") {
-        writeJson(res, 200, { status: "ok" });
+        writeJson(res, 200, {
+          status: "ok",
+          runtime_writes_enabled: writePosture.runtime_writes_enabled,
+          runtime_write_posture: writePosture,
+        });
         return;
       }
 
@@ -707,7 +716,8 @@ export function createRequestHandler({
           examples_available: Array.isArray(grantStore.examples) && grantStore.examples.length > 0,
           file_backed: true,
           writable: false,
-          runtime_writes_enabled: false,
+          runtime_writes_enabled: writePosture.runtime_writes_enabled,
+          runtime_write_posture: writePosture,
           activation_performed: false,
         });
         return;
@@ -716,7 +726,7 @@ export function createRequestHandler({
       if (req.method === "GET" && url.pathname === "/grants/recovery") {
         writeJson(res, 200, summarizeGrantRecoveryInspection(
           resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
-          { grantStore },
+          { grantStore, runtimeWritePosture: writePosture },
         ));
         return;
       }
@@ -1628,11 +1638,12 @@ function resolveGrantRecoveryReport(grantRecoveryReport, context) {
   return grantRecoveryReport;
 }
 
-function summarizeGrantRecoveryInspection(report, { grantStore } = {}) {
+function summarizeGrantRecoveryInspection(report, { grantStore, runtimeWritePosture } = {}) {
   const recoveryInspectionAvailable = report && typeof report === "object";
   const findings = Array.isArray(report?.findings)
     ? report.findings.map(publicGrantRecoveryFinding)
     : [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   return {
     recovery_inspection_available: Boolean(recoveryInspectionAvailable),
     ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
@@ -1646,8 +1657,19 @@ function summarizeGrantRecoveryInspection(report, { grantStore } = {}) {
     findings,
     durable: false,
     activation_performed: false,
-    runtime_writes_enabled: false,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
   };
+}
+
+function normalizeRuntimeWritePosture(posture) {
+  if (posture && typeof posture === "object") {
+    return resolveRuntimeWritePosture({
+      requested: posture.requested === true,
+      source: posture.source ?? "injected",
+    });
+  }
+  return resolveRuntimeWritePosture();
 }
 
 function publicGrantRecoveryFinding(finding = {}) {

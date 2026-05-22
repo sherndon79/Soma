@@ -20,7 +20,10 @@ export function parseCli(argv) {
   };
 }
 
-export async function runCli(parsed, { stdout = process.stdout, stderr = process.stderr, request = apiRequest } = {}) {
+export async function runCli(
+  parsed,
+  { stdout = process.stdout, stderr = process.stderr, stdin = process.stdin, request = apiRequest } = {},
+) {
   const { command, subcommand, rest, flags, baseUrl } = parsed;
   const jsonOutput = Boolean(flags.json);
 
@@ -147,6 +150,16 @@ export async function runCli(parsed, { stdout = process.stdout, stderr = process
     if (subcommand === "recovery") {
       const response = await request(baseUrl, "GET", "/grants/recovery");
       writeOutput(stdout, response, jsonOutput, grantRecoverySummary(response));
+      return 0;
+    }
+    if (subcommand === "review-preview") {
+      const response = await request(
+        baseUrl,
+        "POST",
+        "/grants/mutation-preview-review-text",
+        await grantPreviewReviewTextRequestFromFlags(flags, { stdin }),
+      );
+      writeOutput(stdout, response, jsonOutput, response.text);
       return 0;
     }
     if (subcommand === "preview-create") {
@@ -570,6 +583,33 @@ function grantPreviewRevokeRequestFromFlags(grantId, flags) {
   };
 }
 
+async function grantPreviewReviewTextRequestFromFlags(flags, { stdin }) {
+  const hasPreviewJson = flags["preview-json"] !== undefined;
+  const readFromStdin = Boolean(flags.stdin);
+
+  if (hasPreviewJson && readFromStdin) {
+    throw usageError("grants review-preview accepts either --preview-json or --stdin, not both.");
+  }
+  if (!hasPreviewJson && !readFromStdin) {
+    throw usageError("grants review-preview requires --preview-json json or --stdin.");
+  }
+
+  const previewJson = readFromStdin
+    ? await readAllText(stdin)
+    : String(flags["preview-json"]);
+  let reviewResponse;
+  try {
+    reviewResponse = JSON.parse(previewJson);
+  } catch {
+    throw usageError("grants review-preview preview JSON must be valid JSON.");
+  }
+  if (!isPlainObject(reviewResponse)) {
+    throw usageError("grants review-preview preview JSON must decode to an object.");
+  }
+
+  return { review_response: reviewResponse };
+}
+
 function jsonObjectFlag(value, flagName, commandName) {
   if (value === undefined) {
     return undefined;
@@ -584,6 +624,14 @@ function jsonObjectFlag(value, flagName, commandName) {
     throw usageError(`${commandName} ${flagName} must decode to an object.`);
   }
   return decoded;
+}
+
+async function readAllText(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function requiredFlag(value, flagName, commandName) {
@@ -1319,6 +1367,8 @@ Usage:
   soma modules list|adopt|drop [module-id] [--json]
   soma grants list [--status active|revoked|expired] [--json]
   soma grants recovery [--json]
+  soma grants review-preview --preview-json json [--json]
+  soma grants review-preview --stdin [--json]
   soma grants preview-create --capability key --provider id --reason text [--scope session] [--constraints-json json] [--approval-provenance-id id] [--mutation-id id] [--json]
   soma grants preview-revoke grant-id --reason text [--by user] [--mutation-id id] [--json]
   # reserved durable mutation commands fail locally until activation policy is satisfied:

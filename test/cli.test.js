@@ -985,6 +985,113 @@ test("runCli grants preview-create validates constraints JSON before request", a
   );
 });
 
+test("runCli grants review-preview requests formatting-only review text", async () => {
+  const writes = [];
+  const preview = {
+    ok: true,
+    dry_run: true,
+    mutation_kind: "grant.created",
+    grant: {
+      id: "grant-preview",
+      status: "active",
+      capability: "desktop.inspect.focus",
+      provider: "soma.provider.desktop-broker",
+      scope: "session",
+    },
+    receipt_preview: { status: "preview" },
+    next_store_summary: { grant_count: 1, changed: true },
+    grant_written: false,
+    provenance_appended: false,
+    activation_performed: false,
+  };
+
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "review-preview",
+    "--preview-json",
+    JSON.stringify(preview),
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/grants/mutation-preview-review-text");
+      assert.deepEqual(body, { review_response: preview });
+      return {
+        text: "Grant mutation preview\n  durable write: no",
+        review_only: true,
+        durable: false,
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.match(writes.join(""), /Grant mutation preview/);
+  assert.match(writes.join(""), /durable write: no/);
+});
+
+test("runCli grants review-preview can read preview JSON from stdin", async () => {
+  const writes = [];
+  const preview = {
+    ok: false,
+    dry_run: true,
+    code: "invalid_constraints",
+    grant_written: false,
+    provenance_appended: false,
+    activation_performed: false,
+  };
+
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "review-preview",
+    "--stdin",
+    "--json",
+  ]), {
+    stdin: [JSON.stringify(preview)],
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/grants/mutation-preview-review-text");
+      assert.deepEqual(body, { review_response: preview });
+      return {
+        text: "Grant mutation preview",
+        review_only: true,
+        durable: false,
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(JSON.parse(writes.join("")).review_only, true);
+});
+
+test("runCli grants review-preview validates preview JSON before request", async () => {
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "grants",
+      "review-preview",
+      "--preview-json",
+      "[]",
+    ]), {
+      request: async () => {
+        throw new Error("request should not be called");
+      },
+    }),
+    /grants review-preview preview JSON must decode to an object/,
+  );
+});
+
 test("runCli grants create fails locally before any request", async () => {
   await assert.rejects(
     () => runCli(parseCli([

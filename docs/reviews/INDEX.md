@@ -236,6 +236,8 @@ default.
   - review after reserving durable grant mutation CLI names with local disabled errors
 - [Grant Mutation Preview Review Endpoint](./2026-05-22_grant_mutation_preview_review_endpoint.md)
   - review after exposing grant mutation preview review formatting through a route
+- [Grant Mutation Preview Review CLI](./2026-05-22_grant_mutation_preview_review_cli.md)
+  - review after adding a CLI wrapper for grant mutation preview review formatting
 
 ## Current Review Triggers
 

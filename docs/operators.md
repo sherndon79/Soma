@@ -391,6 +391,21 @@ create previews, write grants, append provenance, activate capabilities, start s
 recovery findings, or deliver model context. Payload-shaped and mismatch-value fields are rejected
 before formatting.
 
+The same formatting-only route is available through the CLI:
+
+```bash
+npm run cli -- grants review-preview --preview-json '{"ok":true,"dry_run":true}'
+
+npm run cli -- grants preview-create \
+  --capability desktop.inspect.focus \
+  --provider soma.provider.desktop-broker \
+  --reason "Preview focused inspection authority." \
+  --json | npm run cli -- grants review-preview --stdin
+```
+
+`grants review-preview` validates the supplied JSON locally before sending the request. It does not
+create a preview or mutate grants; it only asks Soma to format an existing preview object.
+
 Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
 `grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
 request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`

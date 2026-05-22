@@ -238,6 +238,9 @@ Implemented:
 - grant mutation preview review endpoint added at `POST /grants/mutation-preview-review-text`,
   exposing pure review formatting for supplied preview responses while rejecting payload-shaped
   fields and preserving non-write/non-activation flags
+- grant mutation preview review CLI wrapper added as `grants review-preview`, accepting explicit
+  preview JSON or stdin, validating locally before requests, and preserving formatting-only
+  non-write behavior
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -357,24 +360,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review CLI wrapper.
+Add grant mutation preview review forbidden-key fixture coverage.
 
 Target:
 
 ```text
-grant mutation preview review CLI wrapper
-  -> expose the review-only endpoint from the CLI for saved preview JSON
-  -> keep direct preview-create and preview-revoke behavior unchanged
-  -> validate local JSON before any request is sent
+grant mutation preview review forbidden-key fixture coverage
+  -> document the current forbidden review key set in fixtures
+  -> prove nested payload/value fields are rejected consistently
+  -> keep formatter output summary-only
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a `grants review-preview` CLI command over `/grants/mutation-preview-review-text`
-- accept preview JSON from an explicit flag or stdin without writing files
-- add CLI tests for accepted formatting and local malformed JSON rejection
-- document the command as formatting-only
+- add accepted/rejected review fixture cases for grant mutation previews
+- extend route or surface tests to use those fixtures
+- document the forbidden-key boundary without widening review output
+- keep route and CLI behavior unchanged
 
 Constraints:
 

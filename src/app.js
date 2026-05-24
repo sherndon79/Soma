@@ -31,6 +31,9 @@ import {
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
 import { resolveRuntimeWritePosture } from "./runtimeWritePosture.js";
+import {
+  buildRemoteGraphicalGrantCreateCandidateFromProposal,
+} from "./remoteGraphicalGrantCreateCandidate.js";
 import { buildRemoteGraphicalProposalTemplate } from "./remoteGraphicalProposalTemplate.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
@@ -371,6 +374,36 @@ export function createRequestHandler({
           grant_intent: template.grant_intent,
           provenance_id: event.id,
           activation_performed: false,
+          durable: false,
+          grant_written: false,
+          session_opened: false,
+          pairing_performed: false,
+          video_attached: false,
+          input_dispatched: false,
+          recording_started: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/remote-graphical/grant-candidates") {
+        const body = await readJson(req);
+        const proposalId = String(body?.proposal_id ?? "").trim();
+        if (!proposalId) {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_grant_candidate_request_invalid",
+            message: "Remote graphical grant candidate review requires proposal_id.",
+          });
+          return;
+        }
+        const proposal = capabilityProposals.find(proposalId);
+        const candidate = buildRemoteGraphicalGrantCreateCandidateFromProposal(proposal, {
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        writeJson(res, 200, {
+          ...candidate,
+          review_only: true,
           durable: false,
           grant_written: false,
           session_opened: false,

@@ -531,6 +531,16 @@ session, write grants, or attach frames to model context.
 The `propose` command stores a pending capability proposal only. It still does not create a grant or
 activate a remote graphical session.
 
+After a proposal is approved, a grant candidate can be reviewed without writing it:
+
+```bash
+npm run cli -- remote-graphical grant-candidate proposal-id
+```
+
+The candidate review validates the approved proposal, review context, and grant intent still agree.
+It returns grant-create input for inspection, but still does not write a grant, pair a host, open a
+session, dispatch input, attach video, or start recording.
+
 View, pointer input, keyboard input, and disconnect remain separate authorities. A view-only
 proposal must not request keyboard or pointer channels; input proposals must not request video.
 

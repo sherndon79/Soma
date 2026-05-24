@@ -226,6 +226,18 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "grant-candidate") {
+    const proposalId = rest[0];
+    if (!proposalId) {
+      throw usageError("remote-graphical grant-candidate requires a proposal id.");
+    }
+    const response = await request(baseUrl, "POST", "/remote-graphical/grant-candidates", {
+      proposal_id: proposalId,
+    });
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalGrantCandidateSummary(response));
+    return 0;
+  }
+
   if (command === "sensorium" && subcommand === "propose") {
     const response = await request(baseUrl, "POST", "/sensorium/proposals", sensoriumProposalTemplateRequestFromFlags(flags));
     writeOutput(stdout, response, jsonOutput, sensoriumProposalCreatedSummary(response));
@@ -1208,6 +1220,32 @@ function remoteGraphicalProposalCreatedSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalGrantCandidateSummary(response) {
+  const grant = response.grant_create_input ?? {};
+  const constraints = grant.constraints ?? {};
+  const lines = [
+    "Remote graphical grant candidate",
+    `  source proposal: ${response.source_proposal_id ?? "unknown"}`,
+    `  grant id: ${grant.id ?? "pending"}`,
+    `  capability: ${grant.capability ?? "unknown"}`,
+    `  provider: ${grant.provider ?? "unknown"}`,
+    `  scope: ${grant.scope ?? "unknown"}`,
+    `  target host: ${constraints.target_host ?? "unknown"}`,
+    `  mode: ${constraints.mode ?? "unknown"}`,
+    `  channels: ${joinList(constraints.requested_channels)}`,
+    `  max seconds: ${constraints.max_seconds ?? "unknown"}`,
+    `  approval provenance: ${grant.approval_provenance_id ?? "unknown"}`,
+    `  review only: ${booleanText(response.review_only)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1515,6 +1553,7 @@ Usage:
   soma sensorium status [--json]
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
+  soma remote-graphical grant-candidate proposal-id [--json]
   soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
   soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]

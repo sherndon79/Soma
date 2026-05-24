@@ -277,6 +277,10 @@ Implemented:
 - remote graphical grant-candidate builder added for approved proposals, validating approval
   provenance plus provider, target-host, mode, scope, requested-channel, reason, and revocation
   metadata agreement while preserving no-write and no-runtime-activation flags
+- remote graphical grant-candidate review exposed through
+  `POST /remote-graphical/grant-candidates` and
+  `soma remote-graphical grant-candidate`, validating approved proposals through HTTP/CLI while
+  preserving no-grant-write and no-runtime-activation behavior
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -396,24 +400,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose remote graphical grant-candidate review without writes.
+Decide and document remote graphical grant creation activation.
 
 Target:
 
 ```text
-remote graphical grant-candidate review
-  -> expose the approved-proposal candidate builder through a non-writing endpoint and CLI
-  -> preserve no durable grant writes and no runtime session activation
-  -> reject pending/denied proposals and review metadata drift through the route
-  -> keep pairing, screenshots, input, and model visual delivery out of scope
+remote graphical grant creation activation decision
+  -> define whether session grants may be created for approved remote graphical proposals
+  -> separate grant creation from Moonlight/Sunshine pairing and runtime session activation
+  -> document operator prerequisites, recovery behavior, and revocation expectations
+  -> keep pairing, screenshots, input dispatch, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add a non-writing route for approved remote graphical proposal grant candidates
-- add a CLI command that renders the candidate review fields
-- test accepted approved proposal and rejected pending/metadata-drift proposals through HTTP/CLI
-- keep actual grant creation and runtime transport activation out of scope
+- write the activation policy for remote graphical session grant creation
+- decide whether the first grant route should be session-only and runtime-only
+- document that grant creation must not start a Moonlight/Sunshine session
+- identify tests required before any writable route lands
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope
 

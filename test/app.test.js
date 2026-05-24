@@ -3238,6 +3238,81 @@ test("POST /remote-graphical/proposals stores pending proposal without session a
   assert.equal(proposals.pendingCount(), 1);
 });
 
+test("POST /remote-graphical/grant-candidates returns candidate without writing grant or opening session", async () => {
+  const proposals = new CapabilityProposalStore();
+  proposals.proposals.push(makeApprovedRemoteGraphicalProposal());
+  const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grant-candidates",
+    body: {
+      proposal_id: "proposal-remote-video",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.source_proposal_id, "proposal-remote-video");
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.grant_create_input.capability, "perception.remote_desktop.video.subscribe");
+  assert.equal(response.body.grant_create_input.provider, "soma.provider.remote_desktop.sunshine");
+  assert.equal(response.body.grant_create_input.approval_provenance_id, "prov-remote-approval");
+  assert.equal(response.body.grant_create_input.constraints.target_host, "soma-agent-desktop.local.sthnet.org");
+});
+
+test("POST /remote-graphical/grant-candidates rejects pending proposal before grant write", async () => {
+  const proposals = new CapabilityProposalStore();
+  proposals.proposals.push({
+    ...makeApprovedRemoteGraphicalProposal(),
+    status: "pending",
+    decision: undefined,
+  });
+  const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grant-candidates",
+    body: {
+      proposal_id: "proposal-remote-video",
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_grant_candidate");
+  assert.match(response.body.message, /proposal must be approved/);
+});
+
+test("POST /remote-graphical/grant-candidates rejects metadata drift before grant write", async () => {
+  const proposals = new CapabilityProposalStore();
+  const proposal = makeApprovedRemoteGraphicalProposal();
+  proposal.grant_intent = {
+    ...proposal.grant_intent,
+    constraints: {
+      ...proposal.grant_intent.constraints,
+      target_host: "other-host.local",
+    },
+  };
+  proposals.proposals.push(proposal);
+  const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grant-candidates",
+    body: {
+      proposal_id: "proposal-remote-video",
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_grant_candidate");
+  assert.match(response.body.message, /target_host/);
+});
+
 test("POST /sensorium/proposals stores pending proposal with review context but no activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
   let response = await invokeHandler(handler, {
@@ -4171,6 +4246,67 @@ function makeHandler({
     capabilityProposals,
     logger: { info() {} },
   });
+}
+
+function makeApprovedRemoteGraphicalProposal() {
+  const constraints = {
+    target_host: "soma-agent-desktop.local.sthnet.org",
+    mode: "view_only",
+    locality: "lan",
+    attended: true,
+    requested_channels: ["video"],
+    max_seconds: 120,
+    max_fps: 30,
+    max_width: 1280,
+    max_height: 720,
+  };
+  return {
+    id: "proposal-remote-video",
+    status: "approved",
+    type: "capability_proposal",
+    requested_by: "assistant",
+    capability: "perception.remote_desktop.video.subscribe",
+    requested_scope: "session",
+    reason: "Need a bounded view of the graphical lab.",
+    decision: {
+      decision: "approved",
+      approved_scope: "session",
+      decided_by: "user",
+      decided_at: "2026-05-24T12:00:00.000Z",
+      provenance_id: "prov-remote-approval",
+      activation_performed: false,
+    },
+    review_context: {
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "view_only",
+      authority: "video",
+      risk_class: "high",
+      scope: "session",
+      locality: "lan",
+      attended: true,
+      constraints: { ...constraints },
+      requested_channels: ["video"],
+      excluded_channels: ["keyboard", "pointer", "recording"],
+      active_disclosure: "remote graphical video authority for soma-agent-desktop.local.sthnet.org, expires in 120 seconds",
+      revocation: {
+        summary: "Revoking this grant stops video authority for soma-agent-desktop.local.sthnet.org.",
+        immediate_stop: true,
+      },
+      recording_posture: "No screenshots or frames are retained by default.",
+      model_boundary_warning: "Remote desktop frames can be stopped later.",
+      provenance_posture: "Record metadata only.",
+    },
+    grant_intent: {
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      scope: "session",
+      constraints: { ...constraints },
+      reason: "Need a bounded view of the graphical lab.",
+      activation_performed: false,
+    },
+  };
 }
 
 function createDesktopDisclosureRegistrySpy() {

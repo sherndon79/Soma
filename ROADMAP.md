@@ -314,6 +314,9 @@ Implemented:
   configured broker injection, active grant matching, user actor, active disclosure, metadata-only
   provenance, stable refusal codes, and cleanup prerequisites before live broker-backed
   `open_session`
+- remote graphical broker runtime opt-in scaffold added behind `SOMA_REMOTE_GRAPHICAL_ENABLED`,
+  exposing `requested`, `enabled`, and `configured` status posture while preserving the default
+  no-op broker, no live transport calls, and default session-open refusal
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -433,24 +436,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical broker runtime opt-in scaffold.
+Add remote graphical configured broker fixture scaffold.
 
 Target:
 
 ```text
-remote graphical broker runtime opt-in scaffold
-  -> add explicit environment/config parsing for remote graphical broker enablement
-  -> preserve no-op/default-off behavior when unset
-  -> expose requested/enabled posture in status without live Sunshine/Moonlight calls
-  -> keep session-open refusal as default without configured broker injection
+remote graphical configured broker fixture scaffold
+  -> define an injected broker fixture contract for status and future session-open tests
+  -> distinguish opt-in requested from broker configured/provider available
+  -> add not-enabled/not-configured refusal codes without calling live transport
+  -> keep Sunshine/Moonlight implementation, pairing, video, and input out of scope
 ```
 
 Expected work:
 
-- add runtime config helper similar to Sensorium opt-in posture
-- update `GET /remote-graphical/status` to report requested/enabled/configured posture
-- keep default broker no-op and no live transport calls
-- prove `POST /remote-graphical/sessions` still refuses without configured broker
+- add a provider-neutral broker interface fixture for configured-but-fake status
+- thread runtime posture into session-open refusal decisions without live broker invocation
+- preserve explicit user actor and active grant validation ordering
+- prove unset opt-in, missing broker, and fake configured broker paths return bounded refusal codes
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

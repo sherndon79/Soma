@@ -3,10 +3,12 @@ export class RemoteGraphicalBroker {
     family = "desktop.remote_graphical",
     provider = "",
     targetHost = "",
+    runtimePosture = {},
   } = {}) {
     this.family = stringValue(family) || "desktop.remote_graphical";
     this.provider = stringValue(provider);
     this.targetHost = stringValue(targetHost);
+    this.runtimePosture = normalizeRuntimePosture(runtimePosture);
   }
 
   status() {
@@ -14,6 +16,7 @@ export class RemoteGraphicalBroker {
       family: this.family,
       provider: this.provider,
       targetHost: this.targetHost,
+      runtimePosture: this.runtimePosture,
     });
   }
 
@@ -23,9 +26,16 @@ export class RemoteGraphicalBroker {
 }
 
 export function createRemoteGraphicalBrokerStatus(value = {}) {
+  const configured = Boolean(value.configured);
+  const requested = Boolean(value.requested ?? value.runtime_requested ?? value.runtimePosture?.requested);
+  const enabled = value.enabled === undefined && value.runtimePosture?.enabled === undefined
+    ? configured
+    : Boolean(value.enabled ?? value.runtimePosture?.enabled);
   const status = {
     family: stringValue(value.family) || "desktop.remote_graphical",
-    configured: Boolean(value.configured),
+    requested,
+    enabled,
+    configured,
     status: stringValue(value.status) || "provider_not_configured",
     state: stringValue(value.state) || "unconfigured",
     provider: stringValue(value.provider),
@@ -53,9 +63,14 @@ export function createRemoteGraphicalBrokerStatus(value = {}) {
   return status;
 }
 
-function noProviderStatus({ family, provider, targetHost } = {}) {
+function noProviderStatus({ family, provider, targetHost, runtimePosture: rawRuntimePosture } = {}) {
+  const runtimePosture = normalizeRuntimePosture(rawRuntimePosture);
+  const summary = runtimePosture.requested
+    ? "Remote graphical broker opt-in requested, but no provider is configured."
+    : "Remote graphical broker is not configured.";
   return createRemoteGraphicalBrokerStatus({
     family,
+    runtimePosture,
     configured: false,
     status: "provider_not_configured",
     state: "unconfigured",
@@ -63,7 +78,7 @@ function noProviderStatus({ family, provider, targetHost } = {}) {
     target_host: targetHost,
     active_count: 0,
     sessions: [],
-    summary: "Remote graphical broker is not configured.",
+    summary,
   });
 }
 
@@ -101,4 +116,11 @@ function nonNegativeInteger(value) {
 
 function stringValue(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeRuntimePosture(value = {}) {
+  return {
+    requested: Boolean(value.requested),
+    enabled: Boolean(value.enabled),
+  };
 }

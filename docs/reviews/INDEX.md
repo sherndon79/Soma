@@ -278,6 +278,8 @@ default.
   - review after adding default-off session-open refusal without broker calls
 - [Remote Graphical Session-Open Activation Policy](./2026-05-24_remote_graphical_session_open_activation_policy.md)
   - review after documenting gates for future live broker-backed session-open activation
+- [Remote Graphical Runtime Opt-In](./2026-05-24_remote_graphical_runtime_opt_in.md)
+  - review after adding startup-visible runtime opt-in posture without live transport activation
 
 ## Current Review Triggers
 

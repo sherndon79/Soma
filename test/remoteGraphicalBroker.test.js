@@ -11,6 +11,8 @@ test("RemoteGraphicalBroker defaults to provider_not_configured without activati
   const status = broker.describeActive();
 
   assert.equal(status.family, "desktop.remote_graphical");
+  assert.equal(status.requested, false);
+  assert.equal(status.enabled, false);
   assert.equal(status.configured, false);
   assert.equal(status.status, "provider_not_configured");
   assert.equal(status.state, "unconfigured");
@@ -26,6 +28,25 @@ test("RemoteGraphicalBroker defaults to provider_not_configured without activati
   assert.equal(status.provider_session_stopped, false);
   assert.equal(status.model_delivery, false);
   assert.equal(status.live_transport_used, false);
+});
+
+test("RemoteGraphicalBroker reports requested opt-in while remaining unconfigured", () => {
+  const broker = new RemoteGraphicalBroker({
+    runtimePosture: {
+      requested: true,
+      enabled: false,
+      configured: false,
+    },
+  });
+  const status = broker.describeActive();
+
+  assert.equal(status.requested, true);
+  assert.equal(status.enabled, false);
+  assert.equal(status.configured, false);
+  assert.equal(status.status, "provider_not_configured");
+  assert.equal(status.state, "unconfigured");
+  assert.equal(status.live_transport_used, false);
+  assert.match(status.summary, /opt-in requested/);
 });
 
 test("createRemoteGraphicalBrokerStatus normalizes injected session disclosure", () => {
@@ -53,6 +74,8 @@ test("createRemoteGraphicalBrokerStatus normalizes injected session disclosure",
   });
 
   assert.equal(status.configured, true);
+  assert.equal(status.requested, false);
+  assert.equal(status.enabled, true);
   assert.equal(status.active_count, 1);
   assert.equal(status.sessions[0].session_id, "session-1");
   assert.deepEqual(status.sessions[0].active_authorities, ["video"]);

@@ -3212,6 +3212,8 @@ test("GET /remote-graphical/status reports no-op broker without grants or transp
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.family, "desktop.remote_graphical");
+  assert.equal(response.body.requested, false);
+  assert.equal(response.body.enabled, false);
   assert.equal(response.body.configured, false);
   assert.equal(response.body.status, "provider_not_configured");
   assert.equal(response.body.state, "unconfigured");
@@ -3233,6 +3235,38 @@ test("GET /remote-graphical/status reports no-op broker without grants or transp
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.grants.length, 0);
+});
+
+test("GET /remote-graphical/status reports opt-in posture without configuring transport", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    remoteGraphicalBroker: {
+      describeActive() {
+        return {
+          runtimePosture: {
+            requested: true,
+            enabled: false,
+          },
+          configured: false,
+          status: "provider_not_configured",
+          state: "unconfigured",
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/remote-graphical/status",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.requested, true);
+  assert.equal(response.body.enabled, false);
+  assert.equal(response.body.configured, false);
+  assert.equal(response.body.status, "provider_not_configured");
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.live_transport_used, false);
 });
 
 test("GET /remote-graphical/status uses injected disclosure without activating transport", async () => {
@@ -3275,6 +3309,8 @@ test("GET /remote-graphical/status uses injected disclosure without activating t
 
   assert.equal(response.statusCode, 200);
   assert.equal(describeCalls, 1);
+  assert.equal(response.body.requested, false);
+  assert.equal(response.body.enabled, true);
   assert.equal(response.body.configured, true);
   assert.equal(response.body.status, "available");
   assert.equal(response.body.state, "paired_inactive");

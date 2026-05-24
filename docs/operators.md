@@ -541,6 +541,10 @@ The default status reports `provider_not_configured`. It does not pair with Suns
 Moonlight, open a session, capture frames, dispatch input, record, create grants, or attach video to
 model context.
 
+Setting `SOMA_REMOTE_GRAPHICAL_ENABLED=1` makes the runtime opt-in visible as `requested: yes`, but
+the default broker still reports `enabled: no` and `configured: no` until a reviewed provider broker
+is explicitly configured.
+
 Session-open can be reviewed without opening a session:
 
 ```bash

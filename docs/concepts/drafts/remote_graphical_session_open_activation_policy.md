@@ -34,7 +34,8 @@ It must not mean:
 
 The current implemented surfaces are:
 
-- no-op broker status: `GET /remote-graphical/status`
+- no-op broker status: `GET /remote-graphical/status`, including `requested`, `enabled`, and
+  `configured` runtime posture
 - session-open review: `POST /remote-graphical/session-open-review`
 - default-off session-open refusal: `POST /remote-graphical/sessions`
 
@@ -50,6 +51,8 @@ A real broker-backed `open_session` route must not be enabled unless all gates a
    - A setting such as `SOMA_REMOTE_GRAPHICAL_ENABLED=1` is required.
    - Absence of the setting must preserve `provider_not_configured`.
    - Opt-in must be startup-visible in status output.
+   - Opt-in alone may only set `requested=true`; it must not imply `enabled=true` or
+     `configured=true`.
 
 2. **Configured injected broker**
    - The default broker remains no-op.

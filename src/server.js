@@ -6,6 +6,7 @@ import { loadHarnessModules } from "./harnessModules.js";
 import { ModelClient } from "./modelClient.js";
 import { loadRuntimeProfiles } from "./runtimeProfiles.js";
 import { runtimeWritePostureFromEnv } from "./runtimeWritePosture.js";
+import { createRemoteGraphicalRuntime } from "./remoteGraphicalRuntime.js";
 import { createSensoriumRuntime } from "./sensoriumRuntime.js";
 
 const port = Number.parseInt(process.env.SOMA_PORT ?? "8765", 10);
@@ -23,6 +24,7 @@ const runtimeProfiles = await loadRuntimeProfiles();
 const runtimeWritePosture = runtimeWritePostureFromEnv(process.env);
 const modelClient = new ModelClient();
 const sensoriumRuntime = await createSensoriumRuntime({ logger: console });
+const remoteGraphicalRuntime = await createRemoteGraphicalRuntime();
 const app = createApp({
   harness,
   capabilityCatalog,
@@ -34,6 +36,7 @@ const app = createApp({
   runtimeProfiles,
   modelClient,
   sensoriumSubscriber: sensoriumRuntime.subscriber,
+  remoteGraphicalBroker: remoteGraphicalRuntime.broker,
 });
 
 const server = app.listen(port, "127.0.0.1", () => {
@@ -61,4 +64,5 @@ async function shutdown(signal) {
     });
   });
   await sensoriumRuntime.stop();
+  await remoteGraphicalRuntime.stop();
 }

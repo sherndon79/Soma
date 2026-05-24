@@ -1276,6 +1276,8 @@ function remoteGraphicalStatusSummary(response) {
     "Remote graphical status",
     `  status: ${response.status ?? "unknown"}`,
     `  state: ${response.state ?? "unknown"}`,
+    `  requested: ${booleanText(response.requested)}`,
+    `  enabled: ${booleanText(response.enabled)}`,
     `  configured: ${booleanText(response.configured)}`,
     `  provider: ${response.provider || "none"}`,
     `  target host: ${response.target_host || "none"}`,

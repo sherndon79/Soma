@@ -1420,6 +1420,8 @@ test("runCli remote-graphical status reports no-op broker posture", async () => 
       captured = { method, path, body };
       return {
         configured: false,
+        requested: false,
+        enabled: false,
         status: "provider_not_configured",
         state: "unconfigured",
         provider: "",
@@ -1444,6 +1446,8 @@ test("runCli remote-graphical status reports no-op broker posture", async () => 
   assert.equal(captured.body, undefined);
   assert.match(writes.join(""), /Remote graphical status/);
   assert.match(writes.join(""), /status: provider_not_configured/);
+  assert.match(writes.join(""), /requested: no/);
+  assert.match(writes.join(""), /enabled: no/);
   assert.match(writes.join(""), /configured: no/);
   assert.match(writes.join(""), /session opened: no/);
   assert.match(writes.join(""), /input dispatched: no/);

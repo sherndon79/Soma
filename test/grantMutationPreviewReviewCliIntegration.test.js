@@ -14,20 +14,7 @@ const REVIEW_CASES_URL = new URL(
 test("grants review-preview CLI formats fixture preview through the real handler", async () => {
   const fixture = JSON.parse(await readFile(REVIEW_CASES_URL, "utf8"));
   const grantStore = { schema_version: 1, grants: [], examples: [] };
-  const handler = createRequestHandler({
-    harness: { capabilities: [] },
-    capabilityCatalog: { schema_version: 1, capabilities: [] },
-    providerRegistry: { schema_version: 1, providers: [] },
-    moduleRegistry: { schema_version: 1, modules: [] },
-    runtimeProfiles: { schema_version: 1, default_profile: "", profiles: [] },
-    grantStore,
-    modelClient: {
-      async chat() {
-        return { text: "ok", model: "test", finish_reason: "stop", tokens_used: 1 };
-      },
-    },
-    logger: { info() {} },
-  });
+  const handler = makeHandler({ grantStore });
   const { baseUrl, close } = await createHttpServer(handler);
   const writes = [];
 
@@ -67,6 +54,58 @@ test("grants review-preview CLI formats fixture preview through the real handler
     await close();
   }
 });
+
+test("grants review-preview CLI preserves forbidden-field refusal details through the real handler", async () => {
+  const fixture = JSON.parse(await readFile(REVIEW_CASES_URL, "utf8"));
+  const rejectedCase = fixture.rejected_cases.find((entry) => entry.forbidden_key === "event_value");
+  const grantStore = { schema_version: 1, grants: [], examples: [] };
+  const handler = makeHandler({ grantStore });
+  const { baseUrl, close } = await createHttpServer(handler);
+
+  try {
+    await assert.rejects(
+      () => runCli(parseCli([
+        "node",
+        "soma",
+        "grants",
+        "review-preview",
+        "--stdin",
+        "--json",
+        "--url",
+        baseUrl,
+      ]), {
+        stdin: [JSON.stringify(rejectedCase.preview)],
+        stdout: { write() {} },
+      }),
+      (error) => {
+        assert.equal(error.code, "grant_mutation_preview_review_forbidden_field");
+        assert.equal(error.statusCode, 400);
+        assert.ok(error.validation_errors.includes(rejectedCase.expected_path));
+        return true;
+      },
+    );
+    assert.deepEqual(grantStore.grants, []);
+  } finally {
+    await close();
+  }
+});
+
+function makeHandler({ grantStore }) {
+  return createRequestHandler({
+    harness: { capabilities: [] },
+    capabilityCatalog: { schema_version: 1, capabilities: [] },
+    providerRegistry: { schema_version: 1, providers: [] },
+    moduleRegistry: { schema_version: 1, modules: [] },
+    runtimeProfiles: { schema_version: 1, default_profile: "", profiles: [] },
+    grantStore,
+    modelClient: {
+      async chat() {
+        return { text: "ok", model: "test", finish_reason: "stop", tokens_used: 1 };
+      },
+    },
+    logger: { info() {} },
+  });
+}
 
 async function createHttpServer(handler) {
   const server = createServer(handler);

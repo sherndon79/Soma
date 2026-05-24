@@ -247,6 +247,9 @@ Implemented:
 - grant mutation preview review CLI integration smoke added, running `grants review-preview --stdin`
   through a real local HTTP handler with the accepted fixture while asserting review-only
   non-write/non-activation flags and an unchanged grant store
+- grant mutation preview review CLI refusal integration smoke added, preserving HTTP
+  `validation_errors` on CLI request failures and proving forbidden fixture input fails through the
+  real handler without mutating grants
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -366,23 +369,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review CLI refusal integration smoke.
+Add grant mutation preview review operator examples.
 
 Target:
 
 ```text
-grant mutation preview review CLI refusal integration smoke
-  -> exercise forbidden fixture input through `grants review-preview` and a real handler
-  -> preserve route refusal code and validation paths through CLI HTTP errors
-  -> prove refused review formatting does not mutate grants
+grant mutation preview review operator examples
+  -> document accepted and refused review-preview CLI flows
+  -> show how validation path details are exposed for forbidden fields
+  -> keep examples formatting-only and non-mutating
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a CLI integration test using one rejected fixture case
-- assert the CLI surfaces `grant_mutation_preview_review_forbidden_field`
-- assert validation path detail is preserved enough for operator review
+- add concise operator examples for `grants review-preview --stdin`
+- include a refusal example that names `validation_errors`
+- cross-reference the fixture and review endpoint
 - keep preview generation, durable commit routes, and runtime writes out of scope
 
 Constraints:

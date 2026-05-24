@@ -410,6 +410,9 @@ async function apiRequest(baseUrl, method, path, body) {
     const error = new Error(payload.message ?? `Soma request failed with HTTP ${response.status}.`);
     error.code = payload.error ?? "request_failed";
     error.statusCode = response.status;
+    if (Array.isArray(payload.validation_errors)) {
+      error.validation_errors = payload.validation_errors;
+    }
     throw error;
   }
   return payload;

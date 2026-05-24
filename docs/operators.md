@@ -541,6 +541,16 @@ The candidate review validates the approved proposal, review context, and grant 
 It returns grant-create input for inspection, but still does not write a grant, pair a host, open a
 session, dispatch input, attach video, or start recording.
 
+After candidate review, an approved proposal can create a process-local runtime grant:
+
+```bash
+npm run cli -- remote-graphical grant-create proposal-id --by user
+```
+
+This writes the grant only into the running Soma process. It does not write durable grant config,
+pair with Sunshine, start Moonlight, capture frames, dispatch input, attach video to model context,
+or start recording.
+
 View, pointer input, keyboard input, and disconnect remain separate authorities. A view-only
 proposal must not request keyboard or pointer channels; input proposals must not request video.
 

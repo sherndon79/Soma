@@ -284,6 +284,10 @@ Implemented:
 - remote graphical grant activation policy documented: the next writable path may create
   session-only runtime grants from approved proposals, but must not create durable grants, pair
   Sunshine, open Moonlight, capture frames, dispatch input, record, or attach model visual payloads
+- remote graphical runtime grant creation added through `POST /remote-graphical/grants` and
+  `soma remote-graphical grant-create`, creating only process-local grants from approved proposals
+  while preserving no durable writes, no session opening, no pairing, no frame capture, no input
+  dispatch, and no recording
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -403,24 +407,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add runtime-only remote graphical grant creation.
+Add runtime-only remote graphical grant revocation.
 
 Target:
 
 ```text
-remote graphical runtime grant creation
-  -> create session-only runtime grants from approved remote graphical proposals
+remote graphical runtime grant revocation
+  -> revoke process-local remote graphical runtime grants
   -> preserve no durable grant writes and no runtime session activation
-  -> make approval, grant creation, and transport activation separate
-  -> keep pairing, screenshots, input dispatch, and model visual delivery out of scope
+  -> keep revocation separate from transport/provider session control until a broker exists
+  -> keep screenshots, input dispatch, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add `POST /remote-graphical/grants` using the approved-proposal candidate builder
-- add `soma remote-graphical grant-create proposal-id`
-- store only process-local/runtime grants
-- prove approval alone does not create grants and grant creation does not pair/open/capture/input/record
+- add `POST /remote-graphical/grants/:id/revoke`
+- add `soma remote-graphical grant-revoke grant-id --reason text`
+- revoke only process-local/runtime remote graphical grants
+- prove revocation does not pair/open/capture/input/record or call a transport provider
 - keep durable grant writes and transport activation out of scope
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope
@@ -435,7 +439,7 @@ Constraints:
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
 - no model-facing visual payload delivery in this slice
-- no writable grant routes, CLI mutation commands, durable grant writes, or runtime write enablement
+- no durable grant writes or durable mutation command activation
 
 ## Near-Term
 

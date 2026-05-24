@@ -238,6 +238,19 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "grant-create") {
+    const proposalId = rest[0];
+    if (!proposalId) {
+      throw usageError("remote-graphical grant-create requires a proposal id.");
+    }
+    const response = await request(baseUrl, "POST", "/remote-graphical/grants", {
+      proposal_id: proposalId,
+      actor: flags.by ?? "user",
+    });
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalGrantCreatedSummary(response));
+    return 0;
+  }
+
   if (command === "sensorium" && subcommand === "propose") {
     const response = await request(baseUrl, "POST", "/sensorium/proposals", sensoriumProposalTemplateRequestFromFlags(flags));
     writeOutput(stdout, response, jsonOutput, sensoriumProposalCreatedSummary(response));
@@ -1246,6 +1259,32 @@ function remoteGraphicalGrantCandidateSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalGrantCreatedSummary(response) {
+  const grant = response.grant ?? {};
+  const constraints = grant.constraints ?? {};
+  const lines = [
+    "Remote graphical grant created",
+    `  grant: ${grant.id ?? "unknown"}`,
+    `  proposal: ${response.source_proposal_id ?? "unknown"}`,
+    `  capability: ${grant.capability ?? "unknown"}`,
+    `  provider: ${grant.provider ?? "unknown"}`,
+    `  scope: ${grant.scope ?? "unknown"}`,
+    `  target host: ${constraints.target_host ?? "unknown"}`,
+    `  mode: ${constraints.mode ?? "unknown"}`,
+    `  channels: ${joinList(constraints.requested_channels)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  file written: ${booleanText(response.file_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+    `  recording started: ${booleanText(response.recording_started)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1554,6 +1593,7 @@ Usage:
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical grant-candidate proposal-id [--json]
+  soma remote-graphical grant-create proposal-id [--by user] [--json]
   soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
   soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]

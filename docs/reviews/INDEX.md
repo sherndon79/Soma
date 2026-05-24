@@ -264,6 +264,8 @@ default.
   - review after exposing remote graphical grant-candidate review through HTTP and CLI without writes
 - [Remote Graphical Grant Activation Policy](./2026-05-24_remote_graphical_grant_activation_policy.md)
   - review after documenting the future runtime-only grant creation boundary for remote graphical proposals
+- [Remote Graphical Runtime Grant Creation](./2026-05-24_remote_graphical_runtime_grant_creation.md)
+  - review after adding process-local remote graphical grant creation without transport activation
 
 ## Current Review Triggers
 

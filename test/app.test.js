@@ -3313,6 +3313,145 @@ test("POST /remote-graphical/grant-candidates rejects metadata drift before gran
   assert.match(response.body.message, /target_host/);
 });
 
+test("remote graphical proposal approval alone does not create a runtime grant", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "view_only",
+      requested_scope: "session",
+      locality: "lan",
+      reason: "Need a bounded view of the graphical lab.",
+      constraints: {
+        max_seconds: 120,
+        max_fps: 30,
+        max_width: 1280,
+        max_height: 720,
+      },
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
+test("POST /remote-graphical/grants creates runtime grant without opening remote session", async () => {
+  const proposals = new CapabilityProposalStore();
+  proposals.proposals.push(makeApprovedRemoteGraphicalProposal());
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityProposals: proposals,
+    grantStore: { schema_version: 1, grants: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants",
+    body: {
+      proposal_id: "proposal-remote-video",
+      actor: "user",
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.source_proposal_id, "proposal-remote-video");
+  assert.equal(response.body.grant.capability, "perception.remote_desktop.video.subscribe");
+  assert.equal(response.body.grant.provider, "soma.provider.remote_desktop.sunshine");
+  assert.equal(response.body.grant.scope, "session");
+  assert.equal(response.body.grant.constraints.target_host, "soma-agent-desktop.local.sthnet.org");
+  assert.deepEqual(response.body.grant.constraints.requested_channels, ["video"]);
+  assert.equal(response.body.grant.constraints.max_seconds, 120);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.file_written, false);
+  assert.equal(response.body.grant_written, true);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].capability, "perception.remote_desktop.video.subscribe");
+  assert.equal(response.body.grants[0].activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.remote_graphical.grant.created",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_id, "proposal-remote-video");
+  assert.equal(response.body.entries[0].target_host, "soma-agent-desktop.local.sthnet.org");
+  assert.equal(response.body.entries[0].session_opened, false);
+  assert.equal(response.body.entries[0].input_dispatched, false);
+});
+
+test("POST /remote-graphical/grants rejects pending proposals and non-user actors before grant write", async () => {
+  const proposals = new CapabilityProposalStore();
+  proposals.proposals.push({
+    ...makeApprovedRemoteGraphicalProposal(),
+    status: "pending",
+    decision: undefined,
+  });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityProposals: proposals,
+    grantStore: { schema_version: 1, grants: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants",
+    body: { proposal_id: "proposal-remote-video", actor: "assistant" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_grant_create_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants",
+    body: { proposal_id: "proposal-remote-video", actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_grant_candidate");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
 test("POST /sensorium/proposals stores pending proposal with review context but no activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
   let response = await invokeHandler(handler, {

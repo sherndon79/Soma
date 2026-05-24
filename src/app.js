@@ -415,6 +415,60 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/remote-graphical/grants") {
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_grant_create_requires_user_actor",
+            message: "Remote graphical grant creation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const proposal = capabilityProposals.find(String(body?.proposal_id ?? ""));
+        const candidate = buildRemoteGraphicalGrantCreateCandidateFromProposal(proposal, {
+          catalog: capabilityCatalog,
+          providerRegistry,
+          now: () => new Date().toISOString(),
+          createId: () => `grant-remote-graphical-${cryptoRandomId()}`,
+        });
+        const nextGrantStore = createGrant(
+          grantStore,
+          candidate.grant_create_input,
+          {
+            catalog: capabilityCatalog,
+            providerRegistry,
+          },
+        );
+        grantStore = nextGrantStore;
+        const grant = nextGrantStore.grants.find(
+          (entry) => entry.id === candidate.grant_create_input.id,
+        );
+        const event = provenanceLog.append(createRemoteGraphicalGrantCreatedEvent({
+          grant,
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          grant,
+          source_proposal_id: proposal.id,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          file_written: false,
+          grant_written: true,
+          session_opened: false,
+          pairing_performed: false,
+          video_attached: false,
+          input_dispatched: false,
+          recording_started: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/sensorium/proposals") {
         const body = await readJson(req);
         const template = buildSensoriumGrantProposalTemplate({
@@ -1528,6 +1582,39 @@ function createSensoriumGrantCreatedEvent({ grant, proposal, caller }) {
     grant_written: true,
     file_written: false,
     subscription_activated: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createRemoteGraphicalGrantCreatedEvent({ grant, proposal, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "desktop.remote_graphical.grant.created",
+    capability: "desktop.remote_graphical.grant.create",
+    caller_identity: caller,
+    allowed: true,
+    proposal_id: proposal.id ?? "",
+    grant_id: grant.id,
+    requested_capability: grant.capability,
+    provider: grant.provider,
+    scope: grant.scope,
+    target_host: grant.constraints?.target_host ?? "",
+    mode: grant.constraints?.mode ?? "",
+    requested_channels: grant.constraints?.requested_channels ?? [],
+    max_seconds: grant.constraints?.max_seconds ?? null,
+    max_fps: grant.constraints?.max_fps ?? null,
+    max_width: grant.constraints?.max_width ?? null,
+    max_height: grant.constraints?.max_height ?? null,
+    activation_performed: false,
+    grant_written: true,
+    file_written: false,
+    session_opened: false,
+    pairing_performed: false,
+    video_attached: false,
+    input_dispatched: false,
+    recording_started: false,
     memory_written: false,
     remote_service_used: false,
   };

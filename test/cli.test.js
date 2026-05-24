@@ -1545,6 +1545,86 @@ test("runCli remote-graphical grant-candidate validates proposal id before reque
   assert.equal(called, false);
 });
 
+test("runCli remote-graphical grant-create creates runtime grant without session activation", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "grant-create",
+    "remote-proposal-1",
+    "--by",
+    "user",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        grant: {
+          id: "grant-remote-1",
+          capability: "perception.remote_desktop.video.subscribe",
+          provider: "soma.provider.remote_desktop.sunshine",
+          scope: "session",
+          constraints: {
+            target_host: "soma-agent-desktop.local.sthnet.org",
+            mode: "view_only",
+            requested_channels: ["video"],
+            max_seconds: 120,
+          },
+        },
+        source_proposal_id: "remote-proposal-1",
+        activation_performed: false,
+        grant_written: true,
+        file_written: false,
+        session_opened: false,
+        pairing_performed: false,
+        input_dispatched: false,
+        video_attached: false,
+        recording_started: false,
+        provenance_id: "prov-grant",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/remote-graphical/grants");
+  assert.deepEqual(captured.body, {
+    proposal_id: "remote-proposal-1",
+    actor: "user",
+  });
+  assert.match(writes.join(""), /Remote graphical grant created/);
+  assert.match(writes.join(""), /grant: grant-remote-1/);
+  assert.match(writes.join(""), /proposal: remote-proposal-1/);
+  assert.match(writes.join(""), /target host: soma-agent-desktop\.local\.sthnet\.org/);
+  assert.match(writes.join(""), /grant written: yes/);
+  assert.match(writes.join(""), /file written: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+  assert.match(writes.join(""), /recording started: no/);
+});
+
+test("runCli remote-graphical grant-create validates proposal id before request", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "grant-create",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical grant-create requires a proposal id/,
+  );
+  assert.equal(called, false);
+});
+
 test("runCli sensorium propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

@@ -310,6 +310,10 @@ Implemented:
   and `soma remote-graphical session-open`, validating active grant and explicit user actor before
   returning `provider_not_configured` while preserving no broker call, no session opening, no
   pairing, no video attachment, no input dispatch, no recording, and no live transport use
+- remote graphical session-open activation policy documented, defining explicit runtime opt-in,
+  configured broker injection, active grant matching, user actor, active disclosure, metadata-only
+  provenance, stable refusal codes, and cleanup prerequisites before live broker-backed
+  `open_session`
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -429,25 +433,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Design remote graphical session-open activation policy.
+Add remote graphical broker runtime opt-in scaffold.
 
 Target:
 
 ```text
-remote graphical session-open activation policy
-  -> define prerequisites for enabling a configured broker session-open path
-  -> preserve refusal/default-off posture until explicit opt-in and review gates exist
-  -> keep video observation, input dispatch, recording, and model delivery separate
-  -> define provenance and disclosure obligations before live transport
+remote graphical broker runtime opt-in scaffold
+  -> add explicit environment/config parsing for remote graphical broker enablement
+  -> preserve no-op/default-off behavior when unset
+  -> expose requested/enabled posture in status without live Sunshine/Moonlight calls
+  -> keep session-open refusal as default without configured broker injection
 ```
 
 Expected work:
 
-- document activation gates for a real broker-backed `open_session`
-- define opt-in configuration requirements, test fixtures, and refusal cases
-- define required active disclosure and metadata-only provenance fields
-- keep pairing credentials, video frame delivery, input, recording, and model delivery out of scope
-  or separately gated
+- add runtime config helper similar to Sensorium opt-in posture
+- update `GET /remote-graphical/status` to report requested/enabled/configured posture
+- keep default broker no-op and no live transport calls
+- prove `POST /remote-graphical/sessions` still refuses without configured broker
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

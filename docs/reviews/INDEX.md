@@ -276,6 +276,8 @@ default.
   - review after adding review-only session-open scaffolding without broker calls
 - [Remote Graphical Session-Open Refusal](./2026-05-24_remote_graphical_session_open_refusal.md)
   - review after adding default-off session-open refusal without broker calls
+- [Remote Graphical Session-Open Activation Policy](./2026-05-24_remote_graphical_session_open_activation_policy.md)
+  - review after documenting gates for future live broker-backed session-open activation
 
 ## Current Review Triggers
 

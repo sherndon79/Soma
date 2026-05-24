@@ -244,6 +244,8 @@ default.
   - review after adding a real-handler smoke test for the grant preview review CLI
 - [Grant Mutation Preview Review CLI Refusal Integration](./2026-05-24_grant_mutation_preview_review_cli_refusal_integration.md)
   - review after preserving validation-path details through CLI HTTP refusal errors
+- [Grant Mutation Preview Review Operator Examples](./2026-05-24_grant_mutation_preview_review_operator_examples.md)
+  - review after documenting accepted and refused grant preview review CLI flows
 
 ## Current Review Triggers
 

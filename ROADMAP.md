@@ -250,6 +250,9 @@ Implemented:
 - grant mutation preview review CLI refusal integration smoke added, preserving HTTP
   `validation_errors` on CLI request failures and proving forbidden fixture input fails through the
   real handler without mutating grants
+- grant mutation preview review operator examples added for accepted and refused
+  `grants review-preview --stdin` flows, including `validation_errors` inspection and fixture
+  cross-reference
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -369,23 +372,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview review operator examples.
+Add grant mutation preview/review functional smoke script.
 
 Target:
 
 ```text
-grant mutation preview review operator examples
-  -> document accepted and refused review-preview CLI flows
-  -> show how validation path details are exposed for forbidden fields
-  -> keep examples formatting-only and non-mutating
+grant mutation preview/review functional smoke script
+  -> provide an operator-run script for real service preview/review flows
+  -> exercise status, grants recovery, preview-create, and review-preview
+  -> keep the script dry-run and non-mutating by default
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add concise operator examples for `grants review-preview --stdin`
-- include a refusal example that names `validation_errors`
-- cross-reference the fixture and review endpoint
+- add a guarded script under `scripts/` for grant preview/review smoke
+- require explicit environment opt-in before calling a live Soma URL
+- include accepted and refused review-preview checks
+- document how to run it against a local service
 - keep preview generation, durable commit routes, and runtime writes out of scope
 
 Constraints:

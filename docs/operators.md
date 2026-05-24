@@ -406,6 +406,57 @@ npm run cli -- grants preview-create \
 `grants review-preview` validates the supplied JSON locally before sending the request. It does not
 create a preview or mutate grants; it only asks Soma to format an existing preview object.
 
+Accepted review example:
+
+```bash
+npm run cli -- grants review-preview --stdin <<'JSON'
+{
+  "ok": true,
+  "dry_run": true,
+  "mutation_kind": "grant.created",
+  "grant": {
+    "id": "grant-preview",
+    "status": "active",
+    "capability": "desktop.inspect.focus",
+    "provider": "soma.provider.desktop-broker",
+    "scope": "session"
+  },
+  "receipt_preview": {
+    "status": "preview"
+  },
+  "next_store_summary": {
+    "grant_count": 1,
+    "changed": true
+  },
+  "grant_written": false,
+  "provenance_appended": false,
+  "activation_performed": false
+}
+JSON
+```
+
+Refused review example with path details:
+
+```bash
+npm run cli -- grants review-preview --stdin --json <<'JSON'
+{
+  "ok": true,
+  "event": {
+    "event_type": "grant.created",
+    "audit": {
+      "event_value": "forbidden raw event value"
+    }
+  }
+}
+JSON
+```
+
+The refused form returns `grant_mutation_preview_review_forbidden_field` from the route. CLI callers
+that catch request errors can inspect `validation_errors`, such as
+`response.event.audit.event_value`, to identify the rejected field. The complete accepted and
+rejected example set is maintained in
+`docs/fixtures/grant-mutation-preview-review-cases.json`.
+
 The review boundary fixture at `docs/fixtures/grant-mutation-preview-review-cases.json` documents the
 current forbidden review keys. Payloads, provider output, raw payloads, screenshots, image/frame/audio
 bytes, text content, and raw grant/event values must remain outside the review surface, including when

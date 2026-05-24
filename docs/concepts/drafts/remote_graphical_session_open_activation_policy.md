@@ -147,6 +147,13 @@ The current non-activating route maps posture this way:
 - enabled runtime without configured broker: `remote_graphical_broker_not_configured`
 - configured fake/test broker before live activation: `remote_graphical_broker_provider_unavailable`
 
+The current fixture-only activation path requires `session_open_fixture: true` from an injected
+test broker before `openSession` is invoked. Fixture success may set `activation_performed=true`,
+`broker_called=true`, and `session_opened=true`, but must keep `fixture_only=true`,
+`live_transport_used=false`, `video_attached=false`, `input_dispatched=false`,
+`recording_started=false`, `model_delivery=false`, `durable=false`, and `grant_written=false`.
+This does not satisfy the future live activation contract above.
+
 ## Test Requirements
 
 Before live session-open activation, tests must prove:

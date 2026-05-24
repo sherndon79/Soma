@@ -36,6 +36,12 @@ export function createRemoteGraphicalBrokerStatus(value = {}) {
     requested,
     enabled,
     configured,
+    session_open_fixture: Boolean(
+      value.session_open_fixture
+      ?? value.open_session_fixture
+      ?? value.fixture_open_session
+      ?? value.test_fixture?.open_session,
+    ),
     status: stringValue(value.status) || "provider_not_configured",
     state: stringValue(value.state) || "unconfigured",
     provider: stringValue(value.provider),

@@ -282,6 +282,8 @@ default.
   - review after adding startup-visible runtime opt-in posture without live transport activation
 - [Remote Graphical Configured Broker Refusals](./2026-05-24_remote_graphical_configured_broker_refusals.md)
   - review after mapping session-open refusal codes by broker posture without transport activation
+- [Remote Graphical Open-Session Fixture](./2026-05-24_remote_graphical_open_session_fixture.md)
+  - review after adding fixture-only broker session-open success and failure contracts
 
 ## Current Review Triggers
 

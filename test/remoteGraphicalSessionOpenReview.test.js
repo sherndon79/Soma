@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildRemoteGraphicalSessionOpenBrokerFailure,
+  buildRemoteGraphicalSessionOpenFixtureSuccess,
   buildRemoteGraphicalSessionOpenRefusal,
   buildRemoteGraphicalSessionOpenReview,
   remoteGraphicalBrokerRefusalFromStatus,
@@ -135,6 +137,69 @@ test("remoteGraphicalBrokerRefusalFromStatus maps broker posture to bounded refu
     enabled: true,
     configured: true,
   }).code, "remote_graphical_broker_provider_unavailable");
+});
+
+test("buildRemoteGraphicalSessionOpenFixtureSuccess returns bounded fixture-only activation", () => {
+  const review = buildRemoteGraphicalSessionOpenReview({
+    grant: makeGrant(),
+    reason: "Need to open a reviewed broker session.",
+  });
+  const result = buildRemoteGraphicalSessionOpenFixtureSuccess({
+    review,
+    brokerResult: {
+      session_id: "fixture-session-1",
+      status: "opened",
+      state: "open",
+      payload_bytes: "forbidden but not copied",
+    },
+  });
+
+  assert.equal(result.type, "remote_graphical_session_open_result");
+  assert.equal(result.refused, false);
+  assert.equal(result.session_id, "fixture-session-1");
+  assert.equal(result.activation_performed, true);
+  assert.equal(result.broker_called, true);
+  assert.equal(result.session_opened, true);
+  assert.equal(result.fixture_only, true);
+  assert.equal(result.live_transport_used, false);
+  assert.equal(result.video_attached, false);
+  assert.equal(result.input_dispatched, false);
+  assert.equal(result.recording_started, false);
+  assert.equal(result.model_delivery, false);
+  assert.equal(Object.hasOwn(result, "payload_bytes"), false);
+});
+
+test("buildRemoteGraphicalSessionOpenFixtureSuccess requires a bounded session id", () => {
+  const review = buildRemoteGraphicalSessionOpenReview({
+    grant: makeGrant(),
+    reason: "Need to open a reviewed broker session.",
+  });
+
+  assert.throws(() => buildRemoteGraphicalSessionOpenFixtureSuccess({
+    review,
+    brokerResult: {},
+  }), {
+    code: "remote_graphical_broker_session_open_failed",
+  });
+});
+
+test("buildRemoteGraphicalSessionOpenBrokerFailure returns bounded failure after broker call", () => {
+  const review = buildRemoteGraphicalSessionOpenReview({
+    grant: makeGrant(),
+    reason: "Need to open a reviewed broker session.",
+  });
+  const cause = new Error("fixture failed with internal details");
+  cause.code = "fixture_failed";
+  const result = buildRemoteGraphicalSessionOpenBrokerFailure({ review, cause });
+
+  assert.equal(result.type, "remote_graphical_session_open_refusal");
+  assert.equal(result.refused, true);
+  assert.equal(result.error, "remote_graphical_broker_session_open_failed");
+  assert.equal(result.cause_code, "fixture_failed");
+  assert.equal(result.broker_called, true);
+  assert.equal(result.session_opened, false);
+  assert.equal(result.live_transport_used, false);
+  assert.equal(result.message.includes("internal details"), false);
 });
 
 test("buildRemoteGraphicalSessionOpenRefusal requires user actor", () => {

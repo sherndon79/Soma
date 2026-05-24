@@ -40,6 +40,8 @@ import {
 } from "./remoteGraphicalBroker.js";
 import { buildRemoteGraphicalProposalTemplate } from "./remoteGraphicalProposalTemplate.js";
 import {
+  buildRemoteGraphicalSessionOpenBrokerFailure,
+  buildRemoteGraphicalSessionOpenFixtureSuccess,
   buildRemoteGraphicalSessionOpenRefusal,
   buildRemoteGraphicalSessionOpenReview,
 } from "./remoteGraphicalSessionOpenReview.js";
@@ -397,7 +399,7 @@ export function createRequestHandler({
           });
           return;
         }
-        buildRemoteGraphicalSessionOpenReview({
+        const review = buildRemoteGraphicalSessionOpenReview({
           grant,
           reason: body?.reason,
           requested_by: body?.requested_by,
@@ -406,6 +408,32 @@ export function createRequestHandler({
           ? remoteGraphicalBroker.describeActive()
           : remoteGraphicalBroker?.status?.();
         const brokerStatus = createRemoteGraphicalBrokerStatus(rawStatus);
+        if (
+          brokerStatus.requested
+          && brokerStatus.enabled
+          && brokerStatus.configured
+          && brokerStatus.session_open_fixture
+          && typeof remoteGraphicalBroker?.openSession === "function"
+        ) {
+          try {
+            const brokerResult = await remoteGraphicalBroker.openSession({
+              grant,
+              review,
+              requested_by: body?.requested_by,
+              actor,
+            });
+            writeJson(res, 200, buildRemoteGraphicalSessionOpenFixtureSuccess({
+              review,
+              brokerResult,
+            }));
+          } catch (cause) {
+            writeJson(res, 200, buildRemoteGraphicalSessionOpenBrokerFailure({
+              review,
+              cause,
+            }));
+          }
+          return;
+        }
         const refusal = buildRemoteGraphicalSessionOpenRefusal({
           grant,
           reason: body?.reason,

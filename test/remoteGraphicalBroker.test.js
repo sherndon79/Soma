@@ -52,6 +52,7 @@ test("RemoteGraphicalBroker reports requested opt-in while remaining unconfigure
 test("createRemoteGraphicalBrokerStatus normalizes injected session disclosure", () => {
   const status = createRemoteGraphicalBrokerStatus({
     configured: true,
+    session_open_fixture: true,
     status: "available",
     state: "paired_inactive",
     provider: "soma.provider.remote_desktop.sunshine",
@@ -76,6 +77,7 @@ test("createRemoteGraphicalBrokerStatus normalizes injected session disclosure",
   assert.equal(status.configured, true);
   assert.equal(status.requested, false);
   assert.equal(status.enabled, true);
+  assert.equal(status.session_open_fixture, true);
   assert.equal(status.active_count, 1);
   assert.equal(status.sessions[0].session_id, "session-1");
   assert.deepEqual(status.sessions[0].active_authorities, ["video"]);

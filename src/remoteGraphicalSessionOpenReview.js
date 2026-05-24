@@ -159,6 +159,67 @@ export function remoteGraphicalBrokerRefusalFromStatus(status = {}) {
   };
 }
 
+export function buildRemoteGraphicalSessionOpenFixtureSuccess({
+  review = {},
+  brokerResult = {},
+} = {}) {
+  const sessionId = stringValue(brokerResult.session_id ?? brokerResult.id);
+  if (!sessionId) {
+    const error = new Error("Remote graphical broker fixture session-open requires session_id.");
+    error.code = "remote_graphical_broker_session_open_failed";
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return {
+    ...review,
+    type: "remote_graphical_session_open_result",
+    refused: false,
+    status: stringValue(brokerResult.status) || "opened",
+    state: stringValue(brokerResult.state) || "open",
+    session_id: sessionId,
+    provider: stringValue(brokerResult.provider) || stringValue(review.provider),
+    target_host: stringValue(brokerResult.target_host ?? brokerResult.targetHost) || stringValue(review.target_host),
+    locality: stringValue(brokerResult.locality),
+    attended: brokerResult.attended === undefined ? null : Boolean(brokerResult.attended),
+    review_only: false,
+    activation_performed: true,
+    broker_called: true,
+    session_opened: true,
+    fixture_only: true,
+    durable: false,
+    grant_written: false,
+    pairing_performed: false,
+    video_attached: false,
+    input_dispatched: false,
+    recording_started: false,
+    provider_session_stopped: false,
+    model_delivery: false,
+    live_transport_used: false,
+  };
+}
+
+export function buildRemoteGraphicalSessionOpenBrokerFailure({
+  review = {},
+  cause,
+} = {}) {
+  return {
+    ...review,
+    type: "remote_graphical_session_open_refusal",
+    refused: true,
+    status: "session_open_failed",
+    state: "failed",
+    error: "remote_graphical_broker_session_open_failed",
+    message: "Remote graphical broker fixture session-open failed before live transport.",
+    cause_code: stringValue(cause?.code),
+    review_only: false,
+    broker_called: true,
+    session_opened: false,
+    provider_session_stopped: false,
+    session_id: "",
+  };
+}
+
 function normalizeGrant(grant) {
   const constraints = grant && typeof grant === "object" && !Array.isArray(grant.constraints)
     && grant.constraints && typeof grant.constraints === "object"

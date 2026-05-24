@@ -321,6 +321,10 @@ Implemented:
   posture to `remote_graphical_broker_not_enabled`,
   `remote_graphical_broker_not_configured`, or `remote_graphical_broker_provider_unavailable`
   without invoking `openSession` or live transport
+- remote graphical broker open-session fixture activation added for injected test brokers that
+  report `session_open_fixture: true`, allowing bounded fixture-only success/failure contracts while
+  preserving no Sunshine/Moonlight calls, no pairing, no video, no input, no recording, no model
+  delivery, no durable writes, and `live_transport_used=false`
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -440,24 +444,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical broker open-session fixture activation.
+Add remote graphical session-open provenance fixture.
 
 Target:
 
 ```text
-remote graphical broker open-session fixture activation
-  -> invoke only an injected fake broker openSession fixture after all review gates pass
-  -> keep default startup and missing broker paths refused
-  -> prove success response still has no video, input, recording, model delivery, pairing, or durable writes
-  -> keep Sunshine/Moonlight implementation and real transport out of scope
+remote graphical session-open provenance fixture
+  -> add metadata-only provenance summary builder for fixture session-open success/failure
+  -> keep route append disabled unless an explicit provenance append slice is reviewed
+  -> document fields allowed for future live session-open provenance
+  -> keep visual payloads, input events, window metadata, and transport diagnostics out of scope
 ```
 
 Expected work:
 
-- add provider-neutral openSession fixture shape for tests
-- call `openSession` only when the injected broker is configured, enabled, and explicitly fixture-capable
-- preserve explicit user actor, active grant validation, and reviewed session-open intent before broker call
-- map fixture success and fixture failures to bounded response contracts
+- add pure metadata-only constructor for `remote_graphical.session_open.fixture`
+- cover success and failure summaries without payload, frame, input, clipboard, window, file, or diagnostic content
+- keep HTTP route provenance append disabled in this slice
+- cross-link fixture provenance to the activation policy and broker boundary
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

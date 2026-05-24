@@ -3558,6 +3558,120 @@ test("POST /remote-graphical/sessions refuses enabled runtime without configured
   assert.equal(response.body.live_transport_used, false);
 });
 
+test("POST /remote-graphical/sessions invokes only configured fixture broker", async () => {
+  let describeCalls = 0;
+  let openCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return {
+          requested: true,
+          enabled: true,
+          configured: true,
+          session_open_fixture: true,
+          status: "available",
+          state: "paired_inactive",
+        };
+      },
+      openSession({ grant, actor }) {
+        openCalls += 1;
+        assert.equal(grant.id, "grant-remote-video");
+        assert.equal(actor, "user");
+        return {
+          session_id: "fixture-session-1",
+          status: "opened",
+          state: "open",
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+          payload_bytes: "must not be copied",
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 1);
+  assert.equal(openCalls, 1);
+  assert.equal(response.body.type, "remote_graphical_session_open_result");
+  assert.equal(response.body.refused, false);
+  assert.equal(response.body.session_id, "fixture-session-1");
+  assert.equal(response.body.activation_performed, true);
+  assert.equal(response.body.broker_called, true);
+  assert.equal(response.body.session_opened, true);
+  assert.equal(response.body.fixture_only, true);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.model_delivery, false);
+  assert.equal(response.body.live_transport_used, false);
+  assert.equal(Object.hasOwn(response.body, "payload_bytes"), false);
+});
+
+test("POST /remote-graphical/sessions maps fixture broker failure without leaking details", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        return {
+          requested: true,
+          enabled: true,
+          configured: true,
+          session_open_fixture: true,
+          status: "available",
+          state: "paired_inactive",
+        };
+      },
+      openSession() {
+        const error = new Error("internal fixture transport detail");
+        error.code = "fixture_failed";
+        throw error;
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.type, "remote_graphical_session_open_refusal");
+  assert.equal(response.body.error, "remote_graphical_broker_session_open_failed");
+  assert.equal(response.body.cause_code, "fixture_failed");
+  assert.equal(response.body.broker_called, true);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.live_transport_used, false);
+  assert.equal(response.body.message.includes("internal fixture transport detail"), false);
+});
+
 test("POST /remote-graphical/sessions rejects missing grant non-user actor and inactive grant", async () => {
   const handler = makeHandler({
     harness: allowedHarness,

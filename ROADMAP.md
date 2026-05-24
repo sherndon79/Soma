@@ -256,6 +256,9 @@ Implemented:
 - guarded grant preview/review smoke script added as `npm run grant-preview:smoke`, covering status,
   grants recovery, dry-run preview creation, accepted/refused review formatting, and before/after
   grant-list comparison behind `SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1`
+- guarded grant preview/review smoke run passed against a local Soma service at
+  `http://127.0.0.1:8765`, confirming dry-run preview/review surfaces remain non-mutating with
+  runtime writes disabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -375,25 +378,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Run grant mutation preview/review functional smoke against local service.
+Add a first governed graphical node capability contract.
 
 Target:
 
 ```text
-grant mutation preview/review functional smoke run
-  -> start or reuse a local Soma service
-  -> run the guarded smoke script against the real service URL
-  -> capture pass/fail output in a review note
-  -> keep runtime_writes_enabled activation out of scope
+graphical node governed capability contract
+  -> define the request/review shape for a remote graphical session surface
+  -> keep Sunshine/Moonlight as transport, not the trust boundary
+  -> expose the capability as disabled/requestable without activation
+  -> keep desktop actuation and model-facing visual payload delivery out of scope
 ```
 
 Expected work:
 
-- run `npm run grant-preview:smoke -- --dry-run`
-- start or verify `npm start` service on a local port
-- run `SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1 npm run grant-preview:smoke -- --url ...`
-- document observed result and any blocker
-- keep preview generation, durable commit routes, and runtime writes out of scope
+- add or refine docs for `soma-agent-desktop` as a governed graphical node
+- define the initial capability/provider vocabulary for remote graphical session inspection/access
+- add catalog/provider tests proving the surface is visible but inactive by default
+- document operator review questions before any remote graphical session is attached to model use
+- keep transport setup, screenshots, keyboard/mouse actuation, and session recording out of scope
 
 Constraints:
 

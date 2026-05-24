@@ -290,6 +290,80 @@
       "description": "Inspect text content, child names, descriptions, or other potentially sensitive UI text."
     },
     {
+      "key": "desktop.remote.input.pointer",
+      "name": "Remote Desktop Pointer Input",
+      "category": "desktop",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "target remote graphical session identity",
+        "pointer movement or click intent",
+        "bounded input operation metadata"
+      ],
+      "excluded_by_default": [
+        "remote desktop video access",
+        "keyboard input",
+        "clipboard access",
+        "file transfer",
+        "hidden input injection",
+        "session recording"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.remote.input.pointer.v1",
+      "description": "Send pointer movement or click events into an explicitly granted remote graphical session. Does not authorize video observation or keyboard input."
+    },
+    {
+      "key": "desktop.remote.input.keyboard",
+      "name": "Remote Desktop Keyboard Input",
+      "category": "desktop",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "target remote graphical session identity",
+        "keyboard input intent",
+        "bounded input operation metadata"
+      ],
+      "excluded_by_default": [
+        "remote desktop video access",
+        "pointer input",
+        "clipboard access",
+        "file transfer",
+        "hidden input injection",
+        "session recording"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.remote.input.keyboard.v1",
+      "description": "Send keyboard events into an explicitly granted remote graphical session. Does not authorize video observation or pointer input."
+    },
+    {
+      "key": "desktop.remote.session.disconnect",
+      "name": "Remote Desktop Session Disconnect",
+      "category": "desktop",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "target remote graphical session identity",
+        "disconnect intent",
+        "bounded session lifecycle metadata"
+      ],
+      "excluded_by_default": [
+        "remote desktop video access",
+        "pointer input",
+        "keyboard input",
+        "host shutdown",
+        "credential deletion"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.remote.session.disconnect.v1",
+      "description": "Disconnect an explicitly granted remote graphical session without authorizing observation, input, host shutdown, or credential mutation."
+    },
+    {
       "key": "tool.files.read",
       "name": "Scoped File Read",
       "category": "files",
@@ -372,6 +446,32 @@
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.perception.screen.v1",
       "description": "Inspect screen or application state."
+    },
+    {
+      "key": "perception.remote_desktop.video.subscribe",
+      "name": "Remote Desktop Video Subscription",
+      "category": "perception",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "encoded remote graphical session frames",
+        "remote host identity",
+        "session bounds and transport metadata"
+      ],
+      "excluded_by_default": [
+        "keyboard input",
+        "pointer input",
+        "clipboard access",
+        "audio",
+        "file transfer",
+        "hidden recording",
+        "model-facing frame delivery without separate preview"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.remote_desktop.video.v1",
+      "description": "Subscribe to a bounded remote graphical session video stream over a governed transport. View access does not authorize input or model-facing visual delivery."
     },
     {
       "key": "perception.sensorium.color.subscribe",

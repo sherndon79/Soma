@@ -192,3 +192,86 @@ test("model-facing visual attach capabilities are requestable without activating
     assert.ok(cap.excluded_by_default.includes("background delivery without preview"));
   }
 });
+
+const REMOTE_GRAPHICAL_CAPABILITIES = [
+  {
+    key: "perception.remote_desktop.video.subscribe",
+    category: "perception",
+    risk: "high",
+    contract: "soma.perception.remote_desktop.video.v1",
+  },
+  {
+    key: "desktop.remote.input.pointer",
+    category: "desktop",
+    risk: "high",
+    contract: "soma.desktop.remote.input.pointer.v1",
+  },
+  {
+    key: "desktop.remote.input.keyboard",
+    category: "desktop",
+    risk: "high",
+    contract: "soma.desktop.remote.input.keyboard.v1",
+  },
+  {
+    key: "desktop.remote.session.disconnect",
+    category: "desktop",
+    risk: "sensitive",
+    contract: "soma.desktop.remote.session.disconnect.v1",
+  },
+];
+
+test("remote graphical session capabilities are catalogued as disabled-first contracts", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  for (const want of REMOTE_GRAPHICAL_CAPABILITIES) {
+    const cap = view.capabilities.find((c) => c.key === want.key);
+    assert.ok(cap, `expected capability ${want.key} to be present in catalog`);
+    assert.equal(cap.category, want.category);
+    assert.equal(cap.risk_class, want.risk);
+    assert.equal(cap.harness_status, "disabled");
+    assert.equal(cap.status, "requestable");
+    assert.equal(cap.support_status, "supported");
+    assert.equal(cap.activation_policy, "explicit_grant");
+    assert.equal(cap.reversible, false);
+    assert.equal(cap.provider_contract, want.contract);
+    assert.ok(
+      Array.isArray(cap.excluded_by_default) && cap.excluded_by_default.length >= 1,
+      `${want.key}: expected explicit exclusions`,
+    );
+  }
+});
+
+test("remote graphical provider claim does not collapse view input and disconnect authority", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const provider = providerRegistry.providers.find((p) => p.id === "soma.provider.remote_desktop.sunshine");
+  assert.ok(provider, "expected remote graphical provider entry to be present");
+  assert.equal(provider.runtime, "remote-graphical-session");
+  assert.equal(provider.local_only, false);
+  assert.equal(provider.network_access, true);
+  assert.equal(provider.network_scope, "lan-sunshine-moonlight");
+
+  for (const want of REMOTE_GRAPHICAL_CAPABILITIES) {
+    const cap = view.capabilities.find((c) => c.key === want.key);
+    assert.equal(cap.providers.length, 1, `${want.key}: expected exactly one provider claim`);
+    assert.equal(cap.providers[0].id, "soma.provider.remote_desktop.sunshine");
+    assert.equal(cap.providers[0].provider_contract, want.contract);
+  }
+
+  const video = view.capabilities.find((c) => c.key === "perception.remote_desktop.video.subscribe");
+  const pointer = view.capabilities.find((c) => c.key === "desktop.remote.input.pointer");
+  const keyboard = view.capabilities.find((c) => c.key === "desktop.remote.input.keyboard");
+  const disconnect = view.capabilities.find((c) => c.key === "desktop.remote.session.disconnect");
+  assert.ok(video.excluded_by_default.includes("keyboard input"));
+  assert.ok(video.excluded_by_default.includes("pointer input"));
+  assert.ok(pointer.excluded_by_default.includes("remote desktop video access"));
+  assert.ok(pointer.excluded_by_default.includes("keyboard input"));
+  assert.ok(keyboard.excluded_by_default.includes("remote desktop video access"));
+  assert.ok(keyboard.excluded_by_default.includes("pointer input"));
+  assert.ok(disconnect.excluded_by_default.includes("remote desktop video access"));
+  assert.ok(disconnect.excluded_by_default.includes("keyboard input"));
+});

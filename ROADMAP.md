@@ -259,6 +259,11 @@ Implemented:
 - guarded grant preview/review smoke run passed against a local Soma service at
   `http://127.0.0.1:8765`, confirming dry-run preview/review surfaces remain non-mutating with
   runtime writes disabled
+- remote graphical session capability/provider contract added for
+  `perception.remote_desktop.video.subscribe`, `desktop.remote.input.pointer`,
+  `desktop.remote.input.keyboard`, and `desktop.remote.session.disconnect`, with
+  `soma.provider.remote_desktop.sunshine` claiming support while all capabilities remain disabled,
+  requestable, explicit-grant-only, and non-activating
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -378,25 +383,26 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a first governed graphical node capability contract.
+Add a remote graphical session proposal review surface.
 
 Target:
 
 ```text
-graphical node governed capability contract
-  -> define the request/review shape for a remote graphical session surface
-  -> keep Sunshine/Moonlight as transport, not the trust boundary
-  -> expose the capability as disabled/requestable without activation
-  -> keep desktop actuation and model-facing visual payload delivery out of scope
+remote graphical session proposal review
+  -> format an operator-visible proposal for one remote graphical capability
+  -> validate target host, provider, mode, duration, and excluded channels
+  -> keep review non-activating and non-pairing
+  -> keep transport setup, screenshots, input, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add or refine docs for `soma-agent-desktop` as a governed graphical node
-- define the initial capability/provider vocabulary for remote graphical session inspection/access
-- add catalog/provider tests proving the surface is visible but inactive by default
-- document operator review questions before any remote graphical session is attached to model use
-- keep transport setup, screenshots, keyboard/mouse actuation, and session recording out of scope
+- add a pure review/template module for remote graphical capability proposals
+- cover view-only, pointer, keyboard, and disconnect proposal validation in tests
+- expose no runtime route unless the review surface is fully non-activating
+- document operator review fields and default exclusions
+- keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
+  session recording out of scope
 
 Constraints:
 

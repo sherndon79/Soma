@@ -250,6 +250,8 @@ default.
   - review after adding a guarded functional smoke script for grant preview/review flows
 - [Grant Preview Review Live Smoke](./2026-05-24_grant_preview_review_live_smoke.md)
   - review after running the guarded grant preview/review smoke against a local Soma service
+- [Remote Graphical Capability Contract](./2026-05-24_remote_graphical_capability_contract.md)
+  - review after adding disabled-first remote graphical session capability/provider vocabulary
 
 ## Current Review Triggers
 

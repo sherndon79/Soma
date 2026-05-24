@@ -1,6 +1,6 @@
 # Remote Graphical Session Provider
 
-Status: draft concept, not implemented
+Status: draft concept; initial disabled-first catalog/provider contract implemented
 
 Soma may eventually need a standard surface for graphical applications that are not on the local
 host, or that do not expose useful semantic accessibility interfaces. Sunshine and Moonlight are a
@@ -9,6 +9,10 @@ stream, and Moonlight can consume that stream with optional input forwarding.
 
 This should be modeled as a governed remote graphical session provider, not as the local desktop
 authority boundary.
+
+The first implemented slice only adds the catalog/provider vocabulary. It does not pair with
+Sunshine, open a Moonlight session, capture frames, send input, expose screenshots, record streams,
+or attach remote frames to model context.
 
 ## Placement
 
@@ -71,6 +75,16 @@ Provider metadata should include:
 The provider should advertise support only. Provider registration must not grant view or input
 authority.
 
+The initial provider registry entry is:
+
+```text
+soma.provider.remote_desktop.sunshine
+```
+
+It advertises the four capabilities in the split above as supported/requestable while all remain
+disabled in the harness and require explicit grants. This makes the transport visible for review
+without treating a Sunshine/Moonlight pairing as permission.
+
 ## Hardware Encode
 
 Sunshine can use hardware video encode blocks when the host supports them. On NVIDIA GPUs this is
@@ -131,6 +145,23 @@ This draft does not implement Sunshine/Moonlight support. It only records the in
 - Moonlight/Sunshine may be usable locally, but it is not privileged locally
 - no remote graphical session should be activated without explicit grant, active disclosure, and
   revocation
+
+## Implemented Contract Slice
+
+The initial disabled-first contract slice landed these capability keys:
+
+```text
+perception.remote_desktop.video.subscribe
+desktop.remote.input.pointer
+desktop.remote.input.keyboard
+desktop.remote.session.disconnect
+```
+
+All are `default_status: "disabled"`, `activation_policy: "explicit_grant"`, and `reversible:
+false`. The capability catalog intentionally keeps view, pointer input, keyboard input, and
+disconnect as separate authorities. The provider registry only claims support; no runtime broker,
+HTTP route, CLI command, grant proposal helper, video decode path, input path, or disconnect path is
+active.
 
 ---
 

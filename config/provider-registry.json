@@ -165,6 +165,42 @@
           "output_schema": "soma.perception.sensorium.status.response.v1"
         }
       ]
+    },
+    {
+      "id": "soma.provider.remote_desktop.sunshine",
+      "name": "Remote Desktop Sunshine/Moonlight Transport",
+      "version": "0.1.0",
+      "runtime": "remote-graphical-session",
+      "local_only": false,
+      "network_access": true,
+      "network_scope": "lan-sunshine-moonlight",
+      "requires": [
+        "Sunshine host pairing",
+        "Moonlight-compatible client broker",
+        "operator-visible session disclosure"
+      ],
+      "capabilities": [
+        {
+          "key": "perception.remote_desktop.video.subscribe",
+          "provider_contract": "soma.perception.remote_desktop.video.v1",
+          "output_schema": "soma.perception.remote_desktop.video.response.v1"
+        },
+        {
+          "key": "desktop.remote.input.pointer",
+          "provider_contract": "soma.desktop.remote.input.pointer.v1",
+          "output_schema": "soma.desktop.remote.input.pointer.response.v1"
+        },
+        {
+          "key": "desktop.remote.input.keyboard",
+          "provider_contract": "soma.desktop.remote.input.keyboard.v1",
+          "output_schema": "soma.desktop.remote.input.keyboard.response.v1"
+        },
+        {
+          "key": "desktop.remote.session.disconnect",
+          "provider_contract": "soma.desktop.remote.session.disconnect.v1",
+          "output_schema": "soma.desktop.remote.session.disconnect.response.v1"
+        }
+      ]
     }
   ]
 }

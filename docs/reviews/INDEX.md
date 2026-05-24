@@ -258,6 +258,8 @@ default.
   - review after exposing remote graphical proposal review through HTTP and CLI without activation
 - [Remote Graphical Proposal Persistence](./2026-05-24_remote_graphical_proposal_persistence.md)
   - review after storing pending remote graphical proposals without grants or runtime activation
+- [Remote Graphical Grant Candidate Builder](./2026-05-24_remote_graphical_grant_candidate_builder.md)
+  - review after adding a pure non-writing grant-candidate builder for approved remote graphical proposals
 
 ## Current Review Triggers
 

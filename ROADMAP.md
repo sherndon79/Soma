@@ -274,6 +274,9 @@ Implemented:
 - remote graphical pending proposal persistence added through `POST /remote-graphical/proposals`
   and `soma remote-graphical propose`, storing review metadata and grant intent while preserving
   no-grant, no-session, no-pairing, no-input, no-video-attachment, no-recording behavior
+- remote graphical grant-candidate builder added for approved proposals, validating approval
+  provenance plus provider, target-host, mode, scope, requested-channel, reason, and revocation
+  metadata agreement while preserving no-write and no-runtime-activation flags
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -393,23 +396,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a remote graphical grant-candidate builder for approved proposals.
+Expose remote graphical grant-candidate review without writes.
 
 Target:
 
 ```text
-remote graphical grant-candidate builder
-  -> derive a reviewed grant candidate from an approved remote graphical proposal
+remote graphical grant-candidate review
+  -> expose the approved-proposal candidate builder through a non-writing endpoint and CLI
   -> preserve no durable grant writes and no runtime session activation
-  -> reject pending/denied proposals and review metadata drift
+  -> reject pending/denied proposals and review metadata drift through the route
   -> keep pairing, screenshots, input, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add a pure candidate builder that validates approved proposal review metadata
-- add tests for approved, pending, denied, provider drift, target-host drift, and mode drift cases
-- optionally expose a non-writing review route/CLI for the candidate
+- add a non-writing route for approved remote graphical proposal grant candidates
+- add a CLI command that renders the candidate review fields
+- test accepted approved proposal and rejected pending/metadata-drift proposals through HTTP/CLI
 - keep actual grant creation and runtime transport activation out of scope
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope

@@ -34,6 +34,10 @@ import { resolveRuntimeWritePosture } from "./runtimeWritePosture.js";
 import {
   buildRemoteGraphicalGrantCreateCandidateFromProposal,
 } from "./remoteGraphicalGrantCreateCandidate.js";
+import {
+  createRemoteGraphicalBrokerStatus,
+  RemoteGraphicalBroker,
+} from "./remoteGraphicalBroker.js";
 import { buildRemoteGraphicalProposalTemplate } from "./remoteGraphicalProposalTemplate.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
@@ -64,6 +68,7 @@ export function createApp({
   provenanceLog,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
+  remoteGraphicalBroker,
   logger = console,
 } = {}) {
   return createServer(createRequestHandler({
@@ -81,6 +86,7 @@ export function createApp({
     provenanceLog,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
+    remoteGraphicalBroker,
     logger,
   }));
 }
@@ -100,6 +106,7 @@ export function createRequestHandler({
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
   sensoriumSubscriber = null,
+  remoteGraphicalBroker = new RemoteGraphicalBroker(),
   logger = console,
 } = {}) {
   if (!harness) {
@@ -333,6 +340,14 @@ export function createRequestHandler({
           input_dispatched: false,
           recording_started: false,
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/remote-graphical/status") {
+        const rawStatus = typeof remoteGraphicalBroker?.describeActive === "function"
+          ? remoteGraphicalBroker.describeActive()
+          : remoteGraphicalBroker?.status?.();
+        writeJson(res, 200, createRemoteGraphicalBrokerStatus(rawStatus));
         return;
       }
 

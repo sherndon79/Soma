@@ -531,6 +531,16 @@ session, write grants, or attach frames to model context.
 The `propose` command stores a pending capability proposal only. It still does not create a grant or
 activate a remote graphical session.
 
+Remote graphical broker status can be inspected without grants or live transport:
+
+```bash
+npm run cli -- remote-graphical status
+```
+
+The default status reports `provider_not_configured`. It does not pair with Sunshine, start
+Moonlight, open a session, capture frames, dispatch input, record, create grants, or attach video to
+model context.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

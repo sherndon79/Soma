@@ -3200,6 +3200,97 @@ test("POST /remote-graphical/proposal-template rejects cross-channel overreach b
   assert.ok(response.body.validation_errors.includes("requested_channels.keyboard is not authorized by view_only"));
 });
 
+test("GET /remote-graphical/status reports no-op broker without grants or transport activation", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [] },
+  });
+  let response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/remote-graphical/status",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.family, "desktop.remote_graphical");
+  assert.equal(response.body.configured, false);
+  assert.equal(response.body.status, "provider_not_configured");
+  assert.equal(response.body.state, "unconfigured");
+  assert.equal(response.body.active_count, 0);
+  assert.deepEqual(response.body.sessions, []);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.live_transport_used, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
+test("GET /remote-graphical/status uses injected disclosure without activating transport", async () => {
+  let describeCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return {
+          configured: true,
+          status: "available",
+          state: "paired_inactive",
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+          locality: "lan",
+          attended: true,
+          sessions: [{
+            session_id: "remote-session-1",
+            target_host: "soma-agent-desktop.local.sthnet.org",
+            provider: "soma.provider.remote_desktop.sunshine",
+            state: "paired_inactive",
+            locality: "lan",
+            attended: true,
+            active_authorities: [],
+            input_channels: [],
+            recording: false,
+            model_delivery: false,
+          }],
+          summary: "Remote graphical broker is injected for status tests.",
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/remote-graphical/status",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 1);
+  assert.equal(response.body.configured, true);
+  assert.equal(response.body.status, "available");
+  assert.equal(response.body.state, "paired_inactive");
+  assert.equal(response.body.active_count, 1);
+  assert.equal(response.body.sessions[0].session_id, "remote-session-1");
+  assert.equal(response.body.sessions[0].recording, false);
+  assert.equal(response.body.sessions[0].model_delivery, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
 test("POST /remote-graphical/proposals stores pending proposal without session activation", async () => {
   const proposals = new CapabilityProposalStore();
   const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });
@@ -4485,6 +4576,7 @@ function makeHandler({
   runtimeWritePosture,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
+  remoteGraphicalBroker,
   capabilityProposals,
 } = {}) {
   return createRequestHandler({
@@ -4499,6 +4591,7 @@ function makeHandler({
     runtimeWritePosture,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
+    remoteGraphicalBroker,
     capabilityProposals,
     logger: { info() {} },
   });

@@ -297,6 +297,10 @@ Implemented:
   lifecycle states, disclosure fields, no-op/injected first interface, and separate action
   authorities for session open, video observation, input dispatch, disconnect, recording, and
   model-facing delivery
+- no-op remote graphical broker status seam added through `GET /remote-graphical/status` and
+  `soma remote-graphical status`, reporting provider-neutral `provider_not_configured` status by
+  default while preserving no grant creation, no session opening, no pairing, no frame capture, no
+  input dispatch, no recording, and no live transport use
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -416,25 +420,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a no-op remote graphical broker status seam.
+Add remote graphical session-open review scaffolding.
 
 Target:
 
 ```text
-remote graphical broker status seam
-  -> introduce an injected/no-op broker interface
-  -> expose provider-neutral status/disclosure without live transport calls
-  -> preserve grant, session, video, input, disconnect, and model delivery separation
-  -> keep Sunshine/Moonlight execution out of scope
+remote graphical session-open review scaffolding
+  -> define session-open as a separate reviewed action from grant creation and video observation
+  -> preserve broker status as non-activating
+  -> keep live Sunshine/Moonlight execution out of scope
+  -> keep frame delivery, input dispatch, recording, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a small `RemoteGraphicalBroker` no-op/default implementation or equivalent interface
-- add a status/disclosure route and CLI command that report `provider_not_configured` without
-  subprocesses, sockets, frame capture, input dispatch, or recording
-- keep live provider injection test-only until a later explicit activation slice
-- prove status does not require or create grants and does not activate transport
+- add a session-open proposal/review template or activation policy note
+- define required active grant and operator-facing review fields for opening a broker session
+- keep session-open review separate from video observation and input authority
+- prove review surfaces do not call the broker or activate transport
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

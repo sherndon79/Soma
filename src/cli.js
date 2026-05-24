@@ -215,6 +215,12 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "status") {
+    const response = await request(baseUrl, "GET", "/remote-graphical/status");
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalStatusSummary(response));
+    return 0;
+  }
+
   if (command === "remote-graphical" && subcommand === "propose") {
     const response = await request(
       baseUrl,
@@ -1228,6 +1234,28 @@ function remoteGraphicalProposalTemplateSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalStatusSummary(response) {
+  const lines = [
+    "Remote graphical status",
+    `  status: ${response.status ?? "unknown"}`,
+    `  state: ${response.state ?? "unknown"}`,
+    `  configured: ${booleanText(response.configured)}`,
+    `  provider: ${response.provider || "none"}`,
+    `  target host: ${response.target_host || "none"}`,
+    `  active sessions: ${response.active_count ?? 0}`,
+    `  summary: ${response.summary ?? ""}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+    `  recording started: ${booleanText(response.recording_started)}`,
+    `  live transport used: ${booleanText(response.live_transport_used)}`,
+  ];
+  return lines.join("\n");
+}
+
 function remoteGraphicalProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1634,6 +1662,7 @@ Usage:
   soma sensorium subscriptions [--json]
   soma sensorium status [--json]
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
+  soma remote-graphical status [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical grant-candidate proposal-id [--json]
   soma remote-graphical grant-create proposal-id [--by user] [--json]

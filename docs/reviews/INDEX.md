@@ -270,6 +270,8 @@ default.
   - review after adding process-local remote graphical grant revocation without provider session control
 - [Remote Graphical Broker Boundary](./2026-05-24_remote_graphical_broker_boundary.md)
   - review after documenting the provider-neutral broker seam before live transport activation
+- [Remote Graphical Broker Status Seam](./2026-05-24_remote_graphical_broker_status_seam.md)
+  - review after adding no-op remote graphical broker status without live transport activation
 
 ## Current Review Triggers
 

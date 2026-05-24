@@ -1406,6 +1406,51 @@ test("runCli remote-graphical proposal-template validates required flags before 
   assert.equal(called, false);
 });
 
+test("runCli remote-graphical status reports no-op broker posture", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "status",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        configured: false,
+        status: "provider_not_configured",
+        state: "unconfigured",
+        provider: "",
+        target_host: "",
+        active_count: 0,
+        summary: "Remote graphical broker is not configured.",
+        activation_performed: false,
+        grant_written: false,
+        session_opened: false,
+        pairing_performed: false,
+        input_dispatched: false,
+        video_attached: false,
+        recording_started: false,
+        live_transport_used: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "GET");
+  assert.equal(captured.path, "/remote-graphical/status");
+  assert.equal(captured.body, undefined);
+  assert.match(writes.join(""), /Remote graphical status/);
+  assert.match(writes.join(""), /status: provider_not_configured/);
+  assert.match(writes.join(""), /configured: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+  assert.match(writes.join(""), /video attached: no/);
+  assert.match(writes.join(""), /live transport used: no/);
+});
+
 test("runCli remote-graphical propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

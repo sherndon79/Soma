@@ -246,6 +246,8 @@ default.
   - review after preserving validation-path details through CLI HTTP refusal errors
 - [Grant Mutation Preview Review Operator Examples](./2026-05-24_grant_mutation_preview_review_operator_examples.md)
   - review after documenting accepted and refused grant preview review CLI flows
+- [Grant Preview Review Smoke Script](./2026-05-24_grant_preview_review_smoke_script.md)
+  - review after adding a guarded functional smoke script for grant preview/review flows
 
 ## Current Review Triggers
 

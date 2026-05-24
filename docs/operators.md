@@ -462,6 +462,20 @@ current forbidden review keys. Payloads, provider output, raw payloads, screensh
 bytes, text content, and raw grant/event values must remain outside the review surface, including when
 they are nested under otherwise valid preview objects.
 
+A guarded functional smoke script is available for the real service flow:
+
+```bash
+npm run grant-preview:smoke -- --dry-run
+
+SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1 npm run grant-preview:smoke -- \
+  --url http://127.0.0.1:8765
+```
+
+The script prints its CLI plan before execution. The live run checks `status`, captures grants before
+and after, inspects grant recovery, creates a dry-run preview, reviews the accepted preview, and
+checks one refused review fixture. It refuses live execution unless
+`SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1` is set and fails if the grant list changes.
+
 Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
 `grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
 request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`

@@ -253,6 +253,9 @@ Implemented:
 - grant mutation preview review operator examples added for accepted and refused
   `grants review-preview --stdin` flows, including `validation_errors` inspection and fixture
   cross-reference
+- guarded grant preview/review smoke script added as `npm run grant-preview:smoke`, covering status,
+  grants recovery, dry-run preview creation, accepted/refused review formatting, and before/after
+  grant-list comparison behind `SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1`
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -372,24 +375,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add grant mutation preview/review functional smoke script.
+Run grant mutation preview/review functional smoke against local service.
 
 Target:
 
 ```text
-grant mutation preview/review functional smoke script
-  -> provide an operator-run script for real service preview/review flows
-  -> exercise status, grants recovery, preview-create, and review-preview
-  -> keep the script dry-run and non-mutating by default
+grant mutation preview/review functional smoke run
+  -> start or reuse a local Soma service
+  -> run the guarded smoke script against the real service URL
+  -> capture pass/fail output in a review note
   -> keep runtime_writes_enabled activation out of scope
 ```
 
 Expected work:
 
-- add a guarded script under `scripts/` for grant preview/review smoke
-- require explicit environment opt-in before calling a live Soma URL
-- include accepted and refused review-preview checks
-- document how to run it against a local service
+- run `npm run grant-preview:smoke -- --dry-run`
+- start or verify `npm start` service on a local port
+- run `SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1 npm run grant-preview:smoke -- --url ...`
+- document observed result and any blocker
 - keep preview generation, durable commit routes, and runtime writes out of scope
 
 Constraints:

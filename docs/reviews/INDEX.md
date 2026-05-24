@@ -262,6 +262,8 @@ default.
   - review after adding a pure non-writing grant-candidate builder for approved remote graphical proposals
 - [Remote Graphical Grant Candidate Surface](./2026-05-24_remote_graphical_grant_candidate_surface.md)
   - review after exposing remote graphical grant-candidate review through HTTP and CLI without writes
+- [Remote Graphical Grant Activation Policy](./2026-05-24_remote_graphical_grant_activation_policy.md)
+  - review after documenting the future runtime-only grant creation boundary for remote graphical proposals
 
 ## Current Review Triggers
 

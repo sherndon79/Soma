@@ -281,6 +281,9 @@ Implemented:
   `POST /remote-graphical/grant-candidates` and
   `soma remote-graphical grant-candidate`, validating approved proposals through HTTP/CLI while
   preserving no-grant-write and no-runtime-activation behavior
+- remote graphical grant activation policy documented: the next writable path may create
+  session-only runtime grants from approved proposals, but must not create durable grants, pair
+  Sunshine, open Moonlight, capture frames, dispatch input, record, or attach model visual payloads
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -400,24 +403,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Decide and document remote graphical grant creation activation.
+Add runtime-only remote graphical grant creation.
 
 Target:
 
 ```text
-remote graphical grant creation activation decision
-  -> define whether session grants may be created for approved remote graphical proposals
-  -> separate grant creation from Moonlight/Sunshine pairing and runtime session activation
-  -> document operator prerequisites, recovery behavior, and revocation expectations
+remote graphical runtime grant creation
+  -> create session-only runtime grants from approved remote graphical proposals
+  -> preserve no durable grant writes and no runtime session activation
+  -> make approval, grant creation, and transport activation separate
   -> keep pairing, screenshots, input dispatch, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- write the activation policy for remote graphical session grant creation
-- decide whether the first grant route should be session-only and runtime-only
-- document that grant creation must not start a Moonlight/Sunshine session
-- identify tests required before any writable route lands
+- add `POST /remote-graphical/grants` using the approved-proposal candidate builder
+- add `soma remote-graphical grant-create proposal-id`
+- store only process-local/runtime grants
+- prove approval alone does not create grants and grant creation does not pair/open/capture/input/record
+- keep durable grant writes and transport activation out of scope
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope
 

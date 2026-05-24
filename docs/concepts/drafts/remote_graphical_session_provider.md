@@ -168,6 +168,12 @@ The first internal proposal-template builder now exists under
 duration bounds, view-only video bounds, and requested channel separation. This is still
 non-activating and not yet exposed through HTTP or CLI.
 
+Grant creation policy is captured separately in
+[Remote Graphical Grant Activation Policy](./remote_graphical_grant_activation_policy.md). The
+policy permits a future session-only runtime grant path from approved proposals, but keeps grant
+creation separate from Moonlight/Sunshine pairing, session startup, frame capture, input dispatch,
+recording, and durable grant writes.
+
 ---
 
 ## Addendum: Implementation Framing for Sunshine/Moonlight — 2026-05-17

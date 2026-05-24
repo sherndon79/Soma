@@ -317,6 +317,10 @@ Implemented:
 - remote graphical broker runtime opt-in scaffold added behind `SOMA_REMOTE_GRAPHICAL_ENABLED`,
   exposing `requested`, `enabled`, and `configured` status posture while preserving the default
   no-op broker, no live transport calls, and default session-open refusal
+- remote graphical configured broker fixture refusal scaffold added, mapping session-open refusal
+  posture to `remote_graphical_broker_not_enabled`,
+  `remote_graphical_broker_not_configured`, or `remote_graphical_broker_provider_unavailable`
+  without invoking `openSession` or live transport
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -436,24 +440,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical configured broker fixture scaffold.
+Add remote graphical broker open-session fixture activation.
 
 Target:
 
 ```text
-remote graphical configured broker fixture scaffold
-  -> define an injected broker fixture contract for status and future session-open tests
-  -> distinguish opt-in requested from broker configured/provider available
-  -> add not-enabled/not-configured refusal codes without calling live transport
-  -> keep Sunshine/Moonlight implementation, pairing, video, and input out of scope
+remote graphical broker open-session fixture activation
+  -> invoke only an injected fake broker openSession fixture after all review gates pass
+  -> keep default startup and missing broker paths refused
+  -> prove success response still has no video, input, recording, model delivery, pairing, or durable writes
+  -> keep Sunshine/Moonlight implementation and real transport out of scope
 ```
 
 Expected work:
 
-- add a provider-neutral broker interface fixture for configured-but-fake status
-- thread runtime posture into session-open refusal decisions without live broker invocation
-- preserve explicit user actor and active grant validation ordering
-- prove unset opt-in, missing broker, and fake configured broker paths return bounded refusal codes
+- add provider-neutral openSession fixture shape for tests
+- call `openSession` only when the injected broker is configured, enabled, and explicitly fixture-capable
+- preserve explicit user actor, active grant validation, and reviewed session-open intent before broker call
+- map fixture success and fixture failures to bounded response contracts
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

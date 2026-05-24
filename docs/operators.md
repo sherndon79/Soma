@@ -564,9 +564,14 @@ npm run cli -- remote-graphical session-open grant-id \
   --by user
 ```
 
-The default result is `provider_not_configured`. This route validates the active grant and user
-actor, then refuses without calling the broker, pairing, opening a session, attaching video,
-dispatching input, recording, or delivering frames to a model.
+The default result is `remote_graphical_broker_not_enabled` unless the runtime opt-in and a
+configured broker posture are present. With opt-in but no configured broker, the result is
+`remote_graphical_broker_not_configured`. A configured fake broker still returns
+`remote_graphical_broker_provider_unavailable` until live session-open activation is reviewed.
+
+This route validates the active grant and user actor before inspecting broker posture, then refuses
+without calling `openSession`, pairing, opening a session, attaching video, dispatching input,
+recording, or delivering frames to a model.
 
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 

@@ -94,6 +94,7 @@ export function buildRemoteGraphicalSessionOpenRefusal({
   reason = "",
   actor = "",
   requested_by = "assistant",
+  brokerStatus = {},
 } = {}) {
   const normalizedActor = stringValue(actor);
   if (normalizedActor !== "user") {
@@ -108,19 +109,53 @@ export function buildRemoteGraphicalSessionOpenRefusal({
     reason,
     requested_by,
   });
+  const refusal = remoteGraphicalBrokerRefusalFromStatus(brokerStatus);
 
   return {
     ...review,
     type: "remote_graphical_session_open_refusal",
     refused: true,
-    status: "provider_not_configured",
-    state: "unconfigured",
-    error: "provider_not_configured",
-    message: "Remote graphical session-open is not enabled on this Soma instance.",
+    status: refusal.status,
+    state: refusal.state,
+    error: refusal.code,
+    message: refusal.message,
     review_only: false,
     broker_called: false,
     provider_session_stopped: false,
     session_id: "",
+  };
+}
+
+export function remoteGraphicalBrokerRefusalFromStatus(status = {}) {
+  const requested = Boolean(status.requested);
+  const enabled = Boolean(status.enabled);
+  const configured = Boolean(status.configured);
+  const providerStatus = stringValue(status.status);
+  const providerState = stringValue(status.state);
+
+  if (!requested || !enabled) {
+    return {
+      code: "remote_graphical_broker_not_enabled",
+      status: "broker_not_enabled",
+      state: "disabled",
+      message: "Remote graphical session-open requires explicit runtime opt-in before broker use.",
+    };
+  }
+
+  if (!configured) {
+    return {
+      code: "remote_graphical_broker_not_configured",
+      status: "provider_not_configured",
+      state: providerState || "unconfigured",
+      message: "Remote graphical session-open requires a configured remote graphical broker.",
+    };
+  }
+
+  return {
+    code: "remote_graphical_broker_provider_unavailable",
+    status: providerStatus || "session_open_disabled",
+    state: providerState || "configured_inactive",
+    message: "Remote graphical broker is configured, but live session-open activation is not enabled in this slice.",
   };
 }
 

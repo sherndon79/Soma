@@ -388,11 +388,30 @@ export function createRequestHandler({
           return;
         }
         const grant = (grantStore.grants ?? []).find((entry) => entry.id === grantId);
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_session_open_requires_user_actor",
+            message: "Remote graphical session-open requires an explicit user actor.",
+          });
+          return;
+        }
+        buildRemoteGraphicalSessionOpenReview({
+          grant,
+          reason: body?.reason,
+          requested_by: body?.requested_by,
+        });
+        const rawStatus = typeof remoteGraphicalBroker?.describeActive === "function"
+          ? remoteGraphicalBroker.describeActive()
+          : remoteGraphicalBroker?.status?.();
+        const brokerStatus = createRemoteGraphicalBrokerStatus(rawStatus);
         const refusal = buildRemoteGraphicalSessionOpenRefusal({
           grant,
           reason: body?.reason,
-          actor: body?.actor ?? body?.approved_by,
+          actor,
           requested_by: body?.requested_by,
+          brokerStatus,
         });
         writeJson(res, 200, refusal);
         return;

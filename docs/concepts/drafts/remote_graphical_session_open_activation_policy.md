@@ -39,9 +39,9 @@ The current implemented surfaces are:
 - session-open review: `POST /remote-graphical/session-open-review`
 - default-off session-open refusal: `POST /remote-graphical/sessions`
 
-The refusal route validates active grant, explicit user actor, and reason, then returns
-`provider_not_configured`. It must remain the default behavior until the activation gates below are
-met.
+The refusal route validates active grant, explicit user actor, and reason, then inspects broker
+posture to return a bounded non-activating refusal. It must remain the default behavior until the
+activation gates below are met.
 
 ## Activation Gates
 
@@ -140,6 +140,12 @@ input_dispatched=false
 recording_started=false
 model_delivery=false
 ```
+
+The current non-activating route maps posture this way:
+
+- no runtime opt-in or disabled runtime: `remote_graphical_broker_not_enabled`
+- enabled runtime without configured broker: `remote_graphical_broker_not_configured`
+- configured fake/test broker before live activation: `remote_graphical_broker_provider_unavailable`
 
 ## Test Requirements
 

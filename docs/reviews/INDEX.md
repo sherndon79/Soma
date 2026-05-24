@@ -280,6 +280,8 @@ default.
   - review after documenting gates for future live broker-backed session-open activation
 - [Remote Graphical Runtime Opt-In](./2026-05-24_remote_graphical_runtime_opt_in.md)
   - review after adding startup-visible runtime opt-in posture without live transport activation
+- [Remote Graphical Configured Broker Refusals](./2026-05-24_remote_graphical_configured_broker_refusals.md)
+  - review after mapping session-open refusal codes by broker posture without transport activation
 
 ## Current Review Triggers
 

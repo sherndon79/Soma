@@ -3424,7 +3424,7 @@ test("POST /remote-graphical/session-open-review rejects missing inactive and no
   assert.match(response.body.message, /remote graphical grant/);
 });
 
-test("POST /remote-graphical/sessions refuses without broker activation", async () => {
+test("POST /remote-graphical/sessions refuses configured fake broker without opening session", async () => {
   let describeCalls = 0;
   let openCalls = 0;
   const handler = makeHandler({
@@ -3436,7 +3436,13 @@ test("POST /remote-graphical/sessions refuses without broker activation", async 
     remoteGraphicalBroker: {
       describeActive() {
         describeCalls += 1;
-        return { configured: true, status: "available", state: "paired_inactive" };
+        return {
+          requested: true,
+          enabled: true,
+          configured: true,
+          status: "available",
+          state: "paired_inactive",
+        };
       },
       openSession() {
         openCalls += 1;
@@ -3457,13 +3463,13 @@ test("POST /remote-graphical/sessions refuses without broker activation", async 
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(describeCalls, 0);
+  assert.equal(describeCalls, 1);
   assert.equal(openCalls, 0);
   assert.equal(response.body.type, "remote_graphical_session_open_refusal");
   assert.equal(response.body.refused, true);
-  assert.equal(response.body.status, "provider_not_configured");
-  assert.equal(response.body.state, "unconfigured");
-  assert.equal(response.body.error, "provider_not_configured");
+  assert.equal(response.body.status, "available");
+  assert.equal(response.body.state, "paired_inactive");
+  assert.equal(response.body.error, "remote_graphical_broker_provider_unavailable");
   assert.equal(response.body.source_grant_id, "grant-remote-video");
   assert.equal(response.body.broker_called, false);
   assert.equal(response.body.activation_performed, false);
@@ -3474,6 +3480,81 @@ test("POST /remote-graphical/sessions refuses without broker activation", async 
   assert.equal(response.body.input_dispatched, false);
   assert.equal(response.body.recording_started, false);
   assert.equal(response.body.model_delivery, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
+test("POST /remote-graphical/sessions refuses before broker invocation when opt-in is unset", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status, "broker_not_enabled");
+  assert.equal(response.body.state, "disabled");
+  assert.equal(response.body.error, "remote_graphical_broker_not_enabled");
+  assert.equal(response.body.broker_called, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
+test("POST /remote-graphical/sessions refuses enabled runtime without configured broker", async () => {
+  let describeCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return {
+          requested: true,
+          enabled: true,
+          configured: false,
+          status: "provider_not_configured",
+          state: "unconfigured",
+        };
+      },
+      openSession() {
+        throw new Error("openSession should not be called");
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 1);
+  assert.equal(response.body.status, "provider_not_configured");
+  assert.equal(response.body.state, "unconfigured");
+  assert.equal(response.body.error, "remote_graphical_broker_not_configured");
+  assert.equal(response.body.broker_called, false);
+  assert.equal(response.body.session_opened, false);
   assert.equal(response.body.live_transport_used, false);
 });
 

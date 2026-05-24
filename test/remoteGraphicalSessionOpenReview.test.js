@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildRemoteGraphicalSessionOpenRefusal,
   buildRemoteGraphicalSessionOpenReview,
+  remoteGraphicalBrokerRefusalFromStatus,
 } from "../src/remoteGraphicalSessionOpenReview.js";
 
 test("buildRemoteGraphicalSessionOpenReview returns non-activating session-open review", () => {
@@ -58,7 +59,7 @@ test("buildRemoteGraphicalSessionOpenReview rejects inactive malformed or non-re
   }), /reason/);
 });
 
-test("buildRemoteGraphicalSessionOpenRefusal fails closed without broker activation", () => {
+test("buildRemoteGraphicalSessionOpenRefusal fails closed without runtime opt-in", () => {
   const refusal = buildRemoteGraphicalSessionOpenRefusal({
     grant: makeGrant(),
     actor: "user",
@@ -67,9 +68,9 @@ test("buildRemoteGraphicalSessionOpenRefusal fails closed without broker activat
 
   assert.equal(refusal.type, "remote_graphical_session_open_refusal");
   assert.equal(refusal.refused, true);
-  assert.equal(refusal.status, "provider_not_configured");
-  assert.equal(refusal.state, "unconfigured");
-  assert.equal(refusal.error, "provider_not_configured");
+  assert.equal(refusal.status, "broker_not_enabled");
+  assert.equal(refusal.state, "disabled");
+  assert.equal(refusal.error, "remote_graphical_broker_not_enabled");
   assert.equal(refusal.source_grant_id, "grant-remote-video");
   assert.equal(refusal.review_only, false);
   assert.equal(refusal.broker_called, false);
@@ -80,6 +81,60 @@ test("buildRemoteGraphicalSessionOpenRefusal fails closed without broker activat
   assert.equal(refusal.recording_started, false);
   assert.equal(refusal.model_delivery, false);
   assert.equal(refusal.live_transport_used, false);
+});
+
+test("buildRemoteGraphicalSessionOpenRefusal distinguishes missing and fake configured brokers", () => {
+  const notConfigured = buildRemoteGraphicalSessionOpenRefusal({
+    grant: makeGrant(),
+    actor: "user",
+    reason: "Need to open a reviewed broker session.",
+    brokerStatus: {
+      requested: true,
+      enabled: true,
+      configured: false,
+      state: "unconfigured",
+    },
+  });
+  assert.equal(notConfigured.status, "provider_not_configured");
+  assert.equal(notConfigured.error, "remote_graphical_broker_not_configured");
+  assert.equal(notConfigured.broker_called, false);
+
+  const fakeConfigured = buildRemoteGraphicalSessionOpenRefusal({
+    grant: makeGrant(),
+    actor: "user",
+    reason: "Need to open a reviewed broker session.",
+    brokerStatus: {
+      requested: true,
+      enabled: true,
+      configured: true,
+      status: "available",
+      state: "paired_inactive",
+    },
+  });
+  assert.equal(fakeConfigured.status, "available");
+  assert.equal(fakeConfigured.state, "paired_inactive");
+  assert.equal(fakeConfigured.error, "remote_graphical_broker_provider_unavailable");
+  assert.equal(fakeConfigured.broker_called, false);
+  assert.equal(fakeConfigured.session_opened, false);
+});
+
+test("remoteGraphicalBrokerRefusalFromStatus maps broker posture to bounded refusal codes", () => {
+  assert.deepEqual(remoteGraphicalBrokerRefusalFromStatus({}), {
+    code: "remote_graphical_broker_not_enabled",
+    status: "broker_not_enabled",
+    state: "disabled",
+    message: "Remote graphical session-open requires explicit runtime opt-in before broker use.",
+  });
+  assert.equal(remoteGraphicalBrokerRefusalFromStatus({
+    requested: true,
+    enabled: true,
+    configured: false,
+  }).code, "remote_graphical_broker_not_configured");
+  assert.equal(remoteGraphicalBrokerRefusalFromStatus({
+    requested: true,
+    enabled: true,
+    configured: true,
+  }).code, "remote_graphical_broker_provider_unavailable");
 });
 
 test("buildRemoteGraphicalSessionOpenRefusal requires user actor", () => {

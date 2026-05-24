@@ -264,6 +264,9 @@ Implemented:
   `desktop.remote.input.keyboard`, and `desktop.remote.session.disconnect`, with
   `soma.provider.remote_desktop.sunshine` claiming support while all capabilities remain disabled,
   requestable, explicit-grant-only, and non-activating
+- remote graphical session proposal-template builder added for view-only video, pointer input,
+  keyboard input, and disconnect requests, validating target host, provider support, mode, duration
+  bounds, view bounds, and cross-channel authority separation without activation
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -383,24 +386,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a remote graphical session proposal review surface.
+Expose remote graphical session proposal review through HTTP and CLI.
 
 Target:
 
 ```text
 remote graphical session proposal review
-  -> format an operator-visible proposal for one remote graphical capability
-  -> validate target host, provider, mode, duration, and excluded channels
-  -> keep review non-activating and non-pairing
+  -> route the pure proposal-template builder through a non-activating endpoint
+  -> add a CLI wrapper that renders the review fields for operators
+  -> store no grants and create no remote sessions
   -> keep transport setup, screenshots, input, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add a pure review/template module for remote graphical capability proposals
-- cover view-only, pointer, keyboard, and disconnect proposal validation in tests
-- expose no runtime route unless the review surface is fully non-activating
-- document operator review fields and default exclusions
+- add `POST /remote-graphical/proposal-template` or equivalent non-activating route
+- add `soma remote-graphical proposal-template ...` CLI validation/output
+- add route and CLI tests for accepted view-only and refused cross-channel requests
+- document operator examples for the review-only command
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope
 

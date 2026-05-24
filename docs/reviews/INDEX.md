@@ -252,6 +252,8 @@ default.
   - review after running the guarded grant preview/review smoke against a local Soma service
 - [Remote Graphical Capability Contract](./2026-05-24_remote_graphical_capability_contract.md)
   - review after adding disabled-first remote graphical session capability/provider vocabulary
+- [Remote Graphical Proposal Template](./2026-05-24_remote_graphical_proposal_template.md)
+  - review after adding a pure non-activating remote graphical proposal template builder
 
 ## Current Review Triggers
 

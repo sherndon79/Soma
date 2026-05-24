@@ -163,6 +163,11 @@ disconnect as separate authorities. The provider registry only claims support; n
 HTTP route, CLI command, grant proposal helper, video decode path, input path, or disconnect path is
 active.
 
+The first internal proposal-template builder now exists under
+`src/remoteGraphicalProposalTemplate.js`. It validates target host, provider support, mode,
+duration bounds, view-only video bounds, and requested channel separation. This is still
+non-activating and not yet exposed through HTTP or CLI.
+
 ---
 
 ## Addendum: Implementation Framing for Sunshine/Moonlight — 2026-05-17

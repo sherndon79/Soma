@@ -254,6 +254,8 @@ default.
   - review after adding disabled-first remote graphical session capability/provider vocabulary
 - [Remote Graphical Proposal Template](./2026-05-24_remote_graphical_proposal_template.md)
   - review after adding a pure non-activating remote graphical proposal template builder
+- [Remote Graphical Proposal Surface](./2026-05-24_remote_graphical_proposal_surface.md)
+  - review after exposing remote graphical proposal review through HTTP and CLI without activation
 
 ## Current Review Triggers
 

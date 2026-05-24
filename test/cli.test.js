@@ -1275,6 +1275,137 @@ test("runCli sensorium proposal-template validates required flags before request
   assert.equal(called, false);
 });
 
+test("runCli remote-graphical proposal-template requests non-activating review context", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "proposal-template",
+    "--capability",
+    "perception.remote_desktop.video.subscribe",
+    "--provider",
+    "soma.provider.remote_desktop.sunshine",
+    "--host",
+    "soma-agent-desktop.local.sthnet.org",
+    "--mode",
+    "view_only",
+    "--reason",
+    "Need a bounded graphical view.",
+    "--max-seconds",
+    "120",
+    "--max-fps",
+    "30",
+    "--max-width",
+    "1280",
+    "--max-height",
+    "720",
+    "--channels",
+    "video",
+    "--locality",
+    "lan",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: {
+          capability: "perception.remote_desktop.video.subscribe",
+          requested_scope: "session",
+          reason: "Need a bounded graphical view.",
+        },
+        review: {
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+          mode: "view_only",
+          authority: "video",
+          risk_class: "high",
+          scope: "session",
+          constraints: {
+            max_seconds: 120,
+            max_fps: 30,
+            max_width: 1280,
+            max_height: 720,
+            locality: "lan",
+            attended: true,
+          },
+          requested_channels: ["video"],
+          excluded_channels: ["keyboard", "pointer", "recording"],
+          active_disclosure: "remote graphical video authority for soma-agent-desktop.local.sthnet.org, expires in 120 seconds",
+          revocation: {
+            summary: "Revoking this grant stops video authority for soma-agent-desktop.local.sthnet.org.",
+          },
+          recording_posture: "No screenshots or frames are retained by default.",
+          model_boundary_warning: "Remote desktop frames can be stopped later.",
+        },
+        activation_performed: false,
+        grant_written: false,
+        session_opened: false,
+        pairing_performed: false,
+        input_dispatched: false,
+        video_attached: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/remote-graphical/proposal-template");
+  assert.deepEqual(captured.body, {
+    capability: "perception.remote_desktop.video.subscribe",
+    provider: "soma.provider.remote_desktop.sunshine",
+    target_host: "soma-agent-desktop.local.sthnet.org",
+    mode: "view_only",
+    requested_scope: "session",
+    reason: "Need a bounded graphical view.",
+    locality: "lan",
+    requested_channels: ["video"],
+    constraints: {
+      max_seconds: 120,
+      max_fps: 30,
+      max_width: 1280,
+      max_height: 720,
+    },
+  });
+  assert.match(writes.join(""), /Remote graphical proposal template/);
+  assert.match(writes.join(""), /constraints: max_seconds=120 max_fps=30 bounds=1280x720 locality=lan attended=yes/);
+  assert.match(writes.join(""), /activation performed: no/);
+  assert.match(writes.join(""), /grant written: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+});
+
+test("runCli remote-graphical proposal-template validates required flags before request", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "proposal-template",
+      "--capability",
+      "desktop.remote.input.pointer",
+      "--provider",
+      "soma.provider.remote_desktop.sunshine",
+      "--mode",
+      "pointer_input",
+      "--reason",
+      "Need pointer input.",
+      "--max-seconds",
+      "30",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical proposal-template requires --host/,
+  );
+  assert.equal(called, false);
+});
+
 test("runCli sensorium propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

@@ -204,6 +204,17 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "proposal-template") {
+    const response = await request(
+      baseUrl,
+      "POST",
+      "/remote-graphical/proposal-template",
+      remoteGraphicalProposalTemplateRequestFromFlags(flags),
+    );
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalProposalTemplateSummary(response));
+    return 0;
+  }
+
   if (command === "sensorium" && subcommand === "propose") {
     const response = await request(baseUrl, "POST", "/sensorium/proposals", sensoriumProposalTemplateRequestFromFlags(flags));
     writeOutput(stdout, response, jsonOutput, sensoriumProposalCreatedSummary(response));
@@ -504,6 +515,30 @@ function sensoriumProposalTemplateRequestFromFlags(flags) {
   });
 }
 
+function remoteGraphicalProposalTemplateRequestFromFlags(flags) {
+  const constraints = stripUndefined({
+    max_seconds: integerFlag(flags["max-seconds"], "--max-seconds", 1, 3600, "remote-graphical proposal-template"),
+    max_fps: integerFlag(flags["max-fps"], "--max-fps", 1, 60, "remote-graphical proposal-template"),
+    max_width: integerFlag(flags["max-width"], "--max-width", 160, 3840, "remote-graphical proposal-template"),
+    max_height: integerFlag(flags["max-height"], "--max-height", 120, 3840, "remote-graphical proposal-template"),
+  });
+
+  return stripUndefined({
+    requested_by: flags.by,
+    capability: requiredFlag(flags.capability, "--capability", "remote-graphical proposal-template"),
+    provider: requiredFlag(flags.provider, "--provider", "remote-graphical proposal-template"),
+    target_host: requiredFlag(flags.host, "--host", "remote-graphical proposal-template"),
+    mode: requiredFlag(flags.mode, "--mode", "remote-graphical proposal-template"),
+    requested_scope: flags.scope ?? "session",
+    reason: requiredFlag(flags.reason, "--reason", "remote-graphical proposal-template"),
+    fallback: flags.fallback,
+    locality: flags.locality,
+    attended: flags.attended,
+    requested_channels: commaListFlag(flags.channels),
+    constraints,
+  });
+}
+
 function sensoriumSubscribeStartRequestFromFlags(flags) {
   const constraints = stripUndefined({
     max_seconds: integerFlag(flags["max-seconds"], "--max-seconds", 1, 3600, "sensorium subscribe-start"),
@@ -674,6 +709,13 @@ function dimensionFlag(value, flagName, commandName = "sensorium proposal-templa
 
 function stripUndefined(value) {
   return Object.fromEntries(Object.entries(value).filter(([, entryValue]) => entryValue !== undefined));
+}
+
+function commaListFlag(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  return String(value).split(",").map((entry) => entry.trim()).filter(Boolean);
 }
 
 function isPlainObject(value) {
@@ -1101,6 +1143,38 @@ function sensoriumProposalTemplateSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalProposalTemplateSummary(response) {
+  const proposal = response.proposal ?? {};
+  const review = response.review ?? {};
+  const constraints = review.constraints ?? {};
+  const revocation = review.revocation ?? {};
+  const lines = [
+    "Remote graphical proposal template",
+    `  capability: ${proposal.capability ?? review.capability ?? "unknown"}`,
+    `  provider: ${review.provider ?? "unknown"}`,
+    `  target host: ${review.target_host ?? constraints.target_host ?? "unknown"}`,
+    `  mode: ${review.mode ?? constraints.mode ?? "unknown"}`,
+    `  authority: ${review.authority ?? "unknown"}`,
+    `  risk class: ${review.risk_class ?? "unknown"}`,
+    `  scope: ${review.scope ?? proposal.requested_scope ?? "unknown"}`,
+    `  reason: ${proposal.reason ?? ""}`,
+    `  constraints: ${remoteGraphicalConstraintSummary(review)}`,
+    `  channels: ${joinList(review.requested_channels)}`,
+    `  excluded channels: ${joinList(review.excluded_channels)}`,
+    `  disclosure: ${review.active_disclosure ?? ""}`,
+    `  revocation: ${revocation.summary ?? "unknown"}`,
+    `  recording: ${review.recording_posture ?? "unknown"}`,
+    `  model boundary: ${review.model_boundary_warning ?? "unknown"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1305,6 +1379,27 @@ function sensoriumConstraintSummary(review) {
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
+function remoteGraphicalConstraintSummary(review) {
+  const constraints = review.constraints ?? {};
+  const parts = [];
+  if (constraints.max_seconds !== undefined && constraints.max_seconds !== null) {
+    parts.push(`max_seconds=${constraints.max_seconds}`);
+  }
+  if (constraints.max_fps !== undefined && constraints.max_fps !== null) {
+    parts.push(`max_fps=${constraints.max_fps}`);
+  }
+  if (constraints.max_width !== undefined && constraints.max_height !== undefined) {
+    parts.push(`bounds=${constraints.max_width}x${constraints.max_height}`);
+  }
+  if (constraints.locality) {
+    parts.push(`locality=${constraints.locality}`);
+  }
+  if (constraints.attended !== undefined) {
+    parts.push(`attended=${booleanText(constraints.attended)}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "none";
+}
+
 function capabilityViewSummary(response) {
   const summary = response.summary ?? {};
   const grouped = response.grouped ?? {};
@@ -1385,6 +1480,7 @@ Usage:
   soma sensorium subscribe-stop subscription-id [--json]
   soma sensorium subscriptions [--json]
   soma sensorium status [--json]
+  soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
   soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]

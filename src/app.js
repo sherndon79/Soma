@@ -31,6 +31,7 @@ import {
   resolveRuntimeProfile,
 } from "./runtimeProfiles.js";
 import { resolveRuntimeWritePosture } from "./runtimeWritePosture.js";
+import { buildRemoteGraphicalProposalTemplate } from "./remoteGraphicalProposalTemplate.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
   buildSensoriumGrantCreateCandidateFromProposal,
@@ -297,6 +298,37 @@ export function createRequestHandler({
           review_only: true,
           grant_written: false,
           subscription_activated: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/remote-graphical/proposal-template") {
+        const body = await readJson(req);
+        const template = buildRemoteGraphicalProposalTemplate({
+          catalog: capabilityCatalog,
+          providerRegistry,
+          requested_by: body?.requested_by,
+          capability: body?.capability,
+          provider: body?.provider,
+          target_host: body?.target_host,
+          mode: body?.mode,
+          constraints: body?.constraints ?? {},
+          requested_channels: body?.requested_channels ?? [],
+          requested_scope: body?.requested_scope ?? "session",
+          reason: body?.reason,
+          fallback: body?.fallback,
+          locality: body?.locality,
+          attended: body?.attended,
+        });
+        writeJson(res, 200, {
+          ...template,
+          review_only: true,
+          grant_written: false,
+          session_opened: false,
+          pairing_performed: false,
+          video_attached: false,
+          input_dispatched: false,
+          recording_started: false,
         });
         return;
       }

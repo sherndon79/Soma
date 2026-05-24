@@ -183,6 +183,58 @@ const capabilityCatalog = {
       activation_policy: "explicit_grant",
       provider_contract: "soma.perception.sensorium.color.v1",
     },
+    {
+      key: "perception.remote_desktop.video.subscribe",
+      name: "Remote Desktop Video Subscription",
+      category: "perception",
+      risk_class: "high",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["encoded remote graphical session frames", "remote host identity"],
+      excluded_by_default: ["keyboard input", "pointer input", "hidden recording"],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.perception.remote_desktop.video.v1",
+    },
+    {
+      key: "desktop.remote.input.pointer",
+      name: "Remote Desktop Pointer Input",
+      category: "desktop",
+      risk_class: "high",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["target remote graphical session identity", "pointer movement or click intent"],
+      excluded_by_default: ["remote desktop video access", "keyboard input", "hidden input injection"],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.desktop.remote.input.pointer.v1",
+    },
+    {
+      key: "desktop.remote.input.keyboard",
+      name: "Remote Desktop Keyboard Input",
+      category: "desktop",
+      risk_class: "high",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["target remote graphical session identity", "keyboard input intent"],
+      excluded_by_default: ["remote desktop video access", "pointer input", "hidden input injection"],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.desktop.remote.input.keyboard.v1",
+    },
+    {
+      key: "desktop.remote.session.disconnect",
+      name: "Remote Desktop Session Disconnect",
+      category: "desktop",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["target remote graphical session identity", "disconnect intent"],
+      excluded_by_default: ["remote desktop video access", "pointer input", "keyboard input"],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.desktop.remote.session.disconnect.v1",
+    },
   ],
 };
 
@@ -218,6 +270,19 @@ const providerRegistry = {
         "perception.sensorium.imu.subscribe",
         "perception.sensorium.location.subscribe",
         "perception.sensorium.status.subscribe",
+      ],
+    },
+    {
+      id: "soma.provider.remote_desktop.sunshine",
+      name: "Remote Desktop Sunshine/Moonlight Transport",
+      runtime: "test",
+      local_only: false,
+      network_access: true,
+      capabilities: [
+        "perception.remote_desktop.video.subscribe",
+        "desktop.remote.input.pointer",
+        "desktop.remote.input.keyboard",
+        "desktop.remote.session.disconnect",
       ],
     },
   ],
@@ -309,19 +374,23 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 4);
+  assert.equal(response.body.summary.total, 8);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 2);
+  assert.equal(response.body.summary.by_status.requestable, 6);
   assert.equal(response.body.summary.by_status.unsupported, 1);
-  assert.equal(response.body.grouped.desktop.total, 2);
-  assert.equal(response.body.grouped.perception.total, 1);
+  assert.equal(response.body.grouped.desktop.total, 5);
+  assert.equal(response.body.grouped.perception.total, 2);
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
   const sensoriumColor = response.body.capabilities.find((capability) => capability.key === "perception.sensorium.color.subscribe");
+  const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
+  const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(text.status, "unsupported");
   assert.equal(sensoriumColor.status, "requestable");
+  assert.equal(remoteVideo.status, "requestable");
+  assert.equal(remoteKeyboard.status, "requestable");
 });
 
 test("POST /model-visual/review-text formats proposal review without activation", async () => {
@@ -3058,6 +3127,76 @@ test("POST /sensorium/proposal-template rejects invalid review input before gran
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, "invalid_sensorium_grant_proposal_template");
   assert.match(response.body.message, /sensor\/<host>\/realsense\/color/);
+});
+
+test("POST /remote-graphical/proposal-template returns review context without activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/proposal-template",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "view_only",
+      requested_scope: "session",
+      locality: "lan",
+      reason: "Need a bounded view of the graphical lab.",
+      constraints: {
+        max_seconds: 120,
+        max_fps: 30,
+        max_width: 1280,
+        max_height: 720,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.type, "remote_graphical_session_proposal_template");
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.writable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.review.provider, "soma.provider.remote_desktop.sunshine");
+  assert.equal(response.body.review.target_host, "soma-agent-desktop.local.sthnet.org");
+  assert.deepEqual(response.body.review.requested_channels, ["video"]);
+  assert.ok(response.body.review.excluded_channels.includes("keyboard"));
+  assert.ok(response.body.review.excluded_channels.includes("pointer"));
+  assert.equal(response.body.grant_intent.constraints.max_width, 1280);
+});
+
+test("POST /remote-graphical/proposal-template rejects cross-channel overreach before activation", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/proposal-template",
+    body: {
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "view_only",
+      requested_channels: ["video", "keyboard"],
+      requested_scope: "session",
+      reason: "Need view plus keyboard.",
+      constraints: {
+        max_seconds: 120,
+        max_fps: 30,
+        max_width: 1280,
+        max_height: 720,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_proposal_template");
+  assert.ok(response.body.validation_errors.includes("requested_channels.keyboard is not authorized by view_only"));
 });
 
 test("POST /sensorium/proposals stores pending proposal with review context but no activation", async () => {

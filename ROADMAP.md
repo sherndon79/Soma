@@ -267,6 +267,10 @@ Implemented:
 - remote graphical session proposal-template builder added for view-only video, pointer input,
   keyboard input, and disconnect requests, validating target host, provider support, mode, duration
   bounds, view bounds, and cross-channel authority separation without activation
+- remote graphical session proposal-template surface exposed through
+  `POST /remote-graphical/proposal-template` and
+  `soma remote-graphical proposal-template`, returning review-only, no-grant, no-session,
+  no-pairing, no-input, no-video-attachment, no-recording flags
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -386,24 +390,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Expose remote graphical session proposal review through HTTP and CLI.
+Store remote graphical session proposals without activation.
 
 Target:
 
 ```text
-remote graphical session proposal review
-  -> route the pure proposal-template builder through a non-activating endpoint
-  -> add a CLI wrapper that renders the review fields for operators
-  -> store no grants and create no remote sessions
-  -> keep transport setup, screenshots, input, and model visual delivery out of scope
+remote graphical proposal persistence
+  -> store pending remote graphical proposals with review context
+  -> preserve no grant writes and no remote session activation
+  -> make proposal approval distinct from grant creation and runtime transport
+  -> keep pairing, screenshots, input, and model visual delivery out of scope
 ```
 
 Expected work:
 
-- add `POST /remote-graphical/proposal-template` or equivalent non-activating route
-- add `soma remote-graphical proposal-template ...` CLI validation/output
-- add route and CLI tests for accepted view-only and refused cross-channel requests
-- document operator examples for the review-only command
+- add a pending-proposal route using the existing capability proposal store with review metadata
+- add CLI command for creating a pending remote graphical proposal
+- prove approval does not create grants, pair hosts, open sessions, dispatch input, or deliver video
+- document the review-to-proposal-to-grant lifecycle boundary
 - keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
   session recording out of scope
 

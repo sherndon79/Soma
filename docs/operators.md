@@ -494,6 +494,31 @@ The activation boundary is captured in
 preview and review surfaces are not commit surfaces, runtime writes require an explicit operator
 decision, and repair remains a separate operator-controlled workflow.
 
+## Remote Graphical Review
+
+Remote graphical session capabilities are visible for review but inactive by default. The first
+operator surface is review-only:
+
+```bash
+npm run cli -- remote-graphical proposal-template \
+  --capability perception.remote_desktop.video.subscribe \
+  --provider soma.provider.remote_desktop.sunshine \
+  --host soma-agent-desktop.local.sthnet.org \
+  --mode view_only \
+  --reason "Need a bounded graphical lab view." \
+  --max-seconds 120 \
+  --max-fps 30 \
+  --max-width 1280 \
+  --max-height 720
+```
+
+The command validates target host, provider support, mode, requested channels, duration, and video
+bounds. It does not pair with Sunshine, start Moonlight, capture screenshots, send input, open a
+session, write grants, or attach frames to model context.
+
+View, pointer input, keyboard input, and disconnect remain separate authorities. A view-only
+proposal must not request keyboard or pointer channels; input proposals must not request video.
+
 ## Inspect Sensorium Subscriptions
 
 Sensorium is an optional sensor-node integration for the `jetsorano` host. The default Soma service

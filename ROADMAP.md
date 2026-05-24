@@ -288,6 +288,11 @@ Implemented:
   `soma remote-graphical grant-create`, creating only process-local grants from approved proposals
   while preserving no durable writes, no session opening, no pairing, no frame capture, no input
   dispatch, and no recording
+- remote graphical runtime grant revocation added through
+  `POST /remote-graphical/grants/:id/revoke` and
+  `soma remote-graphical grant-revoke`, revoking only process-local grants while preserving no
+  durable writes, no provider session stop, no session opening, no pairing, no frame capture, no
+  input dispatch, and no recording
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -407,27 +412,26 @@ Current authority boundary:
 
 ## Next Slice
 
-Add runtime-only remote graphical grant revocation.
+Design the remote graphical broker boundary.
 
 Target:
 
 ```text
-remote graphical runtime grant revocation
-  -> revoke process-local remote graphical runtime grants
-  -> preserve no durable grant writes and no runtime session activation
-  -> keep revocation separate from transport/provider session control until a broker exists
-  -> keep screenshots, input dispatch, and model visual delivery out of scope
+remote graphical broker boundary
+  -> define the runtime seam between grants and Sunshine/Moonlight transport
+  -> preserve review-first activation and operator disclosure
+  -> keep session open, frame delivery, input dispatch, and recording as separate authorities
+  -> keep model-facing visual payload delivery out of scope
 ```
 
 Expected work:
 
-- add `POST /remote-graphical/grants/:id/revoke`
-- add `soma remote-graphical grant-revoke grant-id --reason text`
-- revoke only process-local/runtime remote graphical grants
-- prove revocation does not pair/open/capture/input/record or call a transport provider
-- keep durable grant writes and transport activation out of scope
-- keep pairing credentials, Moonlight broker state, frame bytes, screenshots, input dispatch, and
-  session recording out of scope
+- document broker responsibilities and non-responsibilities
+- define provider-neutral session lifecycle states and disclosure fields
+- separate pairing credentials, session open, video observation, input dispatch, disconnect, and
+  recording into distinct reviewed actions
+- sketch the first no-op/injected broker interface before implementing any live transport control
+- keep durable grant writes and model visual delivery out of scope
 
 Constraints:
 
@@ -439,6 +443,7 @@ Constraints:
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
 - no model-facing visual payload delivery in this slice
+- no live Sunshine/Moonlight calls in the design slice
 - no durable grant writes or durable mutation command activation
 
 ## Near-Term

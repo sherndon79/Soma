@@ -1625,6 +1625,105 @@ test("runCli remote-graphical grant-create validates proposal id before request"
   assert.equal(called, false);
 });
 
+test("runCli remote-graphical grant-revoke revokes runtime grant without provider session control", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "grant-revoke",
+    "grant-remote-1",
+    "--reason",
+    "Operator ended the bounded graphical authority.",
+    "--by",
+    "user",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        grant: {
+          id: "grant-remote-1",
+          status: "revoked",
+          capability: "perception.remote_desktop.video.subscribe",
+          provider: "soma.provider.remote_desktop.sunshine",
+          revoked_by: "user",
+          revocation_reason: "Operator ended the bounded graphical authority.",
+          constraints: {
+            target_host: "soma-agent-desktop.local.sthnet.org",
+          },
+        },
+        changed: true,
+        activation_performed: false,
+        grant_written: true,
+        file_written: false,
+        session_opened: false,
+        provider_session_stopped: false,
+        input_dispatched: false,
+        video_attached: false,
+        recording_started: false,
+        provenance_id: "prov-revoke",
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/remote-graphical/grants/grant-remote-1/revoke");
+  assert.deepEqual(captured.body, {
+    actor: "user",
+    reason: "Operator ended the bounded graphical authority.",
+  });
+  assert.match(writes.join(""), /Remote graphical grant revoked/);
+  assert.match(writes.join(""), /grant: grant-remote-1/);
+  assert.match(writes.join(""), /changed: yes/);
+  assert.match(writes.join(""), /status: revoked/);
+  assert.match(writes.join(""), /file written: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /provider session stopped: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+  assert.match(writes.join(""), /recording started: no/);
+});
+
+test("runCli remote-graphical grant-revoke validates grant id and reason before request", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "grant-revoke",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical grant-revoke requires a grant id/,
+  );
+  assert.equal(called, false);
+
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "grant-revoke",
+      "grant-remote-1",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical grant-revoke requires --reason text/,
+  );
+  assert.equal(called, false);
+});
+
 test("runCli sensorium propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

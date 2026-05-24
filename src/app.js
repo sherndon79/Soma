@@ -469,6 +469,84 @@ export function createRequestHandler({
         return;
       }
 
+      const remoteGraphicalGrantRevokeMatch = url.pathname.match(/^\/remote-graphical\/grants\/([^/]+)\/revoke$/);
+      if (req.method === "POST" && remoteGraphicalGrantRevokeMatch) {
+        const body = await readJson(req);
+        const grantId = remoteGraphicalGrantRevokeMatch[1];
+        const actor = String(body?.actor ?? body?.revoked_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_grant_revoke_requires_user_actor",
+            message: "Remote graphical grant revocation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const grantBeforeRevocation = (grantStore.grants ?? []).find(
+          (entry) => entry.id === grantId,
+        );
+        if (!grantBeforeRevocation) {
+          writeError(res, {
+            statusCode: 400,
+            code: "unknown_grant",
+            message: "Grant mutation requires an existing grant.",
+          });
+          return;
+        }
+
+        if (!isRemoteGraphicalCapability(grantBeforeRevocation.capability)) {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_grant_revoke_requires_remote_graphical_grant",
+            message: "Remote graphical grant revocation requires a remote graphical grant.",
+          });
+          return;
+        }
+
+        const reason = String(body?.reason ?? body?.revocation_reason ?? "").trim();
+        if (!reason) {
+          writeError(res, {
+            statusCode: 400,
+            code: "missing_revocation_reason",
+            message: "Remote graphical grant revocation requires a reason.",
+          });
+          return;
+        }
+
+        const nextGrantStore = revokeGrant(grantStore, {
+          id: grantId,
+          actor,
+          reason,
+        });
+        grantStore = nextGrantStore;
+        const grant = nextGrantStore.mutation.grant;
+        const event = provenanceLog.append(createRemoteGraphicalGrantRevokedEvent({
+          grant,
+          previousGrant: grantBeforeRevocation,
+          caller: req.headers["x-soma-caller"] ?? "",
+          changed: nextGrantStore.mutation.changed,
+        }));
+        logger.info?.("soma.provenance", event);
+
+        writeJson(res, 200, {
+          grant,
+          changed: nextGrantStore.mutation.changed,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          file_written: false,
+          grant_written: true,
+          session_opened: false,
+          pairing_performed: false,
+          video_attached: false,
+          input_dispatched: false,
+          recording_started: false,
+          provider_session_stopped: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/sensorium/proposals") {
         const body = await readJson(req);
         const template = buildSensoriumGrantProposalTemplate({
@@ -1620,6 +1698,45 @@ function createRemoteGraphicalGrantCreatedEvent({ grant, proposal, caller }) {
   };
 }
 
+function createRemoteGraphicalGrantRevokedEvent({
+  grant,
+  previousGrant,
+  caller,
+  changed,
+}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "desktop.remote_graphical.grant.revoked",
+    capability: "desktop.remote_graphical.grant.revoke",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id,
+    previous_status: previousGrant?.status ?? "",
+    status: grant.status,
+    requested_capability: grant.capability,
+    provider: grant.provider,
+    scope: grant.scope,
+    target_host: grant.constraints?.target_host ?? "",
+    mode: grant.constraints?.mode ?? "",
+    requested_channels: grant.constraints?.requested_channels ?? [],
+    revoked_by: grant.revoked_by,
+    revocation_reason: grant.revocation_reason,
+    changed: Boolean(changed),
+    activation_performed: false,
+    grant_written: true,
+    file_written: false,
+    session_opened: false,
+    pairing_performed: false,
+    video_attached: false,
+    input_dispatched: false,
+    recording_started: false,
+    provider_session_stopped: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
 function createSensoriumGrantRevokedEvent({
   grant,
   previousGrant,
@@ -1981,6 +2098,15 @@ function grantTopicMatchesTopic(grant = {}, topic = "") {
 
 function isSensoriumSubscribeCapability(capability = "") {
   return capability.startsWith("perception.sensorium.") && capability.endsWith(".subscribe");
+}
+
+function isRemoteGraphicalCapability(capability = "") {
+  return [
+    "perception.remote_desktop.video.subscribe",
+    "desktop.remote.input.pointer",
+    "desktop.remote.input.keyboard",
+    "desktop.remote.session.disconnect",
+  ].includes(capability);
 }
 
 function prependSessionMemory(messages, memoryContext) {

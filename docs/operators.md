@@ -551,6 +551,18 @@ This writes the grant only into the running Soma process. It does not write dura
 pair with Sunshine, start Moonlight, capture frames, dispatch input, attach video to model context,
 or start recording.
 
+Runtime remote graphical grants can be revoked without provider session control:
+
+```bash
+npm run cli -- remote-graphical grant-revoke grant-id \
+  --reason "No longer needed for the current task." \
+  --by user
+```
+
+Revocation updates only the running Soma process grant store. It does not stop a Sunshine or
+Moonlight session, capture frames, dispatch input, attach video to model context, start recording,
+or write durable grant config.
+
 View, pointer input, keyboard input, and disconnect remain separate authorities. A view-only
 proposal must not request keyboard or pointer channels; input proposals must not request video.
 

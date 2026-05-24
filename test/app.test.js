@@ -3452,6 +3452,123 @@ test("POST /remote-graphical/grants rejects pending proposals and non-user actor
   assert.equal(response.body.grants.length, 0);
 });
 
+test("POST /remote-graphical/grants/:id/revoke revokes runtime grant without provider session control", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants/grant-remote-video/revoke",
+    body: {
+      actor: "user",
+      reason: "Operator ended the bounded graphical authority.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grant.id, "grant-remote-video");
+  assert.equal(response.body.grant.status, "revoked");
+  assert.equal(response.body.grant.revoked_by, "user");
+  assert.equal(response.body.grant.revocation_reason, "Operator ended the bounded graphical authority.");
+  assert.equal(response.body.changed, true);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.file_written, false);
+  assert.equal(response.body.grant_written, true);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.provider_session_stopped, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants[0].status, "revoked");
+  assert.equal(response.body.grants[0].activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.remote_graphical.grant.revoked",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].grant_id, "grant-remote-video");
+  assert.equal(response.body.entries[0].target_host, "soma-agent-desktop.local.sthnet.org");
+  assert.equal(response.body.entries[0].provider_session_stopped, false);
+  assert.equal(response.body.entries[0].input_dispatched, false);
+});
+
+test("POST /remote-graphical/grants/:id/revoke rejects non-user actors unknown and non-remote grants", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        makeRemoteGraphicalGrant(),
+        {
+          id: "grant-desktop",
+          status: "active",
+          capability: "desktop.inspect.focus",
+          provider: "soma.provider.desktop.atspi",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          approval_provenance_id: "prov-desktop",
+          reason: "Need focus.",
+          created_at: "2026-05-24T12:00:00.000Z",
+          review_required: false,
+          revoked_at: null,
+          revoked_by: "",
+          revocation_reason: "",
+          replacement_grant_id: "",
+          activation_performed: false,
+        },
+      ],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants/grant-remote-video/revoke",
+    body: { actor: "assistant", reason: "No." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_grant_revoke_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants/no-such-grant/revoke",
+    body: { actor: "user", reason: "No longer needed." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "unknown_grant");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants/grant-desktop/revoke",
+    body: { actor: "user", reason: "No longer needed." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_grant_revoke_requires_remote_graphical_grant");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/grants/grant-remote-video/revoke",
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "missing_revocation_reason");
+});
+
 test("POST /sensorium/proposals stores pending proposal with review context but no activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
   let response = await invokeHandler(handler, {
@@ -4445,6 +4562,37 @@ function makeApprovedRemoteGraphicalProposal() {
       reason: "Need a bounded view of the graphical lab.",
       activation_performed: false,
     },
+  };
+}
+
+function makeRemoteGraphicalGrant() {
+  return {
+    id: "grant-remote-video",
+    status: "active",
+    capability: "perception.remote_desktop.video.subscribe",
+    provider: "soma.provider.remote_desktop.sunshine",
+    scope: "session",
+    constraints: {
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "view_only",
+      locality: "lan",
+      attended: true,
+      requested_channels: ["video"],
+      max_seconds: 120,
+      max_fps: 30,
+      max_width: 1280,
+      max_height: 720,
+    },
+    approved_by: "user",
+    approval_provenance_id: "prov-remote-approval",
+    reason: "Need a bounded view of the graphical lab.",
+    created_at: "2026-05-24T12:00:00.000Z",
+    review_required: false,
+    revoked_at: null,
+    revoked_by: "",
+    revocation_reason: "",
+    replacement_grant_id: "",
+    activation_performed: false,
   };
 }
 

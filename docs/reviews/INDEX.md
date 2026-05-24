@@ -266,6 +266,8 @@ default.
   - review after documenting the future runtime-only grant creation boundary for remote graphical proposals
 - [Remote Graphical Runtime Grant Creation](./2026-05-24_remote_graphical_runtime_grant_creation.md)
   - review after adding process-local remote graphical grant creation without transport activation
+- [Remote Graphical Runtime Grant Revocation](./2026-05-24_remote_graphical_runtime_grant_revocation.md)
+  - review after adding process-local remote graphical grant revocation without provider session control
 
 ## Current Review Triggers
 

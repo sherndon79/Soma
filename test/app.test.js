@@ -3388,6 +3388,106 @@ test("POST /remote-graphical/session-open-review rejects missing inactive and no
   assert.match(response.body.message, /remote graphical grant/);
 });
 
+test("POST /remote-graphical/sessions refuses without broker activation", async () => {
+  let describeCalls = 0;
+  let openCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return { configured: true, status: "available", state: "paired_inactive" };
+      },
+      openSession() {
+        openCalls += 1;
+        throw new Error("openSession should not be called");
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 0);
+  assert.equal(openCalls, 0);
+  assert.equal(response.body.type, "remote_graphical_session_open_refusal");
+  assert.equal(response.body.refused, true);
+  assert.equal(response.body.status, "provider_not_configured");
+  assert.equal(response.body.state, "unconfigured");
+  assert.equal(response.body.error, "provider_not_configured");
+  assert.equal(response.body.source_grant_id, "grant-remote-video");
+  assert.equal(response.body.broker_called, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.model_delivery, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
+test("POST /remote-graphical/sessions rejects missing grant non-user actor and inactive grant", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [{
+        ...makeRemoteGraphicalGrant(),
+        id: "grant-revoked",
+        status: "revoked",
+      }],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: { actor: "user", reason: "Need session." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_session_open_requires_grant_id");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-revoked",
+      actor: "assistant",
+      reason: "Need session.",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_session_open_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-revoked",
+      actor: "user",
+      reason: "Need session.",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_session_open_review");
+  assert.match(response.body.message, /active grant/);
+});
+
 test("POST /remote-graphical/proposals stores pending proposal without session activation", async () => {
   const proposals = new CapabilityProposalStore();
   const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });

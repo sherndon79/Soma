@@ -39,7 +39,10 @@ import {
   RemoteGraphicalBroker,
 } from "./remoteGraphicalBroker.js";
 import { buildRemoteGraphicalProposalTemplate } from "./remoteGraphicalProposalTemplate.js";
-import { buildRemoteGraphicalSessionOpenReview } from "./remoteGraphicalSessionOpenReview.js";
+import {
+  buildRemoteGraphicalSessionOpenRefusal,
+  buildRemoteGraphicalSessionOpenReview,
+} from "./remoteGraphicalSessionOpenReview.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
   buildSensoriumGrantCreateCandidateFromProposal,
@@ -370,6 +373,28 @@ export function createRequestHandler({
           requested_by: body?.requested_by,
         });
         writeJson(res, 200, review);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/remote-graphical/sessions") {
+        const body = await readJson(req);
+        const grantId = String(body?.grant_id ?? "").trim();
+        if (!grantId) {
+          writeError(res, {
+            statusCode: 400,
+            code: "remote_graphical_session_open_requires_grant_id",
+            message: "Remote graphical session-open requires grant_id.",
+          });
+          return;
+        }
+        const grant = (grantStore.grants ?? []).find((entry) => entry.id === grantId);
+        const refusal = buildRemoteGraphicalSessionOpenRefusal({
+          grant,
+          reason: body?.reason,
+          actor: body?.actor ?? body?.approved_by,
+          requested_by: body?.requested_by,
+        });
+        writeJson(res, 200, refusal);
         return;
       }
 

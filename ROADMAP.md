@@ -306,6 +306,10 @@ Implemented:
   `soma remote-graphical session-open-review`, producing review-only metadata from an active remote
   graphical grant while preserving no broker call, no session opening, no pairing, no video
   attachment, no input dispatch, no recording, and no live transport use
+- no-op remote graphical session-open refusal route added through `POST /remote-graphical/sessions`
+  and `soma remote-graphical session-open`, validating active grant and explicit user actor before
+  returning `provider_not_configured` while preserving no broker call, no session opening, no
+  pairing, no video attachment, no input dispatch, no recording, and no live transport use
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -425,24 +429,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add no-op remote graphical session-open refusal route.
+Design remote graphical session-open activation policy.
 
 Target:
 
 ```text
-remote graphical session-open refusal route
-  -> accept reviewed session-open intent and fail closed without configured broker activation
-  -> preserve session-open as separate from video observation and input
-  -> keep live Sunshine/Moonlight execution out of scope
-  -> keep frame delivery, input dispatch, recording, and model delivery out of scope
+remote graphical session-open activation policy
+  -> define prerequisites for enabling a configured broker session-open path
+  -> preserve refusal/default-off posture until explicit opt-in and review gates exist
+  -> keep video observation, input dispatch, recording, and model delivery separate
+  -> define provenance and disclosure obligations before live transport
 ```
 
 Expected work:
 
-- add a `POST /remote-graphical/sessions` or equivalent no-op session-open route
-- require active remote graphical grant plus explicit user actor/reason or reviewed intent
-- return `provider_not_configured` / `not_implemented` without live broker calls by default
-- prove failure does not pair/open/capture/input/record or attach model payloads
+- document activation gates for a real broker-backed `open_session`
+- define opt-in configuration requirements, test fixtures, and refusal cases
+- define required active disclosure and metadata-only provenance fields
+- keep pairing credentials, video frame delivery, input, recording, and model delivery out of scope
+  or separately gated
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

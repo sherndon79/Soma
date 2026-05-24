@@ -552,6 +552,18 @@ This requires an active remote graphical grant and returns operator-facing revie
 future `open_session` broker action. It does not call the broker, pair, open a session, attach
 video, dispatch input, record, or deliver frames to a model.
 
+Attempting session-open currently fails closed:
+
+```bash
+npm run cli -- remote-graphical session-open grant-id \
+  --reason "Need to open a reviewed broker session." \
+  --by user
+```
+
+The default result is `provider_not_configured`. This route validates the active grant and user
+actor, then refuses without calling the broker, pairing, opening a session, attaching video,
+dispatching input, recording, or delivering frames to a model.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

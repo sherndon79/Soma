@@ -274,6 +274,8 @@ default.
   - review after adding no-op remote graphical broker status without live transport activation
 - [Remote Graphical Session-Open Review](./2026-05-24_remote_graphical_session_open_review.md)
   - review after adding review-only session-open scaffolding without broker calls
+- [Remote Graphical Session-Open Refusal](./2026-05-24_remote_graphical_session_open_refusal.md)
+  - review after adding default-off session-open refusal without broker calls
 
 ## Current Review Triggers
 

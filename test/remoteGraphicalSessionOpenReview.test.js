@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildRemoteGraphicalSessionOpenReview } from "../src/remoteGraphicalSessionOpenReview.js";
+import {
+  buildRemoteGraphicalSessionOpenRefusal,
+  buildRemoteGraphicalSessionOpenReview,
+} from "../src/remoteGraphicalSessionOpenReview.js";
 
 test("buildRemoteGraphicalSessionOpenReview returns non-activating session-open review", () => {
   const review = buildRemoteGraphicalSessionOpenReview({
@@ -53,6 +56,40 @@ test("buildRemoteGraphicalSessionOpenReview rejects inactive malformed or non-re
   assertSessionOpenError(() => buildRemoteGraphicalSessionOpenReview({
     grant: makeGrant(),
   }), /reason/);
+});
+
+test("buildRemoteGraphicalSessionOpenRefusal fails closed without broker activation", () => {
+  const refusal = buildRemoteGraphicalSessionOpenRefusal({
+    grant: makeGrant(),
+    actor: "user",
+    reason: "Need to open a reviewed broker session.",
+  });
+
+  assert.equal(refusal.type, "remote_graphical_session_open_refusal");
+  assert.equal(refusal.refused, true);
+  assert.equal(refusal.status, "provider_not_configured");
+  assert.equal(refusal.state, "unconfigured");
+  assert.equal(refusal.error, "provider_not_configured");
+  assert.equal(refusal.source_grant_id, "grant-remote-video");
+  assert.equal(refusal.review_only, false);
+  assert.equal(refusal.broker_called, false);
+  assert.equal(refusal.session_opened, false);
+  assert.equal(refusal.pairing_performed, false);
+  assert.equal(refusal.video_attached, false);
+  assert.equal(refusal.input_dispatched, false);
+  assert.equal(refusal.recording_started, false);
+  assert.equal(refusal.model_delivery, false);
+  assert.equal(refusal.live_transport_used, false);
+});
+
+test("buildRemoteGraphicalSessionOpenRefusal requires user actor", () => {
+  assert.throws(() => buildRemoteGraphicalSessionOpenRefusal({
+    grant: makeGrant(),
+    actor: "assistant",
+    reason: "Need session.",
+  }), {
+    code: "remote_graphical_session_open_requires_user_actor",
+  });
 });
 
 function assertSessionOpenError(fn, pattern) {

@@ -239,6 +239,25 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "session-open") {
+    const grantId = rest[0];
+    if (!grantId) {
+      throw usageError("remote-graphical session-open requires a grant id.");
+    }
+    const reason = String(flags.reason ?? "").trim();
+    if (!reason) {
+      throw usageError("remote-graphical session-open requires --reason text.");
+    }
+    const response = await request(baseUrl, "POST", "/remote-graphical/sessions", {
+      grant_id: grantId,
+      actor: flags.by ?? "user",
+      requested_by: "assistant",
+      reason,
+    });
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalSessionOpenRefusalSummary(response));
+    return 0;
+  }
+
   if (command === "remote-graphical" && subcommand === "propose") {
     const response = await request(
       baseUrl,
@@ -1300,6 +1319,29 @@ function remoteGraphicalSessionOpenReviewSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalSessionOpenRefusalSummary(response) {
+  const lines = [
+    "Remote graphical session-open refused",
+    `  grant: ${response.source_grant_id ?? "unknown"}`,
+    `  status: ${response.status ?? "unknown"}`,
+    `  state: ${response.state ?? "unknown"}`,
+    `  provider: ${response.provider ?? "unknown"}`,
+    `  target host: ${response.target_host ?? "unknown"}`,
+    `  refused: ${booleanText(response.refused)}`,
+    `  broker called: ${booleanText(response.broker_called)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+    `  recording started: ${booleanText(response.recording_started)}`,
+    `  live transport used: ${booleanText(response.live_transport_used)}`,
+    `  message: ${response.message ?? ""}`,
+  ];
+  return lines.join("\n");
+}
+
 function remoteGraphicalProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1708,6 +1750,7 @@ Usage:
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical status [--json]
   soma remote-graphical session-open-review grant-id --reason text [--by assistant] [--json]
+  soma remote-graphical session-open grant-id --reason text [--by user] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical grant-candidate proposal-id [--json]
   soma remote-graphical grant-create proposal-id [--by user] [--json]

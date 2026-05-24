@@ -89,6 +89,41 @@ export function buildRemoteGraphicalSessionOpenReview({
   };
 }
 
+export function buildRemoteGraphicalSessionOpenRefusal({
+  grant = {},
+  reason = "",
+  actor = "",
+  requested_by = "assistant",
+} = {}) {
+  const normalizedActor = stringValue(actor);
+  if (normalizedActor !== "user") {
+    const error = new Error("Remote graphical session-open requires an explicit user actor.");
+    error.statusCode = 400;
+    error.code = "remote_graphical_session_open_requires_user_actor";
+    throw error;
+  }
+
+  const review = buildRemoteGraphicalSessionOpenReview({
+    grant,
+    reason,
+    requested_by,
+  });
+
+  return {
+    ...review,
+    type: "remote_graphical_session_open_refusal",
+    refused: true,
+    status: "provider_not_configured",
+    state: "unconfigured",
+    error: "provider_not_configured",
+    message: "Remote graphical session-open is not enabled on this Soma instance.",
+    review_only: false,
+    broker_called: false,
+    provider_session_stopped: false,
+    session_id: "",
+  };
+}
+
 function normalizeGrant(grant) {
   const constraints = grant && typeof grant === "object" && !Array.isArray(grant.constraints)
     && grant.constraints && typeof grant.constraints === "object"

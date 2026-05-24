@@ -333,6 +333,55 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/remote-graphical/proposals") {
+        const body = await readJson(req);
+        const template = buildRemoteGraphicalProposalTemplate({
+          catalog: capabilityCatalog,
+          providerRegistry,
+          requested_by: body?.requested_by,
+          capability: body?.capability,
+          provider: body?.provider,
+          target_host: body?.target_host,
+          mode: body?.mode,
+          constraints: body?.constraints ?? {},
+          requested_channels: body?.requested_channels ?? [],
+          requested_scope: body?.requested_scope ?? "session",
+          reason: body?.reason,
+          fallback: body?.fallback,
+          locality: body?.locality,
+          attended: body?.attended,
+        });
+        const proposal = capabilityProposals.create({
+          ...template.proposal,
+          review_context: template.review,
+          grant_intent: template.grant_intent,
+        }, {
+          allowReviewMetadata: true,
+        });
+        const event = provenanceLog.append(createCapabilityProposalEvent({
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        proposal.provenance_id = event.id;
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          proposal,
+          notification: proposal.notification,
+          review: template.review,
+          grant_intent: template.grant_intent,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          grant_written: false,
+          session_opened: false,
+          pairing_performed: false,
+          video_attached: false,
+          input_dispatched: false,
+          recording_started: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/sensorium/proposals") {
         const body = await readJson(req);
         const template = buildSensoriumGrantProposalTemplate({

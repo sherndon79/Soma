@@ -6,6 +6,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
+import { CapabilityProposalStore } from "../src/capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 
@@ -3199,6 +3200,44 @@ test("POST /remote-graphical/proposal-template rejects cross-channel overreach b
   assert.ok(response.body.validation_errors.includes("requested_channels.keyboard is not authorized by view_only"));
 });
 
+test("POST /remote-graphical/proposals stores pending proposal without session activation", async () => {
+  const proposals = new CapabilityProposalStore();
+  const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.remote.input.pointer",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      mode: "pointer_input",
+      requested_scope: "session",
+      reason: "Need bounded pointer input after operator-visible review.",
+      constraints: {
+        max_seconds: 30,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.match(response.body.proposal.id, /^[0-9a-f-]{36}$/);
+  assert.equal(response.body.proposal.status, "pending");
+  assert.equal(response.body.proposal.capability, "desktop.remote.input.pointer");
+  assert.equal(response.body.review.provider, "soma.provider.remote_desktop.sunshine");
+  assert.equal(response.body.review.authority, "pointer");
+  assert.equal(response.body.grant_intent.constraints.mode, "pointer_input");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(proposals.pendingCount(), 1);
+});
+
 test("POST /sensorium/proposals stores pending proposal with review context but no activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
   let response = await invokeHandler(handler, {
@@ -4115,6 +4154,7 @@ function makeHandler({
   runtimeWritePosture,
   desktopDisclosureRegistry,
   sensoriumSubscriber,
+  capabilityProposals,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -4128,6 +4168,7 @@ function makeHandler({
     runtimeWritePosture,
     desktopDisclosureRegistry,
     sensoriumSubscriber,
+    capabilityProposals,
     logger: { info() {} },
   });
 }

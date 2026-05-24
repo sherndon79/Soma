@@ -1406,6 +1406,74 @@ test("runCli remote-graphical proposal-template validates required flags before 
   assert.equal(called, false);
 });
 
+test("runCli remote-graphical propose creates pending proposal without activation", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "propose",
+    "--capability",
+    "desktop.remote.input.keyboard",
+    "--provider",
+    "soma.provider.remote_desktop.sunshine",
+    "--host",
+    "soma-agent-desktop.local.sthnet.org",
+    "--mode",
+    "keyboard_input",
+    "--reason",
+    "Need bounded keyboard input.",
+    "--max-seconds",
+    "20",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        proposal: {
+          id: "remote-proposal-1",
+          capability: "desktop.remote.input.keyboard",
+          status: "pending",
+        },
+        review: {
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+          mode: "keyboard_input",
+        },
+        provenance_id: "prov-1",
+        activation_performed: false,
+        grant_written: false,
+        session_opened: false,
+        pairing_performed: false,
+        input_dispatched: false,
+        video_attached: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/remote-graphical/proposals");
+  assert.deepEqual(captured.body, {
+    capability: "desktop.remote.input.keyboard",
+    provider: "soma.provider.remote_desktop.sunshine",
+    target_host: "soma-agent-desktop.local.sthnet.org",
+    mode: "keyboard_input",
+    requested_scope: "session",
+    reason: "Need bounded keyboard input.",
+    constraints: {
+      max_seconds: 20,
+    },
+  });
+  assert.match(writes.join(""), /Remote graphical proposal created/);
+  assert.match(writes.join(""), /id: remote-proposal-1/);
+  assert.match(writes.join(""), /activation performed: no/);
+  assert.match(writes.join(""), /grant written: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+});
+
 test("runCli sensorium propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

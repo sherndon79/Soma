@@ -512,9 +512,24 @@ npm run cli -- remote-graphical proposal-template \
   --max-height 720
 ```
 
+To create a pending proposal for later operator approval, use the same shape with `propose`:
+
+```bash
+npm run cli -- remote-graphical propose \
+  --capability desktop.remote.input.pointer \
+  --provider soma.provider.remote_desktop.sunshine \
+  --host soma-agent-desktop.local.sthnet.org \
+  --mode pointer_input \
+  --reason "Need bounded pointer input after review." \
+  --max-seconds 30
+```
+
 The command validates target host, provider support, mode, requested channels, duration, and video
 bounds. It does not pair with Sunshine, start Moonlight, capture screenshots, send input, open a
 session, write grants, or attach frames to model context.
+
+The `propose` command stores a pending capability proposal only. It still does not create a grant or
+activate a remote graphical session.
 
 View, pointer input, keyboard input, and disconnect remain separate authorities. A view-only
 proposal must not request keyboard or pointer channels; input proposals must not request video.

@@ -215,6 +215,17 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "propose") {
+    const response = await request(
+      baseUrl,
+      "POST",
+      "/remote-graphical/proposals",
+      remoteGraphicalProposalTemplateRequestFromFlags(flags),
+    );
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalProposalCreatedSummary(response));
+    return 0;
+  }
+
   if (command === "sensorium" && subcommand === "propose") {
     const response = await request(baseUrl, "POST", "/sensorium/proposals", sensoriumProposalTemplateRequestFromFlags(flags));
     writeOutput(stdout, response, jsonOutput, sensoriumProposalCreatedSummary(response));
@@ -1175,6 +1186,28 @@ function remoteGraphicalProposalTemplateSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalProposalCreatedSummary(response) {
+  const proposal = response.proposal ?? {};
+  const review = response.review ?? proposal.review_context ?? {};
+  const lines = [
+    "Remote graphical proposal created",
+    `  id: ${proposal.id ?? "unknown"}`,
+    `  capability: ${proposal.capability ?? "unknown"}`,
+    `  provider: ${review.provider ?? "unknown"}`,
+    `  target host: ${review.target_host ?? "unknown"}`,
+    `  mode: ${review.mode ?? "unknown"}`,
+    `  status: ${proposal.status ?? "unknown"}`,
+    `  provenance: ${response.provenance_id ?? proposal.provenance_id ?? "none"}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+  ];
+  return lines.join("\n");
+}
+
 function sensoriumProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1481,6 +1514,7 @@ Usage:
   soma sensorium subscriptions [--json]
   soma sensorium status [--json]
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
+  soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma model-visual review --kind proposal|grant_candidate --review-json json [--json]
   soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]

@@ -256,6 +256,8 @@ default.
   - review after adding a pure non-activating remote graphical proposal template builder
 - [Remote Graphical Proposal Surface](./2026-05-24_remote_graphical_proposal_surface.md)
   - review after exposing remote graphical proposal review through HTTP and CLI without activation
+- [Remote Graphical Proposal Persistence](./2026-05-24_remote_graphical_proposal_persistence.md)
+  - review after storing pending remote graphical proposals without grants or runtime activation
 
 ## Current Review Triggers
 

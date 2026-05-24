@@ -72,6 +72,7 @@ should inform implementation.
 - [Model-Facing Visual Delivery Boundary](./concepts/drafts/model_facing_visual_delivery_boundary.md)
 - [Model Visual Preview Acknowledgement](./concepts/drafts/model_visual_preview_acknowledgement.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
+- [Remote Graphical Broker Boundary](./concepts/drafts/remote_graphical_broker_boundary.md)
 - [Remote Graphical Session Provider](./concepts/drafts/remote_graphical_session_provider.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
 - [Sensorium Color Minimization Boundary](./concepts/drafts/sensorium_color_minimization_boundary.md)

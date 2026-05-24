@@ -174,6 +174,11 @@ policy permits a future session-only runtime grant path from approved proposals,
 creation separate from Moonlight/Sunshine pairing, session startup, frame capture, input dispatch,
 recording, and durable grant writes.
 
+The runtime transport seam is captured separately in
+[Remote Graphical Broker Boundary](./remote_graphical_broker_boundary.md). That draft defines the
+provider-neutral broker lifecycle and keeps session open, video observation, input dispatch,
+disconnect, recording, and model-facing delivery as separate reviewed actions.
+
 ---
 
 ## Addendum: Implementation Framing for Sunshine/Moonlight — 2026-05-17

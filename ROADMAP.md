@@ -293,6 +293,10 @@ Implemented:
   `soma remote-graphical grant-revoke`, revoking only process-local grants while preserving no
   durable writes, no provider session stop, no session opening, no pairing, no frame capture, no
   input dispatch, and no recording
+- remote graphical broker boundary documented, defining the provider-neutral runtime seam,
+  lifecycle states, disclosure fields, no-op/injected first interface, and separate action
+  authorities for session open, video observation, input dispatch, disconnect, recording, and
+  model-facing delivery
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -412,25 +416,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the remote graphical broker boundary.
+Add a no-op remote graphical broker status seam.
 
 Target:
 
 ```text
-remote graphical broker boundary
-  -> define the runtime seam between grants and Sunshine/Moonlight transport
-  -> preserve review-first activation and operator disclosure
-  -> keep session open, frame delivery, input dispatch, and recording as separate authorities
-  -> keep model-facing visual payload delivery out of scope
+remote graphical broker status seam
+  -> introduce an injected/no-op broker interface
+  -> expose provider-neutral status/disclosure without live transport calls
+  -> preserve grant, session, video, input, disconnect, and model delivery separation
+  -> keep Sunshine/Moonlight execution out of scope
 ```
 
 Expected work:
 
-- document broker responsibilities and non-responsibilities
-- define provider-neutral session lifecycle states and disclosure fields
-- separate pairing credentials, session open, video observation, input dispatch, disconnect, and
-  recording into distinct reviewed actions
-- sketch the first no-op/injected broker interface before implementing any live transport control
+- add a small `RemoteGraphicalBroker` no-op/default implementation or equivalent interface
+- add a status/disclosure route and CLI command that report `provider_not_configured` without
+  subprocesses, sockets, frame capture, input dispatch, or recording
+- keep live provider injection test-only until a later explicit activation slice
+- prove status does not require or create grants and does not activate transport
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:
@@ -443,7 +447,7 @@ Constraints:
 - no change to the current runtime validator behavior
 - no default sensor subscription, recording, model-facing frame delivery, or unbounded preprocessing
 - no model-facing visual payload delivery in this slice
-- no live Sunshine/Moonlight calls in the design slice
+- no live Sunshine/Moonlight calls in this slice
 - no durable grant writes or durable mutation command activation
 
 ## Near-Term

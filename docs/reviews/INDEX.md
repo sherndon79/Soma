@@ -284,6 +284,8 @@ default.
   - review after mapping session-open refusal codes by broker posture without transport activation
 - [Remote Graphical Open-Session Fixture](./2026-05-24_remote_graphical_open_session_fixture.md)
   - review after adding fixture-only broker session-open success and failure contracts
+- [Remote Graphical Session-Open Provenance Fixture](./2026-05-24_remote_graphical_session_open_provenance_fixture.md)
+  - review after adding pure metadata-only fixture session-open provenance summaries
 
 ## Current Review Triggers
 

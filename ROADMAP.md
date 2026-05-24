@@ -325,6 +325,9 @@ Implemented:
   report `session_open_fixture: true`, allowing bounded fixture-only success/failure contracts while
   preserving no Sunshine/Moonlight calls, no pairing, no video, no input, no recording, no model
   delivery, no durable writes, and `live_transport_used=false`
+- remote graphical session-open fixture provenance constructor added for metadata-only
+  `remote_graphical.session_open.fixture` success/failure summaries, with route append still
+  disabled and content/diagnostic fields rejected before summary creation
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -444,24 +447,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open provenance fixture.
+Add remote graphical session-open provenance preview response.
 
 Target:
 
 ```text
-remote graphical session-open provenance fixture
-  -> add metadata-only provenance summary builder for fixture session-open success/failure
-  -> keep route append disabled unless an explicit provenance append slice is reviewed
-  -> document fields allowed for future live session-open provenance
-  -> keep visual payloads, input events, window metadata, and transport diagnostics out of scope
+remote graphical session-open provenance preview response
+  -> include metadata-only provenance_preview on fixture success/failure responses
+  -> do not append to provenance log yet
+  -> preserve forbidden content/diagnostic field validation before preview creation
+  -> keep live transport, visual payloads, input events, durable writes, and model delivery out of scope
 ```
 
 Expected work:
 
-- add pure metadata-only constructor for `remote_graphical.session_open.fixture`
-- cover success and failure summaries without payload, frame, input, clipboard, window, file, or diagnostic content
-- keep HTTP route provenance append disabled in this slice
-- cross-link fixture provenance to the activation policy and broker boundary
+- thread the pure constructor into fixture success/failure responses as `provenance_preview`
+- keep `provenanceLog.append` disabled for remote graphical session-open
+- add route tests proving preview shape and no append side effects
+- keep CLI output unchanged unless JSON is requested
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

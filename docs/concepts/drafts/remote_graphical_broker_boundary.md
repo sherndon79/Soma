@@ -183,11 +183,16 @@ Broker provenance should record only bounded metadata:
 - requested action
 - active authority family
 - state before and after
+- fixture-only posture, where applicable
 - duration and aggregate counters, where relevant
 - termination reason or error class
 
 It must not record frames, screenshots, audio, clipboard contents, keystrokes, pointer paths, remote
 file names, remote window titles, or recognized text by default.
+
+The fixture-only session-open provenance constructor records
+`remote_graphical.session_open.fixture` summaries for test broker success/failure. It is pure and
+is not appended by the HTTP route in the current slice.
 
 ## Activation Order
 

@@ -3291,6 +3291,103 @@ test("GET /remote-graphical/status uses injected disclosure without activating t
   assert.equal(response.body.live_transport_used, false);
 });
 
+test("POST /remote-graphical/session-open-review returns review without broker activation", async () => {
+  let describeCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return { configured: true, status: "available", state: "paired_inactive" };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/session-open-review",
+    body: {
+      grant_id: "grant-remote-video",
+      requested_by: "assistant",
+      reason: "Need to prepare a reviewed broker session before observation.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 0);
+  assert.equal(response.body.type, "remote_graphical_session_open_review");
+  assert.equal(response.body.source_grant_id, "grant-remote-video");
+  assert.equal(response.body.broker_action, "open_session");
+  assert.equal(response.body.review.session_open_authority, "review_required");
+  assert.equal(response.body.review.video_observation_authority, "separate_action_required");
+  assert.equal(response.body.review.input_authority, "separate_action_required");
+  assert.equal(response.body.review.recording_authority, "not_requested");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.broker_called, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.pairing_performed, false);
+  assert.equal(response.body.video_attached, false);
+  assert.equal(response.body.input_dispatched, false);
+  assert.equal(response.body.recording_started, false);
+  assert.equal(response.body.model_delivery, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
+test("POST /remote-graphical/session-open-review rejects missing inactive and non-remote grants", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        makeRemoteGraphicalGrant(),
+        {
+          ...makeRemoteGraphicalGrant(),
+          id: "grant-revoked",
+          status: "revoked",
+        },
+        {
+          ...makeRemoteGraphicalGrant(),
+          id: "grant-desktop",
+          capability: "desktop.inspect.focus",
+          constraints: {},
+        },
+      ],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/session-open-review",
+    body: { reason: "Need session review." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "remote_graphical_session_open_review_requires_grant_id");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/session-open-review",
+    body: { grant_id: "grant-revoked", reason: "Need session review." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_session_open_review");
+  assert.match(response.body.message, /active grant/);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/session-open-review",
+    body: { grant_id: "grant-desktop", reason: "Need session review." },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_remote_graphical_session_open_review");
+  assert.match(response.body.message, /remote graphical grant/);
+});
+
 test("POST /remote-graphical/proposals stores pending proposal without session activation", async () => {
   const proposals = new CapabilityProposalStore();
   const handler = makeHandler({ harness: allowedHarness, capabilityProposals: proposals });

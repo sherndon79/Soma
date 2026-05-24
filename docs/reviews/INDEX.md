@@ -272,6 +272,8 @@ default.
   - review after documenting the provider-neutral broker seam before live transport activation
 - [Remote Graphical Broker Status Seam](./2026-05-24_remote_graphical_broker_status_seam.md)
   - review after adding no-op remote graphical broker status without live transport activation
+- [Remote Graphical Session-Open Review](./2026-05-24_remote_graphical_session_open_review.md)
+  - review after adding review-only session-open scaffolding without broker calls
 
 ## Current Review Triggers
 

@@ -1451,6 +1451,103 @@ test("runCli remote-graphical status reports no-op broker posture", async () => 
   assert.match(writes.join(""), /live transport used: no/);
 });
 
+test("runCli remote-graphical session-open-review requests non-activating review", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "session-open-review",
+    "grant-remote-video",
+    "--reason",
+    "Need to prepare a reviewed broker session before observation.",
+    "--by",
+    "assistant",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        source_grant_id: "grant-remote-video",
+        provider: "soma.provider.remote_desktop.sunshine",
+        target_host: "soma-agent-desktop.local.sthnet.org",
+        broker_action: "open_session",
+        review: {
+          video_observation_authority: "separate_action_required",
+          input_authority: "separate_action_required",
+          recording_authority: "not_requested",
+          model_delivery_authority: "not_requested",
+        },
+        review_only: true,
+        broker_called: false,
+        activation_performed: false,
+        grant_written: false,
+        session_opened: false,
+        pairing_performed: false,
+        input_dispatched: false,
+        video_attached: false,
+        recording_started: false,
+        live_transport_used: false,
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/remote-graphical/session-open-review");
+  assert.deepEqual(captured.body, {
+    grant_id: "grant-remote-video",
+    requested_by: "assistant",
+    reason: "Need to prepare a reviewed broker session before observation.",
+  });
+  assert.match(writes.join(""), /Remote graphical session-open review/);
+  assert.match(writes.join(""), /grant: grant-remote-video/);
+  assert.match(writes.join(""), /broker called: no/);
+  assert.match(writes.join(""), /session opened: no/);
+  assert.match(writes.join(""), /video attached: no/);
+  assert.match(writes.join(""), /input dispatched: no/);
+  assert.match(writes.join(""), /live transport used: no/);
+});
+
+test("runCli remote-graphical session-open-review validates grant id and reason", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "session-open-review",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical session-open-review requires a grant id/,
+  );
+  assert.equal(called, false);
+
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "session-open-review",
+      "grant-remote-video",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /remote-graphical session-open-review requires --reason text/,
+  );
+  assert.equal(called, false);
+});
+
 test("runCli remote-graphical propose creates pending proposal without activation", async () => {
   let captured;
   const writes = [];

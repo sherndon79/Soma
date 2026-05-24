@@ -221,6 +221,24 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "remote-graphical" && subcommand === "session-open-review") {
+    const grantId = rest[0];
+    if (!grantId) {
+      throw usageError("remote-graphical session-open-review requires a grant id.");
+    }
+    const reason = String(flags.reason ?? "").trim();
+    if (!reason) {
+      throw usageError("remote-graphical session-open-review requires --reason text.");
+    }
+    const response = await request(baseUrl, "POST", "/remote-graphical/session-open-review", {
+      grant_id: grantId,
+      requested_by: flags.by ?? "assistant",
+      reason,
+    });
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalSessionOpenReviewSummary(response));
+    return 0;
+  }
+
   if (command === "remote-graphical" && subcommand === "propose") {
     const response = await request(
       baseUrl,
@@ -1256,6 +1274,32 @@ function remoteGraphicalStatusSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalSessionOpenReviewSummary(response) {
+  const review = response.review ?? {};
+  const lines = [
+    "Remote graphical session-open review",
+    `  grant: ${response.source_grant_id ?? "unknown"}`,
+    `  provider: ${response.provider ?? "unknown"}`,
+    `  target host: ${response.target_host ?? "unknown"}`,
+    `  action: ${response.broker_action ?? review.action ?? "unknown"}`,
+    `  video authority: ${review.video_observation_authority ?? "unknown"}`,
+    `  input authority: ${review.input_authority ?? "unknown"}`,
+    `  recording authority: ${review.recording_authority ?? "unknown"}`,
+    `  model delivery: ${review.model_delivery_authority ?? "unknown"}`,
+    `  review only: ${booleanText(response.review_only)}`,
+    `  broker called: ${booleanText(response.broker_called)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  pairing performed: ${booleanText(response.pairing_performed)}`,
+    `  input dispatched: ${booleanText(response.input_dispatched)}`,
+    `  video attached: ${booleanText(response.video_attached)}`,
+    `  recording started: ${booleanText(response.recording_started)}`,
+    `  live transport used: ${booleanText(response.live_transport_used)}`,
+  ];
+  return lines.join("\n");
+}
+
 function remoteGraphicalProposalCreatedSummary(response) {
   const proposal = response.proposal ?? {};
   const review = response.review ?? proposal.review_context ?? {};
@@ -1663,6 +1707,7 @@ Usage:
   soma sensorium status [--json]
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical status [--json]
+  soma remote-graphical session-open-review grant-id --reason text [--by assistant] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical grant-candidate proposal-id [--json]
   soma remote-graphical grant-create proposal-id [--by user] [--json]

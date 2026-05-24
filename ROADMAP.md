@@ -301,6 +301,11 @@ Implemented:
   `soma remote-graphical status`, reporting provider-neutral `provider_not_configured` status by
   default while preserving no grant creation, no session opening, no pairing, no frame capture, no
   input dispatch, no recording, and no live transport use
+- remote graphical session-open review scaffold added through
+  `POST /remote-graphical/session-open-review` and
+  `soma remote-graphical session-open-review`, producing review-only metadata from an active remote
+  graphical grant while preserving no broker call, no session opening, no pairing, no video
+  attachment, no input dispatch, no recording, and no live transport use
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -420,24 +425,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open review scaffolding.
+Add no-op remote graphical session-open refusal route.
 
 Target:
 
 ```text
-remote graphical session-open review scaffolding
-  -> define session-open as a separate reviewed action from grant creation and video observation
-  -> preserve broker status as non-activating
+remote graphical session-open refusal route
+  -> accept reviewed session-open intent and fail closed without configured broker activation
+  -> preserve session-open as separate from video observation and input
   -> keep live Sunshine/Moonlight execution out of scope
   -> keep frame delivery, input dispatch, recording, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a session-open proposal/review template or activation policy note
-- define required active grant and operator-facing review fields for opening a broker session
-- keep session-open review separate from video observation and input authority
-- prove review surfaces do not call the broker or activate transport
+- add a `POST /remote-graphical/sessions` or equivalent no-op session-open route
+- require active remote graphical grant plus explicit user actor/reason or reviewed intent
+- return `provider_not_configured` / `not_implemented` without live broker calls by default
+- prove failure does not pair/open/capture/input/record or attach model payloads
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

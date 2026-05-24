@@ -541,6 +541,17 @@ The default status reports `provider_not_configured`. It does not pair with Suns
 Moonlight, open a session, capture frames, dispatch input, record, create grants, or attach video to
 model context.
 
+Session-open can be reviewed without opening a session:
+
+```bash
+npm run cli -- remote-graphical session-open-review grant-id \
+  --reason "Need to prepare a reviewed broker session before observation."
+```
+
+This requires an active remote graphical grant and returns operator-facing review metadata for the
+future `open_session` broker action. It does not call the broker, pair, open a session, attach
+video, dispatch input, record, or deliver frames to a model.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

@@ -302,6 +302,8 @@ default.
   - review after documenting the declarative manifest for future live Sunshine/Moonlight broker configuration
 - [Remote Graphical Live Session-Open Provenance](./2026-05-24_remote_graphical_live_session_open_provenance.md)
   - review after documenting the reserved live session-open provenance event shape
+- [Remote Graphical Live Session-Open Provenance Constructor](./2026-05-24_remote_graphical_live_session_open_provenance_constructor.md)
+  - review after adding the pure unused constructor for future live session-open provenance
 
 ## Current Review Triggers
 

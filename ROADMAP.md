@@ -349,6 +349,9 @@ Implemented:
 - remote graphical live session-open provenance draft documented, reserving
   `remote_graphical.session_open.live`, distinguishing it from fixture provenance, and defining
   allowed metadata, required false flags, forbidden fields, and validation requirements
+- remote graphical live session-open provenance constructor scaffold added as a pure unused helper,
+  with tests proving distinct fixture/live event types, required live success/failure fields, and
+  rejection of content-bearing or diagnostic-shaped inputs
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -468,25 +471,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live session-open provenance constructor scaffold.
+Add remote graphical live session-open non-append guard tests.
 
 Target:
 
 ```text
-remote graphical live session-open provenance constructor scaffold
-  -> add a pure constructor for remote_graphical.session_open.live success/failure summaries
-  -> keep the constructor unused by routes until live activation is reviewed
-  -> prove fixture and live event types remain distinct
+remote graphical live session-open non-append guard tests
+  -> prove current fixture/refusal routes do not append remote_graphical.session_open.live
+  -> keep live constructor unused by app routes
+  -> keep fixture append behavior unchanged
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure helper and focused tests, or document why scaffold should wait
-- reject content-bearing and diagnostic-shaped fields before summary construction
-- require live success session id and live failure bounded error/cause code
+- add focused route tests around provenance append event type boundaries
 - keep current fixture event type and route behavior unchanged
 - do not append live provenance from routes
+- avoid introducing live broker construction or runtime opt-ins
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

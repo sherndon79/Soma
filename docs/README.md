@@ -84,6 +84,7 @@ should inform implementation.
 ## Runbooks
 
 - [Graphical Node Smoke Workflow](./runbooks/graphical_node_smoke.md)
+- [Remote Graphical Manifest Review Smoke](./runbooks/remote_graphical_manifest_review_smoke.md)
 - [Sensorium Live Smoke Workflow](./runbooks/sensorium_live_smoke.md)
 
 ## Related Projects

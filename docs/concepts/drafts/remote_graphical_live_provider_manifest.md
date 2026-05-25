@@ -122,6 +122,9 @@ npm run cli -- remote-graphical manifest-review
 The CLI path does not add an HTTP route, provider registry entry, runtime manifest loader, or broker
 construction path.
 
+Operator smoke expectations for this command live in
+[Remote Graphical Manifest Review Smoke](../../runbooks/remote_graphical_manifest_review_smoke.md).
+
 ## Target Host Constraints
 
 Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely

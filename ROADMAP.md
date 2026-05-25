@@ -368,6 +368,9 @@ Implemented:
   `remote-graphical manifest-review`, reading only the docs fixture and returning text or JSON
   without service calls, provider registry loading, broker construction, live transport, grants,
   input, video attachment, or model delivery
+- remote graphical live provider manifest CLI review smoke runbook added, documenting local
+  `manifest-review` commands, expected text markers, expected JSON false flags, and non-activation
+  boundaries
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -487,22 +490,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest CLI review smoke documentation.
+Add remote graphical live provider manifest fixture selection policy.
 
 Target:
 
 ```text
-remote graphical live provider manifest CLI review smoke documentation
-  -> document the exact local CLI review commands operators can run
-  -> capture expected non-activation fields for text and JSON review output
-  -> keep fixture review outside provider registry, service routes, and broker construction
+remote graphical live provider manifest fixture selection policy
+  -> decide whether manifest review remains docs-fixture-only or may accept explicit paths later
+  -> document path-handling and review-only requirements before arbitrary manifest input exists
+  -> keep current CLI review outside provider registry, service routes, and broker construction
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add operator-facing smoke notes for `remote-graphical manifest-review`
-- include expected text markers and JSON false flags
+- document why the current CLI reads only the repository fixture
+- define requirements for any future explicit `--manifest-path` or stdin input
 - keep fixture review disconnected from provider registry and runtime loading
 - do not add an HTTP route for manifest review
 - keep current provider registry behavior unchanged

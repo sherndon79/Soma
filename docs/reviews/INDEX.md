@@ -314,6 +314,8 @@ default.
   - review after adding the pure read-only formatter for future live provider manifest review
 - [Remote Graphical Live Provider Manifest CLI Review](./2026-05-25_remote_graphical_live_provider_manifest_cli_review.md)
   - review after exposing the docs fixture through a CLI-only non-activating review command
+- [Remote Graphical Live Provider Manifest CLI Smoke Docs](./2026-05-25_remote_graphical_live_provider_manifest_cli_smoke_docs.md)
+  - review after documenting text markers and JSON false flags for the CLI-only manifest review
 
 ## Current Review Triggers
 

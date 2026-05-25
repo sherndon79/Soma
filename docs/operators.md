@@ -563,6 +563,9 @@ npm run cli -- remote-graphical manifest-review --json
 This command reads only the docs fixture. It does not add an HTTP route, load the fixture into the
 provider registry, construct a broker, open a session, write a grant, use live transport, attach
 video, dispatch input, or deliver visual payloads to a model.
+The expected text markers and JSON false flags are documented in the
+[Remote Graphical Manifest Review Smoke](./runbooks/remote_graphical_manifest_review_smoke.md)
+runbook.
 
 Session-open can be reviewed without opening a session:
 

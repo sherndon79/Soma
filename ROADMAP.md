@@ -346,6 +346,9 @@ Implemented:
 - remote graphical live provider manifest draft documented, defining declarative provider identity,
   runtime opt-ins, target constraints, action claims, disabled authorities, disclosure, and
   metadata-only provenance without changing runtime registry behavior
+- remote graphical live session-open provenance draft documented, reserving
+  `remote_graphical.session_open.live`, distinguishing it from fixture provenance, and defining
+  allowed metadata, required false flags, forbidden fields, and validation requirements
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -465,24 +468,25 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live session-open provenance constructor draft.
+Add remote graphical live session-open provenance constructor scaffold.
 
 Target:
 
 ```text
-remote graphical live session-open provenance constructor draft
-  -> define the metadata-only event shape for future live open_session success/failure
-  -> distinguish live event type from fixture event type
-  -> keep content and transport diagnostics excluded by contract
+remote graphical live session-open provenance constructor scaffold
+  -> add a pure constructor for remote_graphical.session_open.live success/failure summaries
+  -> keep the constructor unused by routes until live activation is reviewed
+  -> prove fixture and live event types remain distinct
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a draft provenance constructor note under `docs/concepts/drafts/`
-- name allowed fields, required false flags, and forbidden content-bearing fields
-- cross-link fixture provenance and live broker activation docs
+- add a pure helper and focused tests, or document why scaffold should wait
+- reject content-bearing and diagnostic-shaped fields before summary construction
+- require live success session id and live failure bounded error/cause code
 - keep current fixture event type and route behavior unchanged
+- do not append live provenance from routes
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

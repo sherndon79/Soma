@@ -300,6 +300,8 @@ default.
   - review after adding the checklist for future live Sunshine/Moonlight session-open activation
 - [Remote Graphical Live Provider Manifest](./2026-05-24_remote_graphical_live_provider_manifest.md)
   - review after documenting the declarative manifest for future live Sunshine/Moonlight broker configuration
+- [Remote Graphical Live Session-Open Provenance](./2026-05-24_remote_graphical_live_session_open_provenance.md)
+  - review after documenting the reserved live session-open provenance event shape
 
 ## Current Review Triggers
 

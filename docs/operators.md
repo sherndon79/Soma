@@ -575,6 +575,9 @@ This route validates the active grant and user actor before inspecting broker po
 fixture path it refuses without calling `openSession`, pairing, opening a session, attaching video,
 dispatching input, recording, or delivering frames to a model.
 
+Fixture success and failure responses include a metadata-only `provenance_preview`. Soma does not
+append that preview to the provenance log yet.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

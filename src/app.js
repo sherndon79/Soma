@@ -45,6 +45,9 @@ import {
   buildRemoteGraphicalSessionOpenRefusal,
   buildRemoteGraphicalSessionOpenReview,
 } from "./remoteGraphicalSessionOpenReview.js";
+import {
+  createRemoteGraphicalSessionOpenFixtureProvenanceSummary,
+} from "./remoteGraphicalSessionOpenProvenance.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
 import {
   buildSensoriumGrantCreateCandidateFromProposal,
@@ -422,15 +425,27 @@ export function createRequestHandler({
               requested_by: body?.requested_by,
               actor,
             });
-            writeJson(res, 200, buildRemoteGraphicalSessionOpenFixtureSuccess({
+            const result = buildRemoteGraphicalSessionOpenFixtureSuccess({
               review,
               brokerResult,
-            }));
+            });
+            writeJson(res, 200, {
+              ...result,
+              provenance_preview: createRemoteGraphicalSessionOpenFixtureProvenanceSummary({
+                result,
+              }),
+            });
           } catch (cause) {
-            writeJson(res, 200, buildRemoteGraphicalSessionOpenBrokerFailure({
+            const result = buildRemoteGraphicalSessionOpenBrokerFailure({
               review,
               cause,
-            }));
+            });
+            writeJson(res, 200, {
+              ...result,
+              provenance_preview: createRemoteGraphicalSessionOpenFixtureProvenanceSummary({
+                result,
+              }),
+            });
           }
           return;
         }

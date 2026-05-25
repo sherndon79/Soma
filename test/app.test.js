@@ -3561,6 +3561,7 @@ test("POST /remote-graphical/sessions refuses enabled runtime without configured
 test("POST /remote-graphical/sessions invokes only configured fixture broker", async () => {
   let describeCalls = 0;
   let openCalls = 0;
+  let appended = 0;
   const handler = makeHandler({
     harness: allowedHarness,
     grantStore: {
@@ -3593,6 +3594,12 @@ test("POST /remote-graphical/sessions invokes only configured fixture broker", a
         };
       },
     },
+    provenanceLog: {
+      append() {
+        appended += 1;
+        throw new Error("remote graphical session-open must not append provenance yet");
+      },
+    },
   });
 
   const response = await invokeHandler(handler, {
@@ -3623,9 +3630,16 @@ test("POST /remote-graphical/sessions invokes only configured fixture broker", a
   assert.equal(response.body.model_delivery, false);
   assert.equal(response.body.live_transport_used, false);
   assert.equal(Object.hasOwn(response.body, "payload_bytes"), false);
+  assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.equal(response.body.provenance_preview.outcome, "success");
+  assert.equal(response.body.provenance_preview.session_id, "fixture-session-1");
+  assert.equal(response.body.provenance_preview.payload_bytes_included, false);
+  assert.equal(response.body.provenance_preview.live_transport_used, false);
+  assert.equal(appended, 0);
 });
 
 test("POST /remote-graphical/sessions maps fixture broker failure without leaking details", async () => {
+  let appended = 0;
   const handler = makeHandler({
     harness: allowedHarness,
     grantStore: {
@@ -3649,6 +3663,12 @@ test("POST /remote-graphical/sessions maps fixture broker failure without leakin
         throw error;
       },
     },
+    provenanceLog: {
+      append() {
+        appended += 1;
+        throw new Error("remote graphical session-open must not append provenance yet");
+      },
+    },
   });
 
   const response = await invokeHandler(handler, {
@@ -3670,6 +3690,12 @@ test("POST /remote-graphical/sessions maps fixture broker failure without leakin
   assert.equal(response.body.session_opened, false);
   assert.equal(response.body.live_transport_used, false);
   assert.equal(response.body.message.includes("internal fixture transport detail"), false);
+  assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.equal(response.body.provenance_preview.outcome, "failure");
+  assert.equal(response.body.provenance_preview.error, "remote_graphical_broker_session_open_failed");
+  assert.equal(response.body.provenance_preview.cause_code, "fixture_failed");
+  assert.equal(response.body.provenance_preview.transport_diagnostics_included, false);
+  assert.equal(appended, 0);
 });
 
 test("POST /remote-graphical/sessions rejects missing grant non-user actor and inactive grant", async () => {
@@ -5006,6 +5032,7 @@ function makeHandler({
   sensoriumSubscriber,
   remoteGraphicalBroker,
   capabilityProposals,
+  provenanceLog,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -5021,6 +5048,7 @@ function makeHandler({
     sensoriumSubscriber,
     remoteGraphicalBroker,
     capabilityProposals,
+    provenanceLog,
     logger: { info() {} },
   });
 }

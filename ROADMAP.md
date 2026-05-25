@@ -328,6 +328,8 @@ Implemented:
 - remote graphical session-open fixture provenance constructor added for metadata-only
   `remote_graphical.session_open.fixture` success/failure summaries, with route append still
   disabled and content/diagnostic fields rejected before summary creation
+- remote graphical session-open fixture responses now include non-appending `provenance_preview`
+  summaries for success/failure, with tests proving `provenanceLog.append` is not called
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -447,24 +449,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open provenance preview response.
+Add remote graphical session-open provenance append policy.
 
 Target:
 
 ```text
-remote graphical session-open provenance preview response
-  -> include metadata-only provenance_preview on fixture success/failure responses
-  -> do not append to provenance log yet
-  -> preserve forbidden content/diagnostic field validation before preview creation
-  -> keep live transport, visual payloads, input events, durable writes, and model delivery out of scope
+remote graphical session-open provenance append policy
+  -> document and test prerequisites before appending fixture session-open provenance
+  -> keep preview-only response as the current runtime behavior
+  -> define append ordering relative to broker result creation and response shaping
+  -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- thread the pure constructor into fixture success/failure responses as `provenance_preview`
-- keep `provenanceLog.append` disabled for remote graphical session-open
-- add route tests proving preview shape and no append side effects
-- keep CLI output unchanged unless JSON is requested
+- document append gates for fixture provenance
+- add review note explaining why append remains disabled until policy is explicit
+- identify test cases required before appending route provenance
+- keep implementation route behavior unchanged in this slice
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

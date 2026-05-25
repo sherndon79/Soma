@@ -286,6 +286,8 @@ default.
   - review after adding fixture-only broker session-open success and failure contracts
 - [Remote Graphical Session-Open Provenance Fixture](./2026-05-24_remote_graphical_session_open_provenance_fixture.md)
   - review after adding pure metadata-only fixture session-open provenance summaries
+- [Remote Graphical Session-Open Provenance Preview](./2026-05-24_remote_graphical_session_open_provenance_preview.md)
+  - review after adding non-appending fixture session-open provenance previews to route responses
 
 ## Current Review Triggers
 

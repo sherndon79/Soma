@@ -155,12 +155,13 @@ test broker before `openSession` is invoked. Fixture success may set `activation
 This does not satisfy the future live activation contract above.
 
 Fixture session-open provenance is currently available only as a pure metadata constructor for
-`remote_graphical.session_open.fixture`. The route does not append it yet. The allowed summary
-fields are source grant id, capability, provider, target host, scope, requester, broker action,
-status, state, session id for success, bounded error/cause code for failure, and explicit false
-flags for payload bytes, frames, screenshots, recognized text, clipboard, input events, window/file
-metadata, audio, transport diagnostics, live transport, durable writes, grant writes, video, input,
-recording, and model delivery.
+`remote_graphical.session_open.fixture`. Fixture success/failure responses include it as
+`provenance_preview`, but the route does not append it yet. The allowed summary fields are source
+grant id, capability, provider, target host, scope, requester, broker action, status, state, session
+id for success, bounded error/cause code for failure, and explicit false flags for payload bytes,
+frames, screenshots, recognized text, clipboard, input events, window/file metadata, audio,
+transport diagnostics, live transport, durable writes, grant writes, video, input, recording, and
+model delivery.
 
 ## Test Requirements
 

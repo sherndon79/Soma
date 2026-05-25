@@ -3631,12 +3631,14 @@ test("POST /remote-graphical/sessions invokes only configured fixture broker", a
   assert.equal(response.body.live_transport_used, false);
   assert.equal(Object.hasOwn(response.body, "payload_bytes"), false);
   assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.notEqual(response.body.provenance_preview.event_type, "remote_graphical.session_open.live");
   assert.equal(response.body.provenance_preview.outcome, "success");
   assert.equal(response.body.provenance_preview.session_id, "fixture-session-1");
   assert.equal(response.body.provenance_preview.payload_bytes_included, false);
   assert.equal(response.body.provenance_preview.live_transport_used, false);
   assert.equal(response.body.provenance_appended, true);
   assert.equal(appended.length, 1);
+  assert.notEqual(appended[0].event_type, "remote_graphical.session_open.live");
   assert.deepEqual(appended[0], response.body.provenance_preview);
 });
 
@@ -3693,12 +3695,14 @@ test("POST /remote-graphical/sessions maps fixture broker failure without leakin
   assert.equal(response.body.live_transport_used, false);
   assert.equal(response.body.message.includes("internal fixture transport detail"), false);
   assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.notEqual(response.body.provenance_preview.event_type, "remote_graphical.session_open.live");
   assert.equal(response.body.provenance_preview.outcome, "failure");
   assert.equal(response.body.provenance_preview.error, "remote_graphical_broker_session_open_failed");
   assert.equal(response.body.provenance_preview.cause_code, "fixture_failed");
   assert.equal(response.body.provenance_preview.transport_diagnostics_included, false);
   assert.equal(response.body.provenance_appended, true);
   assert.equal(appended.length, 1);
+  assert.notEqual(appended[0].event_type, "remote_graphical.session_open.live");
   assert.deepEqual(appended[0], response.body.provenance_preview);
 });
 
@@ -3763,6 +3767,7 @@ test("POST /remote-graphical/sessions returns bounded append failure without sec
   assert.equal(response.body.session_opened, true);
   assert.equal(response.body.live_transport_used, false);
   assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.notEqual(response.body.provenance_preview.event_type, "remote_graphical.session_open.live");
   assert.equal(response.body.provenance_preview.session_id, "fixture-session-append-failure");
 });
 
@@ -3811,6 +3816,7 @@ test("POST /remote-graphical/sessions does not append provenance on broker postu
   assert.equal(response.body.error, "remote_graphical_broker_not_configured");
   assert.equal(response.body.broker_called, false);
   assert.equal(Object.hasOwn(response.body, "provenance_preview"), false);
+  assert.equal(Object.hasOwn(response.body, "provenance_appended"), false);
   assert.equal(appended, 0);
 });
 

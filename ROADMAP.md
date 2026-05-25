@@ -352,6 +352,9 @@ Implemented:
 - remote graphical live session-open provenance constructor scaffold added as a pure unused helper,
   with tests proving distinct fixture/live event types, required live success/failure fields, and
   rejection of content-bearing or diagnostic-shaped inputs
+- remote graphical live session-open non-append guards added, proving current fixture success,
+  fixture failure, append failure, and broker-posture refusal paths do not emit or append
+  `remote_graphical.session_open.live`
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -471,21 +474,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live session-open non-append guard tests.
+Add remote graphical live provider manifest schema scaffold.
 
 Target:
 
 ```text
-remote graphical live session-open non-append guard tests
-  -> prove current fixture/refusal routes do not append remote_graphical.session_open.live
-  -> keep live constructor unused by app routes
-  -> keep fixture append behavior unchanged
+remote graphical live provider manifest schema scaffold
+  -> add a pure validator for the documented live provider manifest shape
+  -> keep manifest validation unused by runtime broker construction
+  -> prove default-disabled target/action/authority requirements
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add focused route tests around provenance append event type boundaries
+- add a pure helper and focused tests, or document why scaffold should wait
+- validate provider id, runtime opt-ins, target constraints, supported actions, and disabled authorities
+- keep current provider registry behavior unchanged
 - keep current fixture event type and route behavior unchanged
 - do not append live provenance from routes
 - avoid introducing live broker construction or runtime opt-ins

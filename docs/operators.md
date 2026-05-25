@@ -553,6 +553,8 @@ must be satisfied and reviewed.
 The live provider manifest fixture at
 `docs/fixtures/remote-graphical-live-provider-manifest.json` can be reviewed and validated without
 activation. It is not part of the runtime provider registry and is not loaded by broker startup.
+The pure manifest review formatter can summarize that fixture for operator review, but no CLI or
+HTTP activation surface is exposed for it yet.
 
 Session-open can be reviewed without opening a session:
 

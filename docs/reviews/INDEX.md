@@ -310,6 +310,8 @@ default.
   - review after adding the pure validator for future live provider manifests
 - [Remote Graphical Live Provider Manifest Fixture](./2026-05-24_remote_graphical_live_provider_manifest_fixture.md)
   - review after adding the non-runtime validating manifest fixture
+- [Remote Graphical Live Provider Manifest Review Surface](./2026-05-25_remote_graphical_live_provider_manifest_review_surface.md)
+  - review after adding the pure read-only formatter for future live provider manifest review
 
 ## Current Review Triggers
 

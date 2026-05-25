@@ -112,6 +112,10 @@ Operators can validate the fixture with:
 node --test test/remoteGraphicalLiveProviderManifest.test.js
 ```
 
+The pure `remoteGraphicalLiveProviderManifestReviewText` formatter can render a validated manifest
+for operator review without adding an HTTP route, CLI command, provider registry entry, or runtime
+broker construction path.
+
 ## Target Host Constraints
 
 Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely

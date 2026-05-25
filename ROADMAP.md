@@ -361,6 +361,9 @@ Implemented:
 - remote graphical live provider manifest fixture added under `docs/fixtures`, validating through
   the pure manifest validator while remaining outside provider registry, server startup, and broker
   construction
+- remote graphical live provider manifest review surface added as a pure formatter, rendering
+  target constraints, runtime opt-ins, supported actions, disabled authorities, and activation
+  blockers without any CLI/HTTP/runtime loading path
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -480,22 +483,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest review surface.
+Add remote graphical live provider manifest CLI review wrapper.
 
 Target:
 
 ```text
-remote graphical live provider manifest review surface
-  -> define or scaffold a read-only formatting surface for manifest review
-  -> keep fixture and validator outside runtime broker construction
-  -> present disabled authorities and activation blockers clearly
+remote graphical live provider manifest CLI review wrapper
+  -> expose the pure fixture review text through an explicit non-activating CLI path
+  -> keep fixture outside provider registry and broker construction
+  -> preserve JSON/text distinction for review-only output
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure review formatter and focused tests, or document why it should wait
-- include target constraints, required opt-ins, supported actions, and disabled authorities
+- add a CLI review command that reads only the docs fixture, or document why it should wait
+- return review text by default and validated fixture plus review text under `--json`
 - keep fixture review disconnected from provider registry and runtime loading
 - keep current provider registry behavior unchanged
 - keep current fixture event type and route behavior unchanged

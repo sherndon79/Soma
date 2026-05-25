@@ -73,6 +73,7 @@ should inform implementation.
 - [Model Visual Preview Acknowledgement](./concepts/drafts/model_visual_preview_acknowledgement.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Broker Boundary](./concepts/drafts/remote_graphical_broker_boundary.md)
+- [Remote Graphical Manifest Selection Policy](./concepts/drafts/remote_graphical_manifest_selection_policy.md)
 - [Remote Graphical Session-Open Activation Policy](./concepts/drafts/remote_graphical_session_open_activation_policy.md)
 - [Remote Graphical Session-Open Provenance Append Policy](./concepts/drafts/remote_graphical_session_open_provenance_append_policy.md)
 - [Remote Graphical Session Provider](./concepts/drafts/remote_graphical_session_provider.md)

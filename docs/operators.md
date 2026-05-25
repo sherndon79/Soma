@@ -566,6 +566,8 @@ video, dispatch input, or deliver visual payloads to a model.
 The expected text markers and JSON false flags are documented in the
 [Remote Graphical Manifest Review Smoke](./runbooks/remote_graphical_manifest_review_smoke.md)
 runbook.
+The command remains docs-fixture-only under the
+[Remote Graphical Manifest Selection Policy](./concepts/drafts/remote_graphical_manifest_selection_policy.md).
 
 Session-open can be reviewed without opening a session:
 

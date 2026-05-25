@@ -316,6 +316,8 @@ default.
   - review after exposing the docs fixture through a CLI-only non-activating review command
 - [Remote Graphical Live Provider Manifest CLI Smoke Docs](./2026-05-25_remote_graphical_live_provider_manifest_cli_smoke_docs.md)
   - review after documenting text markers and JSON false flags for the CLI-only manifest review
+- [Remote Graphical Manifest Selection Policy](./2026-05-25_remote_graphical_manifest_selection_policy.md)
+  - review after documenting why manifest review remains docs-fixture-only before arbitrary inputs
 
 ## Current Review Triggers
 

@@ -124,6 +124,8 @@ construction path.
 
 Operator smoke expectations for this command live in
 [Remote Graphical Manifest Review Smoke](../../runbooks/remote_graphical_manifest_review_smoke.md).
+The source-selection boundary for this command is defined by
+[Remote Graphical Manifest Selection Policy](./remote_graphical_manifest_selection_policy.md).
 
 ## Target Host Constraints
 

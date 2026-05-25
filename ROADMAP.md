@@ -371,6 +371,9 @@ Implemented:
 - remote graphical live provider manifest CLI review smoke runbook added, documenting local
   `manifest-review` commands, expected text markers, expected JSON false flags, and non-activation
   boundaries
+- remote graphical manifest selection policy documented, keeping current manifest review
+  docs-fixture-only and defining requirements before any future `--manifest-path`, stdin, URL, or
+  runtime-loading input
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -490,22 +493,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest fixture selection policy.
+Add remote graphical live provider manifest fixture source tests.
 
 Target:
 
 ```text
-remote graphical live provider manifest fixture selection policy
-  -> decide whether manifest review remains docs-fixture-only or may accept explicit paths later
-  -> document path-handling and review-only requirements before arbitrary manifest input exists
+remote graphical live provider manifest fixture source tests
+  -> prove the CLI manifest review rejects unsupported source-selection flags locally
+  -> preserve docs-fixture-only behavior until a separate explicit-input review lands
   -> keep current CLI review outside provider registry, service routes, and broker construction
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- document why the current CLI reads only the repository fixture
-- define requirements for any future explicit `--manifest-path` or stdin input
+- add local usage errors for unsupported `--manifest-path`, `--stdin`, or URL/source flags
+- add focused CLI tests proving no request happens and the fixture-only command still passes
 - keep fixture review disconnected from provider registry and runtime loading
 - do not add an HTTP route for manifest review
 - keep current provider registry behavior unchanged

@@ -338,6 +338,8 @@ Implemented:
   returning bounded append failure without a second broker call
 - remote graphical session-open CLI provenance visibility covered, preserving concise default text
   while proving `--json` carries `provenance_appended` and `provenance_preview`
+- remote graphical session-open provenance query examples documented, showing JSON-first
+  `remote_graphical.session_open.fixture` filtering and the expected false content/transport flags
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -457,24 +459,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open provenance query examples.
+Add remote graphical live broker activation checklist.
 
 Target:
 
 ```text
-remote graphical session-open provenance query examples
-  -> document provenance list filtering for remote_graphical.session_open.fixture
-  -> show JSON-first operator inspection without exposing payload content
-  -> keep route behavior unchanged
+remote graphical live broker activation checklist
+  -> define reviewed prerequisites before any Sunshine/Moonlight live session-open path
+  -> separate view, input, recording, disconnect, and model delivery authorities
+  -> identify required smoke evidence and rollback posture
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add operator examples for `soma provenance list --event-type remote_graphical.session_open.fixture --json`
-- document expected false flags and forbidden content posture
-- add no code behavior unless a docs link/index update requires it
-- keep CLI session-open summary unchanged
+- add a draft activation checklist under `docs/concepts/drafts/`
+- cross-link operator docs to the checklist without implying live support
+- keep current fixture broker as the only invokable broker path
+- avoid adding live Sunshine/Moonlight calls in tests or runtime
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

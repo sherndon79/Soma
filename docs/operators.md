@@ -583,6 +583,21 @@ The default CLI text summary stays concise and does not print the full provenanc
 `--json` on `remote-graphical session-open` to inspect `provenance_appended` and
 `provenance_preview`.
 
+Appended fixture events can be inspected through the provenance CLI:
+
+```bash
+npm run cli -- provenance list \
+  --event-type remote_graphical.session_open.fixture \
+  --json
+```
+
+Use the JSON view for operator inspection so the exact metadata-only event can be compared with the
+session-open response. These fixture events are expected to keep content and transport flags false,
+including `payload_bytes_included`, `frames_included`, `screenshots_included`,
+`recognized_text_included`, `clipboard_included`, `input_events_included`,
+`audio_payload_included`, `transport_diagnostics_included`, `live_transport_used`,
+`video_attached`, `input_dispatched`, `recording_started`, and `model_delivery`.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

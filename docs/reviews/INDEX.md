@@ -290,6 +290,8 @@ default.
   - review after adding non-appending fixture session-open provenance previews to route responses
 - [Remote Graphical Session-Open Provenance Append Policy](./2026-05-24_remote_graphical_session_open_provenance_append_policy.md)
   - review after documenting prerequisites for fixture session-open provenance append
+- [Remote Graphical Session-Open Provenance Append Fixture](./2026-05-24_remote_graphical_session_open_provenance_append_fixture.md)
+  - review after appending fixture session-open provenance previews for success and failure
 
 ## Current Review Triggers
 

@@ -1,23 +1,23 @@
 # Remote Graphical Session-Open Provenance Append Policy
 
-Status: policy draft, append remains disabled
+Status: fixture append active, live append disabled
 
 This note defines the prerequisites for appending remote graphical fixture session-open provenance to
-the runtime provenance log. It does not enable append, durable writes, live Sunshine/Moonlight
-transport, pairing, video observation, input dispatch, recording, or model-facing visual delivery.
+the runtime provenance log. The fixture-only append path is active. This does not enable durable
+writes, live Sunshine/Moonlight transport, pairing, video observation, input dispatch, recording, or
+model-facing visual delivery.
 
 ## Current Boundary
 
-The current fixture session-open route may return a metadata-only `provenance_preview` for
-`remote_graphical.session_open.fixture`, but it must not call `provenanceLog.append`.
+The current fixture session-open route returns a metadata-only `provenance_preview` for
+`remote_graphical.session_open.fixture` and appends that exact preview for fixture success/failure.
 
-The preview exists so operators and tests can inspect the exact summary shape before the runtime
-starts recording it.
+Refusal paths still do not append. Live transport session-open append remains disabled.
 
 ## Append Decision
 
-Appending fixture session-open provenance may be enabled only after route behavior satisfies all of
-these gates:
+Appending fixture session-open provenance is enabled only when route behavior satisfies all of these
+gates:
 
 1. **Preview-first construction**
    - The response result is built first.

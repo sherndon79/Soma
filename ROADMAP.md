@@ -333,6 +333,9 @@ Implemented:
 - remote graphical session-open provenance append policy documented, defining preview-first
   construction, validation-before-append, append ordering, bounded append failure behavior,
   fixture-only scope, and required tests before route-level append is enabled
+- remote graphical session-open fixture provenance append added, appending exactly the
+  `provenance_preview` for fixture success/failure, preserving no-append refusal paths, and
+  returning bounded append failure without a second broker call
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -452,24 +455,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open provenance append fixture.
+Add remote graphical session-open CLI provenance visibility.
 
 Target:
 
 ```text
-remote graphical session-open provenance append fixture
-  -> append fixture success/failure provenance only after preview construction
-  -> prove appended event equals provenance_preview
-  -> prove refusal paths still do not append
+remote graphical session-open CLI provenance visibility
+  -> keep existing text summary concise
+  -> expose provenance_appended and provenance_preview only through JSON output
+  -> add CLI test proving text output remains stable and JSON carries the preview
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- call `provenanceLog.append` only for fixture success/failure after preview creation
-- return bounded append failure without a second broker call
-- add route tests for success append, failure append, refusal no-append, and append failure
-- keep CLI text output unchanged unless JSON is requested
+- update CLI JSON fixtures/tests around session-open success/failure preview fields
+- keep human text focused on status/session/open flags
+- avoid printing raw provenance preview in default text output
+- document operator visibility in `docs/operators.md`
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

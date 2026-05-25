@@ -3561,7 +3561,7 @@ test("POST /remote-graphical/sessions refuses enabled runtime without configured
 test("POST /remote-graphical/sessions invokes only configured fixture broker", async () => {
   let describeCalls = 0;
   let openCalls = 0;
-  let appended = 0;
+  const appended = [];
   const handler = makeHandler({
     harness: allowedHarness,
     grantStore: {
@@ -3595,9 +3595,9 @@ test("POST /remote-graphical/sessions invokes only configured fixture broker", a
       },
     },
     provenanceLog: {
-      append() {
-        appended += 1;
-        throw new Error("remote graphical session-open must not append provenance yet");
+      append(event) {
+        appended.push(event);
+        return event;
       },
     },
   });
@@ -3635,11 +3635,13 @@ test("POST /remote-graphical/sessions invokes only configured fixture broker", a
   assert.equal(response.body.provenance_preview.session_id, "fixture-session-1");
   assert.equal(response.body.provenance_preview.payload_bytes_included, false);
   assert.equal(response.body.provenance_preview.live_transport_used, false);
-  assert.equal(appended, 0);
+  assert.equal(response.body.provenance_appended, true);
+  assert.equal(appended.length, 1);
+  assert.deepEqual(appended[0], response.body.provenance_preview);
 });
 
 test("POST /remote-graphical/sessions maps fixture broker failure without leaking details", async () => {
-  let appended = 0;
+  const appended = [];
   const handler = makeHandler({
     harness: allowedHarness,
     grantStore: {
@@ -3664,9 +3666,9 @@ test("POST /remote-graphical/sessions maps fixture broker failure without leakin
       },
     },
     provenanceLog: {
-      append() {
-        appended += 1;
-        throw new Error("remote graphical session-open must not append provenance yet");
+      append(event) {
+        appended.push(event);
+        return event;
       },
     },
   });
@@ -3695,6 +3697,120 @@ test("POST /remote-graphical/sessions maps fixture broker failure without leakin
   assert.equal(response.body.provenance_preview.error, "remote_graphical_broker_session_open_failed");
   assert.equal(response.body.provenance_preview.cause_code, "fixture_failed");
   assert.equal(response.body.provenance_preview.transport_diagnostics_included, false);
+  assert.equal(response.body.provenance_appended, true);
+  assert.equal(appended.length, 1);
+  assert.deepEqual(appended[0], response.body.provenance_preview);
+});
+
+test("POST /remote-graphical/sessions returns bounded append failure without second broker call", async () => {
+  let openCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        return {
+          requested: true,
+          enabled: true,
+          configured: true,
+          session_open_fixture: true,
+          status: "available",
+          state: "paired_inactive",
+        };
+      },
+      openSession() {
+        openCalls += 1;
+        return {
+          session_id: "fixture-session-append-failure",
+          status: "opened",
+          state: "open",
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+        };
+      },
+    },
+    provenanceLog: {
+      append() {
+        const error = new Error("internal append path should not leak");
+        error.code = "append_failed";
+        throw error;
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(openCalls, 1);
+  assert.equal(response.body.type, "remote_graphical_session_open_append_failure");
+  assert.equal(response.body.error, "remote_graphical_session_open_provenance_append_failed");
+  assert.equal(response.body.append_error_code, "append_failed");
+  assert.equal(response.body.message.includes("internal append path"), false);
+  assert.equal(response.body.provenance_appended, false);
+  assert.equal(response.body.broker_called, true);
+  assert.equal(response.body.session_opened, true);
+  assert.equal(response.body.live_transport_used, false);
+  assert.equal(response.body.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.equal(response.body.provenance_preview.session_id, "fixture-session-append-failure");
+});
+
+test("POST /remote-graphical/sessions does not append provenance on broker posture refusal", async () => {
+  let appended = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        return {
+          requested: true,
+          enabled: true,
+          configured: false,
+          status: "provider_not_configured",
+          state: "unconfigured",
+        };
+      },
+      openSession() {
+        throw new Error("openSession should not be called");
+      },
+    },
+    provenanceLog: {
+      append() {
+        appended += 1;
+        throw new Error("refusal should not append provenance");
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.error, "remote_graphical_broker_not_configured");
+  assert.equal(response.body.broker_called, false);
+  assert.equal(Object.hasOwn(response.body, "provenance_preview"), false);
   assert.equal(appended, 0);
 });
 

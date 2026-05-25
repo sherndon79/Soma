@@ -429,23 +429,19 @@ export function createRequestHandler({
               review,
               brokerResult,
             });
-            writeJson(res, 200, {
-              ...result,
-              provenance_preview: createRemoteGraphicalSessionOpenFixtureProvenanceSummary({
-                result,
-              }),
-            });
+            writeJson(res, 200, appendRemoteGraphicalSessionOpenProvenancePreview({
+              result,
+              provenanceLog,
+            }));
           } catch (cause) {
             const result = buildRemoteGraphicalSessionOpenBrokerFailure({
               review,
               cause,
             });
-            writeJson(res, 200, {
-              ...result,
-              provenance_preview: createRemoteGraphicalSessionOpenFixtureProvenanceSummary({
-                result,
-              }),
-            });
+            writeJson(res, 200, appendRemoteGraphicalSessionOpenProvenancePreview({
+              result,
+              provenanceLog,
+            }));
           }
           return;
         }
@@ -2189,6 +2185,36 @@ function normalizeRuntimeWritePosture(posture) {
     });
   }
   return resolveRuntimeWritePosture();
+}
+
+function appendRemoteGraphicalSessionOpenProvenancePreview({ result, provenanceLog } = {}) {
+  const provenancePreview = createRemoteGraphicalSessionOpenFixtureProvenanceSummary({ result });
+  try {
+    provenanceLog.append(provenancePreview);
+  } catch (cause) {
+    return {
+      ...result,
+      type: "remote_graphical_session_open_append_failure",
+      error: "remote_graphical_session_open_provenance_append_failed",
+      message: "Remote graphical session-open provenance append failed after preview creation.",
+      append_error_code: String(cause?.code ?? ""),
+      provenance_preview: provenancePreview,
+      provenance_appended: false,
+      durable: false,
+      grant_written: false,
+      live_transport_used: false,
+      video_attached: false,
+      input_dispatched: false,
+      recording_started: false,
+      model_delivery: false,
+    };
+  }
+
+  return {
+    ...result,
+    provenance_preview: provenancePreview,
+    provenance_appended: true,
+  };
 }
 
 function publicGrantRecoveryFinding(finding = {}) {

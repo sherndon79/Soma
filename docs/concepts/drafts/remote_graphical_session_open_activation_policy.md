@@ -163,6 +163,9 @@ frames, screenshots, recognized text, clipboard, input events, window/file metad
 transport diagnostics, live transport, durable writes, grant writes, video, input, recording, and
 model delivery.
 
+Appending that preview to the runtime provenance log is governed by the
+[Remote Graphical Session-Open Provenance Append Policy](./remote_graphical_session_open_provenance_append_policy.md).
+
 ## Test Requirements
 
 Before live session-open activation, tests must prove:

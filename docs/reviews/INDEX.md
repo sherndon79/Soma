@@ -288,6 +288,8 @@ default.
   - review after adding pure metadata-only fixture session-open provenance summaries
 - [Remote Graphical Session-Open Provenance Preview](./2026-05-24_remote_graphical_session_open_provenance_preview.md)
   - review after adding non-appending fixture session-open provenance previews to route responses
+- [Remote Graphical Session-Open Provenance Append Policy](./2026-05-24_remote_graphical_session_open_provenance_append_policy.md)
+  - review after documenting prerequisites for fixture session-open provenance append
 
 ## Current Review Triggers
 

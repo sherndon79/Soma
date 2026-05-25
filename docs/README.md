@@ -74,6 +74,7 @@ should inform implementation.
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Broker Boundary](./concepts/drafts/remote_graphical_broker_boundary.md)
 - [Remote Graphical Session-Open Activation Policy](./concepts/drafts/remote_graphical_session_open_activation_policy.md)
+- [Remote Graphical Session-Open Provenance Append Policy](./concepts/drafts/remote_graphical_session_open_provenance_append_policy.md)
 - [Remote Graphical Session Provider](./concepts/drafts/remote_graphical_session_provider.md)
 - [Reversibility and Disclosure](./concepts/drafts/reversibility_and_disclosure.md)
 - [Sensorium Color Minimization Boundary](./concepts/drafts/sensorium_color_minimization_boundary.md)

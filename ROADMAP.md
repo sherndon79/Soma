@@ -330,6 +330,9 @@ Implemented:
   disabled and content/diagnostic fields rejected before summary creation
 - remote graphical session-open fixture responses now include non-appending `provenance_preview`
   summaries for success/failure, with tests proving `provenanceLog.append` is not called
+- remote graphical session-open provenance append policy documented, defining preview-first
+  construction, validation-before-append, append ordering, bounded append failure behavior,
+  fixture-only scope, and required tests before route-level append is enabled
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -449,24 +452,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open provenance append policy.
+Add remote graphical session-open provenance append fixture.
 
 Target:
 
 ```text
-remote graphical session-open provenance append policy
-  -> document and test prerequisites before appending fixture session-open provenance
-  -> keep preview-only response as the current runtime behavior
-  -> define append ordering relative to broker result creation and response shaping
+remote graphical session-open provenance append fixture
+  -> append fixture success/failure provenance only after preview construction
+  -> prove appended event equals provenance_preview
+  -> prove refusal paths still do not append
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- document append gates for fixture provenance
-- add review note explaining why append remains disabled until policy is explicit
-- identify test cases required before appending route provenance
-- keep implementation route behavior unchanged in this slice
+- call `provenanceLog.append` only for fixture success/failure after preview creation
+- return bounded append failure without a second broker call
+- add route tests for success append, failure append, refusal no-append, and append failure
+- keep CLI text output unchanged unless JSON is requested
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

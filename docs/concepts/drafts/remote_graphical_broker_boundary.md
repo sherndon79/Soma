@@ -194,6 +194,10 @@ The fixture-only session-open provenance constructor records
 `remote_graphical.session_open.fixture` summaries for test broker success/failure. It is pure and
 is not appended by the HTTP route in the current slice.
 
+Route-level append is governed by the
+[Remote Graphical Session-Open Provenance Append Policy](./remote_graphical_session_open_provenance_append_policy.md)
+and remains disabled until that policy is implemented and tested.
+
 ## Activation Order
 
 Recommended sequence:
@@ -216,5 +220,6 @@ recording out of scope until their own boundaries are documented and tested.
 - [Remote Graphical Session Provider](./remote_graphical_session_provider.md)
 - [Remote Graphical Grant Activation Policy](./remote_graphical_grant_activation_policy.md)
 - [Remote Graphical Session-Open Activation Policy](./remote_graphical_session_open_activation_policy.md)
+- [Remote Graphical Session-Open Provenance Append Policy](./remote_graphical_session_open_provenance_append_policy.md)
 - [Model-Facing Visual Delivery Boundary](./model_facing_visual_delivery_boundary.md)
 - [Reversibility and Disclosure](./reversibility_and_disclosure.md)

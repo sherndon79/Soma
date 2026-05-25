@@ -29,6 +29,50 @@ The command remains fixture-only by policy; see
 before adding `--manifest-path`, stdin, URL input, or runtime manifest loading.
 Current CLI behavior rejects those source-selection flags locally.
 
+## Source Guard Refusals
+
+The command should fail locally before fixture review or service requests when a caller tries to
+select another manifest source.
+
+Unsupported explicit path:
+
+```bash
+npm run cli -- remote-graphical manifest-review \
+  --manifest-path /tmp/operator-manifest.json
+```
+
+Expected marker:
+
+```text
+usage_error: remote-graphical manifest-review does not accept --manifest-path
+```
+
+Unsupported stdin source:
+
+```bash
+npm run cli -- remote-graphical manifest-review --stdin
+```
+
+Expected marker:
+
+```text
+usage_error: remote-graphical manifest-review does not accept --stdin
+```
+
+Unsupported positional path:
+
+```bash
+npm run cli -- remote-graphical manifest-review /tmp/operator-manifest.json
+```
+
+Expected marker:
+
+```text
+usage_error: remote-graphical manifest-review does not accept manifest paths or positional source inputs
+```
+
+These refusal checks do not need a running Soma service.
+
 ## Expected Text Markers
 
 The text output should include:

@@ -320,6 +320,8 @@ default.
   - review after documenting why manifest review remains docs-fixture-only before arbitrary inputs
 - [Remote Graphical Manifest Source Guard](./2026-05-25_remote_graphical_manifest_source_guard.md)
   - review after rejecting unsupported manifest-review source-selection flags locally
+- [Remote Graphical Manifest Source Guard Smoke Notes](./2026-05-25_remote_graphical_manifest_source_guard_smoke_notes.md)
+  - review after documenting local refusal smoke examples for unsupported manifest-review sources
 
 ## Current Review Triggers
 

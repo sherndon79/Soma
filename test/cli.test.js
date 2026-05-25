@@ -1455,6 +1455,70 @@ test("runCli remote-graphical status reports no-op broker posture", async () => 
   assert.match(writes.join(""), /live transport used: no/);
 });
 
+test("runCli remote-graphical manifest-review formats local fixture without service request", async () => {
+  let called = false;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "manifest-review",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => {
+      called = true;
+      throw new Error("request should not be called");
+    },
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.equal(called, false);
+  assert.match(output, /Remote graphical live provider manifest/);
+  assert.match(output, /provider: soma\.provider\.remote_desktop\.sunshine/);
+  assert.match(output, /runtime opt-ins: SOMA_REMOTE_GRAPHICAL_ENABLED=1/);
+  assert.match(output, /target hosts: soma-agent-desktop\.local\.sthnet\.org/);
+  assert.match(output, /disabled authorities: .*video_observation.*keyboard_input.*model_visual_delivery/);
+  assert.match(output, /activation blockers: not in provider registry; not loaded by server startup; no broker construction/);
+  assert.match(output, /activation boundary: manifest review is not live transport, pairing, observation, input, recording, grant write, or model delivery/);
+});
+
+test("runCli remote-graphical manifest-review json includes validated fixture without activation", async () => {
+  let called = false;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "manifest-review",
+    "--json",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => {
+      called = true;
+      throw new Error("request should not be called");
+    },
+  });
+
+  const payload = JSON.parse(writes.join(""));
+  assert.equal(code, 0);
+  assert.equal(called, false);
+  assert.equal(payload.review_only, true);
+  assert.equal(payload.fixture_path, "docs/fixtures/remote-graphical-live-provider-manifest.json");
+  assert.equal(payload.manifest.id, "soma.provider.remote_desktop.sunshine");
+  assert.equal(payload.manifest.runtime_loaded, false);
+  assert.equal(payload.manifest.provider_registry_entry, false);
+  assert.equal(payload.manifest.broker_construction, false);
+  assert.equal(payload.activation_performed, false);
+  assert.equal(payload.live_transport_used, false);
+  assert.equal(payload.grant_written, false);
+  assert.equal(payload.session_opened, false);
+  assert.equal(payload.input_dispatched, false);
+  assert.equal(payload.video_attached, false);
+  assert.equal(payload.model_delivery_performed, false);
+  assert.match(payload.text, /Remote graphical live provider manifest/);
+});
+
 test("runCli remote-graphical session-open-review requests non-activating review", async () => {
   let captured;
   const writes = [];

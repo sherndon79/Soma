@@ -364,6 +364,10 @@ Implemented:
 - remote graphical live provider manifest review surface added as a pure formatter, rendering
   target constraints, runtime opt-ins, supported actions, disabled authorities, and activation
   blockers without any CLI/HTTP/runtime loading path
+- remote graphical live provider manifest CLI review wrapper added for
+  `remote-graphical manifest-review`, reading only the docs fixture and returning text or JSON
+  without service calls, provider registry loading, broker construction, live transport, grants,
+  input, video attachment, or model delivery
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -483,23 +487,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest CLI review wrapper.
+Add remote graphical live provider manifest CLI review smoke documentation.
 
 Target:
 
 ```text
-remote graphical live provider manifest CLI review wrapper
-  -> expose the pure fixture review text through an explicit non-activating CLI path
-  -> keep fixture outside provider registry and broker construction
-  -> preserve JSON/text distinction for review-only output
+remote graphical live provider manifest CLI review smoke documentation
+  -> document the exact local CLI review commands operators can run
+  -> capture expected non-activation fields for text and JSON review output
+  -> keep fixture review outside provider registry, service routes, and broker construction
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a CLI review command that reads only the docs fixture, or document why it should wait
-- return review text by default and validated fixture plus review text under `--json`
+- add operator-facing smoke notes for `remote-graphical manifest-review`
+- include expected text markers and JSON false flags
 - keep fixture review disconnected from provider registry and runtime loading
+- do not add an HTTP route for manifest review
 - keep current provider registry behavior unchanged
 - keep current fixture event type and route behavior unchanged
 - do not append live provenance from routes

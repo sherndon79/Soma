@@ -553,8 +553,16 @@ must be satisfied and reviewed.
 The live provider manifest fixture at
 `docs/fixtures/remote-graphical-live-provider-manifest.json` can be reviewed and validated without
 activation. It is not part of the runtime provider registry and is not loaded by broker startup.
-The pure manifest review formatter can summarize that fixture for operator review, but no CLI or
-HTTP activation surface is exposed for it yet.
+The CLI can summarize that fixture for operator review without calling the Soma service:
+
+```bash
+npm run cli -- remote-graphical manifest-review
+npm run cli -- remote-graphical manifest-review --json
+```
+
+This command reads only the docs fixture. It does not add an HTTP route, load the fixture into the
+provider registry, construct a broker, open a session, write a grant, use live transport, attach
+video, dispatch input, or deliver visual payloads to a model.
 
 Session-open can be reviewed without opening a session:
 

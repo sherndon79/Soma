@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { grantMutationPreviewReviewText } from "./grantMutationPreviewReviewSurface.js";
+import { validateRemoteGraphicalLiveProviderManifest } from "./remoteGraphicalLiveProviderManifest.js";
+import {
+  remoteGraphicalLiveProviderManifestReviewText,
+} from "./remoteGraphicalLiveProviderManifestReviewSurface.js";
 
 const DEFAULT_SOMA_URL = "http://127.0.0.1:8765";
+const REMOTE_GRAPHICAL_LIVE_PROVIDER_MANIFEST_FIXTURE_URL = new URL(
+  "../docs/fixtures/remote-graphical-live-provider-manifest.json",
+  import.meta.url,
+);
 
 export function parseCli(argv) {
   const args = argv.slice(2);
@@ -218,6 +227,12 @@ export async function runCli(
   if (command === "remote-graphical" && subcommand === "status") {
     const response = await request(baseUrl, "GET", "/remote-graphical/status");
     writeOutput(stdout, response, jsonOutput, remoteGraphicalStatusSummary(response));
+    return 0;
+  }
+
+  if (command === "remote-graphical" && subcommand === "manifest-review") {
+    const response = await remoteGraphicalLiveProviderManifestReviewFromFixture();
+    writeOutput(stdout, response, jsonOutput, response.text);
     return 0;
   }
 
@@ -742,6 +757,30 @@ async function grantPreviewReviewTextRequestFromFlags(flags, { stdin }) {
   }
 
   return { review_response: reviewResponse };
+}
+
+async function remoteGraphicalLiveProviderManifestReviewFromFixture() {
+  const manifest = JSON.parse(await readFile(
+    REMOTE_GRAPHICAL_LIVE_PROVIDER_MANIFEST_FIXTURE_URL,
+    "utf8",
+  ));
+  const validated = validateRemoteGraphicalLiveProviderManifest(manifest);
+  return {
+    text: remoteGraphicalLiveProviderManifestReviewText(validated),
+    manifest: validated,
+    review_only: true,
+    fixture_path: "docs/fixtures/remote-graphical-live-provider-manifest.json",
+    runtime_loaded: false,
+    provider_registry_entry: false,
+    broker_construction: false,
+    activation_performed: false,
+    live_transport_used: false,
+    grant_written: false,
+    session_opened: false,
+    input_dispatched: false,
+    video_attached: false,
+    model_delivery_performed: false,
+  };
 }
 
 function jsonObjectFlag(value, flagName, commandName) {
@@ -1751,6 +1790,7 @@ Usage:
   soma sensorium status [--json]
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical status [--json]
+  soma remote-graphical manifest-review [--json]
   soma remote-graphical session-open-review grant-id --reason text [--by assistant] [--json]
   soma remote-graphical session-open grant-id --reason text [--by user] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]

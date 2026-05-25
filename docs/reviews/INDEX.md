@@ -298,6 +298,8 @@ default.
   - review after documenting provenance CLI filtering for appended fixture session-open events
 - [Remote Graphical Live Broker Activation Checklist](./2026-05-24_remote_graphical_live_broker_activation_checklist.md)
   - review after adding the checklist for future live Sunshine/Moonlight session-open activation
+- [Remote Graphical Live Provider Manifest](./2026-05-24_remote_graphical_live_provider_manifest.md)
+  - review after documenting the declarative manifest for future live Sunshine/Moonlight broker configuration
 
 ## Current Review Triggers
 

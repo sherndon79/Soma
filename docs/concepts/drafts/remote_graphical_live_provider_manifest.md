@@ -1,0 +1,193 @@
+# Remote Graphical Live Provider Manifest
+
+Status: manifest draft, no live Sunshine/Moonlight calls enabled
+
+This draft describes the provider metadata Soma should require before a Sunshine/Moonlight-backed
+remote graphical broker can be configured as a live provider. It is deliberately declarative: a
+manifest may make support visible for review, but it must not construct a broker, open a session,
+pair with Sunshine, start Moonlight, capture frames, dispatch input, record, or deliver visual
+payloads to a model.
+
+The existing `soma.provider.remote_desktop.sunshine` provider registry entry remains only a support
+claim. This draft defines the fuller live-provider metadata required before that claim can be
+connected to a broker.
+
+## Manifest Purpose
+
+A live provider manifest should answer these questions before runtime code is allowed to load a
+broker:
+
+- which provider identity is being configured
+- which target hosts and locality classes are allowed
+- which broker actions are implemented
+- which capability contracts each action can satisfy
+- which authorities remain disabled even if the provider is reachable
+- which runtime opt-ins and operator disclosures are required
+- how bounded status, session-open, cleanup, and provenance behave
+- what rollback path exists for the target node or host
+
+The manifest is not a grant. It does not authorize observation, input, disconnect, recording,
+pairing, credential persistence, durable writes, or model delivery.
+
+## Required Fields
+
+A live remote graphical provider manifest should include at least:
+
+```json
+{
+  "id": "soma.provider.remote_desktop.sunshine",
+  "manifest_version": "soma.remote_graphical.provider_manifest.v1",
+  "provider_contract": "soma.remote_graphical.broker.v1",
+  "runtime": "remote-graphical-session",
+  "implementation": {
+    "broker_kind": "moonlight-client-broker",
+    "transport": "sunshine-moonlight",
+    "construction": "explicit-runtime-injection"
+  },
+  "default_enabled": false,
+  "required_runtime_opt_ins": [
+    "SOMA_REMOTE_GRAPHICAL_ENABLED=1",
+    "SOMA_REMOTE_GRAPHICAL_PROVIDER=soma.provider.remote_desktop.sunshine"
+  ],
+  "target_constraints": {
+    "allowed_hosts": ["soma-agent-desktop.local.sthnet.org"],
+    "locality": ["lan"],
+    "attended_required": true,
+    "operator_rollback": "graphical lab base snapshot or documented host rollback"
+  },
+  "supported_actions": [
+    {
+      "action": "status",
+      "requires_grant": false,
+      "live_transport_allowed": false
+    },
+    {
+      "action": "open_session",
+      "requires_grant": true,
+      "requires_user_actor": true,
+      "requires_review": true,
+      "live_transport_allowed": true,
+      "must_not_enable": ["video", "input", "recording", "model_delivery"]
+    }
+  ],
+  "disabled_authorities": [
+    "pairing",
+    "credential_persistence",
+    "video_observation",
+    "screenshot_capture",
+    "ocr",
+    "pointer_input",
+    "keyboard_input",
+    "clipboard",
+    "file_transfer",
+    "audio",
+    "controller_input",
+    "recording",
+    "model_visual_delivery",
+    "durable_grant_writes"
+  ]
+}
+```
+
+The concrete file format can be JSON or another structured format, but the loaded shape should be
+schema-checked before it can influence runtime provider construction.
+
+## Target Host Constraints
+
+Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely
+because Moonlight can discover them.
+
+Required target metadata:
+
+- stable target host name
+- expected provider id
+- locality class: `local`, `lan`, `vpn`, or `internet`
+- attended or unattended posture
+- expected rollback path
+- whether the target is a disposable graphical lab, operator workstation, or shared system
+- whether Sunshine pairing already exists and whether new pairing is out of scope
+
+For the current lab, the first eligible target is expected to be
+`soma-agent-desktop.local.sthnet.org`. Its ZFS-backed base snapshot is rollback evidence, not
+authority.
+
+## Supported Action Claims
+
+The first live manifest should claim only:
+
+| Action | Required state | Must not imply |
+| --- | --- | --- |
+| `status` | provider configured | grant, session open, pairing, transport activation |
+| `open_session` | active grant, user actor, review, disclosure | video, input, recording, model delivery |
+| `describe_active` | provider configured | frame metadata, screenshots, window titles |
+| `cleanup_for_grant` | Soma-opened session or broker state | provider-wide disconnect unless reviewed |
+
+Video observation, pointer input, keyboard input, disconnect, recording, and model-facing visual
+delivery must remain separate later manifests or manifest sections with their own activation
+reviews.
+
+## Disabled Authorities
+
+The manifest should state disabled authorities negatively so future code cannot treat omission as
+permission. For the first live `open_session` provider, these remain disabled:
+
+- Sunshine pairing and credential persistence
+- Moonlight stream frame delivery to Soma
+- screenshots, thumbnails, OCR, or window/application metadata
+- pointer, keyboard, controller, clipboard, file-transfer, and audio channels
+- recording
+- model-facing visual payload delivery
+- durable grant creation, revocation, or mutation
+- local desktop semantic expansion through AT-SPI, D-Bus, compositor APIs, or browser automation
+
+## Provenance And Disclosure Requirements
+
+The manifest should declare that live session-open provenance is metadata-only and must record
+explicit false flags for content-bearing surfaces. Disclosure should identify:
+
+- provider id
+- target host
+- lifecycle state
+- active authorities
+- inactive authorities
+- attended posture
+- revocation or cleanup path
+- whether live transport was used
+
+Disclosure must not contain frames, screenshots, recognized text, clipboard contents, input events,
+window titles, file names, audio payloads, or transport diagnostics.
+
+## Relationship To Runtime Registry
+
+The current static provider registry makes remote graphical capabilities requestable for review. A
+future live manifest should be a stricter input to broker construction:
+
+```text
+provider registry claim
+  -> live provider manifest
+  -> runtime opt-in
+  -> active grant
+  -> session-open review
+  -> live broker invocation
+```
+
+Every step is necessary. None is sufficient alone.
+
+## Review Triggers
+
+Run a focused review before any change that:
+
+- loads this manifest into runtime broker construction
+- broadens allowed target hosts or locality classes
+- adds pairing or credential persistence
+- adds video, input, recording, disconnect, audio, clipboard, or file-transfer authority
+- changes model-facing visual delivery posture
+- changes durable grant write posture
+
+## Related Documents
+
+- [Remote Graphical Live Broker Activation Checklist](./remote_graphical_live_broker_activation_checklist.md)
+- [Remote Graphical Session Provider](./remote_graphical_session_provider.md)
+- [Remote Graphical Broker Boundary](./remote_graphical_broker_boundary.md)
+- [Remote Graphical Session-Open Activation Policy](./remote_graphical_session_open_activation_policy.md)
+- [Capability Catalog and Providers](./capability_catalog_and_providers.md)

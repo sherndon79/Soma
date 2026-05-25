@@ -343,6 +343,9 @@ Implemented:
 - remote graphical live broker activation checklist documented, consolidating required artifacts,
   authority separation, smoke evidence, rollback posture, and review triggers before any live
   Sunshine/Moonlight session-open path
+- remote graphical live provider manifest draft documented, defining declarative provider identity,
+  runtime opt-ins, target constraints, action claims, disabled authorities, disclosure, and
+  metadata-only provenance without changing runtime registry behavior
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -462,24 +465,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest draft.
+Add remote graphical live session-open provenance constructor draft.
 
 Target:
 
 ```text
-remote graphical live provider manifest draft
-  -> define the provider metadata Soma would require for a Sunshine/Moonlight live broker
-  -> keep manifest declarative and disabled-first
-  -> do not construct a live broker or call transport
+remote graphical live session-open provenance constructor draft
+  -> define the metadata-only event shape for future live open_session success/failure
+  -> distinguish live event type from fixture event type
+  -> keep content and transport diagnostics excluded by contract
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a provider manifest draft or schema note under `docs/concepts/drafts/`
-- name required provider fields, supported actions, target-host constraints, and disabled authorities
-- cross-link the live broker activation checklist
-- keep current runtime provider registry behavior unchanged
+- add a draft provenance constructor note under `docs/concepts/drafts/`
+- name allowed fields, required false flags, and forbidden content-bearing fields
+- cross-link fixture provenance and live broker activation docs
+- keep current fixture event type and route behavior unchanged
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

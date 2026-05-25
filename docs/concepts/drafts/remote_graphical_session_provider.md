@@ -75,6 +75,11 @@ Provider metadata should include:
 The provider should advertise support only. Provider registration must not grant view or input
 authority.
 
+Future live broker configuration requires a stricter declarative manifest. See the
+[Remote Graphical Live Provider Manifest](./remote_graphical_live_provider_manifest.md) draft for
+the required target constraints, supported action claims, disabled authorities, disclosure posture,
+and runtime opt-in fields.
+
 The initial provider registry entry is:
 
 ```text

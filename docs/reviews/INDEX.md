@@ -318,6 +318,8 @@ default.
   - review after documenting text markers and JSON false flags for the CLI-only manifest review
 - [Remote Graphical Manifest Selection Policy](./2026-05-25_remote_graphical_manifest_selection_policy.md)
   - review after documenting why manifest review remains docs-fixture-only before arbitrary inputs
+- [Remote Graphical Manifest Source Guard](./2026-05-25_remote_graphical_manifest_source_guard.md)
+  - review after rejecting unsupported manifest-review source-selection flags locally
 
 ## Current Review Triggers
 

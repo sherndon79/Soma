@@ -374,6 +374,8 @@ Implemented:
 - remote graphical manifest selection policy documented, keeping current manifest review
   docs-fixture-only and defining requirements before any future `--manifest-path`, stdin, URL, or
   runtime-loading input
+- remote graphical manifest review source-selection guard added, rejecting unsupported source flags
+  and positional manifest paths locally before fixture review or service requests
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -493,13 +495,13 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest fixture source tests.
+Add remote graphical live provider manifest source guard smoke notes.
 
 Target:
 
 ```text
-remote graphical live provider manifest fixture source tests
-  -> prove the CLI manifest review rejects unsupported source-selection flags locally
+remote graphical live provider manifest source guard smoke notes
+  -> document example refusal commands for unsupported manifest-review source flags
   -> preserve docs-fixture-only behavior until a separate explicit-input review lands
   -> keep current CLI review outside provider registry, service routes, and broker construction
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
@@ -507,8 +509,8 @@ remote graphical live provider manifest fixture source tests
 
 Expected work:
 
-- add local usage errors for unsupported `--manifest-path`, `--stdin`, or URL/source flags
-- add focused CLI tests proving no request happens and the fixture-only command still passes
+- add operator-facing examples for local source-selection refusals
+- include verification commands for `--manifest-path`, `--stdin`, and positional source inputs
 - keep fixture review disconnected from provider registry and runtime loading
 - do not add an HTTP route for manifest review
 - keep current provider registry behavior unchanged

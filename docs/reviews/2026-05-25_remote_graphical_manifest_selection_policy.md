@@ -29,11 +29,10 @@ input, add an HTTP route, load runtime manifests, change provider registry behav
 broker, call Sunshine/Moonlight, append provenance, write grants, dispatch input, attach video, or
 deliver visual payloads to a model.
 
-## Residual Risk
+## Follow-Up
 
-The CLI does not yet reject unsupported source-selection flags with a tailored error; unknown flags
-are currently ignored by the fixture-only command. A focused follow-up should add local usage errors
-for `--manifest-path`, `--stdin`, URL, or source flags while preserving the fixed fixture behavior.
+The next slice should make this policy executable by rejecting unsupported source-selection flags
+locally while preserving the fixed fixture behavior.
 
 ## Verification
 

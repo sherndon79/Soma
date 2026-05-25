@@ -231,6 +231,7 @@ export async function runCli(
   }
 
   if (command === "remote-graphical" && subcommand === "manifest-review") {
+    assertRemoteGraphicalManifestReviewFixtureOnly(flags, rest);
     const response = await remoteGraphicalLiveProviderManifestReviewFromFixture();
     writeOutput(stdout, response, jsonOutput, response.text);
     return 0;
@@ -781,6 +782,30 @@ async function remoteGraphicalLiveProviderManifestReviewFromFixture() {
     video_attached: false,
     model_delivery_performed: false,
   };
+}
+
+function assertRemoteGraphicalManifestReviewFixtureOnly(flags, rest = []) {
+  if (rest.length > 0) {
+    throw usageError("remote-graphical manifest-review does not accept manifest paths or positional source inputs.");
+  }
+
+  const allowedFlags = new Set(["json"]);
+  const sourceSelectionFlags = new Set([
+    "manifest-path",
+    "manifest-url",
+    "stdin",
+    "source",
+    "source-url",
+    "provider",
+    "url",
+  ]);
+  const unsupported = Object.keys(flags).find((flag) => !allowedFlags.has(flag) || sourceSelectionFlags.has(flag));
+  if (unsupported) {
+    throw usageError(
+      `remote-graphical manifest-review does not accept --${unsupported}; `
+        + "it reads only docs/fixtures/remote-graphical-live-provider-manifest.json.",
+    );
+  }
 }
 
 function jsonObjectFlag(value, flagName, commandName) {

@@ -19,7 +19,7 @@ between review evidence and runtime configuration.
 
 The current CLI review command remains fixture-only.
 
-It must not accept:
+It rejects:
 
 - `--manifest-path`
 - stdin JSON
@@ -31,6 +31,9 @@ It must not accept:
 It must not call the Soma service, read `config/provider-registry.json`, load runtime config,
 construct a broker, open a session, append provenance, write grants, dispatch input, attach video,
 or deliver visual payloads to a model.
+
+The current guard also rejects positional source inputs so an operator cannot pass a local path and
+mistake the result for a reviewed external manifest.
 
 ## Why Fixture-Only
 

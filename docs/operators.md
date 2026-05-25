@@ -568,6 +568,8 @@ The expected text markers and JSON false flags are documented in the
 runbook.
 The command remains docs-fixture-only under the
 [Remote Graphical Manifest Selection Policy](./concepts/drafts/remote_graphical_manifest_selection_policy.md).
+Unsupported source-selection flags such as `--manifest-path`, `--stdin`, `--manifest-url`, `--url`,
+or positional manifest paths fail locally before service requests or fixture review.
 
 Session-open can be reviewed without opening a session:
 

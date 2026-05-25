@@ -27,6 +27,7 @@ They do not require the Soma service to be running.
 The command remains fixture-only by policy; see
 [Remote Graphical Manifest Selection Policy](../concepts/drafts/remote_graphical_manifest_selection_policy.md)
 before adding `--manifest-path`, stdin, URL input, or runtime manifest loading.
+Current CLI behavior rejects those source-selection flags locally.
 
 ## Expected Text Markers
 

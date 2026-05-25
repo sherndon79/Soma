@@ -1519,6 +1519,54 @@ test("runCli remote-graphical manifest-review json includes validated fixture wi
   assert.match(payload.text, /Remote graphical live provider manifest/);
 });
 
+test("runCli remote-graphical manifest-review rejects unsupported source-selection flags locally", async () => {
+  for (const flag of ["--manifest-path", "--stdin", "--manifest-url", "--source", "--url", "--provider"]) {
+    let called = false;
+    await assert.rejects(
+      () => runCli(parseCli([
+        "node",
+        "soma",
+        "remote-graphical",
+        "manifest-review",
+        flag,
+        flag === "--stdin" ? undefined : "ignored-source",
+      ].filter(Boolean)), {
+        stdout: { write: () => {} },
+        request: async () => {
+          called = true;
+          throw new Error("request should not be called");
+        },
+      }),
+      {
+        code: "usage_error",
+        statusCode: 2,
+      },
+    );
+    assert.equal(called, false, `${flag} should fail before service request`);
+  }
+});
+
+test("runCli remote-graphical manifest-review rejects positional manifest paths locally", async () => {
+  let called = false;
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node",
+      "soma",
+      "remote-graphical",
+      "manifest-review",
+      "/tmp/operator-manifest.json",
+    ]), {
+      stdout: { write: () => {} },
+      request: async () => {
+        called = true;
+        throw new Error("request should not be called");
+      },
+    }),
+    /does not accept manifest paths or positional source inputs/,
+  );
+  assert.equal(called, false);
+});
+
 test("runCli remote-graphical session-open-review requests non-activating review", async () => {
   let captured;
   const writes = [];

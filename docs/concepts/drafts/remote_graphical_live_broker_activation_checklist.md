@@ -16,6 +16,8 @@ It only gates the first live `open_session` substrate action.
 Before implementation, the activation branch must include:
 
 - a provider manifest for the live remote graphical broker
+- an explicit runtime-manifest-loader decision showing whether the reviewed manifest remains a
+  fixture or can influence provider selection
 - a runtime configuration document naming the opt-in variables and default-off behavior
 - a bounded broker interface contract for `status`, `open_session`, `describe_active`, and
   `cleanup_for_grant`

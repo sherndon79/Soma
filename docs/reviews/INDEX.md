@@ -322,6 +322,8 @@ default.
   - review after rejecting unsupported manifest-review source-selection flags locally
 - [Remote Graphical Manifest Source Guard Smoke Notes](./2026-05-25_remote_graphical_manifest_source_guard_smoke_notes.md)
   - review after documenting local refusal smoke examples for unsupported manifest-review sources
+- [Remote Graphical Manifest Review Thread Consolidation](./2026-05-25_remote_graphical_manifest_review_thread_consolidation.md)
+  - review after summarizing the manifest review-only sequence and naming runtime loader design as the next boundary
 
 ## Current Review Triggers
 

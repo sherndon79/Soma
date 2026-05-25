@@ -378,6 +378,9 @@ Implemented:
   and positional manifest paths locally before fixture review or service requests
 - remote graphical manifest review source guard smoke notes added, documenting local refusal
   examples for `--manifest-path`, `--stdin`, and positional manifest path inputs
+- remote graphical live provider manifest review thread consolidated, documenting the implemented
+  sequence from draft, validator, fixture, formatter, CLI, smoke, policy, and source guard through
+  the runtime-manifest-loader activation boundary
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -497,22 +500,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest review thread consolidation.
+Add remote graphical runtime manifest loader design.
 
 Target:
 
 ```text
-remote graphical live provider manifest review thread consolidation
-  -> summarize the manifest review sequence from schema through fixture, formatter, CLI, smoke, policy, and source guard
-  -> identify the next true activation boundary before runtime manifest loading
-  -> keep current CLI review outside provider registry, service routes, and broker construction
+remote graphical runtime manifest loader design
+  -> define whether and how a reviewed live provider manifest could influence runtime provider selection
+  -> keep any design default-off and separate from current CLI fixture review
+  -> preserve provider registry, service routes, and broker construction behavior until implementation review
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a short consolidation note or update the manifest draft with the current implemented thread state
-- list remaining gates before any runtime manifest loader or live broker construction
+- document loader inputs, default-off posture, source roots, validation order, and refusal behavior
+- distinguish manifest review, runtime manifest loading, and live broker construction
 - keep fixture review disconnected from provider registry and runtime loading
 - do not add an HTTP route for manifest review
 - keep current provider registry behavior unchanged

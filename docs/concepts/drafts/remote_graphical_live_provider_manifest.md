@@ -127,6 +127,48 @@ Operator smoke expectations for this command live in
 The source-selection boundary for this command is defined by
 [Remote Graphical Manifest Selection Policy](./remote_graphical_manifest_selection_policy.md).
 
+## Implemented Review Thread
+
+The current manifest thread is review-only and ends before runtime loading:
+
+```text
+manifest draft
+  -> pure validator
+  -> repository fixture
+  -> pure review formatter
+  -> CLI fixture review
+  -> smoke expectations
+  -> fixture source-selection policy
+  -> local source-selection guard
+```
+
+Implemented pieces:
+
+- `validateRemoteGraphicalLiveProviderManifest` validates the future live manifest shape without
+  loading it at runtime.
+- `docs/fixtures/remote-graphical-live-provider-manifest.json` is the only reviewed fixture source.
+- `remoteGraphicalLiveProviderManifestReviewText` renders operator-facing text after validation.
+- `remote-graphical manifest-review` reads only the repository fixture and supports text or JSON
+  output.
+- the smoke runbook records expected non-activation markers and source-selection refusals.
+- the selection policy keeps external manifest paths, stdin, URLs, provider ids, environment-selected
+  paths, and runtime manifest directories out of scope.
+- the CLI guard rejects source-selection flags and positional manifest paths locally.
+
+Current non-activation invariants:
+
+- no HTTP manifest-review route
+- no runtime manifest loader
+- no provider registry mutation or manifest-backed provider selection
+- no broker construction
+- no Sunshine/Moonlight calls
+- no live transport, pairing, video, input, recording, grant write, provenance append, or model
+  delivery
+
+The next true activation boundary is not another review formatter. It is a runtime-manifest-loader
+decision: whether any manifest may influence provider selection or broker construction. That
+decision must be reviewed separately from this fixture-review thread.
+
 ## Target Host Constraints
 
 Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely

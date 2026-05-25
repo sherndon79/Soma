@@ -95,6 +95,23 @@ schema-checked before it can influence runtime provider construction.
 The first pure schema scaffold is `validateRemoteGraphicalLiveProviderManifest`. It validates the
 documented shape without loading manifests into runtime broker construction.
 
+## Review Fixture
+
+A non-runtime review fixture lives at:
+
+```text
+docs/fixtures/remote-graphical-live-provider-manifest.json
+```
+
+The fixture is review evidence only. It is not in `config/provider-registry.json`, is not loaded by
+server startup, and does not construct a live broker.
+
+Operators can validate the fixture with:
+
+```bash
+node --test test/remoteGraphicalLiveProviderManifest.test.js
+```
+
 ## Target Host Constraints
 
 Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely

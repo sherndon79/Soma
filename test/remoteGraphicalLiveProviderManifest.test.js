@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   validateRemoteGraphicalLiveProviderManifest,
 } from "../src/remoteGraphicalLiveProviderManifest.js";
+
+test("remote graphical live provider fixture validates as review-only evidence", async () => {
+  const fixture = JSON.parse(await readFile(
+    new URL("../docs/fixtures/remote-graphical-live-provider-manifest.json", import.meta.url),
+    "utf8",
+  ));
+  const validated = validateRemoteGraphicalLiveProviderManifest(fixture);
+
+  assert.deepEqual(validated, fixture);
+  assert.equal(validated.review_only, true);
+  assert.equal(validated.runtime_loaded, false);
+  assert.equal(validated.provider_registry_entry, false);
+  assert.equal(validated.broker_construction, false);
+});
 
 test("validateRemoteGraphicalLiveProviderManifest accepts the disabled-first manifest shape", () => {
   const manifest = makeLiveProviderManifest();

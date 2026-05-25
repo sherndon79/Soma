@@ -550,6 +550,10 @@ call a live broker, the
 [Remote Graphical Live Broker Activation Checklist](./concepts/drafts/remote_graphical_live_broker_activation_checklist.md)
 must be satisfied and reviewed.
 
+The live provider manifest fixture at
+`docs/fixtures/remote-graphical-live-provider-manifest.json` can be reviewed and validated without
+activation. It is not part of the runtime provider registry and is not loaded by broker startup.
+
 Session-open can be reviewed without opening a session:
 
 ```bash

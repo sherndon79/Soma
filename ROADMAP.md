@@ -358,6 +358,9 @@ Implemented:
 - remote graphical live provider manifest schema scaffold added as a pure unused validator, with
   tests proving fixed provider identity, disabled defaults, explicit target constraints, action
   separation, runtime opt-in requirements, and disabled authority coverage
+- remote graphical live provider manifest fixture added under `docs/fixtures`, validating through
+  the pure manifest validator while remaining outside provider registry, server startup, and broker
+  construction
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -477,23 +480,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live provider manifest fixture.
+Add remote graphical live provider manifest review surface.
 
 Target:
 
 ```text
-remote graphical live provider manifest fixture
-  -> add a non-runtime fixture manifest that satisfies the pure validator
-  -> keep fixture outside provider registry and broker construction
-  -> document how operators can review the fixture without activation
+remote graphical live provider manifest review surface
+  -> define or scaffold a read-only formatting surface for manifest review
+  -> keep fixture and validator outside runtime broker construction
+  -> present disabled authorities and activation blockers clearly
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a fixture under a non-runtime docs or fixtures path
-- add a focused test proving the fixture validates
-- document that the fixture is review evidence only
+- add a pure review formatter and focused tests, or document why it should wait
+- include target constraints, required opt-ins, supported actions, and disabled authorities
+- keep fixture review disconnected from provider registry and runtime loading
 - keep current provider registry behavior unchanged
 - keep current fixture event type and route behavior unchanged
 - do not append live provenance from routes

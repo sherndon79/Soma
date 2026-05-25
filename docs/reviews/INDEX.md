@@ -308,6 +308,8 @@ default.
   - review after proving current session-open routes do not emit live provenance
 - [Remote Graphical Live Provider Manifest Schema](./2026-05-24_remote_graphical_live_provider_manifest_schema.md)
   - review after adding the pure validator for future live provider manifests
+- [Remote Graphical Live Provider Manifest Fixture](./2026-05-24_remote_graphical_live_provider_manifest_fixture.md)
+  - review after adding the non-runtime validating manifest fixture
 
 ## Current Review Triggers
 

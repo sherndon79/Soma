@@ -1609,6 +1609,61 @@ test("runCli remote-graphical session-open reports provider-not-configured refus
   assert.match(writes.join(""), /live transport used: no/);
 });
 
+test("runCli remote-graphical session-open text omits provenance preview fields", async () => {
+  const writes = [];
+  const response = makeRemoteGraphicalSessionOpenFixtureResponse();
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "session-open",
+    "grant-remote-video",
+    "--reason",
+    "Need to open a reviewed broker session.",
+    "--by",
+    "user",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => response,
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.match(output, /Remote graphical session-open refused/);
+  assert.match(output, /session opened: yes/);
+  assert.match(output, /broker called: yes/);
+  assert.doesNotMatch(output, /provenance_preview/);
+  assert.doesNotMatch(output, /provenance appended/);
+  assert.doesNotMatch(output, /remote_graphical\.session_open\.fixture/);
+});
+
+test("runCli remote-graphical session-open json includes provenance preview fields", async () => {
+  const writes = [];
+  const response = makeRemoteGraphicalSessionOpenFixtureResponse();
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "session-open",
+    "grant-remote-video",
+    "--reason",
+    "Need to open a reviewed broker session.",
+    "--by",
+    "user",
+    "--json",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => response,
+  });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(writes.join(""));
+  assert.equal(parsed.provenance_appended, true);
+  assert.equal(parsed.provenance_preview.event_type, "remote_graphical.session_open.fixture");
+  assert.equal(parsed.provenance_preview.outcome, "success");
+  assert.equal(parsed.provenance_preview.session_id, "fixture-session-1");
+});
+
 test("runCli remote-graphical session-open validates grant id and reason", async () => {
   let called = false;
   await assert.rejects(
@@ -2592,6 +2647,74 @@ test("runCli desktop focus sends include-text to server refusal path", async () 
   assert.equal(captured.requestPath, "/desktop/inspect/focus");
   assert.deepEqual(captured.body, { include_text: true });
 });
+
+function makeRemoteGraphicalSessionOpenFixtureResponse() {
+  return {
+    type: "remote_graphical_session_open_result",
+    source_grant_id: "grant-remote-video",
+    capability: "perception.remote_desktop.video.subscribe",
+    provider: "soma.provider.remote_desktop.sunshine",
+    target_host: "soma-agent-desktop.local.sthnet.org",
+    requested_by: "assistant",
+    broker_action: "open_session",
+    refused: false,
+    status: "opened",
+    state: "open",
+    session_id: "fixture-session-1",
+    fixture_only: true,
+    activation_performed: true,
+    broker_called: true,
+    session_opened: true,
+    durable: false,
+    grant_written: false,
+    pairing_performed: false,
+    video_attached: false,
+    input_dispatched: false,
+    recording_started: false,
+    provider_session_stopped: false,
+    model_delivery: false,
+    live_transport_used: false,
+    provenance_appended: true,
+    provenance_preview: {
+      event_type: "remote_graphical.session_open.fixture",
+      outcome: "success",
+      source_grant_id: "grant-remote-video",
+      capability: "perception.remote_desktop.video.subscribe",
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      requested_by: "assistant",
+      broker_action: "open_session",
+      status: "opened",
+      state: "open",
+      session_id: "fixture-session-1",
+      error: "",
+      cause_code: "",
+      fixture_only: true,
+      activation_performed: true,
+      broker_called: true,
+      session_opened: true,
+      durable: false,
+      grant_written: false,
+      pairing_performed: false,
+      video_attached: false,
+      input_dispatched: false,
+      recording_started: false,
+      provider_session_stopped: false,
+      model_delivery: false,
+      live_transport_used: false,
+      payload_bytes_included: false,
+      frames_included: false,
+      screenshots_included: false,
+      recognized_text_included: false,
+      clipboard_included: false,
+      input_events_included: false,
+      window_metadata_included: false,
+      file_metadata_included: false,
+      audio_payload_included: false,
+      transport_diagnostics_included: false,
+    },
+  };
+}
 
 async function createJsonServer(handler) {
   const server = http.createServer(handler);

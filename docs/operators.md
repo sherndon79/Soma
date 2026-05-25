@@ -579,6 +579,10 @@ Fixture success and failure responses include a metadata-only `provenance_previe
 that exact preview to the runtime provenance log for fixture success/failure only; refusal paths do
 not append.
 
+The default CLI text summary stays concise and does not print the full provenance preview. Use
+`--json` on `remote-graphical session-open` to inspect `provenance_appended` and
+`provenance_preview`.
+
 After a proposal is approved, a grant candidate can be reviewed without writing it:
 
 ```bash

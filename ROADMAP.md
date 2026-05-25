@@ -336,6 +336,8 @@ Implemented:
 - remote graphical session-open fixture provenance append added, appending exactly the
   `provenance_preview` for fixture success/failure, preserving no-append refusal paths, and
   returning bounded append failure without a second broker call
+- remote graphical session-open CLI provenance visibility covered, preserving concise default text
+  while proving `--json` carries `provenance_appended` and `provenance_preview`
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -455,24 +457,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical session-open CLI provenance visibility.
+Add remote graphical session-open provenance query examples.
 
 Target:
 
 ```text
-remote graphical session-open CLI provenance visibility
-  -> keep existing text summary concise
-  -> expose provenance_appended and provenance_preview only through JSON output
-  -> add CLI test proving text output remains stable and JSON carries the preview
+remote graphical session-open provenance query examples
+  -> document provenance list filtering for remote_graphical.session_open.fixture
+  -> show JSON-first operator inspection without exposing payload content
+  -> keep route behavior unchanged
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- update CLI JSON fixtures/tests around session-open success/failure preview fields
-- keep human text focused on status/session/open flags
-- avoid printing raw provenance preview in default text output
-- document operator visibility in `docs/operators.md`
+- add operator examples for `soma provenance list --event-type remote_graphical.session_open.fixture --json`
+- document expected false flags and forbidden content posture
+- add no code behavior unless a docs link/index update requires it
+- keep CLI session-open summary unchanged
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

@@ -292,6 +292,8 @@ default.
   - review after documenting prerequisites for fixture session-open provenance append
 - [Remote Graphical Session-Open Provenance Append Fixture](./2026-05-24_remote_graphical_session_open_provenance_append_fixture.md)
   - review after appending fixture session-open provenance previews for success and failure
+- [Remote Graphical Session-Open CLI Provenance Visibility](./2026-05-24_remote_graphical_session_open_cli_provenance_visibility.md)
+  - review after covering text-vs-json CLI visibility for fixture session-open provenance
 
 ## Current Review Triggers
 

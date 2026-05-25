@@ -306,6 +306,8 @@ default.
   - review after adding the pure unused constructor for future live session-open provenance
 - [Remote Graphical Live Session-Open Non-Append Guards](./2026-05-24_remote_graphical_live_session_open_non_append_guards.md)
   - review after proving current session-open routes do not emit live provenance
+- [Remote Graphical Live Provider Manifest Schema](./2026-05-24_remote_graphical_live_provider_manifest_schema.md)
+  - review after adding the pure validator for future live provider manifests
 
 ## Current Review Triggers
 

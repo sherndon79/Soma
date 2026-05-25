@@ -92,6 +92,9 @@ A live remote graphical provider manifest should include at least:
 The concrete file format can be JSON or another structured format, but the loaded shape should be
 schema-checked before it can influence runtime provider construction.
 
+The first pure schema scaffold is `validateRemoteGraphicalLiveProviderManifest`. It validates the
+documented shape without loading manifests into runtime broker construction.
+
 ## Target Host Constraints
 
 Target constraints must be explicit. A manifest should not authorize arbitrary LAN hosts merely

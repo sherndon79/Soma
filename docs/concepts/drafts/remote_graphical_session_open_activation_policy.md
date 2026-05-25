@@ -209,6 +209,7 @@ Run a focused review before merging any change that:
 
 ## Related Documents
 
+- [Remote Graphical Live Broker Activation Checklist](./remote_graphical_live_broker_activation_checklist.md)
 - [Remote Graphical Broker Boundary](./remote_graphical_broker_boundary.md)
 - [Remote Graphical Session Provider](./remote_graphical_session_provider.md)
 - [Remote Graphical Grant Activation Policy](./remote_graphical_grant_activation_policy.md)

@@ -217,6 +217,7 @@ recording out of scope until their own boundaries are documented and tested.
 
 ## Related Documents
 
+- [Remote Graphical Live Broker Activation Checklist](./remote_graphical_live_broker_activation_checklist.md)
 - [Remote Graphical Session Provider](./remote_graphical_session_provider.md)
 - [Remote Graphical Grant Activation Policy](./remote_graphical_grant_activation_policy.md)
 - [Remote Graphical Session-Open Activation Policy](./remote_graphical_session_open_activation_policy.md)

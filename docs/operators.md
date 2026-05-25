@@ -545,6 +545,11 @@ Setting `SOMA_REMOTE_GRAPHICAL_ENABLED=1` makes the runtime opt-in visible as `r
 the default broker still reports `enabled: no` and `configured: no` until a reviewed provider broker
 is explicitly configured.
 
+Live Sunshine/Moonlight broker activation remains future work. Before the session-open route can
+call a live broker, the
+[Remote Graphical Live Broker Activation Checklist](./concepts/drafts/remote_graphical_live_broker_activation_checklist.md)
+must be satisfied and reviewed.
+
 Session-open can be reviewed without opening a session:
 
 ```bash

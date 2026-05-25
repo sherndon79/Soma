@@ -340,6 +340,9 @@ Implemented:
   while proving `--json` carries `provenance_appended` and `provenance_preview`
 - remote graphical session-open provenance query examples documented, showing JSON-first
   `remote_graphical.session_open.fixture` filtering and the expected false content/transport flags
+- remote graphical live broker activation checklist documented, consolidating required artifacts,
+  authority separation, smoke evidence, rollback posture, and review triggers before any live
+  Sunshine/Moonlight session-open path
 - Sensorium integration scaffold added for jetsorano with disabled-first capability catalog entries,
   provider registry entry, request validation, overreach tests, provenance/disclosure shapes, Rust
   sensor-broker lifecycle, Node helper manager, `SensoriumSubscriber`, and an injected HTTP
@@ -459,24 +462,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical live broker activation checklist.
+Add remote graphical live provider manifest draft.
 
 Target:
 
 ```text
-remote graphical live broker activation checklist
-  -> define reviewed prerequisites before any Sunshine/Moonlight live session-open path
-  -> separate view, input, recording, disconnect, and model delivery authorities
-  -> identify required smoke evidence and rollback posture
+remote graphical live provider manifest draft
+  -> define the provider metadata Soma would require for a Sunshine/Moonlight live broker
+  -> keep manifest declarative and disabled-first
+  -> do not construct a live broker or call transport
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a draft activation checklist under `docs/concepts/drafts/`
-- cross-link operator docs to the checklist without implying live support
-- keep current fixture broker as the only invokable broker path
-- avoid adding live Sunshine/Moonlight calls in tests or runtime
+- add a provider manifest draft or schema note under `docs/concepts/drafts/`
+- name required provider fields, supported actions, target-host constraints, and disabled authorities
+- cross-link the live broker activation checklist
+- keep current runtime provider registry behavior unchanged
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

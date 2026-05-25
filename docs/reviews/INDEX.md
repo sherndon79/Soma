@@ -296,6 +296,8 @@ default.
   - review after covering text-vs-json CLI visibility for fixture session-open provenance
 - [Remote Graphical Session-Open Provenance Query Examples](./2026-05-24_remote_graphical_session_open_provenance_query_examples.md)
   - review after documenting provenance CLI filtering for appended fixture session-open events
+- [Remote Graphical Live Broker Activation Checklist](./2026-05-24_remote_graphical_live_broker_activation_checklist.md)
+  - review after adding the checklist for future live Sunshine/Moonlight session-open activation
 
 ## Current Review Triggers
 

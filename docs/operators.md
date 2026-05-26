@@ -541,9 +541,26 @@ The default status reports `provider_not_configured`. It does not pair with Suns
 Moonlight, open a session, capture frames, dispatch input, record, create grants, or attach video to
 model context.
 
-Setting `SOMA_REMOTE_GRAPHICAL_ENABLED=1` makes the runtime opt-in visible as `requested: yes`, but
-the default broker still reports `enabled: no` and `configured: no` until a reviewed provider broker
-is explicitly configured.
+Setting only `SOMA_REMOTE_GRAPHICAL_ENABLED=1` makes the runtime opt-in visible as `requested: yes`,
+but the default broker still reports `enabled: no` and `configured: no` until a repository-owned
+runtime manifest is selected.
+
+The current runtime manifest root is:
+
+```text
+config/remote-graphical-providers/
+```
+
+When both of the following are set, Soma may load the repository-owned Sunshine manifest and report
+`provider_manifest_configured` through status:
+
+```bash
+SOMA_REMOTE_GRAPHICAL_ENABLED=1
+SOMA_REMOTE_GRAPHICAL_PROVIDER=soma.provider.remote_desktop.sunshine
+```
+
+That status remains metadata-only: `enabled: no`, no active sessions, no live transport, no video,
+no input, no recording, no grant write, and no model-facing visual delivery.
 
 Live Sunshine/Moonlight broker activation remains future work. Before the session-open route can
 call a live broker, the

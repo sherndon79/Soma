@@ -1,0 +1,74 @@
+{
+  "id": "soma.provider.remote_desktop.sunshine",
+  "manifest_version": "soma.remote_graphical.provider_manifest.v1",
+  "provider_contract": "soma.remote_graphical.broker.v1",
+  "runtime": "remote-graphical-session",
+  "implementation": {
+    "broker_kind": "moonlight-client-broker",
+    "transport": "sunshine-moonlight",
+    "construction": "explicit-runtime-injection"
+  },
+  "default_enabled": false,
+  "required_runtime_opt_ins": [
+    "SOMA_REMOTE_GRAPHICAL_ENABLED=1",
+    "SOMA_REMOTE_GRAPHICAL_PROVIDER=soma.provider.remote_desktop.sunshine"
+  ],
+  "target_constraints": {
+    "allowed_hosts": [
+      "soma-agent-desktop.local.sthnet.org"
+    ],
+    "locality": [
+      "lan"
+    ],
+    "attended_required": true,
+    "operator_rollback": "graphical lab base snapshot or documented host rollback"
+  },
+  "supported_actions": [
+    {
+      "action": "status",
+      "requires_grant": false,
+      "live_transport_allowed": false
+    },
+    {
+      "action": "open_session",
+      "requires_grant": true,
+      "requires_user_actor": true,
+      "requires_review": true,
+      "live_transport_allowed": true,
+      "must_not_enable": [
+        "video",
+        "input",
+        "recording",
+        "model_delivery"
+      ]
+    },
+    {
+      "action": "describe_active",
+      "live_transport_allowed": false
+    },
+    {
+      "action": "cleanup_for_grant",
+      "requires_grant": true
+    }
+  ],
+  "disabled_authorities": [
+    "pairing",
+    "credential_persistence",
+    "video_observation",
+    "screenshot_capture",
+    "ocr",
+    "pointer_input",
+    "keyboard_input",
+    "clipboard",
+    "file_transfer",
+    "audio",
+    "controller_input",
+    "recording",
+    "model_visual_delivery",
+    "durable_grant_writes"
+  ],
+  "review_only": false,
+  "runtime_loaded": true,
+  "provider_registry_entry": true,
+  "broker_construction": false
+}

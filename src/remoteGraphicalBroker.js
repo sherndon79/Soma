@@ -12,6 +12,14 @@ export class RemoteGraphicalBroker {
   }
 
   status() {
+    if (this.runtimePosture.configured) {
+      return configuredProviderStatus({
+        family: this.family,
+        provider: this.provider || this.runtimePosture.provider,
+        targetHost: this.targetHost || this.runtimePosture.target_host,
+        runtimePosture: this.runtimePosture,
+      });
+    }
     return noProviderStatus({
       family: this.family,
       provider: this.provider,
@@ -48,6 +56,12 @@ export function createRemoteGraphicalBrokerStatus(value = {}) {
     target_host: stringValue(value.target_host ?? value.targetHost),
     locality: stringValue(value.locality),
     attended: value.attended === undefined ? null : Boolean(value.attended),
+    manifest_loaded: Boolean(value.manifest_loaded ?? value.runtimePosture?.manifest_loaded),
+    manifest_status: stringValue(value.manifest_status ?? value.runtimePosture?.manifest_status),
+    manifest_source_kind: stringValue(
+      value.manifest_source_kind ?? value.runtimePosture?.manifest_source_kind,
+    ),
+    manifest_source: stringValue(value.manifest_source ?? value.runtimePosture?.manifest_source),
     active_count: nonNegativeInteger(value.active_count),
     sessions: Array.isArray(value.sessions)
       ? value.sessions.map(publicRemoteGraphicalSession)
@@ -85,6 +99,30 @@ function noProviderStatus({ family, provider, targetHost, runtimePosture: rawRun
     active_count: 0,
     sessions: [],
     summary,
+  });
+}
+
+function configuredProviderStatus({ family, provider, targetHost, runtimePosture: rawRuntimePosture } = {}) {
+  const runtimePosture = normalizeRuntimePosture(rawRuntimePosture);
+  return createRemoteGraphicalBrokerStatus({
+    family,
+    runtimePosture,
+    configured: true,
+    enabled: false,
+    status: "provider_manifest_configured",
+    state: "configured_inactive",
+    provider,
+    target_host: targetHost,
+    locality: runtimePosture.locality,
+    attended: runtimePosture.attended,
+    manifest_loaded: runtimePosture.manifest_loaded,
+    manifest_status: runtimePosture.manifest_status,
+    manifest_source_kind: runtimePosture.manifest_source_kind,
+    manifest_source: runtimePosture.manifest_source,
+    active_count: 0,
+    sessions: [],
+    summary: runtimePosture.summary
+      || "Remote graphical provider manifest is configured; live broker activation remains disabled.",
   });
 }
 
@@ -128,5 +166,15 @@ function normalizeRuntimePosture(value = {}) {
   return {
     requested: Boolean(value.requested),
     enabled: Boolean(value.enabled),
+    configured: Boolean(value.configured),
+    provider: stringValue(value.provider),
+    target_host: stringValue(value.target_host ?? value.targetHost),
+    locality: stringValue(value.locality),
+    attended: value.attended === undefined ? null : Boolean(value.attended),
+    manifest_loaded: Boolean(value.manifest_loaded),
+    manifest_status: stringValue(value.manifest_status),
+    manifest_source_kind: stringValue(value.manifest_source_kind),
+    manifest_source: stringValue(value.manifest_source),
+    summary: stringValue(value.summary),
   };
 }

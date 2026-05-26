@@ -49,6 +49,45 @@ test("RemoteGraphicalBroker reports requested opt-in while remaining unconfigure
   assert.match(status.summary, /opt-in requested/);
 });
 
+test("RemoteGraphicalBroker reports configured manifest while keeping live activation disabled", () => {
+  const broker = new RemoteGraphicalBroker({
+    runtimePosture: {
+      requested: true,
+      enabled: false,
+      configured: true,
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      locality: "lan",
+      attended: true,
+      manifest_loaded: true,
+      manifest_status: "provider_manifest_configured",
+      manifest_source_kind: "repository_runtime_config",
+      manifest_source: "config/remote-graphical-providers/soma.provider.remote_desktop.sunshine.json",
+    },
+  });
+  const status = broker.describeActive();
+
+  assert.equal(status.requested, true);
+  assert.equal(status.enabled, false);
+  assert.equal(status.configured, true);
+  assert.equal(status.status, "provider_manifest_configured");
+  assert.equal(status.state, "configured_inactive");
+  assert.equal(status.provider, "soma.provider.remote_desktop.sunshine");
+  assert.equal(status.target_host, "soma-agent-desktop.local.sthnet.org");
+  assert.equal(status.locality, "lan");
+  assert.equal(status.attended, true);
+  assert.equal(status.manifest_loaded, true);
+  assert.equal(status.manifest_status, "provider_manifest_configured");
+  assert.equal(status.manifest_source_kind, "repository_runtime_config");
+  assert.deepEqual(status.sessions, []);
+  assert.equal(status.activation_performed, false);
+  assert.equal(status.session_opened, false);
+  assert.equal(status.video_attached, false);
+  assert.equal(status.input_dispatched, false);
+  assert.equal(status.model_delivery, false);
+  assert.equal(status.live_transport_used, false);
+});
+
 test("createRemoteGraphicalBrokerStatus normalizes injected session disclosure", () => {
   const status = createRemoteGraphicalBrokerStatus({
     configured: true,

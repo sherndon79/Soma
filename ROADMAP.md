@@ -488,6 +488,10 @@ Implemented:
   separate capability/grant, participant-visible preview, no default retention, byte-free
   provenance, and metadata-only Sensorium subscriptions remain the default posture
 - documented implementation guide and component review scope
+- added a default-off remote graphical runtime manifest loader scaffold: repository-owned
+  `config/remote-graphical-providers/` manifests are read only after explicit opt-in/provider
+  selection, validated before status influence, and surfaced as configured metadata without live
+  broker activation, session-open, grant writes, provenance append, video, input, or model delivery
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -500,30 +504,29 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement a default-off remote graphical runtime manifest loader scaffold.
+Implement the next remote graphical live broker activation prerequisite without crossing into live
+Sunshine/Moonlight transport.
 
 Target:
 
 ```text
-remote graphical runtime manifest loader scaffold
-  -> read only a future repository-owned manifest root under explicit runtime opt-in
-  -> validate manifests before they can influence configured-provider status
-  -> preserve CLI fixture review as review-only evidence
-  -> preserve session-open refusal and live broker non-activation
-  -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
+remote graphical live broker readiness scaffold
+  -> keep the repository manifest loader metadata-only
+  -> define the injected live broker interface and readiness checks
+  -> preserve session-open refusal and no live transport calls
+  -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add `config/remote-graphical-providers/` only when implementing the reviewed loader scaffold
-- validate loader inputs, default-off posture, source roots, validation order, and refusal behavior
-- distinguish manifest review, runtime manifest loading, and live broker construction
-- keep fixture review disconnected from provider registry and runtime loading
-- do not add an HTTP route for manifest review
+- document and test the live broker interface shape without implementing a Sunshine/Moonlight call
+- distinguish configured manifest status from live broker readiness
+- preserve fixture review as review-only evidence
+- preserve current session-open refusal behavior
 - keep current provider registry behavior unchanged
 - keep current fixture event type and route behavior unchanged
 - do not append live provenance from routes
-- avoid introducing live broker construction or runtime opt-ins
+- avoid introducing live transport, pairing, video observation, input dispatch, or recording
 - keep durable grant writes and model visual delivery out of scope
 
 Constraints:

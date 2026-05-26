@@ -1,6 +1,6 @@
 # Remote Graphical Runtime Manifest Loader Decision
 
-Status: design decision, no runtime loader implemented
+Status: implemented as a default-off metadata-only runtime loader scaffold
 
 This document records the loader decision required by the remote graphical live broker activation
 checklist. It decides whether reviewed live provider manifests may influence provider selection or
@@ -21,8 +21,8 @@ The first eligible runtime source is:
 config/remote-graphical-providers/
 ```
 
-That directory does not exist yet. Creating it is a separate implementation slice. A manifest in
-that directory is still configuration evidence, not permission.
+That directory now exists as a repository-owned runtime configuration root. A manifest in that
+directory is still configuration evidence, not permission.
 
 ## Rationale
 
@@ -45,7 +45,7 @@ inputs.
 
 ## Loader Rules
 
-If implemented later, the static loader must:
+The static loader must:
 
 - remain disabled unless `SOMA_REMOTE_GRAPHICAL_ENABLED=1`
 - require an explicit provider id match with `SOMA_REMOTE_GRAPHICAL_PROVIDER`
@@ -90,6 +90,16 @@ This decision does not activate live remote graphical transport. The first loade
 must stop at provider eligibility and configured-broker selection. It may make status report a
 validated provider manifest as configured, but it must not make `open_session` call Sunshine or
 Moonlight until the live broker activation checklist is separately satisfied.
+
+## Implemented Scaffold Boundary
+
+The first loader scaffold reads only `config/remote-graphical-providers/` after explicit runtime
+opt-in and provider selection. A valid manifest may make `remote-graphical status` report
+`provider_manifest_configured` with repository source metadata.
+
+The scaffold does not construct a live Sunshine/Moonlight broker. It does not pair, start
+Moonlight, open sessions, append provenance, write grants, observe video, dispatch input, record,
+access clipboard/files/audio, or deliver visual payloads to a model.
 
 ## Required Tests For Loader Implementation
 

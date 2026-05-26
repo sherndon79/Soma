@@ -324,6 +324,8 @@ default.
   - review after documenting local refusal smoke examples for unsupported manifest-review sources
 - [Remote Graphical Manifest Review Thread Consolidation](./2026-05-25_remote_graphical_manifest_review_thread_consolidation.md)
   - review after summarizing the manifest review-only sequence and naming runtime loader design as the next boundary
+- [Remote Graphical Runtime Manifest Loader Scaffold](./2026-05-26_remote_graphical_runtime_manifest_loader_scaffold.md)
+  - review after adding the default-off repository-owned runtime manifest loader scaffold
 
 ## Current Review Triggers
 

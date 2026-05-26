@@ -500,21 +500,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add remote graphical runtime manifest loader design.
+Implement a default-off remote graphical runtime manifest loader scaffold.
 
 Target:
 
 ```text
-remote graphical runtime manifest loader design
-  -> define whether and how a reviewed live provider manifest could influence runtime provider selection
-  -> keep any design default-off and separate from current CLI fixture review
-  -> preserve provider registry, service routes, and broker construction behavior until implementation review
+remote graphical runtime manifest loader scaffold
+  -> read only a future repository-owned manifest root under explicit runtime opt-in
+  -> validate manifests before they can influence configured-provider status
+  -> preserve CLI fixture review as review-only evidence
+  -> preserve session-open refusal and live broker non-activation
   -> keep durable writes, live transport, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- document loader inputs, default-off posture, source roots, validation order, and refusal behavior
+- add `config/remote-graphical-providers/` only when implementing the reviewed loader scaffold
+- validate loader inputs, default-off posture, source roots, validation order, and refusal behavior
 - distinguish manifest review, runtime manifest loading, and live broker construction
 - keep fixture review disconnected from provider registry and runtime loading
 - do not add an HTTP route for manifest review

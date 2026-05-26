@@ -92,6 +92,11 @@ Runtime loading would answer:
 Runtime loading must not be introduced by extending the review command. It needs a separate
 activation design, review trigger, tests, and operator decision.
 
+That decision is now recorded in
+[Remote Graphical Runtime Manifest Loader Decision](./remote_graphical_runtime_manifest_loader_decision.md):
+no dynamic or operator-supplied runtime manifest loading. The first eligible loader is a future
+default-off, repository-owned manifest root under `config/remote-graphical-providers/`.
+
 ## Review Triggers
 
 Run a focused review before any change that:

@@ -16,8 +16,9 @@ It only gates the first live `open_session` substrate action.
 Before implementation, the activation branch must include:
 
 - a provider manifest for the live remote graphical broker
-- an explicit runtime-manifest-loader decision showing whether the reviewed manifest remains a
-  fixture or can influence provider selection
+- an explicit runtime-manifest-loader decision showing that dynamic/operator-supplied manifests
+  remain disallowed and only a future default-off repository-owned manifest root may influence
+  provider selection
 - a runtime configuration document naming the opt-in variables and default-off behavior
 - a bounded broker interface contract for `status`, `open_session`, `describe_active`, and
   `cleanup_for_grant`
@@ -59,9 +60,11 @@ All checks must be true before live `open_session` can be reachable:
 
 2. **Explicit live broker configuration**
    - The no-op broker remains the default.
-   - The live broker is injected only when the runtime opt-in and provider configuration are both
-     present.
+   - The live broker is injected only when the runtime opt-in, provider id, and validated
+     repository-owned runtime manifest are present.
    - Tests prove fixture brokers and live brokers cannot be confused.
+   - Tests prove the docs fixture, external paths, stdin, URLs, and environment-selected manifest
+     directories cannot influence broker construction.
 
 3. **Grant and actor gates**
    - Session-open requires an active remote graphical runtime grant.
@@ -139,6 +142,7 @@ Run a focused review before any change that:
 
 - [Remote Graphical Live Session-Open Provenance](./remote_graphical_live_session_open_provenance.md)
 - [Remote Graphical Live Provider Manifest](./remote_graphical_live_provider_manifest.md)
+- [Remote Graphical Runtime Manifest Loader Decision](./remote_graphical_runtime_manifest_loader_decision.md)
 - [Remote Graphical Session-Open Activation Policy](./remote_graphical_session_open_activation_policy.md)
 - [Remote Graphical Broker Boundary](./remote_graphical_broker_boundary.md)
 - [Remote Graphical Session Provider](./remote_graphical_session_provider.md)

@@ -167,7 +167,11 @@ Current non-activation invariants:
 
 The next true activation boundary is not another review formatter. It is a runtime-manifest-loader
 decision: whether any manifest may influence provider selection or broker construction. That
-decision must be reviewed separately from this fixture-review thread.
+decision is recorded in
+[Remote Graphical Runtime Manifest Loader Decision](./remote_graphical_runtime_manifest_loader_decision.md).
+The decision keeps dynamic and operator-supplied runtime manifest loading out of scope. The first
+eligible loader is a future default-off, repository-owned manifest root under
+`config/remote-graphical-providers/`.
 
 ## Target Host Constraints
 
@@ -249,6 +253,10 @@ provider registry claim
 ```
 
 Every step is necessary. None is sufficient alone.
+
+The runtime loader decision narrows the second step: a live provider manifest may influence runtime
+only when loaded from the future repository-owned manifest root under explicit opt-in. The review
+fixture remains review evidence only and never becomes runtime configuration by implication.
 
 ## Review Triggers
 

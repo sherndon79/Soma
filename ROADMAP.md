@@ -492,6 +492,9 @@ Implemented:
   `config/remote-graphical-providers/` manifests are read only after explicit opt-in/provider
   selection, validated before status influence, and surfaced as configured metadata without live
   broker activation, session-open, grant writes, provenance append, video, input, or model delivery
+- added a remote graphical live broker readiness contract: the required live broker method surface
+  is documented and testable, fixture brokers and drift are rejected as live candidates, and complete
+  broker shape is still held at `activation_guard_disabled` with no broker calls or transport use
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -504,23 +507,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement the next remote graphical live broker activation prerequisite without crossing into live
+Implement a metadata-only live session active-disclosure constructor without crossing into live
 Sunshine/Moonlight transport.
 
 Target:
 
 ```text
-remote graphical live broker readiness scaffold
+remote graphical live session disclosure scaffold
   -> keep the repository manifest loader metadata-only
-  -> define the injected live broker interface and readiness checks
+  -> define the opened-but-not-observing disclosure shape
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- document and test the live broker interface shape without implementing a Sunshine/Moonlight call
-- distinguish configured manifest status from live broker readiness
+- add pure disclosure construction/validation for a future live opened substrate
+- distinguish opened substrate disclosure from video observation disclosure
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior
 - keep current provider registry behavior unchanged

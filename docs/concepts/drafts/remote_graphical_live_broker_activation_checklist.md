@@ -21,7 +21,8 @@ Before implementation, the activation branch must include:
   provider selection
 - a runtime configuration document naming the opt-in variables and default-off behavior
 - a bounded broker interface contract for `status`, `open_session`, `describe_active`, and
-  `cleanup_for_grant`
+  `cleanup_for_grant`; the current readiness contract is implemented in
+  `src/remoteGraphicalLiveBrokerReadiness.js` and remains activation-disabled
 - a reviewed active-disclosure shape for an opened but not-observing session
 - metadata-only provenance constructors for live session-open success and failure
 - stable refusal codes for disabled runtime, missing broker, target mismatch, pairing required,

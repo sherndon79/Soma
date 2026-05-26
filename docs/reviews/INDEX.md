@@ -326,6 +326,8 @@ default.
   - review after summarizing the manifest review-only sequence and naming runtime loader design as the next boundary
 - [Remote Graphical Runtime Manifest Loader Scaffold](./2026-05-26_remote_graphical_runtime_manifest_loader_scaffold.md)
   - review after adding the default-off repository-owned runtime manifest loader scaffold
+- [Remote Graphical Live Broker Readiness](./2026-05-26_remote_graphical_live_broker_readiness.md)
+  - review after adding the pure live broker interface and readiness contract without activation
 
 ## Current Review Triggers
 

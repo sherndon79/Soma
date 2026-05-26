@@ -151,19 +151,24 @@ are separately reviewed and implemented.
 
 ## First Interface Sketch
 
-The first implementation should be an injected no-op broker that proves routing and disclosure
-without live transport:
+The current live-readiness contract is narrower than the full future broker surface. A live broker
+candidate must first satisfy:
 
 ```js
-remoteGraphicalBroker.status({ targetHost, provider })
-remoteGraphicalBroker.openSession({ grant, requestedBy })
+remoteGraphicalBroker.status()
+remoteGraphicalBroker.describeActive()
+remoteGraphicalBroker.openSession({ grant, review, requested_by, actor })
+remoteGraphicalBroker.cleanupForGrant({ grant_id, reason })
+```
+
+The broader future surface still includes separately reviewed actions:
+
+```js
 remoteGraphicalBroker.startVideo({ grant, constraints })
 remoteGraphicalBroker.stopVideo({ sessionId, reason })
 remoteGraphicalBroker.dispatchPointer({ grant, event })
 remoteGraphicalBroker.dispatchKeyboard({ grant, event })
 remoteGraphicalBroker.disconnect({ grant, reason })
-remoteGraphicalBroker.cleanupForGrant({ grantId, reason })
-remoteGraphicalBroker.describeActive()
 ```
 
 In the first no-op slice, methods that would activate transport should return explicit

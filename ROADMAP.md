@@ -495,6 +495,9 @@ Implemented:
 - added a remote graphical live broker readiness contract: the required live broker method surface
   is documented and testable, fixture brokers and drift are rejected as live candidates, and complete
   broker shape is still held at `activation_guard_disabled` with no broker calls or transport use
+- added a remote graphical live session disclosure contract: future opened substrate disclosure uses
+  `open_observe_inactive`, empty active authorities/input channels, explicit non-observation flags,
+  bounded revocation text, and rejects content-bearing fields without changing session-open routes
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -507,23 +510,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement a metadata-only live session active-disclosure constructor without crossing into live
-Sunshine/Moonlight transport.
+Implement live session-open result construction as a pure unused helper without crossing into route
+activation or live Sunshine/Moonlight transport.
 
 Target:
 
 ```text
-remote graphical live session disclosure scaffold
+remote graphical live session-open result scaffold
   -> keep the repository manifest loader metadata-only
-  -> define the opened-but-not-observing disclosure shape
+  -> compose review, broker result, disclosure, and live provenance summary shape
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add pure disclosure construction/validation for a future live opened substrate
-- distinguish opened substrate disclosure from video observation disclosure
+- add pure live session-open success/failure result constructors
+- include opened-but-not-observing disclosure on success
+- preserve live provenance as preview/constructor-only, not route append
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior
 - keep current provider registry behavior unchanged

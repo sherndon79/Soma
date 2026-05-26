@@ -23,7 +23,8 @@ Before implementation, the activation branch must include:
 - a bounded broker interface contract for `status`, `open_session`, `describe_active`, and
   `cleanup_for_grant`; the current readiness contract is implemented in
   `src/remoteGraphicalLiveBrokerReadiness.js` and remains activation-disabled
-- a reviewed active-disclosure shape for an opened but not-observing session
+- a reviewed active-disclosure shape for an opened but not-observing session; the current
+  metadata-only constructor is implemented in `src/remoteGraphicalLiveSessionDisclosure.js`
 - metadata-only provenance constructors for live session-open success and failure
 - stable refusal codes for disabled runtime, missing broker, target mismatch, pairing required,
   provider unavailable, broker failure, and cleanup failure
@@ -85,6 +86,8 @@ All checks must be true before live `open_session` can be reachable:
    - Disclosure states that the session is open but not observing unless video authority is later
      activated.
    - Disclosure names revocation and cleanup behavior.
+   - Disclosure rejects frame bytes, screenshots, recognized text, input events, window metadata,
+     file names, audio payloads, and transport diagnostics.
 
 6. **Metadata-only provenance**
    - Live success/failure provenance records target, provider, grant, action, bounded state, stable

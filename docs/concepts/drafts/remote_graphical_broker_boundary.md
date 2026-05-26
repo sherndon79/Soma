@@ -149,6 +149,10 @@ Disclosure must not include frame bytes, screenshots, recognized text, clipboard
 keystrokes, pointer paths, remote window titles, or remote application metadata unless those fields
 are separately reviewed and implemented.
 
+The first live opened-substrate disclosure uses `open_observe_inactive`, empty active authorities,
+empty input channels, and explicit `video.observing=false`. See
+[Remote Graphical Live Session Disclosure](./remote_graphical_live_session_disclosure.md).
+
 ## First Interface Sketch
 
 The current live-readiness contract is narrower than the full future broker surface. A live broker

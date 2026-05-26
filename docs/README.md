@@ -74,6 +74,7 @@ should inform implementation.
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Broker Boundary](./concepts/drafts/remote_graphical_broker_boundary.md)
 - [Remote Graphical Live Broker Readiness](./concepts/drafts/remote_graphical_live_broker_readiness.md)
+- [Remote Graphical Live Session Disclosure](./concepts/drafts/remote_graphical_live_session_disclosure.md)
 - [Remote Graphical Manifest Selection Policy](./concepts/drafts/remote_graphical_manifest_selection_policy.md)
 - [Remote Graphical Runtime Manifest Loader Decision](./concepts/drafts/remote_graphical_runtime_manifest_loader_decision.md)
 - [Remote Graphical Session-Open Activation Policy](./concepts/drafts/remote_graphical_session_open_activation_policy.md)

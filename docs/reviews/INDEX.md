@@ -328,6 +328,8 @@ default.
   - review after adding the default-off repository-owned runtime manifest loader scaffold
 - [Remote Graphical Live Broker Readiness](./2026-05-26_remote_graphical_live_broker_readiness.md)
   - review after adding the pure live broker interface and readiness contract without activation
+- [Remote Graphical Live Session Disclosure](./2026-05-26_remote_graphical_live_session_disclosure.md)
+  - review after adding the pure opened-but-not-observing live session disclosure contract
 
 ## Current Review Triggers
 

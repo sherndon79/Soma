@@ -330,6 +330,8 @@ default.
   - review after adding the pure live broker interface and readiness contract without activation
 - [Remote Graphical Live Session Disclosure](./2026-05-26_remote_graphical_live_session_disclosure.md)
   - review after adding the pure opened-but-not-observing live session disclosure contract
+- [Remote Graphical Live Session-Open Result](./2026-05-26_remote_graphical_live_session_open_result.md)
+  - review after adding pure live session-open result constructors without route activation
 
 ## Current Review Triggers
 

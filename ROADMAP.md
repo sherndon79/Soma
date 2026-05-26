@@ -498,6 +498,9 @@ Implemented:
 - added a remote graphical live session disclosure contract: future opened substrate disclosure uses
   `open_observe_inactive`, empty active authorities/input channels, explicit non-observation flags,
   bounded revocation text, and rejects content-bearing fields without changing session-open routes
+- added pure remote graphical live session-open result constructors that compose reviewed intent,
+  bounded broker result, opened-but-not-observing disclosure, and live provenance preview while
+  rejecting content-bearing fields and leaving route activation unchanged
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -510,24 +513,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement live session-open result construction as a pure unused helper without crossing into route
-activation or live Sunshine/Moonlight transport.
+Implement live session-open route gating review without calling live Sunshine/Moonlight transport.
 
 Target:
 
 ```text
-remote graphical live session-open result scaffold
+remote graphical live session-open route gating scaffold
   -> keep the repository manifest loader metadata-only
-  -> compose review, broker result, disclosure, and live provenance summary shape
+  -> define route preconditions for future live broker invocation
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add pure live session-open success/failure result constructors
-- include opened-but-not-observing disclosure on success
-- preserve live provenance as preview/constructor-only, not route append
+- add a pure route eligibility decision for live broker invocation
+- distinguish fixture session-open invocation from future live invocation
+- preserve current route behavior while making the future switch explicit
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior
 - keep current provider registry behavior unchanged

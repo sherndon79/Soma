@@ -26,6 +26,8 @@ Before implementation, the activation branch must include:
 - a reviewed active-disclosure shape for an opened but not-observing session; the current
   metadata-only constructor is implemented in `src/remoteGraphicalLiveSessionDisclosure.js`
 - metadata-only provenance constructors for live session-open success and failure
+- pure live session-open result constructors that compose review, broker result, active disclosure,
+  and provenance preview without route activation
 - stable refusal codes for disabled runtime, missing broker, target mismatch, pairing required,
   provider unavailable, broker failure, and cleanup failure
 - an operator rollback plan for the target node or host

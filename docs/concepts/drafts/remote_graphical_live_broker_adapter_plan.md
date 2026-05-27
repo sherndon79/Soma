@@ -121,6 +121,26 @@ screenshots, recognized text, clipboard contents, input events, audio payloads, 
 transport logs, stack traces, raw diagnostics, environment variables, process details, or command
 lines.
 
+Successful `describe_active` may return only bounded metadata matching
+`createRemoteGraphicalLiveBrokerActiveSessions`:
+
+- schema version
+- provider id
+- target host
+- active session count derived from returned sessions
+- per-session id
+- per-session source grant id
+- per-session provider id and target host
+- provider-neutral state fixed to `open_observe_inactive`
+- locality and attended posture
+- opened and expiry timestamps
+- explicit inactive-authority booleans for video, input, recording, and model delivery
+
+Describe-active output must not return frame bytes, screenshots, thumbnails, recognized text,
+clipboard contents, input events, window metadata, file names, audio payloads, stdout, stderr,
+transport logs, raw diagnostics, stack traces, environment variables, process details, command
+lines, credentials, tokens, or pairing pins.
+
 Successful `open_session` may return only:
 
 - session id

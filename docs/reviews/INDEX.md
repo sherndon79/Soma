@@ -342,6 +342,8 @@ default.
   - review after proving manager readiness composition without routing live invocation
 - [Remote Graphical Live Broker Status Contract](./2026-05-26_remote_graphical_live_broker_status_contract.md)
   - review after adding a bounded status result contract for future live helpers
+- [Remote Graphical Live Broker Active Sessions Contract](./2026-05-27_remote_graphical_live_broker_active_sessions_contract.md)
+  - review after adding a bounded describe-active result contract for future live helpers
 
 ## Current Review Triggers
 

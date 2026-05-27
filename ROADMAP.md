@@ -544,6 +544,9 @@ Implemented:
   `soma remote-graphical startup-review`, reading the committed manifest fixture locally and
   exposing concise text plus JSON plan metadata without service requests, manager construction,
   helper startup, broker calls, or live transport
+- documented startup-review operator examples in
+  `docs/runbooks/remote_graphical_startup_review.md`, including expected text/JSON markers,
+  source-guard refusals, and the distinction between eligible posture and activation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -556,23 +559,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker startup posture visibility docs and operator examples.
+Add live broker startup-review smoke test fixture guard coverage.
 
 Target:
 
 ```text
-remote graphical live broker startup posture visibility docs
+remote graphical live broker startup-review fixture guard coverage
   -> keep the repository manifest loader metadata-only
-  -> document startup-review text and JSON usage for operators
+  -> prove startup-review stays local fixture-only and side-effect-free
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add runbook examples for `soma remote-graphical startup-review`
-- document that eligible posture is not activation or construction
-- cross-link startup planner, adapter plan, and activation checklist
+- add a docs/runbook smoke test or focused doc-reference test for startup-review markers
+- prove unsupported source-selection examples remain documented and tested
+- preserve JSON false-flag expectations
 - keep `createRemoteGraphicalRuntime` returning the current no-op broker
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness

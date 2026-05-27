@@ -354,6 +354,8 @@ default.
   - review after adding pure startup eligibility planning without runtime manager construction
 - [Remote Graphical Live Broker Startup Visibility](./2026-05-27_remote_graphical_live_broker_startup_visibility.md)
   - review after adding review-only CLI visibility for startup posture planning
+- [Remote Graphical Startup Review Runbook](./2026-05-27_remote_graphical_startup_review_runbook.md)
+  - review after documenting startup-review operator examples and non-activation markers
 
 ## Current Review Triggers
 

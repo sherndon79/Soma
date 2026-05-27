@@ -124,6 +124,8 @@ construction path.
 
 Operator smoke expectations for this command live in
 [Remote Graphical Manifest Review Smoke](../../runbooks/remote_graphical_manifest_review_smoke.md).
+Startup posture review examples for the same fixture live in
+[Remote Graphical Startup Review](../../runbooks/remote_graphical_startup_review.md).
 The source-selection boundary for this command is defined by
 [Remote Graphical Manifest Selection Policy](./remote_graphical_manifest_selection_policy.md).
 

@@ -153,6 +153,7 @@ Run a focused review before any change that:
 
 - [Remote Graphical Live Session-Open Provenance](./remote_graphical_live_session_open_provenance.md)
 - [Remote Graphical Live Provider Manifest](./remote_graphical_live_provider_manifest.md)
+- [Remote Graphical Startup Review](../../runbooks/remote_graphical_startup_review.md)
 - [Remote Graphical Runtime Manifest Loader Decision](./remote_graphical_runtime_manifest_loader_decision.md)
 - [Remote Graphical Session-Open Activation Policy](./remote_graphical_session_open_activation_policy.md)
 - [Remote Graphical Broker Boundary](./remote_graphical_broker_boundary.md)

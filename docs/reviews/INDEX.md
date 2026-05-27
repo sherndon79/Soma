@@ -340,6 +340,8 @@ default.
   - review after adding a non-activating Moonlight helper and Node manager scaffold
 - [Remote Graphical Live Broker Readiness Composition](./2026-05-26_remote_graphical_live_broker_readiness_composition.md)
   - review after proving manager readiness composition without routing live invocation
+- [Remote Graphical Live Broker Status Contract](./2026-05-26_remote_graphical_live_broker_status_contract.md)
+  - review after adding a bounded status result contract for future live helpers
 
 ## Current Review Triggers
 

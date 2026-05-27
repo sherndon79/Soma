@@ -515,6 +515,10 @@ Implemented:
   the readiness method surface without helper startup, readiness can be classified as candidate/ready
   in tests only, and `POST /remote-graphical/sessions` still refuses live-shaped brokers because
   live readiness is not routed into the HTTP path
+- added a bounded live broker status result contract through
+  `createRemoteGraphicalLiveBrokerStatus`, defining provider-neutral configured, unconfigured, and
+  degraded metadata while rejecting content-bearing/provider-secret fields and preserving no helper
+  implementation or route activation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -527,23 +531,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a bounded live broker status result contract without implementing Sunshine/Moonlight calls.
+Add a bounded live broker active-session description contract without implementing Sunshine/Moonlight calls.
 
 Target:
 
 ```text
-remote graphical live broker status result contract
+remote graphical live broker active-session description contract
   -> keep the repository manifest loader metadata-only
-  -> define the helper status result shape for future live readiness inputs
+  -> define the helper describe-active result shape for future disclosure inputs
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure validator/constructor for bounded live broker status metadata
-- document allowed status fields and forbidden content-bearing/provider-secret fields
-- add tests for configured/unconfigured/degraded status shapes
+- add a pure validator/constructor for bounded active session metadata
+- document allowed active-session fields and forbidden content-bearing/provider-secret fields
+- add tests for empty, one-session, and malformed/over-disclosing shapes
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence

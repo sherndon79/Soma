@@ -103,6 +103,24 @@ Node must not pass:
 
 ## Helper Outputs
 
+Successful `status` may return only bounded metadata matching
+`createRemoteGraphicalLiveBrokerStatus`:
+
+- schema version
+- provider id
+- target host
+- provider-neutral status and state
+- configured/reachable/degraded booleans
+- retryable boolean, if known
+- active session count
+- supported helper capability names
+- bounded human summary
+
+Status must not return passwords, tokens, pairing pins, credential material, frame bytes,
+screenshots, recognized text, clipboard contents, input events, audio payloads, stdout, stderr,
+transport logs, stack traces, raw diagnostics, environment variables, process details, or command
+lines.
+
 Successful `open_session` may return only:
 
 - session id

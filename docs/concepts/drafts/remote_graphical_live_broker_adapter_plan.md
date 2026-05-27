@@ -76,8 +76,9 @@ shape without linking Moonlight libraries, spawning transport processes, opening
 persisting credentials, opening sessions, observing video, dispatching input, recording, or
 cleaning up provider sessions.
 
-The Node-side scaffold is `src/remoteGraphicalLiveBrokerManager.js`. It can spawn the helper and
-map JSON-RPC errors, but no runtime path instantiates it.
+The Node-side scaffold is `src/remoteGraphicalLiveBrokerManager.js`. It can spawn the helper, map
+JSON-RPC errors, and validate successful `status`, `describe_active`, and `cleanup_for_grant`
+results through the bounded contracts below. No runtime path instantiates it.
 
 ## Node Manager Inputs
 

@@ -3,6 +3,16 @@ import { spawn } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import {
+  createRemoteGraphicalLiveBrokerActiveSessions,
+} from "./remoteGraphicalLiveBrokerActiveSessions.js";
+import {
+  createRemoteGraphicalLiveBrokerCleanupResult,
+} from "./remoteGraphicalLiveBrokerCleanupResult.js";
+import {
+  createRemoteGraphicalLiveBrokerStatus,
+} from "./remoteGraphicalLiveBrokerStatus.js";
+
 const DEFAULT_HELPER_PATH = fileURLToPath(
   new URL("../target/debug/soma-moonlight-broker", import.meta.url),
 );
@@ -11,6 +21,7 @@ const JSONRPC = "2.0";
 
 export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
   #binaryPath;
+  #resultValidators;
   #child = null;
   #stdoutBuffer = "";
   #stderrBuffer = "";
@@ -18,9 +29,16 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
   #nextRequestId = 1;
   #stopped = false;
 
-  constructor({ binaryPath = DEFAULT_HELPER_PATH } = {}) {
+  constructor({
+    binaryPath = DEFAULT_HELPER_PATH,
+    resultValidators = defaultResultValidators(),
+  } = {}) {
     super();
     this.#binaryPath = binaryPath;
+    this.#resultValidators = {
+      ...defaultResultValidators(),
+      ...(resultValidators ?? {}),
+    };
   }
 
   async start() {
@@ -61,7 +79,8 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
   }
 
   status(params = {}) {
-    return this.send("remote_graphical.status", params);
+    return this.send("remote_graphical.status", params)
+      .then((result) => this.#resultValidators.status(result));
   }
 
   openSession(params = {}) {
@@ -69,11 +88,13 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
   }
 
   describeActive(params = {}) {
-    return this.send("remote_graphical.describe_active", params);
+    return this.send("remote_graphical.describe_active", params)
+      .then((result) => this.#resultValidators.describeActive(result));
   }
 
   cleanupForGrant(params = {}) {
-    return this.send("remote_graphical.cleanup_for_grant", params);
+    return this.send("remote_graphical.cleanup_for_grant", params)
+      .then((result) => this.#resultValidators.cleanupForGrant(result));
   }
 
   send(method, params = {}) {
@@ -184,3 +205,11 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
 }
 
 export const REMOTE_GRAPHICAL_LIVE_BROKER_DEFAULT_BINARY = DEFAULT_HELPER_PATH;
+
+function defaultResultValidators() {
+  return {
+    status: createRemoteGraphicalLiveBrokerStatus,
+    describeActive: createRemoteGraphicalLiveBrokerActiveSessions,
+    cleanupForGrant: createRemoteGraphicalLiveBrokerCleanupResult,
+  };
+}

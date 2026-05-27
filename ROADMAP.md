@@ -527,6 +527,10 @@ Implemented:
   `createRemoteGraphicalLiveBrokerCleanupResult`, defining no-op, stopped-session, and failed
   cleanup metadata for future `cleanup_for_grant` helper output while rejecting content-bearing and
   provider-secret fields without helper implementation or route activation
+- composed bounded live broker result validators into `RemoteGraphicalLiveBrokerManager` wrapper
+  methods for successful `status`, `describe_active`, and `cleanup_for_grant` helper results, while
+  preserving passthrough `method_implementation_pending` errors from the stub helper and leaving
+  runtime routes unconnected
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -539,23 +543,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker helper result validator composition in the Node manager without implementing helper methods.
+Add live broker manager contract invalid error mapping without implementing helper methods.
 
 Target:
 
 ```text
-remote graphical live broker manager result validator composition
+remote graphical live broker manager contract invalid error mapping
   -> keep the repository manifest loader metadata-only
-  -> compose status, describe-active, and cleanup result validators with manager call sites
+  -> map validator failures to bounded helper-contract error classes
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add optional result validators to `RemoteGraphicalLiveBrokerManager` wrapper methods
-- prove helper `method_implementation_pending` errors are still passed through
-- prove synthetic successful helper results are narrowed by validators in manager-level tests
+- add bounded manager-side wrapping for validator failures from successful helper responses
+- preserve original validation error code internally without leaking helper payload
+- prove helper `method_implementation_pending` errors remain unchanged
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence

@@ -37,6 +37,80 @@ test("RemoteGraphicalLiveBrokerManager exports the default binary path", () => {
   );
 });
 
+test("RemoteGraphicalLiveBrokerManager validates synthetic successful helper results", async () => {
+  const manager = new SyntheticResultManager({
+    "remote_graphical.status": {
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      configured: true,
+    },
+    "remote_graphical.describe_active": {
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      sessions: [{
+        session_id: "live-session-1",
+        source_grant_id: "grant-remote-video",
+      }],
+    },
+    "remote_graphical.cleanup_for_grant": {
+      source_grant_id: "grant-remote-video",
+      stopped_session_ids: ["live-session-1"],
+    },
+  });
+
+  const status = await manager.status();
+  assert.equal(status.schema_matches_expected, true);
+  assert.equal(status.status, "provider_configured");
+  assert.equal(status.session_opened, false);
+
+  const active = await manager.describeActive();
+  assert.equal(active.active_count, 1);
+  assert.equal(active.sessions[0].state, "open_observe_inactive");
+  assert.equal(active.sessions[0].video_attached, false);
+
+  const cleanup = await manager.cleanupForGrant({ grant_id: "grant-remote-video" });
+  assert.equal(cleanup.status, "cleanup_completed");
+  assert.equal(cleanup.stopped_count, 1);
+  assert.equal(cleanup.video_attached, false);
+});
+
+test("RemoteGraphicalLiveBrokerManager rejects over-disclosing synthetic helper results", async () => {
+  const manager = new SyntheticResultManager({
+    "remote_graphical.status": {
+      provider: "soma.provider.remote_desktop.sunshine",
+      target_host: "soma-agent-desktop.local.sthnet.org",
+      configured: true,
+      screenshot_bytes: "not allowed",
+    },
+    "remote_graphical.describe_active": {
+      sessions: [{
+        session_id: "live-session-1",
+        source_grant_id: "grant-remote-video",
+        provider: "soma.provider.remote_desktop.sunshine",
+        target_host: "soma-agent-desktop.local.sthnet.org",
+        clipboard_text: "not allowed",
+      }],
+    },
+    "remote_graphical.cleanup_for_grant": {
+      source_grant_id: "grant-remote-video",
+      stderr: "not allowed",
+    },
+  });
+
+  await assert.rejects(
+    () => manager.status(),
+    { code: "remote_graphical_live_status_forbidden_field" },
+  );
+  await assert.rejects(
+    () => manager.describeActive(),
+    { code: "remote_graphical_live_active_sessions_forbidden_field" },
+  );
+  await assert.rejects(
+    () => manager.cleanupForGrant(),
+    { code: "remote_graphical_live_cleanup_result_forbidden_field" },
+  );
+});
+
 test(
   "RemoteGraphicalLiveBrokerManager starts helper and returns implementation-pending status",
   { skip: HELPER_SKIP_REASON },
@@ -62,6 +136,22 @@ test(
     }
   },
 );
+
+class SyntheticResultManager extends RemoteGraphicalLiveBrokerManager {
+  #results;
+
+  constructor(results) {
+    super({ binaryPath: "/not/used/by/synthetic-manager" });
+    this.#results = results;
+  }
+
+  send(method) {
+    if (!Object.hasOwn(this.#results, method)) {
+      return Promise.reject(new Error(`No synthetic result for ${method}`));
+    }
+    return Promise.resolve(this.#results[method]);
+  }
+}
 
 test(
   "RemoteGraphicalLiveBrokerManager maps all live methods to implementation-pending errors",

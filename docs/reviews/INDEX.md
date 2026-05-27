@@ -356,6 +356,8 @@ default.
   - review after adding review-only CLI visibility for startup posture planning
 - [Remote Graphical Startup Review Runbook](./2026-05-27_remote_graphical_startup_review_runbook.md)
   - review after documenting startup-review operator examples and non-activation markers
+- [Remote Graphical Startup Review Runbook Guard](./2026-05-27_remote_graphical_startup_review_runbook_guard.md)
+  - review after adding guard coverage for startup-review runbook markers and false flags
 
 ## Current Review Triggers
 

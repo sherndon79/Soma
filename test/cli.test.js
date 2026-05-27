@@ -1519,6 +1519,97 @@ test("runCli remote-graphical manifest-review json includes validated fixture wi
   assert.match(payload.text, /Remote graphical live provider manifest/);
 });
 
+test("runCli remote-graphical startup-review formats local startup plan without service request", async () => {
+  let called = false;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "startup-review",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => {
+      called = true;
+      throw new Error("request should not be called");
+    },
+  });
+
+  const output = writes.join("");
+  assert.equal(code, 0);
+  assert.equal(called, false);
+  assert.match(output, /Remote graphical live broker startup review/);
+  assert.match(output, /review only: yes/);
+  assert.match(output, /eligible: yes/);
+  assert.match(output, /eligibility: eligible/);
+  assert.match(output, /provider: soma\.provider\.remote_desktop\.sunshine/);
+  assert.match(output, /target host: soma-agent-desktop\.local\.sthnet\.org/);
+  assert.match(output, /helper binary reviewed: yes/);
+  assert.match(output, /manager constructed: no/);
+  assert.match(output, /helper started: no/);
+  assert.match(output, /live transport used: no/);
+});
+
+test("runCli remote-graphical startup-review json includes plan without activation", async () => {
+  let called = false;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "remote-graphical",
+    "startup-review",
+    "--json",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async () => {
+      called = true;
+      throw new Error("request should not be called");
+    },
+  });
+
+  const payload = JSON.parse(writes.join(""));
+  assert.equal(code, 0);
+  assert.equal(called, false);
+  assert.equal(payload.type, "remote_graphical_live_broker_startup_review");
+  assert.equal(payload.review_only, true);
+  assert.equal(payload.fixture_path, "docs/fixtures/remote-graphical-live-provider-manifest.json");
+  assert.equal(payload.plan.eligible, true);
+  assert.equal(payload.plan.eligibility, "eligible");
+  assert.equal(payload.plan.manager_constructed, false);
+  assert.equal(payload.runtime_loaded, false);
+  assert.equal(payload.manager_constructed, false);
+  assert.equal(payload.helper_started, false);
+  assert.equal(payload.broker_called, false);
+  assert.equal(payload.session_opened, false);
+  assert.equal(payload.video_attached, false);
+  assert.equal(payload.input_dispatched, false);
+  assert.equal(payload.live_transport_used, false);
+});
+
+test("runCli remote-graphical startup-review rejects unsupported source-selection flags locally", async () => {
+  for (const flag of ["--manifest-path", "--stdin", "--helper-binary", "--source", "--url", "--provider"]) {
+    let called = false;
+    await assert.rejects(
+      () => runCli(parseCli([
+        "node",
+        "soma",
+        "remote-graphical",
+        "startup-review",
+        flag,
+        flag === "--stdin" ? undefined : "ignored-source",
+      ].filter(Boolean)), {
+        stdout: { write: () => {} },
+        request: async () => {
+          called = true;
+          throw new Error("request should not be called");
+        },
+      }),
+      /startup-review does not accept/,
+    );
+    assert.equal(called, false);
+  }
+});
+
 test("runCli remote-graphical manifest-review rejects unsupported source-selection flags locally", async () => {
   for (const flag of ["--manifest-path", "--stdin", "--manifest-url", "--source", "--url", "--provider"]) {
     let called = false;

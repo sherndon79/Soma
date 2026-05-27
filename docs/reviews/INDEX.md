@@ -352,6 +352,8 @@ default.
   - review after bounding manager-side validator failure errors without retaining helper payloads
 - [Remote Graphical Live Broker Startup Plan](./2026-05-27_remote_graphical_live_broker_startup_plan.md)
   - review after adding pure startup eligibility planning without runtime manager construction
+- [Remote Graphical Live Broker Startup Visibility](./2026-05-27_remote_graphical_live_broker_startup_visibility.md)
+  - review after adding review-only CLI visibility for startup posture planning
 
 ## Current Review Triggers
 

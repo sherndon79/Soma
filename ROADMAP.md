@@ -540,6 +540,10 @@ Implemented:
   opt-in, configured/loaded manifest posture, provider/target identity, and a reviewed helper
   binary path are present, while preserving no manager construction, helper startup, broker calls,
   or runtime path changes
+- added review-only CLI visibility for the startup posture planner through
+  `soma remote-graphical startup-review`, reading the committed manifest fixture locally and
+  exposing concise text plus JSON plan metadata without service requests, manager construction,
+  helper startup, broker calls, or live transport
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -552,23 +556,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker manager startup posture CLI/review visibility without enabling runtime construction.
+Add live broker startup posture visibility docs and operator examples.
 
 Target:
 
 ```text
-remote graphical live broker manager startup posture visibility
+remote graphical live broker startup posture visibility docs
   -> keep the repository manifest loader metadata-only
-  -> expose startup eligibility as review metadata only
+  -> document startup-review text and JSON usage for operators
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a review formatter or CLI-visible summary for startup posture planning
-- preserve concise default text and JSON-first machine output patterns
-- prove visibility does not construct manager or start helper
+- add runbook examples for `soma remote-graphical startup-review`
+- document that eligible posture is not activation or construction
+- cross-link startup planner, adapter plan, and activation checklist
 - keep `createRemoteGraphicalRuntime` returning the current no-op broker
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness

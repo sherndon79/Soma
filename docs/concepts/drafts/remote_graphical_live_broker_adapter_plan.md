@@ -88,6 +88,10 @@ manifest posture is configured and loaded, provider/target identity is present, 
 binary path is reviewed. It does not construct the manager, start the helper, call the broker, or
 change `createRemoteGraphicalRuntime`, which remains on the current no-op broker path.
 
+`soma remote-graphical startup-review` exposes that planning posture as review-only CLI output. It
+reads the committed manifest fixture locally, supports concise text and JSON output, and performs no
+service request, runtime construction, helper startup, broker call, or live transport.
+
 ## Node Manager Inputs
 
 Node may pass:

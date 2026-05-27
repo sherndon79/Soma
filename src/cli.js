@@ -8,6 +8,9 @@ import { validateRemoteGraphicalLiveProviderManifest } from "./remoteGraphicalLi
 import {
   remoteGraphicalLiveProviderManifestReviewText,
 } from "./remoteGraphicalLiveProviderManifestReviewSurface.js";
+import {
+  planRemoteGraphicalLiveBrokerManagerStartup,
+} from "./remoteGraphicalLiveBrokerStartupPlan.js";
 
 const DEFAULT_SOMA_URL = "http://127.0.0.1:8765";
 const REMOTE_GRAPHICAL_LIVE_PROVIDER_MANIFEST_FIXTURE_URL = new URL(
@@ -234,6 +237,13 @@ export async function runCli(
     assertRemoteGraphicalManifestReviewFixtureOnly(flags, rest);
     const response = await remoteGraphicalLiveProviderManifestReviewFromFixture();
     writeOutput(stdout, response, jsonOutput, response.text);
+    return 0;
+  }
+
+  if (command === "remote-graphical" && subcommand === "startup-review") {
+    assertRemoteGraphicalStartupReviewFixtureOnly(flags, rest);
+    const response = await remoteGraphicalLiveBrokerStartupReviewFromFixture();
+    writeOutput(stdout, response, jsonOutput, remoteGraphicalLiveBrokerStartupReviewSummary(response));
     return 0;
   }
 
@@ -784,6 +794,45 @@ async function remoteGraphicalLiveProviderManifestReviewFromFixture() {
   };
 }
 
+async function remoteGraphicalLiveBrokerStartupReviewFromFixture() {
+  const manifest = validateRemoteGraphicalLiveProviderManifest(JSON.parse(await readFile(
+    REMOTE_GRAPHICAL_LIVE_PROVIDER_MANIFEST_FIXTURE_URL,
+    "utf8",
+  )));
+  const posture = {
+    requested: true,
+    configured: true,
+    manifest_loaded: true,
+    provider: manifest.id,
+    target_host: manifest.target_constraints.allowed_hosts[0],
+    manifest_source_kind: "repository_runtime_config",
+  };
+  const plan = planRemoteGraphicalLiveBrokerManagerStartup({ posture });
+  return {
+    type: "remote_graphical_live_broker_startup_review",
+    review_only: true,
+    fixture_path: "docs/fixtures/remote-graphical-live-provider-manifest.json",
+    manifest: {
+      id: manifest.id,
+      target_host: posture.target_host,
+      manifest_source_kind: posture.manifest_source_kind,
+    },
+    plan,
+    runtime_loaded: false,
+    manager_constructed: false,
+    helper_started: false,
+    broker_called: false,
+    session_opened: false,
+    pairing_performed: false,
+    video_attached: false,
+    input_dispatched: false,
+    recording_started: false,
+    provider_session_stopped: false,
+    model_delivery: false,
+    live_transport_used: false,
+  };
+}
+
 function assertRemoteGraphicalManifestReviewFixtureOnly(flags, rest = []) {
   if (rest.length > 0) {
     throw usageError("remote-graphical manifest-review does not accept manifest paths or positional source inputs.");
@@ -803,6 +852,21 @@ function assertRemoteGraphicalManifestReviewFixtureOnly(flags, rest = []) {
   if (unsupported) {
     throw usageError(
       `remote-graphical manifest-review does not accept --${unsupported}; `
+        + "it reads only docs/fixtures/remote-graphical-live-provider-manifest.json.",
+    );
+  }
+}
+
+function assertRemoteGraphicalStartupReviewFixtureOnly(flags, rest = []) {
+  if (rest.length > 0) {
+    throw usageError("remote-graphical startup-review does not accept manifest paths or positional source inputs.");
+  }
+
+  const allowedFlags = new Set(["json"]);
+  const unsupported = Object.keys(flags).find((flag) => !allowedFlags.has(flag));
+  if (unsupported) {
+    throw usageError(
+      `remote-graphical startup-review does not accept --${unsupported}; `
         + "it reads only docs/fixtures/remote-graphical-live-provider-manifest.json.",
     );
   }
@@ -1362,6 +1426,28 @@ function remoteGraphicalStatusSummary(response) {
   return lines.join("\n");
 }
 
+function remoteGraphicalLiveBrokerStartupReviewSummary(response) {
+  const plan = response.plan ?? {};
+  const lines = [
+    "Remote graphical live broker startup review",
+    `  review only: ${booleanText(response.review_only)}`,
+    `  fixture: ${response.fixture_path || "none"}`,
+    `  eligible: ${booleanText(plan.eligible)}`,
+    `  eligibility: ${plan.eligibility || "unknown"}`,
+    `  reason: ${plan.reason || "none"}`,
+    `  provider: ${plan.provider || "none"}`,
+    `  target host: ${plan.target_host || "none"}`,
+    `  manifest loaded: ${booleanText(plan.manifest_loaded)}`,
+    `  helper binary reviewed: ${booleanText(plan.reviewed_helper_binary_path)}`,
+    `  manager constructed: ${booleanText(response.manager_constructed)}`,
+    `  helper started: ${booleanText(response.helper_started)}`,
+    `  broker called: ${booleanText(response.broker_called)}`,
+    `  session opened: ${booleanText(response.session_opened)}`,
+    `  live transport used: ${booleanText(response.live_transport_used)}`,
+  ];
+  return lines.join("\n");
+}
+
 function remoteGraphicalSessionOpenReviewSummary(response) {
   const review = response.review ?? {};
   const lines = [
@@ -1819,6 +1905,7 @@ Usage:
   soma remote-graphical proposal-template --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]
   soma remote-graphical status [--json]
   soma remote-graphical manifest-review [--json]
+  soma remote-graphical startup-review [--json]
   soma remote-graphical session-open-review grant-id --reason text [--by assistant] [--json]
   soma remote-graphical session-open grant-id --reason text [--by user] [--json]
   soma remote-graphical propose --capability key --provider id --host host --mode view_only|pointer_input|keyboard_input|disconnect --reason text --max-seconds n [--max-fps n] [--max-width n] [--max-height n] [--channels csv] [--locality local|lan|vpn|internet] [--json]

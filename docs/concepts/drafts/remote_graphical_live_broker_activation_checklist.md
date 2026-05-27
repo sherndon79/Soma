@@ -28,6 +28,8 @@ Before implementation, the activation branch must include:
 - metadata-only provenance constructors for live session-open success and failure
 - pure live session-open result constructors that compose review, broker result, active disclosure,
   and provenance preview without route activation
+- a reviewed route gate that keeps fixture invocation separate from future live invocation and
+  requires an explicit switch before any live broker can be called
 - stable refusal codes for disabled runtime, missing broker, target mismatch, pairing required,
   provider unavailable, broker failure, and cleanup failure
 - an operator rollback plan for the target node or host
@@ -139,6 +141,7 @@ The first live broker activation slice must not:
 Run a focused review before any change that:
 
 - changes `POST /remote-graphical/sessions` to call a live broker
+- passes live readiness or enables live invocation in the session-open route gate
 - introduces Sunshine/Moonlight process, socket, or credential handling
 - changes cleanup semantics for active remote graphical grants
 - exposes visual, input, audio, clipboard, file, or transport-diagnostic payloads

@@ -501,6 +501,9 @@ Implemented:
 - added pure remote graphical live session-open result constructors that compose reviewed intent,
   bounded broker result, opened-but-not-observing disclosure, and live provenance preview while
   rejecting content-bearing fields and leaving route activation unchanged
+- added a remote graphical session-open route gate: fixture invocation now flows through a pure
+  decision helper, future live invocation has an explicit disabled switch point, and current route
+  behavior remains fixture-only/refusal without live readiness or transport calls
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -513,23 +516,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement live session-open route gating review without calling live Sunshine/Moonlight transport.
+Design the live Sunshine/Moonlight broker adapter plan without implementing process, socket, or
+credential handling.
 
 Target:
 
 ```text
-remote graphical live session-open route gating scaffold
+remote graphical live broker adapter design
   -> keep the repository manifest loader metadata-only
-  -> define route preconditions for future live broker invocation
+  -> define adapter responsibilities and host-side command boundaries
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure route eligibility decision for live broker invocation
-- distinguish fixture session-open invocation from future live invocation
-- preserve current route behavior while making the future switch explicit
+- document adapter inputs/outputs, subprocess boundaries, timeout/error classes, and cleanup hooks
+- distinguish Sunshine/Moonlight process control from video observation and input channels
+- keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior
 - keep current provider registry behavior unchanged

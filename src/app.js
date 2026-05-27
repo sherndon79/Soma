@@ -46,6 +46,9 @@ import {
   buildRemoteGraphicalSessionOpenReview,
 } from "./remoteGraphicalSessionOpenReview.js";
 import {
+  decideRemoteGraphicalSessionOpenRouteInvocation,
+} from "./remoteGraphicalSessionOpenRouteGate.js";
+import {
   createRemoteGraphicalSessionOpenFixtureProvenanceSummary,
 } from "./remoteGraphicalSessionOpenProvenance.js";
 import { enforceSensoriumGrantConstraints } from "./sensoriumGrantConstraints.js";
@@ -411,13 +414,11 @@ export function createRequestHandler({
           ? remoteGraphicalBroker.describeActive()
           : remoteGraphicalBroker?.status?.();
         const brokerStatus = createRemoteGraphicalBrokerStatus(rawStatus);
-        if (
-          brokerStatus.requested
-          && brokerStatus.enabled
-          && brokerStatus.configured
-          && brokerStatus.session_open_fixture
-          && typeof remoteGraphicalBroker?.openSession === "function"
-        ) {
+        const routeDecision = decideRemoteGraphicalSessionOpenRouteInvocation({
+          broker: remoteGraphicalBroker,
+          brokerStatus,
+        });
+        if (routeDecision.invoke_fixture) {
           try {
             const brokerResult = await remoteGraphicalBroker.openSession({
               grant,

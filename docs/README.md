@@ -77,6 +77,7 @@ should inform implementation.
 - [Remote Graphical Live Session Disclosure](./concepts/drafts/remote_graphical_live_session_disclosure.md)
 - [Remote Graphical Live Session-Open Result](./concepts/drafts/remote_graphical_live_session_open_result.md)
 - [Remote Graphical Manifest Selection Policy](./concepts/drafts/remote_graphical_manifest_selection_policy.md)
+- [Remote Graphical Session-Open Route Gate](./concepts/drafts/remote_graphical_session_open_route_gate.md)
 - [Remote Graphical Runtime Manifest Loader Decision](./concepts/drafts/remote_graphical_runtime_manifest_loader_decision.md)
 - [Remote Graphical Session-Open Activation Policy](./concepts/drafts/remote_graphical_session_open_activation_policy.md)
 - [Remote Graphical Session-Open Provenance Append Policy](./concepts/drafts/remote_graphical_session_open_provenance_append_policy.md)

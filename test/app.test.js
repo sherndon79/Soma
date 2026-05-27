@@ -3483,6 +3483,69 @@ test("POST /remote-graphical/sessions refuses configured fake broker without ope
   assert.equal(response.body.live_transport_used, false);
 });
 
+test("POST /remote-graphical/sessions refuses live-shaped broker because live readiness is not routed", async () => {
+  let describeCalls = 0;
+  let openCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [makeRemoteGraphicalGrant()],
+    },
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        return {
+          requested: true,
+          enabled: true,
+          configured: true,
+          status: "provider_manifest_configured",
+          state: "configured_inactive",
+          provider: "soma.provider.remote_desktop.sunshine",
+          target_host: "soma-agent-desktop.local.sthnet.org",
+          manifest_loaded: true,
+        };
+      },
+      status() {
+        throw new Error("describeActive should be preferred");
+      },
+      openSession() {
+        openCalls += 1;
+        throw new Error("openSession should not be called");
+      },
+      describeActiveSessions() {
+        throw new Error("non-contract method should not be called");
+      },
+      cleanupForGrant() {
+        throw new Error("cleanupForGrant should not be called");
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/remote-graphical/sessions",
+    body: {
+      grant_id: "grant-remote-video",
+      actor: "user",
+      requested_by: "assistant",
+      reason: "Need to open a reviewed broker session.",
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(describeCalls, 1);
+  assert.equal(openCalls, 0);
+  assert.equal(response.body.type, "remote_graphical_session_open_refusal");
+  assert.equal(response.body.refused, true);
+  assert.equal(response.body.status, "provider_manifest_configured");
+  assert.equal(response.body.error, "remote_graphical_broker_provider_unavailable");
+  assert.equal(response.body.broker_called, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.session_opened, false);
+  assert.equal(response.body.live_transport_used, false);
+});
+
 test("POST /remote-graphical/sessions refuses before broker invocation when opt-in is unset", async () => {
   const handler = makeHandler({
     harness: allowedHarness,

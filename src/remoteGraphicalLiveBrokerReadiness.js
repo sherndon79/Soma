@@ -146,12 +146,12 @@ export function evaluateRemoteGraphicalLiveBrokerReadiness({
     provider,
     targetHost,
     manifestLoaded,
-      candidate: true,
-      ready: true,
-      activationEnabled,
-      readiness: "ready",
-      reason: "Remote graphical live broker readiness checks passed.",
-    });
+    candidate: true,
+    ready: true,
+    activationEnabled,
+    readiness: "ready",
+    reason: "Remote graphical live broker readiness checks passed.",
+  });
 }
 
 function readinessResult({

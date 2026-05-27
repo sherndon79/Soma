@@ -338,6 +338,8 @@ default.
   - review after documenting the live Sunshine/Moonlight adapter boundary without implementation
 - [Remote Graphical Live Broker Helper Scaffold](./2026-05-26_remote_graphical_live_broker_helper_scaffold.md)
   - review after adding a non-activating Moonlight helper and Node manager scaffold
+- [Remote Graphical Live Broker Readiness Composition](./2026-05-26_remote_graphical_live_broker_readiness_composition.md)
+  - review after proving manager readiness composition without routing live invocation
 
 ## Current Review Triggers
 

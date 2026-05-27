@@ -511,6 +511,10 @@ Implemented:
 - added a non-activating Moonlight broker helper/manager scaffold: `soma-moonlight-broker`
   recognizes the future JSON-RPC method surface and returns `method_implementation_pending`, while
   `RemoteGraphicalLiveBrokerManager` can spawn/map helper errors but remains unused by runtime routes
+- added live broker manager readiness composition tests: `RemoteGraphicalLiveBrokerManager` satisfies
+  the readiness method surface without helper startup, readiness can be classified as candidate/ready
+  in tests only, and `POST /remote-graphical/sessions` still refuses live-shaped brokers because
+  live readiness is not routed into the HTTP path
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -523,23 +527,24 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker manager readiness composition tests without enabling route invocation.
+Add a bounded live broker status result contract without implementing Sunshine/Moonlight calls.
 
 Target:
 
 ```text
-remote graphical live broker manager readiness composition
+remote graphical live broker status result contract
   -> keep the repository manifest loader metadata-only
-  -> prove helper manager can satisfy method-surface readiness while activation remains disabled
-  -> preserve session-open refusal and no live transport calls
+  -> define the helper status result shape for future live readiness inputs
+  -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- compose `RemoteGraphicalLiveBrokerManager` with readiness checks in tests only
-- prove route gate remains disabled even if readiness sees a complete method surface
-- keep helper methods implementation-pending
+- add a pure validator/constructor for bounded live broker status metadata
+- document allowed status fields and forbidden content-bearing/provider-secret fields
+- add tests for configured/unconfigured/degraded status shapes
+- keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior

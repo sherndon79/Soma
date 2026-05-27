@@ -504,6 +504,10 @@ Implemented:
 - added a remote graphical session-open route gate: fixture invocation now flows through a pure
   decision helper, future live invocation has an explicit disabled switch point, and current route
   behavior remains fixture-only/refusal without live readiness or transport calls
+- documented the remote graphical live broker adapter plan: Node keeps policy/gates/provenance,
+  a future Rust helper owns bounded Sunshine/Moonlight substrate interaction, and helper
+  inputs/outputs, subprocess bounds, timeout/error classes, and cleanup hooks are named without
+  implementing process/socket/credential handling
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -516,23 +520,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Design the live Sunshine/Moonlight broker adapter plan without implementing process, socket, or
-credential handling.
+Implement a non-activating live broker helper scaffold with stubbed methods and contract tests.
 
 Target:
 
 ```text
-remote graphical live broker adapter design
+remote graphical live broker helper scaffold
   -> keep the repository manifest loader metadata-only
-  -> define adapter responsibilities and host-side command boundaries
+  -> add helper/manager shape with methods returning implementation-pending errors
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- document adapter inputs/outputs, subprocess boundaries, timeout/error classes, and cleanup hooks
-- distinguish Sunshine/Moonlight process control from video observation and input channels
+- add stubbed helper or manager contract that cannot call Sunshine/Moonlight
+- expose stable `method_implementation_pending`/helper-unavailable style errors
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior

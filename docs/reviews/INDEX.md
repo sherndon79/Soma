@@ -334,6 +334,8 @@ default.
   - review after adding pure live session-open result constructors without route activation
 - [Remote Graphical Session-Open Route Gate](./2026-05-26_remote_graphical_session_open_route_gate.md)
   - review after adding a pure route invocation decision while preserving fixture-only behavior
+- [Remote Graphical Live Broker Adapter Plan](./2026-05-26_remote_graphical_live_broker_adapter_plan.md)
+  - review after documenting the live Sunshine/Moonlight adapter boundary without implementation
 
 ## Current Review Triggers
 

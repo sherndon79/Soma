@@ -30,6 +30,8 @@ Before implementation, the activation branch must include:
   and provenance preview without route activation
 - a reviewed route gate that keeps fixture invocation separate from future live invocation and
   requires an explicit switch before any live broker can be called
+- a reviewed live broker adapter plan naming Node/Rust ownership, helper input/output bounds,
+  timeout/error classes, and cleanup hooks before process/socket/credential handling is implemented
 - stable refusal codes for disabled runtime, missing broker, target mismatch, pairing required,
   provider unavailable, broker failure, and cleanup failure
 - an operator rollback plan for the target node or host

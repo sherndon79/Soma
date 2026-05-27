@@ -73,6 +73,7 @@ should inform implementation.
 - [Model Visual Preview Acknowledgement](./concepts/drafts/model_visual_preview_acknowledgement.md)
 - [Model Capability Evaluations](./concepts/drafts/model_capability_evaluations.md)
 - [Remote Graphical Broker Boundary](./concepts/drafts/remote_graphical_broker_boundary.md)
+- [Remote Graphical Live Broker Adapter Plan](./concepts/drafts/remote_graphical_live_broker_adapter_plan.md)
 - [Remote Graphical Live Broker Readiness](./concepts/drafts/remote_graphical_live_broker_readiness.md)
 - [Remote Graphical Live Session Disclosure](./concepts/drafts/remote_graphical_live_session_disclosure.md)
 - [Remote Graphical Live Session-Open Result](./concepts/drafts/remote_graphical_live_session_open_result.md)

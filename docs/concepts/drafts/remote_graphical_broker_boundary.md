@@ -180,6 +180,11 @@ In the first no-op slice, methods that would activate transport should return ex
 Tests should prove no Sunshine/Moonlight command, subprocess, socket, frame capture, input dispatch,
 or recording is invoked.
 
+The provider-specific adapter boundary is captured in
+[Remote Graphical Live Broker Adapter Plan](./remote_graphical_live_broker_adapter_plan.md). That
+plan keeps Node responsible for policy and gates, while a future Rust helper owns bounded
+Sunshine/Moonlight process or socket interaction.
+
 ## Provenance
 
 Broker provenance should record only bounded metadata:

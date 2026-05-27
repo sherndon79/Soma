@@ -184,6 +184,11 @@ The runtime transport seam is captured separately in
 provider-neutral broker lifecycle and keeps session open, video observation, input dispatch,
 disconnect, recording, and model-facing delivery as separate reviewed actions.
 
+The provider-specific live adapter boundary is captured in
+[Remote Graphical Live Broker Adapter Plan](./remote_graphical_live_broker_adapter_plan.md). That
+plan adopts the Rust helper + Node manager shape recommended below, but does not implement
+Sunshine/Moonlight process, socket, pairing, credential, or live transport handling.
+
 ---
 
 ## Addendum: Implementation Framing for Sunshine/Moonlight — 2026-05-17

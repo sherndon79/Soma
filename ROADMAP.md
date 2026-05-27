@@ -508,6 +508,9 @@ Implemented:
   a future Rust helper owns bounded Sunshine/Moonlight substrate interaction, and helper
   inputs/outputs, subprocess bounds, timeout/error classes, and cleanup hooks are named without
   implementing process/socket/credential handling
+- added a non-activating Moonlight broker helper/manager scaffold: `soma-moonlight-broker`
+  recognizes the future JSON-RPC method surface and returns `method_implementation_pending`, while
+  `RemoteGraphicalLiveBrokerManager` can spawn/map helper errors but remains unused by runtime routes
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -520,22 +523,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Implement a non-activating live broker helper scaffold with stubbed methods and contract tests.
+Add live broker manager readiness composition tests without enabling route invocation.
 
 Target:
 
 ```text
-remote graphical live broker helper scaffold
+remote graphical live broker manager readiness composition
   -> keep the repository manifest loader metadata-only
-  -> add helper/manager shape with methods returning implementation-pending errors
+  -> prove helper manager can satisfy method-surface readiness while activation remains disabled
   -> preserve session-open refusal and no live transport calls
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add stubbed helper or manager contract that cannot call Sunshine/Moonlight
-- expose stable `method_implementation_pending`/helper-unavailable style errors
+- compose `RemoteGraphicalLiveBrokerManager` with readiness checks in tests only
+- prove route gate remains disabled even if readiness sees a complete method surface
+- keep helper methods implementation-pending
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence
 - preserve current session-open refusal behavior

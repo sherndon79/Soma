@@ -1,6 +1,6 @@
 # Remote Graphical Live Broker Adapter Plan
 
-Status: adapter design, no process/socket/credential handling implemented
+Status: adapter design with non-activating helper scaffold, no process/socket/credential handling implemented
 
 This document defines the first live Sunshine/Moonlight broker adapter boundary. It does not
 authorize live route invocation or any Sunshine/Moonlight calls.
@@ -61,6 +61,23 @@ cleanup_for_grant
 The helper must return bounded JSON only. It must not return frame bytes, screenshots, recognized
 text, clipboard contents, input events, window metadata, file names, audio payloads, stdout, stderr,
 stack traces, transport logs, or raw diagnostics.
+
+The current scaffold is `crates/soma-moonlight-broker`. It recognizes these JSON-RPC methods:
+
+```text
+remote_graphical.status
+remote_graphical.open_session
+remote_graphical.describe_active
+remote_graphical.cleanup_for_grant
+```
+
+Each recognized method returns `method_implementation_pending`. This proves the helper/manager
+shape without linking Moonlight libraries, spawning transport processes, opening sockets, pairing,
+persisting credentials, opening sessions, observing video, dispatching input, recording, or
+cleaning up provider sessions.
+
+The Node-side scaffold is `src/remoteGraphicalLiveBrokerManager.js`. It can spawn the helper and
+map JSON-RPC errors, but no runtime path instantiates it.
 
 ## Node Manager Inputs
 

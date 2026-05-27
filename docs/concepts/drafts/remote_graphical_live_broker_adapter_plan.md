@@ -82,6 +82,12 @@ results through the bounded contracts below. Validator failures are wrapped as
 `remote_graphical_live_helper_contract_invalid` with a stable cause code and without retaining the
 helper payload. No runtime path instantiates it.
 
+`planRemoteGraphicalLiveBrokerManagerStartup` is a pure startup posture planner. It may report that
+future live manager construction is eligible only when runtime opt-in is explicit, repository
+manifest posture is configured and loaded, provider/target identity is present, and the helper
+binary path is reviewed. It does not construct the manager, start the helper, call the broker, or
+change `createRemoteGraphicalRuntime`, which remains on the current no-op broker path.
+
 ## Node Manager Inputs
 
 Node may pass:

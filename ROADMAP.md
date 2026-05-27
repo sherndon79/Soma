@@ -535,6 +535,11 @@ Implemented:
   helper responses now surface as `remote_graphical_live_helper_contract_invalid` with result kind,
   stable cause code, and optional validation details, without retaining helper payloads; helper
   protocol errors remain unchanged
+- added a pure live broker manager startup posture planner:
+  `planRemoteGraphicalLiveBrokerManagerStartup` reports construction eligibility only when runtime
+  opt-in, configured/loaded manifest posture, provider/target identity, and a reviewed helper
+  binary path are present, while preserving no manager construction, helper startup, broker calls,
+  or runtime path changes
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -547,22 +552,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker manager startup posture factory without enabling runtime construction.
+Add live broker manager startup posture CLI/review visibility without enabling runtime construction.
 
 Target:
 
 ```text
-remote graphical live broker manager startup posture factory
+remote graphical live broker manager startup posture visibility
   -> keep the repository manifest loader metadata-only
-  -> define a pure factory decision for when a live manager may be constructed
+  -> expose startup eligibility as review metadata only
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure factory/planner that reports whether live manager construction is eligible
-- require explicit runtime opt-in, configured manifest posture, and reviewed helper binary path
+- add a review formatter or CLI-visible summary for startup posture planning
+- preserve concise default text and JSON-first machine output patterns
+- prove visibility does not construct manager or start helper
 - keep `createRemoteGraphicalRuntime` returning the current no-op broker
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness

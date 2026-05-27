@@ -350,6 +350,8 @@ default.
   - review after composing bounded helper result validators into the Node manager wrappers
 - [Remote Graphical Live Broker Manager Contract Error Mapping](./2026-05-27_remote_graphical_live_broker_manager_contract_error_mapping.md)
   - review after bounding manager-side validator failure errors without retaining helper payloads
+- [Remote Graphical Live Broker Startup Plan](./2026-05-27_remote_graphical_live_broker_startup_plan.md)
+  - review after adding pure startup eligibility planning without runtime manager construction
 
 ## Current Review Triggers
 

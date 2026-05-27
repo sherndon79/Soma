@@ -84,6 +84,16 @@ The embedded `plan` object should include:
 }
 ```
 
+The portable example fixture is:
+
+```text
+docs/fixtures/remote-graphical-startup-review-output.example.json
+```
+
+The fixture normalizes the workspace-absolute helper binary path to
+`<repo-root>/target/debug/soma-moonlight-broker`; the live CLI output should still report the
+actual local path it reviewed.
+
 ## Source Guard Refusals
 
 The command should fail locally before fixture review or service requests when a caller tries to

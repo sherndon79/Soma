@@ -550,6 +550,8 @@ Implemented:
 - added startup-review runbook guard coverage that checks documented local commands, source-guard
   refusals, text markers, JSON false flags, and the no-service-request posture against actual CLI
   output
+- added a portable startup-review JSON example fixture and guard test that compares fixture-required
+  fields against the current CLI output shape while preserving all false activation flags
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -562,22 +564,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker startup-review JSON schema fixture for operator automation.
+Add remote graphical startup-review fixture route-reference guard coverage.
 
 Target:
 
 ```text
-remote graphical live broker startup-review JSON schema fixture
+remote graphical startup-review fixture route-reference guard coverage
   -> keep the repository manifest loader metadata-only
-  -> document machine-readable startup-review output for future operator automation
+  -> prove startup-review fixture docs remain CLI-only and route-unconnected
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a docs fixture/example JSON output for `soma remote-graphical startup-review --json`
-- add a test that compares fixture-required fields against current CLI output shape
+- add a guard that no `/remote-graphical/startup-review` route is exposed
+- keep the startup-review fixture documented as a CLI/operator automation artifact only
+- preserve JSON example fixture parity with current CLI output
 - preserve all false activation flags and local fixture-only posture
 - keep `createRemoteGraphicalRuntime` returning the current no-op broker
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`

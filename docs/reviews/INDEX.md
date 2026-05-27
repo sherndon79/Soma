@@ -358,6 +358,8 @@ default.
   - review after documenting startup-review operator examples and non-activation markers
 - [Remote Graphical Startup Review Runbook Guard](./2026-05-27_remote_graphical_startup_review_runbook_guard.md)
   - review after adding guard coverage for startup-review runbook markers and false flags
+- [Remote Graphical Startup Review JSON Fixture](./2026-05-27_remote_graphical_startup_review_json_fixture.md)
+  - review after adding a portable startup-review JSON example fixture and CLI parity guard
 
 ## Current Review Triggers
 

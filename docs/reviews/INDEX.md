@@ -344,6 +344,8 @@ default.
   - review after adding a bounded status result contract for future live helpers
 - [Remote Graphical Live Broker Active Sessions Contract](./2026-05-27_remote_graphical_live_broker_active_sessions_contract.md)
   - review after adding a bounded describe-active result contract for future live helpers
+- [Remote Graphical Live Broker Cleanup Result Contract](./2026-05-27_remote_graphical_live_broker_cleanup_result_contract.md)
+  - review after adding a bounded cleanup result contract for future live helpers
 
 ## Current Review Triggers
 

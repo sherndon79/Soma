@@ -523,6 +523,10 @@ Implemented:
   `createRemoteGraphicalLiveBrokerActiveSessions`, defining empty and opened-but-not-observing
   session metadata for future `describe_active` helper output while rejecting content-bearing and
   provider-secret fields without helper implementation or route activation
+- added a bounded live broker cleanup result contract through
+  `createRemoteGraphicalLiveBrokerCleanupResult`, defining no-op, stopped-session, and failed
+  cleanup metadata for future `cleanup_for_grant` helper output while rejecting content-bearing and
+  provider-secret fields without helper implementation or route activation
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -535,23 +539,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add a bounded live broker cleanup result contract without implementing Sunshine/Moonlight calls.
+Add live broker helper result validator composition in the Node manager without implementing helper methods.
 
 Target:
 
 ```text
-remote graphical live broker cleanup result contract
+remote graphical live broker manager result validator composition
   -> keep the repository manifest loader metadata-only
-  -> define the helper cleanup_for_grant result shape for future revocation/shutdown inputs
+  -> compose status, describe-active, and cleanup result validators with manager call sites
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a pure validator/constructor for bounded cleanup result metadata
-- document allowed cleanup fields and forbidden content-bearing/provider-secret fields
-- add tests for no-op, stopped-session, failed-cleanup, and malformed/over-disclosing shapes
+- add optional result validators to `RemoteGraphicalLiveBrokerManager` wrapper methods
+- prove helper `method_implementation_pending` errors are still passed through
+- prove synthetic successful helper results are narrowed by validators in manager-level tests
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence

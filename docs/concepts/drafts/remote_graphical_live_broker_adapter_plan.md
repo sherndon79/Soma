@@ -161,6 +161,26 @@ Failure may return only:
 
 Failures must not leak transport diagnostics or remote system details.
 
+Successful `cleanup_for_grant` may return only bounded metadata matching
+`createRemoteGraphicalLiveBrokerCleanupResult`:
+
+- schema version
+- action fixed to `cleanup_for_grant`
+- source grant id
+- provider id and target host, if known
+- cleanup status: `cleanup_noop`, `cleanup_completed`, or `cleanup_failed`
+- cleanup reason: revocation, expiry, shutdown, manual stop, or error recovery
+- stopped session count derived from stopped session ids
+- stopped Soma-opened session ids
+- cleanup-needed and retryable booleans
+- stable cause code for failed cleanup
+- bounded human summary
+
+Cleanup output must not return frame bytes, screenshots, thumbnails, recognized text, clipboard
+contents, input events, window metadata, file names, audio payloads, stdout, stderr, transport logs,
+raw diagnostics, stack traces, environment variables, process details, command lines, credentials,
+tokens, or pairing pins.
+
 ## Subprocess And Socket Boundary
 
 Any future subprocess or socket handling must be inside the reviewed helper or a reviewed helper

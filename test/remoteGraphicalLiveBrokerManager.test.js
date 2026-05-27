@@ -74,7 +74,7 @@ test("RemoteGraphicalLiveBrokerManager validates synthetic successful helper res
   assert.equal(cleanup.video_attached, false);
 });
 
-test("RemoteGraphicalLiveBrokerManager rejects over-disclosing synthetic helper results", async () => {
+test("RemoteGraphicalLiveBrokerManager maps invalid synthetic helper results to bounded contract errors", async () => {
   const manager = new SyntheticResultManager({
     "remote_graphical.status": {
       provider: "soma.provider.remote_desktop.sunshine",
@@ -99,15 +99,66 @@ test("RemoteGraphicalLiveBrokerManager rejects over-disclosing synthetic helper 
 
   await assert.rejects(
     () => manager.status(),
-    { code: "remote_graphical_live_status_forbidden_field" },
+    (error) => {
+      assert.equal(error.code, "remote_graphical_live_helper_contract_invalid");
+      assert.equal(error.code_name, "helper_contract_invalid");
+      assert.equal(error.result_kind, "status");
+      assert.equal(error.cause_code, "remote_graphical_live_status_forbidden_field");
+      assert.equal(Object.hasOwn(error, "helper_response"), false);
+      assert.equal(Object.hasOwn(error, "result"), false);
+      return true;
+    },
   );
   await assert.rejects(
     () => manager.describeActive(),
-    { code: "remote_graphical_live_active_sessions_forbidden_field" },
+    (error) => {
+      assert.equal(error.code, "remote_graphical_live_helper_contract_invalid");
+      assert.equal(error.code_name, "helper_contract_invalid");
+      assert.equal(error.result_kind, "describeActive");
+      assert.equal(error.cause_code, "remote_graphical_live_active_sessions_forbidden_field");
+      assert.equal(Object.hasOwn(error, "helper_response"), false);
+      assert.equal(Object.hasOwn(error, "result"), false);
+      return true;
+    },
   );
   await assert.rejects(
     () => manager.cleanupForGrant(),
-    { code: "remote_graphical_live_cleanup_result_forbidden_field" },
+    (error) => {
+      assert.equal(error.code, "remote_graphical_live_helper_contract_invalid");
+      assert.equal(error.code_name, "helper_contract_invalid");
+      assert.equal(error.result_kind, "cleanupForGrant");
+      assert.equal(error.cause_code, "remote_graphical_live_cleanup_result_forbidden_field");
+      assert.equal(Object.hasOwn(error, "helper_response"), false);
+      assert.equal(Object.hasOwn(error, "result"), false);
+      return true;
+    },
+  );
+});
+
+test("RemoteGraphicalLiveBrokerManager preserves validation details without helper payloads", async () => {
+  const manager = new SyntheticResultManager({
+    "remote_graphical.cleanup_for_grant": {},
+  }, {
+    cleanupForGrant() {
+      const error = new Error("bad cleanup");
+      error.code = "fixture_validation_failed";
+      error.validation_errors = ["source_grant_id missing", "cause_code missing"];
+      error.result = { source_grant_id: "", secret: "not retained" };
+      throw error;
+    },
+  });
+
+  await assert.rejects(
+    () => manager.cleanupForGrant(),
+    (error) => {
+      assert.equal(error.code, "remote_graphical_live_helper_contract_invalid");
+      assert.equal(error.cause_code, "fixture_validation_failed");
+      assert.deepEqual(error.validation_errors, ["source_grant_id missing", "cause_code missing"]);
+      assert.equal(Object.hasOwn(error, "result"), false);
+      assert.equal(Object.hasOwn(error, "helper_response"), false);
+      assert.equal(error.message.includes("secret"), false);
+      return true;
+    },
   );
 });
 
@@ -140,8 +191,11 @@ test(
 class SyntheticResultManager extends RemoteGraphicalLiveBrokerManager {
   #results;
 
-  constructor(results) {
-    super({ binaryPath: "/not/used/by/synthetic-manager" });
+  constructor(results, resultValidators) {
+    super({
+      binaryPath: "/not/used/by/synthetic-manager",
+      resultValidators,
+    });
     this.#results = results;
   }
 

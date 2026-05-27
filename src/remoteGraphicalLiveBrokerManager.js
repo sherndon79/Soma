@@ -80,7 +80,7 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
 
   status(params = {}) {
     return this.send("remote_graphical.status", params)
-      .then((result) => this.#resultValidators.status(result));
+      .then((result) => this.#validateResult("status", result));
   }
 
   openSession(params = {}) {
@@ -89,12 +89,12 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
 
   describeActive(params = {}) {
     return this.send("remote_graphical.describe_active", params)
-      .then((result) => this.#resultValidators.describeActive(result));
+      .then((result) => this.#validateResult("describeActive", result));
   }
 
   cleanupForGrant(params = {}) {
     return this.send("remote_graphical.cleanup_for_grant", params)
-      .then((result) => this.#resultValidators.cleanupForGrant(result));
+      .then((result) => this.#validateResult("cleanupForGrant", result));
   }
 
   send(method, params = {}) {
@@ -202,6 +202,14 @@ export class RemoteGraphicalLiveBrokerManager extends EventEmitter {
     }
     this.#pending.clear();
   }
+
+  #validateResult(kind, result) {
+    try {
+      return this.#resultValidators[kind](result);
+    } catch (cause) {
+      throw createHelperContractInvalidError(kind, cause);
+    }
+  }
 }
 
 export const REMOTE_GRAPHICAL_LIVE_BROKER_DEFAULT_BINARY = DEFAULT_HELPER_PATH;
@@ -212,4 +220,17 @@ function defaultResultValidators() {
     describeActive: createRemoteGraphicalLiveBrokerActiveSessions,
     cleanupForGrant: createRemoteGraphicalLiveBrokerCleanupResult,
   };
+}
+
+function createHelperContractInvalidError(kind, cause) {
+  const error = new Error(`Remote graphical live helper returned invalid ${kind} result.`);
+  error.code = "remote_graphical_live_helper_contract_invalid";
+  error.code_name = "helper_contract_invalid";
+  error.statusCode = 502;
+  error.result_kind = kind;
+  error.cause_code = String(cause?.code ?? "").trim();
+  error.validation_errors = Array.isArray(cause?.validation_errors)
+    ? cause.validation_errors.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  return error;
 }

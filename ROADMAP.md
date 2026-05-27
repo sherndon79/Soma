@@ -531,6 +531,10 @@ Implemented:
   methods for successful `status`, `describe_active`, and `cleanup_for_grant` helper results, while
   preserving passthrough `method_implementation_pending` errors from the stub helper and leaving
   runtime routes unconnected
+- added bounded manager-side helper contract error mapping: validator failures from successful
+  helper responses now surface as `remote_graphical_live_helper_contract_invalid` with result kind,
+  stable cause code, and optional validation details, without retaining helper payloads; helper
+  protocol errors remain unchanged
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -543,23 +547,23 @@ Current authority boundary:
 
 ## Next Slice
 
-Add live broker manager contract invalid error mapping without implementing helper methods.
+Add live broker manager startup posture factory without enabling runtime construction.
 
 Target:
 
 ```text
-remote graphical live broker manager contract invalid error mapping
+remote graphical live broker manager startup posture factory
   -> keep the repository manifest loader metadata-only
-  -> map validator failures to bounded helper-contract error classes
+  -> define a pure factory decision for when a live manager may be constructed
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add bounded manager-side wrapping for validator failures from successful helper responses
-- preserve original validation error code internally without leaking helper payload
-- prove helper `method_implementation_pending` errors remain unchanged
+- add a pure factory/planner that reports whether live manager construction is eligible
+- require explicit runtime opt-in, configured manifest posture, and reviewed helper binary path
+- keep `createRemoteGraphicalRuntime` returning the current no-op broker
 - keep `soma-moonlight-broker` methods returning `method_implementation_pending`
 - keep route gate disabled and unconnected to live readiness
 - preserve fixture review as review-only evidence

@@ -78,7 +78,9 @@ cleaning up provider sessions.
 
 The Node-side scaffold is `src/remoteGraphicalLiveBrokerManager.js`. It can spawn the helper, map
 JSON-RPC errors, and validate successful `status`, `describe_active`, and `cleanup_for_grant`
-results through the bounded contracts below. No runtime path instantiates it.
+results through the bounded contracts below. Validator failures are wrapped as
+`remote_graphical_live_helper_contract_invalid` with a stable cause code and without retaining the
+helper payload. No runtime path instantiates it.
 
 ## Node Manager Inputs
 

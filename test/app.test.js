@@ -3327,6 +3327,38 @@ test("GET /remote-graphical/status uses injected disclosure without activating t
   assert.equal(response.body.live_transport_used, false);
 });
 
+test("remote-graphical startup-review is not exposed as an HTTP route", async () => {
+  let describeCalls = 0;
+  let openSessionCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    remoteGraphicalBroker: {
+      describeActive() {
+        describeCalls += 1;
+        throw new Error("startup-review route guard should not inspect broker status");
+      },
+      async openSession() {
+        openSessionCalls += 1;
+        throw new Error("startup-review route guard should not open sessions");
+      },
+    },
+  });
+
+  for (const method of ["GET", "POST"]) {
+    const response = await invokeHandler(handler, {
+      method,
+      url: "/remote-graphical/startup-review",
+      body: method === "POST" ? { requested_by: "assistant" } : undefined,
+    });
+
+    assert.equal(response.statusCode, 404);
+    assert.equal(response.body.error, "not_found");
+  }
+
+  assert.equal(describeCalls, 0);
+  assert.equal(openSessionCalls, 0);
+});
+
 test("POST /remote-graphical/session-open-review returns review without broker activation", async () => {
   let describeCalls = 0;
   const handler = makeHandler({

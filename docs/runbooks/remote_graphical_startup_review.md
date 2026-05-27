@@ -4,6 +4,9 @@ This runbook verifies the review-only startup posture surface for the future liv
 Sunshine/Moonlight broker manager. It is intentionally a local planning review, not live broker
 startup.
 
+This is a CLI-only operator automation surface. Soma does not expose a
+`/remote-graphical/startup-review` HTTP route for this fixture.
+
 ## Commands
 
 Run the human-readable startup review:

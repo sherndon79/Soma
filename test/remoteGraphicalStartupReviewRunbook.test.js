@@ -12,6 +12,8 @@ test("remote graphical startup-review runbook documents local commands and sourc
   for (const marker of [
     "npm run cli -- remote-graphical startup-review",
     "npm run cli -- remote-graphical startup-review --json",
+    "This is a CLI-only operator automation surface.",
+    "`/remote-graphical/startup-review` HTTP route",
     "docs/fixtures/remote-graphical-live-provider-manifest.json",
     "usage_error: remote-graphical startup-review does not accept --manifest-path",
     "usage_error: remote-graphical startup-review does not accept --helper-binary",

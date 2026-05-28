@@ -14,6 +14,8 @@ test("remote graphical startup-review runbook documents local commands and sourc
     "npm run cli -- remote-graphical startup-review --json",
     "This is a CLI-only operator automation surface.",
     "`/remote-graphical/startup-review` HTTP route",
+    "[Remote Graphical Live Broker Activation Checklist](../concepts/drafts/remote_graphical_live_broker_activation_checklist.md)",
+    "Before any startup-review output is used to justify route or runtime activation",
     "docs/fixtures/remote-graphical-live-provider-manifest.json",
     "usage_error: remote-graphical startup-review does not accept --manifest-path",
     "usage_error: remote-graphical startup-review does not accept --helper-binary",

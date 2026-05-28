@@ -11,6 +11,10 @@ Passing this checklist must not be treated as permission to activate video obser
 recording, pairing, credential persistence, durable grant writes, or model-facing visual delivery.
 It only gates the first live `open_session` substrate action.
 
+`soma remote-graphical startup-review` and its JSON fixture are review-only evidence for planner
+preconditions. They are not route authority, runtime authority, grant authority, or permission to
+construct a live broker.
+
 ## Required Artifacts
 
 Before implementation, the activation branch must include:

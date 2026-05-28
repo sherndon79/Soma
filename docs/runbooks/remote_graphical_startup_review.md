@@ -7,6 +7,9 @@ startup.
 This is a CLI-only operator automation surface. Soma does not expose a
 `/remote-graphical/startup-review` HTTP route for this fixture.
 
+Before any startup-review output is used to justify route or runtime activation, review the
+[Remote Graphical Live Broker Activation Checklist](../concepts/drafts/remote_graphical_live_broker_activation_checklist.md).
+
 ## Commands
 
 Run the human-readable startup review:

@@ -554,6 +554,8 @@ Implemented:
   fields against the current CLI output shape while preserving all false activation flags
 - added route-reference guard coverage proving `/remote-graphical/startup-review` is not an HTTP
   route and does not inspect or invoke the remote graphical broker
+- added activation-checklist cross-reference guard coverage so startup-review remains documented as
+  review-only evidence rather than route, runtime, grant, or live broker authority
 - CI for Node tests and Rust helper build
 
 Current authority boundary:
@@ -566,23 +568,22 @@ Current authority boundary:
 
 ## Next Slice
 
-Add startup-review activation-checklist cross-reference guard.
+Add startup-review no-live-runtime composition guard.
 
 Target:
 
 ```text
-remote graphical startup-review activation-checklist cross-reference guard
+remote graphical startup-review no-live-runtime composition guard
   -> keep the repository manifest loader metadata-only
-  -> keep startup-review tied to the live broker activation checklist before any route/runtime use
+  -> prove startup-review tests do not construct runtime or live broker manager surfaces
   -> preserve session-open refusal and no live transport calls or helper implementation
   -> keep durable writes, visual payloads, input events, and model delivery out of scope
 ```
 
 Expected work:
 
-- add a focused doc guard that the startup-review runbook links to the activation checklist
-- ensure activation checklist language names startup-review as review-only evidence, not authority
-- preserve route-unconnected startup-review posture
+- add a focused source/test guard that startup-review uses the pure planner only
+- preserve activation-checklist and route-unconnected startup-review posture
 - preserve JSON example fixture parity with current CLI output
 - preserve all false activation flags and local fixture-only posture
 - keep `createRemoteGraphicalRuntime` returning the current no-op broker

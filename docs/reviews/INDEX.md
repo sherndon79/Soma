@@ -362,6 +362,8 @@ default.
   - review after adding a portable startup-review JSON example fixture and CLI parity guard
 - [Remote Graphical Startup Review Route Guard](./2026-05-27_remote_graphical_startup_review_route_guard.md)
   - review after proving startup-review remains CLI-only and route-unconnected
+- [Remote Graphical Startup Review Activation Checklist Guard](./2026-05-28_remote_graphical_startup_review_activation_checklist_guard.md)
+  - review after tying startup-review to activation-checklist evidence rather than authority
 
 ## Current Review Triggers
 

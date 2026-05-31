@@ -5,6 +5,7 @@ import {
   buildCapabilityView,
   loadCapabilityCatalog,
   loadProviderRegistry,
+  normalizeCapabilityCatalog,
 } from "../src/capabilityCatalog.js";
 
 test("capability view exposes provider contract metadata from registry claims", async () => {
@@ -24,6 +25,14 @@ test("capability view exposes provider contract metadata from registry claims", 
   assert.equal(tree.provider_contract, "soma.desktop.inspect.accessibility_tree.v1");
   assert.equal(tree.providers[0].provider_contract, "soma.desktop.inspect.accessibility_tree.v1");
   assert.equal(tree.providers[0].output_schema, "docs/schemas/desktop-inspection-result.schema.json");
+  assert.equal(tree.risk_class, "sensitive");
+  assert.equal(tree.activation_policy, "base_harness");
+  assert.ok(tree.data_exposed.includes("authorized structure-only recursive role/count topology"));
+  assert.ok(tree.excluded_by_default.includes("child names"));
+  assert.ok(tree.excluded_by_default.includes("descriptions"));
+  assert.ok(tree.excluded_by_default.includes("text content"));
+  assert.ok(tree.excluded_by_default.includes("states"));
+  assert.ok(tree.excluded_by_default.includes("actions"));
 });
 
 test("capability view keeps remote planning unsupported until a provider is registered", async () => {
@@ -38,6 +47,64 @@ test("capability view keeps remote planning unsupported until a provider is regi
   assert.equal(remotePlan.support_status, "unsupported");
   assert.deepEqual(remotePlan.providers, []);
   assert.equal(remotePlan.activation_policy, "explicit_grant");
+});
+
+test("capability catalog rejects ambiguous base-harness authority", () => {
+  assert.throws(
+    () => normalizeCapabilityCatalog({
+      capabilities: [
+        {
+          key: "example.unknown",
+          activation_policy: "base_harness",
+        },
+      ],
+    }),
+    /capability "example\.unknown" has risk_class=unknown and must use activation_policy=explicit_grant or forbidden/,
+  );
+});
+
+test("capability catalog rejects high-risk base-harness authority", () => {
+  assert.throws(
+    () => normalizeCapabilityCatalog({
+      capabilities: [
+        {
+          key: "example.high",
+          risk_class: "high",
+          activation_policy: "base_harness",
+        },
+      ],
+    }),
+    /capability "example\.high" has risk_class=high and must use activation_policy=explicit_grant or forbidden/,
+  );
+});
+
+test("capability catalog rejects unrecognized risk classes on light authority", () => {
+  assert.throws(
+    () => normalizeCapabilityCatalog({
+      capabilities: [
+        {
+          key: "example.typo",
+          risk_class: "sensitve",
+          activation_policy: "base_harness",
+        },
+      ],
+    }),
+    /capability "example\.typo" has risk_class=sensitve and must use activation_policy=explicit_grant or forbidden/,
+  );
+});
+
+test("capability catalog permits reviewed sensitive base-harness authority", () => {
+  const catalog = normalizeCapabilityCatalog({
+    capabilities: [
+      {
+        key: "example.sensitive",
+        risk_class: "sensitive",
+        activation_policy: "base_harness",
+      },
+    ],
+  });
+
+  assert.equal(catalog.capabilities.length, 1);
 });
 
 // ── Sensorium subscription capabilities (disabled-first integration) ───────

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const DEFAULT_CATALOG_PATH = new URL("../config/capability-catalog.json", import.meta.url);
 const DEFAULT_PROVIDER_REGISTRY_PATH = new URL("../config/provider-registry.json", import.meta.url);
+const CATALOG_RISK_CLASSES = new Set(["low", "sensitive", "high"]);
 
 export async function loadCapabilityCatalog(path = DEFAULT_CATALOG_PATH) {
   const raw = await readFile(path, "utf8");
@@ -14,10 +15,12 @@ export async function loadProviderRegistry(path = DEFAULT_PROVIDER_REGISTRY_PATH
 }
 
 export function normalizeCapabilityCatalog(config) {
-  return {
+  const catalog = {
     schema_version: config.schema_version ?? 1,
     capabilities: Array.isArray(config.capabilities) ? config.capabilities : [],
   };
+  validateCapabilityCatalogPolicy(catalog);
+  return catalog;
 }
 
 export function normalizeProviderRegistry(config) {
@@ -88,6 +91,28 @@ function classifyCapabilityStatus({ capability, harnessStatus, supported }) {
     return "requestable";
   }
   return "disabled";
+}
+
+function validateCapabilityCatalogPolicy(catalog) {
+  for (const capability of catalog.capabilities) {
+    const riskClass = capability.risk_class ?? "unknown";
+    const activationPolicy = capability.activation_policy ?? "";
+    const key = capability.key ?? "<missing capability key>";
+    const riskClassRecognized = CATALOG_RISK_CLASSES.has(riskClass);
+
+    if (
+      !riskClassRecognized
+      || riskClass === "unknown"
+      || riskClass === "high"
+      || !Object.hasOwn(capability, "risk_class")
+    ) {
+      if (activationPolicy !== "explicit_grant" && activationPolicy !== "forbidden") {
+        throw new Error(
+          `capability "${key}" has risk_class=${riskClass} and must use activation_policy=explicit_grant or forbidden`,
+        );
+      }
+    }
+  }
 }
 
 function findHarnessCapability(harness, key) {

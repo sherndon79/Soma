@@ -149,8 +149,9 @@ Implemented:
   invariants
 - final Node traversal endpoint enablement review completed; endpoint activation is ready for a
   guarded implementation slice that replaces hard refusal only with converted active assertions
-- public Node traversal endpoint activated behind disclosure-registry authorization, traversal
-  helper-output validation, traversal-authorized response validation, and summary-only provenance
+- public Node structure-only traversal endpoint activated behind disclosure-registry authorization,
+  traversal helper-output validation, traversal-authorized response validation, explicit
+  `text_content_included=false`, content-bearing field rejection, and summary-only provenance
 - public Node traversal endpoint activation review completed; activation accepted with no rollback
   or immediate code cleanup required
 - traversal artifact lifecycle disposition completed with stable active API names, compatibility
@@ -613,9 +614,9 @@ Constraints:
 ## Near-Term
 
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
-- Expand bounded AT-SPI inspection from shallow child metadata into opt-in recursive traversal only
-  after focused inspection boundaries are validated.
-- Preserve operator narrowing controls as traversal expands.
+- Preserve operator narrowing controls as traversal and focused inspection evolve.
+- Keep text-bearing desktop traversal separate under `desktop.inspect.text`; do not fold child
+  names, descriptions, text content, states, or actions into the structure-only traversal envelope.
 - Add a separate `desktop.inspect.text` grant path before any child names, descriptions, text
   content, states, or actions are exposed.
 - Expand provenance for future desktop inspection modes without storing large trees by default.

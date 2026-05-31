@@ -49,6 +49,53 @@ model/helper/provider says it can do X
 
 Do not bypass this sequence for convenience.
 
+## Risk-Proportional Enablement
+
+Keep consent architecture proportional to the actual authority being added. Soma should stay
+closed by default, but the ceremony around a capability should scale with what it can expose,
+persist, disclose, or change.
+
+Cross-project invariant: match the gate to the failure mode; ambiguity resolves upward.
+
+Use the lightest path that still preserves the authority boundary:
+
+- **Low-risk read-only metadata**: catalog/provider clarity, explicit request validation, bounded
+  output validation, lightweight attribution/provenance, and focused tests are usually enough. Do
+  not require full proposal/grant/revocation scaffolding unless the metadata can identify people,
+  expose content, create durable state, compose with already-granted capabilities into sensitive
+  observation, or become a stepping stone to broader authority.
+- **Sensitive read-only perception**: add disclosure, provenance minimization, refusal behavior,
+  and overreach tests before activation. This includes host inspection that can reveal user
+  activity, private content, device state, or stable identifiers.
+- **Externally-disclosing, durable, writable, or actuation behavior**: use the full disabled-first
+  pattern, including proposal/grant/revocation shape, threat/failure updates, operator surfaces,
+  and activation gates.
+
+Ambiguous, unclassified, or mixed-risk capabilities default upward to the heavier applicable path
+until a deliberate review classifies them down. Proportionality should reduce ceremony only after
+the data exposed, persistence, disclosure path, reversibility, and authority expansion are clear.
+
+Classify capabilities in combination with what is already active or granted, not only in isolation;
+aggregate ambiguity also resolves upward.
+
+Soma's current runtime gate remains intentionally binary: base-harness capabilities may run through
+the ordinary request path, while explicit-grant capabilities require proposal, grant,
+authorization, provenance, and recovery checks. Risk class informs review and catalog validation;
+it does not create a third runtime authority path by itself. Catalog loading must fail closed when
+`risk_class` is missing, unknown, unrecognized, or high-risk while activation policy is lighter
+than `explicit_grant` or `forbidden`.
+
+`desktop.inspect.accessibility_tree` is the current example of an intentionally reviewed sensitive
+base-harness capability. Its active traversal path is structure-only: prior-disclosure root
+authorization, bounded recursive role/count topology, explicit `text_content_included=false`,
+content-bearing field rejection, and summary-only provenance. Text-bearing traversal belongs to the
+separate high-risk `desktop.inspect.text` path and should not be smuggled into the structure-only
+envelope.
+
+When a feature feels stalled in scaffolding, check whether its current slice is proving a real
+authority boundary or only repeating ceremony from a higher-risk class. The substrate is part of
+the product, but it should be cheap to extend where the risk is genuinely small.
+
 ## Disabled-First Capability Pattern
 
 For sensitive or authority-expanding behavior, prefer disabled-first scaffolding.

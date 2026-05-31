@@ -192,16 +192,24 @@ Soma/
 
 ### Add A Capability
 
-1. Define the capability in the catalog as disabled unless it is clearly part of the conservative
+1. Classify the risk first. Keep low-risk read-only metadata slices lightweight; reserve the full
+   proposal/grant/revocation ceremony for sensitive perception, external disclosure, durable
+   state, writes, actuation, or authority expansion.
+   Ambiguous, unclassified, or mixed-risk capabilities default upward to the heavier applicable
+   path until deliberately classified down.
+   Classify risk in combination with what is already active or granted, not only in isolation.
+2. Define the capability in the catalog as disabled unless it is clearly part of the conservative
    base harness.
-2. Define provider support separately.
-3. Document data exposed, excluded data, risk class, allowed scopes, and reversibility.
-4. Add proposal/grant/revocation shape before activation.
-5. Update threat model and failure modes.
-6. Add or update model capability evals when model behavior around the boundary matters, including
+3. Define provider support separately.
+4. Document data exposed, excluded data, risk class, allowed scopes, and reversibility.
+5. Add proposal/grant/revocation shape before activation when the risk class requires explicit
+   authority records.
+6. Update threat model and failure modes when the behavior changes an authority, privacy,
+   disclosure, persistence, or failure boundary.
+7. Add or update model capability evals when model behavior around the boundary matters, including
    unsupported authority claims, excluded-data requests, and proposal reason/scope/risk/fallback
    requirements.
-7. Avoid central catch-all handlers. If the capability needs a new implementation surface, add a
+8. Avoid central catch-all handlers. If the capability needs a new implementation surface, add a
    provider or broker boundary instead of folding it into an unrelated module.
 
 ### Add Desktop Broker Behavior

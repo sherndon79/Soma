@@ -240,12 +240,26 @@
       "risk_class": "sensitive",
       "default_status": "allowed",
       "allowed_scopes": ["session"],
-      "data_exposed": ["application metadata", "root object roles", "shallow child role/count metadata"],
-      "excluded_by_default": ["text content", "screenshots", "pointer control", "keyboard control"],
+      "data_exposed": [
+        "application metadata",
+        "root object roles",
+        "shallow child role/count metadata",
+        "authorized structure-only recursive role/count topology"
+      ],
+      "excluded_by_default": [
+        "child names",
+        "descriptions",
+        "text content",
+        "states",
+        "actions",
+        "screenshots",
+        "pointer control",
+        "keyboard control"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.desktop.inspect.accessibility_tree.v1",
-      "description": "Inspect bounded desktop accessibility environment, application root objects, and shallow child role/count metadata without actuation."
+      "description": "Inspect bounded desktop accessibility environment, application root objects, shallow child role/count metadata, and prior-disclosure-authorized structure-only traversal without actuation."
     },
     {
       "key": "desktop.inspect.windows",

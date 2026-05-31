@@ -7,9 +7,10 @@ The first implementation slice is intentionally narrow: a dependency-free local 
 exposes a conservative base harness, routes chat to a local vLLM/OpenAI-compatible model, and
 puts early local capabilities behind policy checks and provenance.
 
-Current scaffold capabilities include local chat, ephemeral session memory, in-process
-provenance, text-only cognitive-load stewardship, scoped file reads, and read-only desktop
-inspection readiness.
+Current capabilities include policy-gated local chat, ephemeral session memory and in-process
+provenance, scoped read-only file access, text-only cognitive-load stewardship, and read-only
+desktop accessibility inspection, including authorized structure-only recursive traversal
+(role/count topology only; text-bearing content remains excluded and gated separately).
 
 ## Architecture Direction
 

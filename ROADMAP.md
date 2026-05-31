@@ -3,7 +3,52 @@
 Soma is currently a policy-gated local service scaffold. The roadmap below captures the intended
 technical direction without treating later capabilities as already approved.
 
-## Current Scaffold
+## Current State (authoritative)
+
+This section describes Soma's posture *right now*. The **Current Scaffold -> Implemented** list
+below it is a chronological build-log: true-at-the-time records of how each slice landed.
+**When the history and this section disagree, this section wins.**
+
+### Live / usable now
+
+Base-harness capabilities, active by default and reachable over live routes (no grant ceremony):
+
+- `model.local.chat` — local vLLM/OpenAI-compatible chat (`/chat`)
+- `memory.session.read` / `memory.session.write` — ephemeral in-process session memory (`/session-memory`)
+- `provenance.read` / `provenance.clear` — bounded in-process provenance log (`/provenance`, `/provenance/summary`)
+- `stewardship.cognitive_load.assess` — text-only cognitive-load stewardship (`/stewardship/cognitive-load`)
+- `tool.files.read` — scoped read-only file access (`/files/read`)
+- `desktop.inspect.accessibility_tree` — bounded read-only AT-SPI inspection, **including the live
+  structure-only recursive traversal** (`/desktop/inspect/accessibility-tree`): prior-disclosure root
+  authorization, role/count topology only, `text_content_included=false`, content-bearing fields
+  rejected, summary-only provenance.
+
+### Built but disabled-first (not active by default)
+
+Scaffolded and tested behind `explicit_grant`/`disabled`. These capabilities are present in the
+catalog and exercised by tests, but remain inert unless the required provider support and deliberate
+grant path exist. Grouped by domain rather than per micro-slice:
+
+- **Model escalation / visual context** — local tool-calls, remote chat, remote plan, visual color/depth/composite attach
+- **Memory** — durable memory write
+- **Desktop inspection (heavier)** — windows, focus, text-bearing inspection
+- **Desktop actuation / remote** — pointer + keyboard input, remote session disconnect
+- **Filesystem / shell mutation** — file write, shell run
+- **Perception** — camera, microphone, screen, remote-desktop video subscribe
+- **Sensorium streams** — color, depth, IMU, location, status subscribe
+
+### Not yet live / explicitly out of current scope
+
+Text-bearing desktop traversal, screenshots, input/actuation, shell and file writes, durable
+memory, remote-graphical live transport, and model-facing visual payload delivery are **not**
+active. They exist as disabled-first scaffolding or design only; activation is a deliberate,
+separately-reviewed step.
+
+## Current Scaffold (historical build-log)
+
+The list below is a chronological record of implementation slices, each true at the time it was
+written. It is *how Soma got here*, not its current posture; **Current State** above is authoritative
+when they conflict.
 
 Implemented:
 

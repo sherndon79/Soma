@@ -5,6 +5,10 @@ import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
+import {
+  createDesktopNotificationAdapter,
+  createDesktopNotificationProvenanceEvent,
+} from "./desktopNotificationAdapter.js";
 import { DesktopDisclosureRegistry } from "./desktopDisclosureRegistry.js";
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
@@ -79,6 +83,7 @@ export function createApp({
   runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
+  desktopNotificationAdapter,
   sensoriumSubscriber,
   remoteGraphicalBroker,
   logger = console,
@@ -97,6 +102,7 @@ export function createApp({
     runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
+    desktopNotificationAdapter,
     sensoriumSubscriber,
     remoteGraphicalBroker,
     logger,
@@ -117,6 +123,7 @@ export function createRequestHandler({
   runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
+  desktopNotificationAdapter = createDesktopNotificationAdapter(),
   sensoriumSubscriber = null,
   remoteGraphicalBroker = new RemoteGraphicalBroker(),
   logger = console,
@@ -1191,9 +1198,18 @@ export function createRequestHandler({
         }));
         proposal.provenance_id = event.id;
         logger.info?.("soma.provenance", event);
+        const desktopNotification = await emitDesktopNotificationForProposal({
+          adapter: desktopNotificationAdapter,
+          proposal,
+          catalog: capabilityCatalog,
+          caller: req.headers["x-soma-caller"] ?? "",
+          provenanceLog,
+          logger,
+        });
         writeJson(res, 201, {
           proposal,
           notification: proposal.notification,
+          desktop_notification: desktopNotification,
           provenance_id: event.id,
           activation_performed: false,
           durable: false,
@@ -1770,6 +1786,44 @@ function validateFocusedDesktopInspectionRequest(body) {
     grant_id: String(body.grant_id ?? "").trim(),
     provider: String(body.provider ?? "").trim(),
     scope: String(body.scope ?? "session").trim() || "session",
+  };
+}
+
+async function emitDesktopNotificationForProposal({
+  adapter,
+  proposal,
+  catalog,
+  caller,
+  provenanceLog,
+  logger,
+} = {}) {
+  let result;
+  try {
+    result = await adapter.emitCapabilityProposal(proposal, { catalog });
+  } catch (error) {
+    result = {
+      status: "failed",
+      reason: "desktop_notification_adapter_failed",
+      proposal_id: proposal?.id ?? "",
+      requested_capability: proposal?.capability ?? "",
+      risk_class: "unknown",
+      title_template: "Soma: capability requested",
+      reason_preview: "",
+      reason_truncated: false,
+      error_code: String(error?.code ?? ""),
+      error_message: String(error?.message ?? ""),
+    };
+  }
+
+  const event = provenanceLog.append(createDesktopNotificationProvenanceEvent(result, { caller }));
+  logger.info?.("soma.provenance", event);
+  return {
+    status: result.status,
+    reason: result.reason,
+    provenance_id: event.id,
+    activation_performed: false,
+    grant_written: false,
+    approval_performed: false,
   };
 }
 

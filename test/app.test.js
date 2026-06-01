@@ -614,6 +614,117 @@ test("capability proposals can be created and listed without activation", async 
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
+test("desktop proposal notification adapter is skipped by default without changing authority", async () => {
+  const calls = [];
+  const desktopNotificationAdapter = {
+    async emitCapabilityProposal(proposal) {
+      calls.push(proposal);
+      return {
+        status: "skipped",
+        reason: "disabled",
+        proposal_id: proposal.id,
+        requested_capability: proposal.capability,
+        risk_class: "sensitive",
+        reason_preview: "",
+        reason_truncated: false,
+      };
+    },
+  };
+  const handler = makeHandler({ harness: allowedHarness, desktopNotificationAdapter });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(calls.length, 1);
+  assert.equal(response.body.desktop_notification.status, "skipped");
+  assert.equal(response.body.desktop_notification.reason, "disabled");
+  assert.equal(response.body.desktop_notification.activation_performed, false);
+  assert.equal(response.body.desktop_notification.approval_performed, false);
+  assert.equal(response.body.desktop_notification.grant_written, false);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.notification.emitted",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].notification_status, "skipped");
+  assert.equal(provenance.body.entries[0].skip_reason, "disabled");
+  assert.equal(provenance.body.entries[0].activation_performed, false);
+  assert.equal(provenance.body.entries[0].approval_performed, false);
+  assert.equal(provenance.body.entries[0].grant_written, false);
+});
+
+test("desktop proposal notification adapter records emitted and failed status without blocking creation", async () => {
+  for (const scenario of [
+    { name: "emitted", result: { status: "emitted", reason: "" } },
+    { name: "failed", result: { status: "failed", reason: "notify_send_failed" } },
+  ]) {
+    const desktopNotificationAdapter = {
+      async emitCapabilityProposal(proposal) {
+        return {
+          ...scenario.result,
+          proposal_id: proposal.id,
+          requested_capability: proposal.capability,
+          risk_class: "sensitive",
+          reason_preview: "bounded reason",
+          reason_truncated: false,
+        };
+      },
+    };
+    const handler = makeHandler({ harness: allowedHarness, desktopNotificationAdapter });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "desktop.inspect.focus",
+        reason: "Need focused object role.",
+        requested_scope: "session",
+        data_exposed: ["focused object role"],
+        risk: "May reveal active application context.",
+        fallback: "Continue without focus.",
+      },
+    });
+
+    assert.equal(response.statusCode, 201, scenario.name);
+    assert.equal(response.body.proposal.status, "pending", scenario.name);
+    assert.equal(response.body.desktop_notification.status, scenario.result.status, scenario.name);
+    assert.equal(response.body.activation_performed, false, scenario.name);
+
+    const grants = await invokeHandler(handler, {
+      method: "GET",
+      url: "/grants?status=active",
+    });
+    assert.equal(grants.statusCode, 200, scenario.name);
+    assert.equal(grants.body.grants.length, 0, scenario.name);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.notification.emitted",
+    });
+    assert.equal(provenance.statusCode, 200, scenario.name);
+    assert.equal(provenance.body.entries.length, 1, scenario.name);
+    assert.equal(provenance.body.entries[0].notification_status, scenario.result.status, scenario.name);
+    assert.equal(provenance.body.entries[0].activation_performed, false, scenario.name);
+    assert.equal(provenance.body.entries[0].approval_performed, false, scenario.name);
+    assert.equal(provenance.body.entries[0].grant_written, false, scenario.name);
+  }
+});
+
 test("GET /grants lists file-backed grants without activation", async () => {
   const response = await invoke({
     method: "GET",
@@ -5635,6 +5746,19 @@ function makeHandler({
   grantRecoveryReport,
   runtimeWritePosture,
   desktopDisclosureRegistry,
+  desktopNotificationAdapter = {
+    async emitCapabilityProposal(proposal) {
+      return {
+        status: "skipped",
+        reason: "disabled",
+        proposal_id: proposal?.id ?? "",
+        requested_capability: proposal?.capability ?? "",
+        risk_class: "unknown",
+        reason_preview: "",
+        reason_truncated: false,
+      };
+    },
+  },
   sensoriumSubscriber,
   remoteGraphicalBroker,
   capabilityProposals,
@@ -5651,6 +5775,7 @@ function makeHandler({
     grantRecoveryReport,
     runtimeWritePosture,
     desktopDisclosureRegistry,
+    desktopNotificationAdapter,
     sensoriumSubscriber,
     remoteGraphicalBroker,
     capabilityProposals,

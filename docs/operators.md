@@ -230,7 +230,7 @@ remote planning. Eval success does not grant or activate any capability.
 
 ## Inspect Notifications
 
-Notifications surface pending review work without granting or activating anything. Current
+Notifications surface pending review work without granting or activating anything. Pull
 notifications are derived from pending capability proposals.
 
 ```bash
@@ -245,6 +245,20 @@ npm run cli -- notifications --json
 
 Notification actions point back to proposal review commands. Approval and denial still record
 proposal decisions only; they do not create grants or activate capabilities.
+
+Soma can also push a local desktop notification when `POST /capability-proposals` creates a
+proposal:
+
+```bash
+SOMA_DESKTOP_NOTIFY=1 npm start
+```
+
+The push adapter is off by default. When enabled, it shells out to `notify-send` with a fixed
+Soma title and a bounded body containing the capability key, catalog risk class, sanitized/truncated
+reason, and an approve instruction. Failed or missing `notify-send` is non-fatal; proposal creation
+still succeeds and provenance records `desktop.notification.emitted` with `emitted`, `skipped`, or
+`failed` status. Desktop notifications are informational only and never approve, activate, create
+grants, or add a catalog capability.
 
 ## Revoke Desktop Inspection
 

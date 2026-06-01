@@ -77,6 +77,7 @@ Implemented:
 - self-scoped narrowing modules for revocation
 - proposal show/review endpoint and CLI surface
 - proposal notification endpoint and CLI surface
+- opt-in desktop notification adapter for proposal creation, with non-authorizing provenance
 - documented modular harness invariant and extension boundary
 - documented provider invocation contract and remote-planning escalation concept
 - threat-model and failure-mode coverage for unsupported remote planning

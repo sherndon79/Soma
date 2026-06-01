@@ -503,6 +503,9 @@ export async function runCli(
 
   if (command === "desktop" && subcommand === "focus") {
     const response = await request(baseUrl, "POST", "/desktop/inspect/focus", {
+      grant_id: flags["grant-id"] ?? rest[0],
+      provider: flags.provider,
+      scope: flags.scope,
       include_text: flags["include-text"],
     });
     writeOutput(stdout, response, jsonOutput, focusedDesktopInspectionSummary(response));
@@ -1921,7 +1924,7 @@ Usage:
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
   soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]
-  soma desktop focus [--json]
+  soma desktop focus grant-id [--provider provider-id] [--scope session] [--json]
   soma provenance summary|list|clear [--allowed true|false] [--capability key] [--event-type type] [--limit n] [--json]
   soma stewardship assess "text" [--json]
 

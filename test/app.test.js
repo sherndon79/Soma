@@ -129,7 +129,7 @@ const moduleRegistry = {
         adoption_policy: "self_apply",
       },
       overlay: {
-        disabled_capabilities: ["desktop.inspect.accessibility_tree"],
+        disabled_capabilities: ["desktop.inspect.accessibility_tree", "desktop.inspect.focus"],
       },
     },
   ],
@@ -1092,6 +1092,283 @@ test("capability proposals can be approved without activation", async () => {
   assert.equal(response.body.entries[0].proposal_id, proposalId);
   assert.equal(response.body.entries[0].approved_scope, "session");
   assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("approved generic capability proposal can create an existing-cap runtime grant", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: { actor: "user", constraints: { include_text: false } },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.source_proposal_id, proposalId);
+  assert.equal(response.body.grant.capability, "desktop.inspect.focus");
+  assert.equal(response.body.grant.provider, "desktop-broker");
+  assert.equal(response.body.grant.scope, "session");
+  assert.equal(response.body.grant.approved_by, "user");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(response.body.grant_written, true);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 1);
+  assert.equal(response.body.grants[0].capability, "desktop.inspect.focus");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=runtime.grant.created",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_id, proposalId);
+  assert.ok(response.body.entries[0].grant_id.startsWith("grant-runtime-"));
+  assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("runtime grant creation rejects non-user actors and missing proposals before grant write", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: { actor: "assistant" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals/not-found/grants",
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.body.error, "capability_proposal_not_found");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
+test("runtime grant creation rejects unapproved and non-user-approved proposals", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const pendingProposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${pendingProposalId}/grants`,
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_requires_approved_proposal");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const assistantApprovedProposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${assistantApprovedProposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "assistant" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${assistantApprovedProposalId}/grants`,
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_requires_user_approval");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
+test("runtime grant creation rejects unknown non-explicit capabilities and invalid constraints", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "model.local.chat",
+      reason: "Need local chat.",
+      requested_scope: "session",
+      data_exposed: ["submitted text"],
+      risk: "Uses submitted text only.",
+      fallback: "Do not chat.",
+    },
+  });
+  const nonExplicitProposalId = response.body.proposal.id;
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${nonExplicitProposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${nonExplicitProposalId}/grants`,
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_requires_explicit_grant_capability");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.unknown",
+      reason: "Need unsupported desktop metadata.",
+      requested_scope: "session",
+      data_exposed: ["desktop metadata"],
+      risk: "Unknown authority.",
+      fallback: "Continue without unsupported metadata.",
+    },
+  });
+  const unknownProposalId = response.body.proposal.id;
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${unknownProposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${unknownProposalId}/grants`,
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_unknown_capability");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const invalidConstraintsProposalId = response.body.proposal.id;
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${invalidConstraintsProposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${invalidConstraintsProposalId}/grants`,
+    body: { actor: "user", constraints: ["include_text=false"] },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_invalid_constraints");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
 });
 
 test("capability proposals can be denied without activation", async () => {
@@ -2197,7 +2474,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
-test("focused desktop inspection is blocked when focus capability is disabled", async () => {
+test("focused desktop inspection requires an active runtime grant while base harness stays disabled", async () => {
   const response = await invoke({
     method: "POST",
     url: "/desktop/inspect/focus",
@@ -2206,7 +2483,54 @@ test("focused desktop inspection is blocked when focus capability is disabled", 
   });
 
   assert.equal(response.statusCode, 403);
-  assert.equal(response.body.error, "capability_not_allowed");
+  assert.equal(response.body.error, "desktop_focus_grant_required");
+});
+
+test("focused desktop inspection rejects revoked degraded and provider-mismatched grants", async () => {
+  for (const scenario of [
+    {
+      name: "revoked",
+      grantStore: focusGrantStore({ status: "revoked" }),
+      body: { grant_id: "grant-focus" },
+      expectedAuthorization: "grant_not_found",
+    },
+    {
+      name: "degraded",
+      grantStore: focusGrantStore(),
+      grantRecoveryReport: {
+        ok: false,
+        degraded: true,
+        findings: [
+          {
+            grant_id: "grant-focus",
+            code: "grant_store_provenance_append_failed",
+            authorizing_safe: false,
+          },
+        ],
+      },
+      body: { grant_id: "grant-focus" },
+      expectedAuthorization: "grant_recovery_degraded",
+    },
+    {
+      name: "mismatched provider",
+      grantStore: focusGrantStore(),
+      body: { grant_id: "grant-focus", provider: "soma.provider.sensorium.jetsorano" },
+      expectedAuthorization: "grant_not_found",
+    },
+  ]) {
+    const response = await invoke({
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      harness: allowedHarness,
+      grantStore: scenario.grantStore,
+      grantRecoveryReport: scenario.grantRecoveryReport,
+      body: scenario.body,
+    });
+
+    assert.equal(response.statusCode, 403, scenario.name);
+    assert.equal(response.body.error, "desktop_focus_grant_not_authorized", scenario.name);
+    assert.equal(response.body.authorization_code, scenario.expectedAuthorization, scenario.name);
+  }
 });
 
 test("focused desktop inspection returns bounded focus metadata and provenance", async () => {
@@ -2224,14 +2548,21 @@ fi
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
     const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
-    const handler = makeHandler({ harness: focusedInspectionHarness, desktopDisclosureRegistry });
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: focusGrantStore(),
+      desktopDisclosureRegistry,
+    });
     let response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
-      body: {},
+      body: { grant_id: "grant-focus" },
     });
 
     assert.equal(response.statusCode, 200);
+    assert.equal(response.body.grant_id, "grant-focus");
+    assert.equal(response.body.provider, "desktop-broker");
+    assert.equal(response.body.scope, "session");
     assert.equal(response.body.inspection.mode, "read_only_focused_object_probe");
     assert.equal(response.body.inspection.focus_available, true);
     assert.equal(response.body.inspection.focused_object.role, "frame");
@@ -2253,11 +2584,62 @@ fi
     assert.equal(response.body.entries.length, 1);
     assert.equal(response.body.entries[0].id, provenanceId);
     assert.equal(response.body.entries[0].capability, "desktop.inspect.focus");
+    assert.equal(response.body.entries[0].grant_id, "grant-focus");
+    assert.equal(response.body.entries[0].provider, "desktop-broker");
+    assert.equal(response.body.entries[0].scope, "session");
     assert.equal(response.body.entries[0].focus_available, true);
     assert.equal(response.body.entries[0].focused_role, "frame");
     assert.equal(response.body.entries[0].focused_child_count, 2);
     assert.equal(response.body.entries[0].text_content_included, false);
     assert.equal("focused_name" in response.body.entries[0], false);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
+test("narrowing modules revoke focused desktop disclosure refs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-narrowing-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":0,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    let nextRefId = 0;
+    const desktopDisclosureRegistry = new DesktopDisclosureRegistry({
+      idFactory: () => `focus-ref-${++nextRefId}`,
+    });
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: focusGrantStore(),
+      desktopDisclosureRegistry,
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      body: { grant_id: "grant-focus" },
+    });
+    assert.equal(response.statusCode, 200);
+    const [entry] = desktopDisclosureRegistry.summary().entries;
+    assert.equal(entry.source_capability, "desktop.inspect.focus");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/harness-modules/adopt",
+      body: { module_id: "no-desktop-inspection" },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(desktopDisclosureRegistry.authorizeRootRef({
+      rootRef: entry.id,
+      capability: "desktop.inspect.focus",
+    }), { ok: false, error: "desktop_traversal_root_revoked" });
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;
@@ -2277,11 +2659,14 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
-    const handler = makeHandler({ harness: focusedInspectionHarness });
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: focusGrantStore(),
+    });
     let response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
-      body: {},
+      body: { grant_id: "grant-focus" },
     });
 
     assert.equal(response.statusCode, 200);
@@ -2312,12 +2697,12 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   }
 });
 
-test("focused desktop inspection rejects text inclusion", async () => {
-  const handler = makeHandler({ harness: focusedInspectionHarness });
+test("focused desktop inspection rejects text inclusion before grant use or helper invocation", async () => {
+  const handler = makeHandler({ harness: allowedHarness, grantStore: focusGrantStore() });
   const response = await invokeHandler(handler, {
     method: "POST",
     url: "/desktop/inspect/focus",
-    body: { include_text: true },
+    body: { grant_id: "grant-focus", include_text: true },
   });
 
   assert.equal(response.statusCode, 403);
@@ -2338,7 +2723,7 @@ test("focused desktop inspection rejects invalid request fields before provenanc
     null_include_text: { include_text: null },
     object_include_text: { include_text: {} },
   })) {
-    const handler = makeHandler({ harness: focusedInspectionHarness });
+    const handler = makeHandler({ harness: allowedHarness, grantStore: focusGrantStore() });
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
@@ -2370,11 +2755,15 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   process.env.SOMA_DESKTOP_BROKER = helperPath;
   try {
     const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
-    const handler = makeHandler({ harness: focusedInspectionHarness, desktopDisclosureRegistry });
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: focusGrantStore(),
+      desktopDisclosureRegistry,
+    });
     const response = await invokeHandler(handler, {
       method: "POST",
       url: "/desktop/inspect/focus",
-      body: {},
+      body: { grant_id: "grant-focus" },
     });
 
     assert.equal(response.statusCode, 502);
@@ -5359,6 +5748,34 @@ function makeRemoteGraphicalGrant() {
     revocation_reason: "",
     replacement_grant_id: "",
     activation_performed: false,
+  };
+}
+
+function focusGrantStore(overrides = {}) {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-focus",
+        status: "active",
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: { include_text: false },
+        approved_by: "user",
+        approval_provenance_id: "prov-focus-approval",
+        reason: "Need focused object role for the current session.",
+        created_at: "2026-05-31T12:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+        ...overrides,
+      },
+    ],
+    examples: [],
   };
 }
 

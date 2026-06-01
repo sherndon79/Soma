@@ -1226,6 +1226,63 @@ export function createRequestHandler({
         return;
       }
 
+      const proposalGrantMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)\/grants$/);
+      if (req.method === "POST" && proposalGrantMatch) {
+        const [, proposalId] = proposalGrantMatch;
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "runtime_grant_create_requires_user_actor",
+            message: "Runtime grant creation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const proposal = capabilityProposals.find(proposalId);
+        const grantCreateInput = buildRuntimeGrantCreateInputFromProposal(proposal, body, {
+          catalog: capabilityCatalog,
+          providerRegistry,
+          now: () => new Date().toISOString(),
+          createId: () => `grant-runtime-${cryptoRandomId()}`,
+        });
+
+        let nextGrantStore;
+        try {
+          nextGrantStore = createGrant(
+            grantStore,
+            grantCreateInput,
+            {
+              catalog: capabilityCatalog,
+              providerRegistry,
+            },
+          );
+        } catch (error) {
+          error.statusCode ??= 400;
+          throw error;
+        }
+
+        grantStore = nextGrantStore;
+        const grant = nextGrantStore.grants.find((entry) => entry.id === grantCreateInput.id);
+        const event = provenanceLog.append(createRuntimeGrantCreatedEvent({
+          grant,
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 201, {
+          grant,
+          source_proposal_id: proposal.id,
+          provenance_id: event.id,
+          activation_performed: false,
+          durable: false,
+          file_written: false,
+          grant_written: true,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/harness-modules/adopt") {
         const body = await readJson(req);
         const moduleId = String(body.module_id ?? "");
@@ -1413,13 +1470,50 @@ export function createRequestHandler({
       }
 
       if (req.method === "POST" && url.pathname === "/desktop/inspect/focus") {
-        requireCapability(effectiveHarness, "desktop.inspect.focus");
         const body = await readJson(req);
         const focusRequest = validateFocusedDesktopInspectionRequest(body);
+        focusRequest.provider ||= providerForCapability(providerRegistry, "desktop.inspect.focus");
+        if (isCapabilityDisabledByActiveModule(activeModules, "desktop.inspect.focus")) {
+          writeError(res, {
+            statusCode: 403,
+            code: "capability_not_allowed",
+            message: "Capability desktop.inspect.focus is disabled by the active harness.",
+          });
+          return;
+        }
+        if (!focusRequest.grant_id) {
+          writeError(res, {
+            statusCode: 403,
+            code: "desktop_focus_grant_required",
+            message: "Focused desktop inspection requires an active grant id.",
+          });
+          return;
+        }
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: focusRequest.grant_id,
+          capability: "desktop.inspect.focus",
+          provider: focusRequest.provider,
+          scope: focusRequest.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "desktop_focus_grant_not_authorized",
+            message: "Focused desktop inspection requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
         const inspection = await inspectFocusedDesktopObject();
         const event = provenanceLog.append(createFocusedDesktopInspectionEvent({
           inspection,
           request: focusRequest,
+          grant: authorization.grant,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -1431,6 +1525,9 @@ export function createRequestHandler({
         writeJson(res, 200, {
           inspection,
           provenance_id: event.id,
+          grant_id: authorization.grant.id,
+          provider: authorization.grant.provider,
+          scope: authorization.grant.scope,
         });
         return;
       }
@@ -1628,7 +1725,7 @@ function validateOptionalIntegerLimit(value, path, minimum, maximum, errors) {
 }
 
 function validateFocusedDesktopInspectionRequest(body) {
-  const allowedKeys = new Set(["include_text"]);
+  const allowedKeys = new Set(["include_text", "grant_id", "provider", "scope"]);
   const errors = [];
 
   if (!isPlainObject(body)) {
@@ -1649,6 +1746,15 @@ function validateFocusedDesktopInspectionRequest(body) {
     if (body.include_text !== undefined && body.include_text !== false) {
       errors.push("request.include_text must be false when provided");
     }
+    if (body.grant_id !== undefined && typeof body.grant_id !== "string") {
+      errors.push("request.grant_id must be a string when provided");
+    }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      errors.push("request.provider must be a string when provided");
+    }
+    if (body.scope !== undefined && !["once", "session"].includes(body.scope)) {
+      errors.push("request.scope must be once or session when provided");
+    }
   }
 
   if (errors.length > 0) {
@@ -1660,8 +1766,93 @@ function validateFocusedDesktopInspectionRequest(body) {
   }
 
   return {
-    include_text: body.include_text === true,
+    include_text: false,
+    grant_id: String(body.grant_id ?? "").trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
   };
+}
+
+function buildRuntimeGrantCreateInputFromProposal(proposal, body = {}, {
+  catalog,
+  providerRegistry,
+  now = () => new Date().toISOString(),
+  createId = cryptoRandomId,
+} = {}) {
+  if (proposal.status !== "approved" || proposal.decision?.decision !== "approved") {
+    throwValidationError(
+      "runtime_grant_create_requires_approved_proposal",
+      "Runtime grant creation requires an approved capability proposal.",
+    );
+  }
+  if (proposal.decision?.decided_by !== "user") {
+    throwValidationError(
+      "runtime_grant_create_requires_user_approval",
+      "Runtime grant creation requires host-user approval on the source proposal.",
+    );
+  }
+
+  const capability = String(proposal.capability ?? "").trim();
+  const definition = findCatalogCapability(catalog, capability);
+  if (!definition) {
+    throwValidationError(
+      "runtime_grant_create_unknown_capability",
+      "Runtime grant creation requires a known catalog capability.",
+    );
+  }
+  if (definition.activation_policy !== "explicit_grant") {
+    throwValidationError(
+      "runtime_grant_create_requires_explicit_grant_capability",
+      "Runtime grant creation is only available for explicit-grant capabilities.",
+    );
+  }
+
+  const scope = String(body.scope ?? proposal.decision.approved_scope ?? proposal.requested_scope ?? "").trim();
+  const provider = String(body.provider ?? providerForCapability(providerRegistry, capability) ?? "").trim();
+  if (body.constraints !== undefined && !isPlainObject(body.constraints)) {
+    throwValidationError(
+      "runtime_grant_create_invalid_constraints",
+      "Runtime grant creation requires constraints to be an object when provided.",
+    );
+  }
+  return {
+    id: String(body.id ?? createId()).trim(),
+    capability,
+    provider,
+    scope,
+    constraints: body.constraints ? structuredClone(body.constraints) : {},
+    approved_by: "user",
+    approval_provenance_id: String(proposal.decision.provenance_id ?? "").trim(),
+    reason: String(body.reason ?? proposal.reason ?? "").trim(),
+    created_at: now(),
+    review_required: Boolean(body.review_required),
+    direct_user_action: true,
+  };
+}
+
+function findCatalogCapability(catalog = {}, capability = "") {
+  const capabilities = Array.isArray(catalog.capabilities) ? catalog.capabilities : [];
+  return capabilities.find((entry) => entry?.key === capability) ?? null;
+}
+
+function providerForCapability(providerRegistry = {}, capability = "") {
+  const providers = Array.isArray(providerRegistry.providers) ? providerRegistry.providers : [];
+  const matches = providers.filter((provider) => providerSupportsCapability(provider, capability));
+  return matches.length === 1 ? matches[0].id : "";
+}
+
+function isCapabilityDisabledByActiveModule(activeModules = [], capability = "") {
+  return activeModules.some((module) => (
+    Array.isArray(module?.overlay?.disabled_capabilities)
+      && module.overlay.disabled_capabilities.includes(capability)
+  ));
+}
+
+function throwValidationError(code, message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.code = code;
+  throw error;
 }
 
 function parseProvenanceFilters(searchParams) {
@@ -1994,7 +2185,29 @@ function createDesktopInspectionEvent({ inspection, request = {}, caller }) {
   };
 }
 
-function createFocusedDesktopInspectionEvent({ inspection, request = {}, caller }) {
+function createRuntimeGrantCreatedEvent({ grant = {}, proposal = {}, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "runtime.grant.created",
+    capability: grant.capability ?? proposal.capability ?? "",
+    caller_identity: caller,
+    allowed: true,
+    proposal_id: proposal.id ?? "",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    approved_by: grant.approved_by ?? "",
+    approval_provenance_id: grant.approval_provenance_id ?? "",
+    grant_status: grant.status ?? "",
+    grant_written: true,
+    durable: false,
+    file_written: false,
+    activation_performed: false,
+  };
+}
+
+function createFocusedDesktopInspectionEvent({ inspection, request = {}, grant = {}, caller }) {
   const focusedObject = inspection.focused_object ?? {};
   return {
     id: cryptoRandomId(),
@@ -2003,6 +2216,9 @@ function createFocusedDesktopInspectionEvent({ inspection, request = {}, caller 
     capability: "desktop.inspect.focus",
     caller_identity: caller,
     allowed: true,
+    grant_id: grant.id ?? request.grant_id ?? "",
+    provider: grant.provider ?? request.provider ?? "",
+    scope: grant.scope ?? request.scope ?? "",
     desktop_session: inspection.desktop_session,
     session_type: inspection.session_type,
     broker_source: inspection.broker_source,

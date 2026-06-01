@@ -334,13 +334,16 @@ limits separately from returned object counts.
 
 ### `POST /desktop/inspect/focus`
 
-Returns read-only focused-object metadata when `desktop.inspect.focus` is allowed.
+Returns read-only focused-object metadata when an active runtime grant authorizes
+`desktop.inspect.focus`.
 
-The base harness keeps this capability disabled. When explicitly allowed, the endpoint returns
-focus availability, broker/session metadata, focused object role, child count, service/path
-references, withheld-field markers, and provenance. It rejects `include_text=true` and does not
-return focused names, descriptions, text, states, actions, screenshots, pointer position, keyboard
-input, or actuation.
+The base harness keeps this capability disabled. Use requires `grant_id` plus a matching provider
+and scope; the route validates grant status, catalog membership, provider support, and grant
+recovery before helper invocation. When authorized, the endpoint returns focus availability,
+broker/session metadata, focused object role, child count, service/path references,
+withheld-field markers, and provenance including grant id/provider/scope. It rejects
+`include_text=true` and does not return focused names, descriptions, text, states, actions,
+screenshots, pointer position, keyboard input, or actuation.
 
 ## Initial Capability Vocabulary
 

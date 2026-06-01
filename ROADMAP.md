@@ -72,6 +72,7 @@ Implemented:
 - desktop inspection provider-overreach tests for child metadata, windows, and rejected-provenance
   behavior
 - focused-object inspection endpoint and CLI, disabled by default
+- focus activation through in-memory runtime grants while the base harness remains disabled
 - bounded AT-SPI active-descendant focus lookup with fail-closed unavailable reasons
 - self-scoped narrowing modules for revocation
 - proposal show/review endpoint and CLI surface

@@ -2791,7 +2791,7 @@ test("runCli desktop focus calls focused inspection endpoint", async () => {
   let captured;
   const writes = [];
 
-  await runCli(parseCli(["node", "soma", "desktop", "focus"]), {
+  await runCli(parseCli(["node", "soma", "desktop", "focus", "grant-focus"]), {
     stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, method, requestPath, body) => {
       captured = { method, requestPath, body };
@@ -2815,7 +2815,12 @@ test("runCli desktop focus calls focused inspection endpoint", async () => {
 
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/desktop/inspect/focus");
-  assert.deepEqual(captured.body, { include_text: undefined });
+  assert.deepEqual(captured.body, {
+    grant_id: "grant-focus",
+    provider: undefined,
+    scope: undefined,
+    include_text: undefined,
+  });
   assert.match(writes.join(""), /Focused desktop object/);
   assert.match(writes.join(""), /available: yes/);
   assert.match(writes.join(""), /role: frame/);
@@ -2827,7 +2832,19 @@ test("runCli desktop focus calls focused inspection endpoint", async () => {
 test("runCli desktop focus sends include-text to server refusal path", async () => {
   let captured;
 
-  await runCli(parseCli(["node", "soma", "desktop", "focus", "--include-text"]), {
+  await runCli(parseCli([
+    "node",
+    "soma",
+    "desktop",
+    "focus",
+    "--grant-id",
+    "grant-focus",
+    "--provider",
+    "desktop-broker",
+    "--scope",
+    "session",
+    "--include-text",
+  ]), {
     stdout: { write: () => {} },
     request: async (_baseUrl, method, requestPath, body) => {
       captured = { method, requestPath, body };
@@ -2848,7 +2865,12 @@ test("runCli desktop focus sends include-text to server refusal path", async () 
 
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/desktop/inspect/focus");
-  assert.deepEqual(captured.body, { include_text: true });
+  assert.deepEqual(captured.body, {
+    grant_id: "grant-focus",
+    provider: "desktop-broker",
+    scope: "session",
+    include_text: true,
+  });
 });
 
 function makeRemoteGraphicalSessionOpenFixtureResponse() {

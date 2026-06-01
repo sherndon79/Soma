@@ -107,15 +107,24 @@ Request body:
 
 ```json
 {
+  "grant_id": "grant-runtime-id",
+  "provider": "soma.provider.desktop-broker",
+  "scope": "session",
   "include_text": false
 }
 ```
 
-For MVP, `include_text` is rejected and the endpoint always returns `text_content_included: false`.
-The request body accepts only `include_text`. Unknown fields and non-boolean `include_text` values
-fail with `focused_desktop_inspection_request_invalid` before helper invocation or provenance
-recording. `include_text=true` fails with `focused_desktop_text_not_allowed` until a separate
-text-capable focus contract exists.
+For MVP, `grant_id` is required for use. The endpoint authorizes that grant against
+`desktop.inspect.focus`, the requested provider, the requested scope, the capability catalog, the
+provider registry, and grant recovery findings before invoking the helper. The base harness remains
+disabled; an active runtime grant is the activation path. Self-applied narrowing modules still win
+and revoke focused disclosure refs when they disable desktop inspection.
+
+`include_text` is rejected and the endpoint always returns `text_content_included: false`. The
+request body accepts only `grant_id`, `provider`, `scope`, and `include_text`. Unknown fields and
+invalid values fail with `focused_desktop_inspection_request_invalid` before helper invocation or
+provenance recording. `include_text=true` fails with `focused_desktop_text_not_allowed` until a
+separate text-capable focus contract exists.
 
 ## Provenance
 
@@ -123,6 +132,9 @@ Focused inspection provenance should record:
 
 - `event_type=desktop.inspect.focus`
 - `capability=desktop.inspect.focus`
+- grant id
+- provider
+- scope
 - requested text inclusion
 - whether focus was available
 - broker source
@@ -140,7 +152,7 @@ actions.
 Preferred command:
 
 ```bash
-npm run cli -- desktop focus
+npm run cli -- desktop focus grant-runtime-id
 ```
 
 Expected default output:
@@ -187,8 +199,11 @@ returns `focus_available=false` with `unavailable_reason=active_descendant_unava
 ## Current Implementation Status
 
 - `POST /desktop/inspect/focus` exists.
-- `npm run cli -- desktop focus` exists.
-- `desktop.inspect.focus` remains disabled in the base harness.
+- `npm run cli -- desktop focus grant-id` exists.
+- `desktop.inspect.focus` remains disabled in the base harness and is usable only through an active
+  runtime grant.
+- `POST /capability-proposals/:id/grants` can turn an approved known explicit-grant capability
+  proposal into an in-memory runtime grant without enabling durable `/grants` writes.
 - `soma.provider.desktop-broker` advertises `desktop.inspect.focus` support so the capability is
   requestable.
 - The Rust helper supports `inspect-focus` and attempts `GetActiveDescendant` on AT-SPI collection
@@ -200,4 +215,5 @@ returns `focus_available=false` with `unavailable_reason=active_descendant_unava
 - Request bodies are validated before helper invocation; invalid focus requests do not record
   provenance.
 - Provenance records focus availability, role, child count, requested text inclusion, broker
-  source, mode, and session metadata without storing focused text or names.
+  source, mode, session metadata, grant id, provider, and scope without storing focused text or
+  names.

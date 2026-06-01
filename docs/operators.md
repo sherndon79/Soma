@@ -111,11 +111,11 @@ Read-only AT-SPI probe:
 npm run cli -- desktop inspect --mode atspi
 ```
 
-Focused object probe, when `desktop.inspect.focus` is explicitly allowed:
+Focused object probe, when `desktop.inspect.focus` has an active runtime grant:
 
 ```bash
-npm run cli -- desktop focus
-npm run cli -- desktop focus --include-text
+npm run cli -- desktop focus grant-runtime-id
+npm run cli -- desktop focus --grant-id grant-runtime-id --include-text
 ```
 
 Narrow returned output:
@@ -138,12 +138,35 @@ The CLI validates desktop inspection `--mode`, `--max-apps`, and `--max-children
 sending the request, so malformed inspect flags are not silently omitted. The service still owns
 the authoritative request and provider-output validation boundary.
 
-Focused inspection is also read-only and non-textual. It is behind the disabled
-`desktop.inspect.focus` capability and returns only focus availability, focused object role, child
-count, service/path references, and withheld-field markers. It does not return names,
-descriptions, text, state lists, actions, screenshots, pointer position, or keyboard input.
-`desktop focus --include-text` is sent to the service and rejected until a separate text-capable
-focus contract exists.
+Focused inspection is also read-only and non-textual. The base harness keeps
+`desktop.inspect.focus` disabled; use requires an active runtime grant id. The service authorizes
+the grant against the catalog, provider registry, requested scope, and recovery findings before
+invoking the helper. It returns only focus availability, focused object role, child count,
+service/path references, and withheld-field markers. It does not return names, descriptions, text,
+state lists, actions, screenshots, pointer position, or keyboard input. `desktop focus
+--include-text` is sent to the service and rejected until a separate text-capable focus contract
+exists.
+
+One in-memory operator flow for focus is:
+
+```bash
+curl -X POST http://127.0.0.1:8765/capability-proposals \
+  -H 'content-type: application/json' \
+  -d '{"requested_by":"assistant","capability":"desktop.inspect.focus","reason":"Need focused object role for this session.","requested_scope":"session","data_exposed":["focused application metadata","focused accessibility role","focused object bounds"],"risk":"May reveal active application context.","fallback":"Continue without focused desktop inspection."}'
+
+curl -X POST http://127.0.0.1:8765/capability-proposals/proposal-id/approve \
+  -H 'content-type: application/json' \
+  -d '{"approved_scope":"session","decided_by":"user"}'
+
+curl -X POST http://127.0.0.1:8765/capability-proposals/proposal-id/grants \
+  -H 'content-type: application/json' \
+  -d '{"actor":"user","provider":"soma.provider.desktop-broker","constraints":{"include_text":false}}'
+
+npm run cli -- desktop focus grant-runtime-id
+```
+
+This writes only the in-memory runtime grant for the current process. It does not enable durable
+`POST /grants`, and proposal approval alone still does not activate focus inspection.
 
 ## Inspect Provenance
 

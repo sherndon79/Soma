@@ -44,6 +44,20 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "status" && subcommand === "snapshot") {
+    const grantId = flags["grant-id"] ?? rest[0];
+    if (!grantId) {
+      throw usageError("status snapshot requires --grant-id grant-id.");
+    }
+    const response = await request(baseUrl, "POST", "/status/snapshot", {
+      grant_id: grantId,
+      provider: flags.provider,
+      scope: flags.scope,
+    });
+    writeOutput(stdout, response, jsonOutput, statusSnapshotSummary(response));
+    return 0;
+  }
+
   if (command === "status") {
     const [health, harness, modules, pendingProposals, provenance] = await Promise.all([
       request(baseUrl, "GET", "/health"),
@@ -1101,6 +1115,28 @@ function provenanceSummaryText(response) {
   return lines.join("\n");
 }
 
+function statusSnapshotSummary(response) {
+  const snapshot = response.snapshot ?? {};
+  const lines = [
+    "Status snapshot",
+    `  grant: ${response.grant_id ?? "unknown"}`,
+    `  provider: ${response.provider ?? "unknown"}`,
+    `  generated: ${snapshot.generated_at ?? "unknown"}`,
+    `  runtime writes: ${snapshot.health?.runtime_write_posture?.status ?? "unknown"}`,
+    `  active modules: ${snapshot.modules?.active_count ?? 0}`,
+    `  pending proposals: ${snapshot.proposals?.pending_total ?? 0}`,
+    `  capabilities: ${snapshot.capabilities?.total ?? 0}`,
+    `  provenance entries: ${snapshot.provenance?.total ?? 0}`,
+    `  grants: ${snapshot.grants?.total ?? 0}`,
+    `  raw entries included: ${booleanText(snapshot.raw_entries_included)}`,
+    `  memory content included: ${booleanText(snapshot.memory_content_included)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  return lines.join("\n");
+}
+
 function proposalListSummary(response) {
   const proposals = Array.isArray(response.proposals) ? response.proposals : [];
   if (proposals.length === 0) {
@@ -1928,6 +1964,7 @@ function helpText() {
 
 Usage:
   soma status [--json]
+  soma status snapshot --grant-id grant-id [--json]
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma capabilities [--json]
   soma notifications [--status pending] [--json]

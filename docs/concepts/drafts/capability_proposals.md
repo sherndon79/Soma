@@ -278,6 +278,11 @@ Current implementation status:
 - `capability.proposal.approved` and `capability.proposal.denied` provenance are recorded.
 - `capability.design_proposal.created`, `.approved`, and `.denied` provenance are recorded for
   design-only proposals.
+- Implemented designs can be closed with durable repo receipts in
+  `docs/capability-design-implementations/`. Receipt tests validate the linked catalog capability
+  and provider claim. Receipts are evidence only and do not grant authority.
+- `status.snapshot.read` is the first receipt-backed demo capability. It is explicit-grant and
+  exposes bounded aggregate status summaries only.
 - `desktop.notification.emitted` provenance records desktop notification `emitted`, `skipped`, or
   `failed` status separately from proposal approval and grant authority.
 - Decision records include a generic outcome message even when feedback is absent.

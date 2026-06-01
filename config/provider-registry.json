@@ -87,6 +87,21 @@
       ]
     },
     {
+      "id": "soma.provider.status",
+      "name": "In-Process Status Snapshot",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "status.snapshot.read",
+          "provider_contract": "soma.status.snapshot.v1",
+          "output_schema": "soma.status.snapshot.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.scoped-files",
       "name": "Scoped File Reader",
       "version": "0.1.0",

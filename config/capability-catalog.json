@@ -234,6 +234,34 @@
       "description": "Assess submitted text for non-diagnostic cognitive-load stewardship signals."
     },
     {
+      "key": "status.snapshot.read",
+      "name": "Status Snapshot Read",
+      "category": "status",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "runtime health posture",
+        "active module ids",
+        "pending proposal counts",
+        "capability summary counts",
+        "provenance summary counts",
+        "grant summary counts"
+      ],
+      "excluded_by_default": [
+        "raw provenance entries",
+        "chat messages",
+        "session memory contents",
+        "file contents",
+        "desktop content",
+        "sensor payloads"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.status.snapshot.v1",
+      "description": "Read a bounded aggregate operational status snapshot. This composition of status metadata requires an explicit runtime grant."
+    },
+    {
       "key": "desktop.inspect.accessibility_tree",
       "name": "Desktop Accessibility Tree Inspection",
       "category": "desktop",

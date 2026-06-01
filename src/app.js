@@ -188,6 +188,70 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/status/snapshot") {
+        const body = await readJson(req);
+        const grantId = String(body?.grant_id ?? "").trim();
+        const provider = String(
+          body?.provider ?? providerForCapability(providerRegistry, "status.snapshot.read") ?? "",
+        ).trim();
+        const scope = String(body?.scope ?? "session").trim() || "session";
+        if (!grantId) {
+          writeError(res, {
+            statusCode: 403,
+            code: "status_snapshot_grant_required",
+            message: "Status snapshot requires an active runtime grant id.",
+          });
+          return;
+        }
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId,
+          capability: "status.snapshot.read",
+          provider,
+          scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "status_snapshot_grant_not_authorized",
+            message: "Status snapshot requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const snapshot = buildStatusSnapshot({
+          activeModules,
+          capabilityCatalog,
+          capabilityProposals,
+          effectiveHarness,
+          grantStore,
+          provenanceLog,
+          providerRegistry,
+          writePosture,
+        });
+        const event = provenanceLog.append(createStatusSnapshotReadEvent({
+          grant: authorization.grant,
+          snapshot,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          snapshot,
+          provenance_id: event.id,
+          grant_id: authorization.grant.id,
+          provider: authorization.grant.provider,
+          scope: authorization.grant.scope,
+          activation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/model-visual/review-text") {
         const body = await readJson(req);
         const kind = String(body?.kind ?? "").trim();
@@ -2056,6 +2120,83 @@ function createCapabilityProposalDecisionEvent({ proposal, caller }) {
     activation_performed: false,
     memory_written: false,
     remote_service_used: false,
+  };
+}
+
+function buildStatusSnapshot({
+  activeModules = [],
+  capabilityCatalog,
+  capabilityProposals,
+  effectiveHarness,
+  grantStore,
+  provenanceLog,
+  providerRegistry,
+  writePosture,
+} = {}) {
+  const capabilityView = buildCapabilityView({
+    catalog: capabilityCatalog,
+    providerRegistry,
+    harness: effectiveHarness,
+  });
+  const pendingProposals = capabilityProposals.list({ status: "pending" });
+  const pendingByType = {};
+  for (const proposal of pendingProposals) {
+    const type = proposal.type ?? "capability_proposal";
+    pendingByType[type] = (pendingByType[type] ?? 0) + 1;
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    health: {
+      status: "ok",
+      runtime_writes_enabled: writePosture.runtime_writes_enabled,
+      runtime_write_posture: writePosture,
+    },
+    modules: {
+      active: activeModules.map((module) => module.id ?? String(module)),
+      active_count: activeModules.length,
+    },
+    proposals: {
+      pending_total: pendingProposals.length,
+      pending_by_type: pendingByType,
+    },
+    capabilities: {
+      total: capabilityView.summary.total,
+      by_status: capabilityView.summary.by_status,
+      by_category: capabilityView.summary.by_category,
+    },
+    provenance: provenanceLog.summary(),
+    grants: summarizeGrants(grantStore),
+    raw_entries_included: false,
+    memory_content_included: false,
+    desktop_content_included: false,
+    sensor_payloads_included: false,
+  };
+}
+
+function createStatusSnapshotReadEvent({ grant = {}, snapshot = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "status.snapshot.read",
+    capability: "status.snapshot.read",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    active_module_count: snapshot.modules?.active_count ?? 0,
+    pending_capability_proposals: snapshot.proposals?.pending_total ?? 0,
+    capability_total: snapshot.capabilities?.total ?? 0,
+    provenance_total: snapshot.provenance?.total ?? 0,
+    grant_total: snapshot.grants?.total ?? 0,
+    raw_entries_included: false,
+    memory_read: false,
+    memory_written: false,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
   };
 }
 

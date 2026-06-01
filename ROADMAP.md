@@ -80,6 +80,7 @@ Implemented:
 - opt-in desktop notification adapter for proposal creation, with non-authorizing provenance
 - optional proposal decision feedback and proportional reversible-only notification actions
 - capability design proposal route for review-only new-tooling requests
+- receipt-backed capability design implementation closure with `status.snapshot.read`
 - documented modular harness invariant and extension boundary
 - documented provider invocation contract and remote-planning escalation concept
 - threat-model and failure-mode coverage for unsupported remote planning

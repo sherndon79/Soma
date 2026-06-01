@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "receipt_type": "capability_design_implementation",
+  "source_design": {
+    "proposal_id": "demo-status-snapshot-design",
+    "capability": "status.snapshot.read",
+    "proposed_name": "Status Snapshot Read",
+    "reason": "Expose a bounded operational snapshot through an explicit grant rather than composing several low-risk reads implicitly.",
+    "requested_scope": "session",
+    "data_exposed": [
+      "runtime health posture",
+      "active module ids",
+      "pending proposal counts",
+      "capability summary counts",
+      "provenance summary counts",
+      "grant summary counts"
+    ],
+    "excluded_data": [
+      "raw provenance entries",
+      "chat messages",
+      "session memory contents",
+      "file contents",
+      "desktop content",
+      "sensor payloads"
+    ],
+    "failure_mode": "Aggregated status metadata can reveal workflow shape if exposed without an explicit grant.",
+    "proposed_reversibility": true,
+    "provider_boundary": "Soma in-process status provider returns aggregate metadata only.",
+    "proposed_risk_class": "low",
+    "fallback": "Use existing separate operator status and provenance summary surfaces."
+  },
+  "implemented_as": "status.snapshot.read",
+  "provider": "soma.provider.status",
+  "provider_contract": "soma.status.snapshot.v1",
+  "implemented_by": "codex",
+  "implementation_commit": "same commit as this receipt",
+  "tests": [
+    "test/app.test.js: status snapshot requires an active runtime grant",
+    "test/app.test.js: status snapshot full loop proposal approval grant and route use",
+    "test/capabilityDesignImplementationReceipts.test.js: implementation receipts match catalog and provider claims"
+  ],
+  "authority": {
+    "receipt_confers_authority": false,
+    "grant_written": false,
+    "activation_performed": false,
+    "catalog_mutation_runtime": false
+  },
+  "notes": "The receipt is durable evidence of a reviewed code/config implementation. Runtime use still requires the normal Path A proposal, approval, and runtime grant flow."
+}

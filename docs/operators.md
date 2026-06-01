@@ -73,6 +73,13 @@ npm run cli -- status --json
 Status includes concise pending capability proposal details so an operator can see whether any
 review requests need attention without opening the full proposal records.
 
+`status.snapshot.read` is a grant-gated aggregate status capability. It returns bounded health,
+module, proposal, capability, provenance, and grant summaries without raw entries or content:
+
+```bash
+npm run cli -- status snapshot --grant-id grant-runtime-id
+```
+
 ## Chat Through The Local Runtime
 
 ```bash
@@ -321,6 +328,13 @@ curl -s http://127.0.0.1:8765/capability-design-proposals \
 `capability_design` proposals are review-only. Approval means approved for consideration; it does
 not create a grant, activate a capability, mutate the catalog, or make the proposed capability
 usable. Runtime grant creation explicitly rejects design proposals.
+
+Implemented designs are closed by reviewed code/config changes plus durable receipts under
+`docs/capability-design-implementations/`; see
+[Capability Design Implementation](./runbooks/capability_design_implementation.md). Receipts are
+validated by tests against the catalog and provider registry, but they do not confer runtime
+authority. New capabilities still activate only through the normal proposal, approval, and runtime
+grant flow.
 
 Approve a proposal record without activating the capability:
 

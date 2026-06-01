@@ -89,6 +89,60 @@ test("runCli status gathers operator summary", async () => {
   assert.equal(payload.provenance_summary.total, 3);
 });
 
+test("runCli status snapshot sends grant-bound request", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "status",
+    "snapshot",
+    "--grant-id",
+    "grant-status-snapshot",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        grant_id: "grant-status-snapshot",
+        provider: "soma.provider.status",
+        provenance_id: "prov-status",
+        activation_performed: false,
+        grant_written: false,
+        snapshot: {
+          generated_at: "2026-06-01T20:00:00.000Z",
+          health: {
+            status: "ok",
+            runtime_write_posture: { status: "disabled" },
+          },
+          modules: { active_count: 1 },
+          proposals: { pending_total: 2 },
+          capabilities: { total: 9 },
+          provenance: { total: 4 },
+          grants: { total: 1 },
+          raw_entries_included: false,
+          memory_content_included: false,
+        },
+      };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/status/snapshot");
+  assert.deepEqual(captured.body, {
+    grant_id: "grant-status-snapshot",
+    provider: undefined,
+    scope: undefined,
+  });
+  const output = writes.join("");
+  assert.match(output, /Status snapshot/);
+  assert.match(output, /grant: grant-status-snapshot/);
+  assert.match(output, /pending proposals: 2/);
+  assert.match(output, /raw entries included: no/);
+  assert.match(output, /activation performed: no/);
+});
+
 test("runCli chat sends expected request body", async () => {
   let captured;
   const writes = [];

@@ -49,6 +49,25 @@ test("capability view keeps remote planning unsupported until a provider is regi
   assert.equal(remotePlan.activation_policy, "explicit_grant");
 });
 
+test("status snapshot read is explicit-grant and provider-backed", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const statusSnapshot = view.capabilities.find((capability) => capability.key === "status.snapshot.read");
+  assert.ok(statusSnapshot, "expected status.snapshot.read to be present in catalog");
+  assert.equal(statusSnapshot.category, "status");
+  assert.equal(statusSnapshot.risk_class, "low");
+  assert.equal(statusSnapshot.harness_status, "disabled");
+  assert.equal(statusSnapshot.status, "requestable");
+  assert.equal(statusSnapshot.activation_policy, "explicit_grant");
+  assert.equal(statusSnapshot.reversible, true);
+  assert.equal(statusSnapshot.provider_contract, "soma.status.snapshot.v1");
+  assert.equal(statusSnapshot.providers.length, 1);
+  assert.equal(statusSnapshot.providers[0].id, "soma.provider.status");
+  assert.equal(statusSnapshot.providers[0].provider_contract, "soma.status.snapshot.v1");
+});
+
 test("capability catalog rejects ambiguous base-harness authority", () => {
   assert.throws(
     () => normalizeCapabilityCatalog({

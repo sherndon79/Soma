@@ -163,6 +163,19 @@ const capabilityCatalog = {
       activation_policy: "explicit_grant",
     },
     {
+      key: "status.snapshot.read",
+      name: "Status Snapshot Read",
+      category: "status",
+      risk_class: "low",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: ["runtime health posture", "active module ids", "summary counts"],
+      excluded_by_default: ["raw provenance entries", "memory contents", "desktop content"],
+      reversible: true,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.status.snapshot.v1",
+    },
+    {
       key: "perception.sensorium.color.subscribe",
       name: "Sensorium Color Stream Subscription",
       category: "perception",
@@ -257,6 +270,19 @@ const providerRegistry = {
       local_only: true,
       network_access: false,
       capabilities: ["desktop.inspect.focus"],
+    },
+    {
+      id: "soma.provider.status",
+      name: "Status Snapshot",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "status.snapshot.read",
+          provider_contract: "soma.status.snapshot.v1",
+        },
+      ],
     },
     {
       id: "soma.provider.sensorium.jetsorano",
@@ -375,23 +401,27 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 8);
+  assert.equal(response.body.summary.total, 9);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 6);
+  assert.equal(response.body.summary.by_status.requestable, 7);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 5);
   assert.equal(response.body.grouped.perception.total, 2);
+  assert.equal(response.body.grouped.status.total, 1);
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
   const sensoriumColor = response.body.capabilities.find((capability) => capability.key === "perception.sensorium.color.subscribe");
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
   const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
+  const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(text.status, "unsupported");
   assert.equal(sensoriumColor.status, "requestable");
   assert.equal(remoteVideo.status, "requestable");
   assert.equal(remoteKeyboard.status, "requestable");
+  assert.equal(statusSnapshot.status, "requestable");
+  assert.equal(statusSnapshot.providers[0].id, "soma.provider.status");
 });
 
 test("POST /model-visual/review-text formats proposal review without activation", async () => {
@@ -1436,6 +1466,108 @@ test("approved generic capability proposal can create an existing-cap runtime gr
   assert.equal(response.body.entries.length, 1);
   assert.equal(response.body.entries[0].proposal_id, proposalId);
   assert.ok(response.body.entries[0].grant_id.startsWith("grant-runtime-"));
+  assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("status snapshot requires an active runtime grant", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/status/snapshot",
+    body: {},
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "status_snapshot_grant_required");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/status/snapshot",
+    body: { grant_id: "missing-grant" },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "status_snapshot_grant_not_authorized");
+  assert.equal(response.body.authorization_code, "grant_not_found");
+});
+
+test("status snapshot full loop proposal approval grant and route use", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "status.snapshot.read",
+      reason: "Need a bounded operational status snapshot for this session.",
+      requested_scope: "session",
+      data_exposed: ["runtime posture", "module ids", "summary counts"],
+      excluded_data: ["raw provenance entries", "memory contents", "desktop content"],
+      risk: "Aggregated status metadata can reveal workflow shape.",
+      fallback: "Use separate operator status commands.",
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: {
+      actor: "user",
+      provider: "soma.provider.status",
+      reason: "Allow one bounded status snapshot for this session.",
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.grant.capability, "status.snapshot.read");
+  assert.equal(response.body.grant.provider, "soma.provider.status");
+  assert.equal(response.body.grant.scope, "session");
+  assert.equal(response.body.grant_written, true);
+  const grantId = response.body.grant.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/status/snapshot",
+    body: { grant_id: grantId },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grant_id, grantId);
+  assert.equal(response.body.provider, "soma.provider.status");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.snapshot.health.status, "ok");
+  assert.equal(response.body.snapshot.raw_entries_included, false);
+  assert.equal(response.body.snapshot.memory_content_included, false);
+  assert.equal(response.body.snapshot.desktop_content_included, false);
+  assert.equal(response.body.snapshot.sensor_payloads_included, false);
+  assert.equal(response.body.snapshot.proposals.pending_total, 0);
+  assert.equal(response.body.snapshot.grants.by_capability["status.snapshot.read"], 1);
+  assert.ok(response.body.snapshot.capabilities.by_status.requestable >= 1);
+  assert.ok(response.body.snapshot.provenance.total >= 3);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=status.snapshot.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].capability, "status.snapshot.read");
+  assert.equal(response.body.entries[0].grant_id, grantId);
+  assert.equal(response.body.entries[0].grant_written, false);
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 

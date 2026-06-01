@@ -112,6 +112,7 @@ export function buildCapabilityProposalDesktopNotification(proposal = {}, contex
   ].join("\n");
   const args = actionable
     ? [
+        "--expire-time=0",
         "-A",
         "approve=Approve",
         "-A",

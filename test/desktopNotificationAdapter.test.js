@@ -55,19 +55,20 @@ test("desktop notification adapter invokes notify-send with fixed title and boun
   assert.equal(result.status, "emitted");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, "/usr/bin/notify-send");
-  assert.deepEqual(calls[0].args.slice(0, 5), [
+  assert.deepEqual(calls[0].args.slice(0, 6), [
+    "--expire-time=0",
     "-A",
     "approve=Approve",
     "-A",
     "deny=Deny",
     "--",
   ]);
-  assert.equal(calls[0].args[5], DESKTOP_NOTIFICATION_TITLE);
-  assert.match(calls[0].args[6], /capability: desktop\.inspect\.focus/);
-  assert.match(calls[0].args[6], /risk_class: sensitive/);
-  assert.match(calls[0].args[6], /approve: soma proposals approve proposal-focus --scope session/);
-  assert.equal(calls[0].args[6].includes("\u0000"), false);
-  assert.equal(calls[0].args[6].includes("\u001b"), false);
+  assert.equal(calls[0].args[6], DESKTOP_NOTIFICATION_TITLE);
+  assert.match(calls[0].args[7], /capability: desktop\.inspect\.focus/);
+  assert.match(calls[0].args[7], /risk_class: sensitive/);
+  assert.match(calls[0].args[7], /approve: soma proposals approve proposal-focus --scope session/);
+  assert.equal(calls[0].args[7].includes("\u0000"), false);
+  assert.equal(calls[0].args[7].includes("\u001b"), false);
   assert.equal(result.action_waiter_started, true);
   assert.equal(result.reason_preview.length, DESKTOP_NOTIFICATION_REASON_MAX_CHARS);
   assert.equal(result.reason_truncated, true);
@@ -195,6 +196,7 @@ test("high-risk desktop notifications do not include one-click approval actions"
 
   assert.equal(notification.actionable, false);
   assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
+  assert.equal(notification.args.includes("--expire-time=0"), false);
   assert.equal(notification.args.includes("approve=Approve"), false);
   assert.equal(notification.args.includes("deny=Deny"), false);
   assert.match(notification.body, /review required: soma proposals show proposal-focus/);
@@ -211,6 +213,7 @@ test("irreversible desktop notifications do not include one-click approval actio
   assert.equal(notification.risk_class, "sensitive");
   assert.equal(notification.actionable, false);
   assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
+  assert.equal(notification.args.includes("--expire-time=0"), false);
   assert.equal(notification.args.includes("approve=Approve"), false);
   assert.equal(notification.args.includes("deny=Deny"), false);
   assert.match(notification.body, /review required: soma proposals show proposal-focus/);

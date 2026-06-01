@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import { sanitizeDisplayText } from "./textSanitization.js";
+
 const VALID_SCOPES = new Set(["once", "session"]);
+const DECISION_FEEDBACK_MAX_CHARS = 500;
 
 export class CapabilityProposalStore {
   constructor({ now = () => new Date() } = {}) {
@@ -184,19 +187,32 @@ function requiredScope(value) {
 }
 
 function normalizeApproval(input, decidedAt) {
+  const feedback = optionalFeedback(input?.feedback);
   return {
     approved_scope: requiredScope(input?.approved_scope ?? input?.scope),
     decided_by: requiredString(input?.decided_by ?? input?.approved_by ?? "user", "decided_by"),
     decided_at: decidedAt,
+    decision_message: "capability request was approved",
+    feedback,
   };
 }
 
 function normalizeDenial(input, decidedAt) {
+  const feedback = optionalFeedback(input?.feedback);
   return {
     denial_reason: requiredString(input?.reason, "reason"),
     decided_by: requiredString(input?.decided_by ?? input?.denied_by ?? "user", "decided_by"),
     decided_at: decidedAt,
+    decision_message: "capability request was rejected",
+    feedback,
   };
+}
+
+function optionalFeedback(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return sanitizeDisplayText(value, DECISION_FEEDBACK_MAX_CHARS);
 }
 
 function requiredStringArray(value, field) {

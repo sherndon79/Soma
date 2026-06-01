@@ -255,10 +255,15 @@ SOMA_DESKTOP_NOTIFY=1 npm start
 
 The push adapter is off by default. When enabled, it shells out to `notify-send` with a fixed
 Soma title and a bounded body containing the capability key, catalog risk class, sanitized/truncated
-reason, and an approve instruction. Failed or missing `notify-send` is non-fatal; proposal creation
-still succeeds and provenance records `desktop.notification.emitted` with `emitted`, `skipped`, or
-`failed` status. Desktop notifications are informational only and never approve, activate, create
-grants, or add a catalog capability.
+reason, and review instructions. For low and sensitive capabilities, the notification includes
+fixed `Approve` and `Deny` buttons; clicking one calls the existing proposal decision route with
+`decided_by=user` and no free-form feedback, but only when the catalog marks the capability
+explicitly reversible. High-risk, irreversible, and unknown-reversibility capabilities are
+review-only and do not get one-click approval buttons. Failed or missing `notify-send` is
+non-fatal; proposal creation still succeeds and provenance records `desktop.notification.emitted`
+with `emitted`, `skipped`, or `failed` status. Desktop notification actions never create grants,
+activate capabilities, or add a
+catalog capability.
 
 ## Revoke Desktop Inspection
 
@@ -309,13 +314,19 @@ Approve a proposal record without activating the capability:
 
 ```bash
 npm run cli -- proposals approve proposal-id --scope session
+npm run cli -- proposals approve proposal-id --scope session --feedback "OK for this session."
 ```
 
 Deny a proposal record with a reason:
 
 ```bash
 npm run cli -- proposals deny proposal-id --reason "Not needed right now."
+npm run cli -- proposals deny proposal-id --reason "Not needed right now." --feedback "Try again after guardrails exist."
 ```
+
+Decision feedback is optional. It is sanitized before storage and returned with the proposal
+decision so the requesting agent gets a clear outcome plus any operator note. When feedback is
+absent, the decision still includes a generic approval or rejection message.
 
 Full proposal JSON:
 

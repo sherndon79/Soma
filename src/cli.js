@@ -147,8 +147,16 @@ export async function runCli(
         throw usageError(`proposals ${subcommand} requires a proposal id.`);
       }
       const body = subcommand === "approve"
-        ? { approved_scope: flags.scope ?? "session", decided_by: flags.by ?? "user" }
-        : { reason: flags.reason, decided_by: flags.by ?? "user" };
+        ? {
+            approved_scope: flags.scope ?? "session",
+            decided_by: flags.by ?? "user",
+            feedback: flags.feedback,
+          }
+        : {
+            reason: flags.reason,
+            decided_by: flags.by ?? "user",
+            feedback: flags.feedback,
+          };
       const response = await request(baseUrl, "POST", `/capability-proposals/${proposalId}/${subcommand}`, body);
       writeOutput(stdout, response, jsonOutput, proposalDecisionSummary(response));
       return 0;
@@ -1173,6 +1181,12 @@ function proposalDetailSummary(response) {
   if (decision.denial_reason) {
     lines.push(`  denial reason: ${decision.denial_reason}`);
   }
+  if (decision.decision_message) {
+    lines.push(`  message: ${decision.decision_message}`);
+  }
+  if (decision.feedback) {
+    lines.push(`  feedback: ${decision.feedback}`);
+  }
 
   return lines.join("\n");
 }
@@ -1193,6 +1207,12 @@ function proposalDecisionSummary(response) {
   }
   if (decision.denial_reason) {
     lines.splice(4, 0, `  denial reason: ${decision.denial_reason}`);
+  }
+  if (decision.decision_message) {
+    lines.splice(4, 0, `  message: ${decision.decision_message}`);
+  }
+  if (decision.feedback) {
+    lines.splice(4, 0, `  feedback: ${decision.feedback}`);
   }
   return lines.join("\n");
 }
@@ -1919,8 +1939,8 @@ Usage:
   soma model-visual attach-dry-run --request-json json [--json]
   soma proposals list [--status pending] [--json]
   soma proposals show proposal-id [--json]
-  soma proposals approve proposal-id [--scope once|session] [--by user] [--json]
-  soma proposals deny proposal-id --reason text [--by user] [--json]
+  soma proposals approve proposal-id [--scope once|session] [--by user] [--feedback text] [--json]
+  soma proposals deny proposal-id --reason text [--by user] [--feedback text] [--json]
   soma memory list|add|clear [content] [--role note] [--source manual] [--json]
   soma files read path [--json]
   soma desktop inspect [--mode environment|atspi] [--max-apps n] [--max-children n] [--json]

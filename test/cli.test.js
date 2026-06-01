@@ -591,13 +591,19 @@ test("runCli proposals approve sends decision request", async () => {
     "proposal-1",
     "--scope",
     "session",
+    "--feedback",
+    "Looks good.",
   ]), {
     stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, method, path, body) => {
       captured = { method, path, body };
       return {
         proposal: { id: "proposal-1", status: "approved", capability: "desktop.inspect.focus" },
-        decision: { decision: "approved", approved_scope: "session" },
+        decision: {
+          decision: "approved",
+          approved_scope: "session",
+          feedback: "Looks good.",
+        },
         activation_performed: false,
         provenance_id: "prov-1",
       };
@@ -607,8 +613,13 @@ test("runCli proposals approve sends decision request", async () => {
   assert.equal(code, 0);
   assert.equal(captured.method, "POST");
   assert.equal(captured.path, "/capability-proposals/proposal-1/approve");
-  assert.deepEqual(captured.body, { approved_scope: "session", decided_by: "user" });
+  assert.deepEqual(captured.body, {
+    approved_scope: "session",
+    decided_by: "user",
+    feedback: "Looks good.",
+  });
   assert.match(writes.join(""), /status: approved/);
+  assert.match(writes.join(""), /feedback: Looks good\./);
   assert.match(writes.join(""), /activation performed: no/);
 });
 
@@ -2662,13 +2673,19 @@ test("runCli proposals deny sends decision request", async () => {
     "proposal-1",
     "--reason",
     "Not needed.",
+    "--feedback",
+    "Try later.",
   ]), {
     stdout: { write: (value) => writes.push(value) },
     request: async (_baseUrl, method, path, body) => {
       captured = { method, path, body };
       return {
         proposal: { id: "proposal-1", status: "denied", capability: "desktop.inspect.focus" },
-        decision: { decision: "denied", denial_reason: "Not needed." },
+        decision: {
+          decision: "denied",
+          denial_reason: "Not needed.",
+          feedback: "Try later.",
+        },
         activation_performed: false,
         provenance_id: "prov-1",
       };
@@ -2678,9 +2695,14 @@ test("runCli proposals deny sends decision request", async () => {
   assert.equal(code, 0);
   assert.equal(captured.method, "POST");
   assert.equal(captured.path, "/capability-proposals/proposal-1/deny");
-  assert.deepEqual(captured.body, { reason: "Not needed.", decided_by: "user" });
+  assert.deepEqual(captured.body, {
+    reason: "Not needed.",
+    decided_by: "user",
+    feedback: "Try later.",
+  });
   assert.match(writes.join(""), /status: denied/);
   assert.match(writes.join(""), /denial reason: Not needed\./);
+  assert.match(writes.join(""), /feedback: Try later\./);
 });
 
 test("runCli files read sends expected request body", async () => {

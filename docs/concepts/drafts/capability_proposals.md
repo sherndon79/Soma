@@ -251,20 +251,27 @@ Current implementation status:
   paths.
 - Optional desktop push notifications are off by default and can be enabled with
   `SOMA_DESKTOP_NOTIFY=1`. They use a fixed Soma title and bounded structured body via
-  `notify-send`; failures are non-fatal.
+  `notify-send`; failures are non-fatal. Low and sensitive proposals get fixed Approve/Deny
+  actions only when the catalog marks the capability explicitly reversible; high-risk,
+  irreversible, or unknown-reversibility proposals are review-only and route to the deliberate
+  CLI/API flow.
 - `npm run cli -- proposals list` prints a concise proposal summary.
 - `npm run cli -- notifications` prints pending proposal-review notifications.
 - `npm run cli -- proposals show proposal-id` prints full review context.
-- `POST /capability-proposals/:id/approve` records an approval decision with approved scope.
-- `POST /capability-proposals/:id/deny` records a denial decision with reason.
-- `npm run cli -- proposals approve proposal-id --scope session` records approval.
-- `npm run cli -- proposals deny proposal-id --reason "reason"` records denial.
+- `POST /capability-proposals/:id/approve` records an approval decision with approved scope and
+  optional sanitized feedback.
+- `POST /capability-proposals/:id/deny` records a denial decision with reason and optional
+  sanitized feedback.
+- `npm run cli -- proposals approve proposal-id --scope session [--feedback text]` records
+  approval.
+- `npm run cli -- proposals deny proposal-id --reason "reason" [--feedback text]` records denial.
 - `GET /harness-modules` includes `pending_capability_proposals` for operator status.
 - `npm run cli -- status` includes concise pending proposal details.
 - `capability.proposal.created` provenance is recorded.
 - `capability.proposal.approved` and `capability.proposal.denied` provenance are recorded.
 - `desktop.notification.emitted` provenance records desktop notification `emitted`, `skipped`, or
   `failed` status separately from proposal approval and grant authority.
+- Decision records include a generic outcome message even when feedback is absent.
 - revocation and activation are not implemented.
 
 Phase 2:

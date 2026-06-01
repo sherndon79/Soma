@@ -1179,13 +1179,19 @@ test("capability proposals can be approved without activation", async () => {
   response = await invokeHandler(handler, {
     method: "POST",
     url: `/capability-proposals/${proposalId}/approve`,
-    body: { approved_scope: "session", decided_by: "user" },
+    body: {
+      approved_scope: "session",
+      decided_by: "user",
+      feedback: "Approved after review <b>bounded</b> & local only.",
+    },
   });
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.proposal.status, "approved");
   assert.equal(response.body.decision.decision, "approved");
   assert.equal(response.body.decision.approved_scope, "session");
+  assert.equal(response.body.decision.decision_message, "capability request was approved");
+  assert.equal(response.body.decision.feedback, "Approved after review bbounded/b local only.");
   assert.equal(response.body.activation_performed, false);
 
   response = await invokeHandler(handler, {
@@ -1202,6 +1208,9 @@ test("capability proposals can be approved without activation", async () => {
   assert.equal(response.body.entries.length, 1);
   assert.equal(response.body.entries[0].proposal_id, proposalId);
   assert.equal(response.body.entries[0].approved_scope, "session");
+  assert.equal(response.body.entries[0].decision_message, "capability request was approved");
+  assert.equal(response.body.entries[0].feedback, "Approved after review bbounded/b local only.");
+  assert.equal(response.body.entries[0].feedback_included, true);
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
@@ -1502,13 +1511,19 @@ test("capability proposals can be denied without activation", async () => {
   response = await invokeHandler(handler, {
     method: "POST",
     url: `/capability-proposals/${proposalId}/deny`,
-    body: { reason: "Not needed right now.", decided_by: "user" },
+    body: {
+      reason: "Not needed right now.",
+      decided_by: "user",
+      feedback: "Too risky until guardrails <script>alert(1)</script> & review.",
+    },
   });
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.proposal.status, "denied");
   assert.equal(response.body.decision.decision, "denied");
   assert.equal(response.body.decision.denial_reason, "Not needed right now.");
+  assert.equal(response.body.decision.decision_message, "capability request was rejected");
+  assert.equal(response.body.decision.feedback, "Too risky until guardrails scriptalert(1)/script review.");
   assert.equal(response.body.activation_performed, false);
 
   response = await invokeHandler(handler, {
@@ -1519,6 +1534,9 @@ test("capability proposals can be denied without activation", async () => {
   assert.equal(response.body.entries.length, 1);
   assert.equal(response.body.entries[0].proposal_id, proposalId);
   assert.equal(response.body.entries[0].denial_reason, "Not needed right now.");
+  assert.equal(response.body.entries[0].decision_message, "capability request was rejected");
+  assert.equal(response.body.entries[0].feedback, "Too risky until guardrails scriptalert(1)/script review.");
+  assert.equal(response.body.entries[0].feedback_included, true);
 });
 
 test("capability proposal decisions cannot be repeated", async () => {

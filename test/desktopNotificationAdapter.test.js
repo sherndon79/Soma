@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import {
@@ -37,10 +38,11 @@ test("desktop notification adapter invokes notify-send with fixed title and boun
   const adapter = createDesktopNotificationAdapter({
     enabled: true,
     command: "/usr/bin/notify-send",
-    execFileFn(command, args, options, callback) {
+    spawnFn(command, args, options) {
       calls.push({ command, args, options });
-      callback();
+      return fakeChild();
     },
+    commandExistsFn: () => true,
   });
 
   const result = await adapter.emitCapabilityProposal({
@@ -53,13 +55,20 @@ test("desktop notification adapter invokes notify-send with fixed title and boun
   assert.equal(result.status, "emitted");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, "/usr/bin/notify-send");
-  assert.equal(calls[0].args[0], "--");
-  assert.equal(calls[0].args[1], DESKTOP_NOTIFICATION_TITLE);
-  assert.match(calls[0].args[2], /capability: desktop\.inspect\.focus/);
-  assert.match(calls[0].args[2], /risk_class: sensitive/);
-  assert.match(calls[0].args[2], /approve: soma proposals approve proposal-focus --scope session/);
-  assert.equal(calls[0].args[2].includes("\u0000"), false);
-  assert.equal(calls[0].args[2].includes("\u001b"), false);
+  assert.deepEqual(calls[0].args.slice(0, 5), [
+    "-A",
+    "approve=Approve",
+    "-A",
+    "deny=Deny",
+    "--",
+  ]);
+  assert.equal(calls[0].args[5], DESKTOP_NOTIFICATION_TITLE);
+  assert.match(calls[0].args[6], /capability: desktop\.inspect\.focus/);
+  assert.match(calls[0].args[6], /risk_class: sensitive/);
+  assert.match(calls[0].args[6], /approve: soma proposals approve proposal-focus --scope session/);
+  assert.equal(calls[0].args[6].includes("\u0000"), false);
+  assert.equal(calls[0].args[6].includes("\u001b"), false);
+  assert.equal(result.action_waiter_started, true);
   assert.equal(result.reason_preview.length, DESKTOP_NOTIFICATION_REASON_MAX_CHARS);
   assert.equal(result.reason_truncated, true);
 });
@@ -76,14 +85,135 @@ test("desktop notification adapter treats missing notify-send and command failur
       },
     });
 
-    const result = await adapter.emitCapabilityProposal(proposalFixture(), {
-      catalog: catalogFixture(),
+    const result = await adapter.emitCapabilityProposal({
+      ...proposalFixture(),
+      capability: "capability.high",
+    }, {
+      catalog: highCatalogFixture(),
     });
 
     assert.equal(result.status, "failed", name);
     assert.equal(result.reason, expectedReason, name);
     assert.equal(result.proposal_id, "proposal-focus", name);
   }
+});
+
+test("desktop notification adapter records missing notify-send before starting action waiter", async () => {
+  const calls = [];
+  const adapter = createDesktopNotificationAdapter({
+    enabled: true,
+    command: "notify-send-missing",
+    commandExistsFn: () => false,
+    spawnFn(command, args, options) {
+      calls.push({ command, args, options });
+      return fakeChild();
+    },
+  });
+
+  const result = await adapter.emitCapabilityProposal(proposalFixture(), {
+    catalog: catalogFixture(),
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "notify_send_unavailable");
+  assert.deepEqual(calls, []);
+});
+
+test("desktop notification action waiter posts fixed approve and deny decisions", async () => {
+  for (const [selectedAction, expectedPath, expectedBody] of [
+    ["approve\n", "/capability-proposals/proposal-focus/approve", {
+      approved_scope: "session",
+      decided_by: "user",
+    }],
+    ["deny\n", "/capability-proposals/proposal-focus/deny", {
+      reason: "Denied from desktop notification.",
+      decided_by: "user",
+    }],
+  ]) {
+    const requests = [];
+    const adapter = createDesktopNotificationAdapter({
+      enabled: true,
+      actionBaseUrl: "http://127.0.0.1:8765/",
+      spawnFn(_command, _args, _options) {
+        return fakeChild({ selectedAction });
+      },
+      commandExistsFn: () => true,
+      async fetchFn(url, options) {
+        requests.push({ url, options });
+        return { status: 200 };
+      },
+    });
+
+    const result = await adapter.emitCapabilityProposal(proposalFixture(), {
+      catalog: catalogFixture(),
+    });
+    await tick();
+
+    assert.equal(result.status, "emitted", selectedAction);
+    assert.equal(requests.length, 1, selectedAction);
+    assert.equal(requests[0].url, `http://127.0.0.1:8765${expectedPath}`, selectedAction);
+    assert.equal(requests[0].options.method, "POST", selectedAction);
+    assert.deepEqual(JSON.parse(requests[0].options.body), expectedBody, selectedAction);
+  }
+});
+
+test("desktop notification action waiter ignores dismiss timeout and already-decided conflicts", async () => {
+  for (const [name, selectedAction, status, expectedRequests] of [
+    ["dismiss", "", 200, 0],
+    ["already decided", "approve\n", 409, 1],
+  ]) {
+    const requests = [];
+    const adapter = createDesktopNotificationAdapter({
+      enabled: true,
+      spawnFn() {
+        return fakeChild({ selectedAction });
+      },
+      commandExistsFn: () => true,
+      async fetchFn(url, options) {
+        requests.push({ url, options });
+        return { status };
+      },
+    });
+
+    const result = await adapter.emitCapabilityProposal(proposalFixture(), {
+      catalog: catalogFixture(),
+    });
+    await tick();
+
+    assert.equal(result.status, "emitted", name);
+    assert.equal(requests.length, expectedRequests, name);
+  }
+});
+
+test("high-risk desktop notifications do not include one-click approval actions", () => {
+  const notification = buildCapabilityProposalDesktopNotification({
+    ...proposalFixture(),
+    capability: "capability.high",
+  }, {
+    catalog: highCatalogFixture(),
+  });
+
+  assert.equal(notification.actionable, false);
+  assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
+  assert.equal(notification.args.includes("approve=Approve"), false);
+  assert.equal(notification.args.includes("deny=Deny"), false);
+  assert.match(notification.body, /review required: soma proposals show proposal-focus/);
+});
+
+test("irreversible desktop notifications do not include one-click approval actions", () => {
+  const notification = buildCapabilityProposalDesktopNotification({
+    ...proposalFixture(),
+    capability: "capability.irreversible",
+  }, {
+    catalog: irreversibleCatalogFixture(),
+  });
+
+  assert.equal(notification.risk_class, "sensitive");
+  assert.equal(notification.actionable, false);
+  assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
+  assert.equal(notification.args.includes("approve=Approve"), false);
+  assert.equal(notification.args.includes("deny=Deny"), false);
+  assert.match(notification.body, /review required: soma proposals show proposal-focus/);
 });
 
 test("desktop notification template uses fixed structure and sanitized reason", () => {
@@ -158,7 +288,52 @@ function catalogFixture() {
       {
         key: "desktop.inspect.focus",
         risk_class: "sensitive",
+        reversible: true,
       },
     ],
   };
+}
+
+function highCatalogFixture() {
+  return {
+    schema_version: 1,
+    capabilities: [
+      {
+        key: "capability.high",
+        risk_class: "high",
+        reversible: true,
+      },
+    ],
+  };
+}
+
+function irreversibleCatalogFixture() {
+  return {
+    schema_version: 1,
+    capabilities: [
+      {
+        key: "capability.irreversible",
+        risk_class: "sensitive",
+        reversible: false,
+      },
+    ],
+  };
+}
+
+function fakeChild({ selectedAction = "" } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stdout.setEncoding = () => {};
+  child.unref = () => {};
+  process.nextTick(() => {
+    if (selectedAction) {
+      child.stdout.emit("data", selectedAction);
+    }
+    child.emit("close", 0);
+  });
+  return child;
+}
+
+function tick() {
+  return new Promise((resolve) => setImmediate(resolve));
 }

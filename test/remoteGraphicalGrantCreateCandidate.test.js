@@ -154,6 +154,16 @@ test("buildRemoteGraphicalGrantCreateCandidateFromProposal rejects pending and d
   );
 });
 
+test("buildRemoteGraphicalGrantCreateCandidateFromProposal rejects capability design proposals", () => {
+  assertRemoteGraphicalCandidateError(
+    () => buildRemoteGraphicalGrantCreateCandidateFromProposal({
+      ...approvedProposal,
+      type: "capability_design",
+    }, context),
+    "remote_graphical_grant_candidate_rejects_capability_design",
+  );
+});
+
 test("buildRemoteGraphicalGrantCreateCandidateFromProposal requires approval provenance", () => {
   assertRemoteGraphicalCandidateError(
     () => buildRemoteGraphicalGrantCreateCandidateFromProposal({

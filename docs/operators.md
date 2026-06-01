@@ -310,6 +310,18 @@ Show the full review context for a proposal:
 npm run cli -- proposals show proposal-id
 ```
 
+Create a new-tooling design proposal for review without adding catalog or runtime authority:
+
+```bash
+curl -s http://127.0.0.1:8765/capability-design-proposals \
+  -H 'content-type: application/json' \
+  -d '{"requested_by":"assistant","capability":"desktop.inspect.selected_text","proposed_name":"Selected Desktop Text Inspection","reason":"Need a narrower alternative to broad desktop text inspection.","requested_scope":"session","data_exposed":["selected accessibility text"],"excluded_data":["screenshots","full accessibility tree","keyboard input"],"risk":"Could reveal selected user text if implemented.","fallback":"Ask the user to paste selected text.","failure_mode":"Over-broad provider scope could disclose unrelated text.","proposed_reversibility":false,"provider_boundary":"desktop broker returns selected text only after explicit grant","proposed_risk_class":"sensitive"}'
+```
+
+`capability_design` proposals are review-only. Approval means approved for consideration; it does
+not create a grant, activate a capability, mutate the catalog, or make the proposed capability
+usable. Runtime grant creation explicitly rejects design proposals.
+
 Approve a proposal record without activating the capability:
 
 ```bash

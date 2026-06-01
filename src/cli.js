@@ -1112,6 +1112,7 @@ function proposalListSummary(response) {
     lines.push([
       `  ${proposal.id ?? "unknown-id"}`,
       `[${proposal.status ?? "unknown-status"}]`,
+      `type=${proposal.type ?? "capability_proposal"}`,
       `capability=${proposal.capability ?? "unknown"}`,
       `requested_by=${proposal.requested_by ?? "unknown"}`,
       `scope=${proposal.requested_scope ?? "unknown"}`,
@@ -1142,6 +1143,9 @@ function notificationSummary(response) {
       `proposal=${notification.proposal_id ?? "unknown"}`,
     ].join(" "));
     lines.push(`    reason: ${notification.reason ?? ""}`);
+    if (notification.proposed_name) {
+      lines.push(`    proposed name: ${notification.proposed_name}`);
+    }
     lines.push(`    show: soma proposals show ${notification.proposal_id ?? "proposal-id"}`);
     lines.push(`    approve: soma proposals approve ${notification.proposal_id ?? "proposal-id"} --scope ${notification.requested_scope ?? "session"}`);
     lines.push(`    deny: soma proposals deny ${notification.proposal_id ?? "proposal-id"} --reason text`);
@@ -1155,6 +1159,7 @@ function proposalDetailSummary(response) {
   const lines = [
     "Capability proposal",
     `  id: ${proposal.id ?? "unknown"}`,
+    `  type: ${proposal.type ?? "capability_proposal"}`,
     `  status: ${proposal.status ?? "unknown"}`,
     `  capability: ${proposal.capability ?? "unknown"}`,
     `  requested by: ${proposal.requested_by ?? "unknown"}`,
@@ -1166,6 +1171,25 @@ function proposalDetailSummary(response) {
     `  excluded data: ${joinList(proposal.excluded_data)}`,
     `  activation performed: ${booleanText(response.activation_performed)}`,
   ];
+
+  if (proposal.proposed_name) {
+    lines.push(`  proposed name: ${proposal.proposed_name}`);
+  }
+  if (proposal.proposed_risk_class) {
+    lines.push(`  proposed risk class: ${proposal.proposed_risk_class}`);
+  }
+  if (proposal.proposed_reversibility !== undefined && proposal.proposed_reversibility !== null) {
+    lines.push(`  proposed reversible: ${booleanText(proposal.proposed_reversibility)}`);
+  }
+  if (proposal.failure_mode) {
+    lines.push(`  failure mode: ${proposal.failure_mode}`);
+  }
+  if (proposal.provider_boundary) {
+    lines.push(`  provider boundary: ${proposal.provider_boundary}`);
+  }
+  if (proposal.grant_eligible !== undefined) {
+    lines.push(`  grant eligible: ${booleanText(proposal.grant_eligible)}`);
+  }
 
   if (proposal.provenance_id) {
     lines.push(`  provenance: ${proposal.provenance_id}`);

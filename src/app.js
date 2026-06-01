@@ -1217,6 +1217,37 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/capability-design-proposals") {
+        const body = await readJson(req);
+        const proposal = capabilityProposals.createDesign(body);
+        const event = provenanceLog.append(createCapabilityProposalEvent({
+          proposal,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        proposal.provenance_id = event.id;
+        logger.info?.("soma.provenance", event);
+        const desktopNotification = await emitDesktopNotificationForProposal({
+          adapter: desktopNotificationAdapter,
+          proposal,
+          catalog: capabilityCatalog,
+          caller: req.headers["x-soma-caller"] ?? "",
+          provenanceLog,
+          logger,
+        });
+        writeJson(res, 201, {
+          proposal,
+          notification: proposal.notification,
+          desktop_notification: desktopNotification,
+          provenance_id: event.id,
+          review_only: true,
+          activation_performed: false,
+          catalog_mutation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
+        return;
+      }
+
       const proposalDecisionMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)\/(approve|deny)$/);
       if (req.method === "POST" && proposalDecisionMatch) {
         const [, proposalId, action] = proposalDecisionMatch;
@@ -1846,6 +1877,13 @@ function buildRuntimeGrantCreateInputFromProposal(proposal, body = {}, {
     );
   }
 
+  if (proposal.type === "capability_design") {
+    throwValidationError(
+      "runtime_grant_create_rejects_capability_design",
+      "Capability design proposals are review-only and cannot create runtime grants.",
+    );
+  }
+
   const capability = String(proposal.capability ?? "").trim();
   const definition = findCatalogCapability(catalog, capability);
   if (!definition) {
@@ -1951,13 +1989,15 @@ function createHarnessModuleEvent({ eventType, moduleId, activeModules, caller }
 }
 
 function createCapabilityProposalEvent({ proposal, caller }) {
+  const designProposal = proposal.type === "capability_design";
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
-    event_type: "capability.proposal.created",
-    capability: "capability.proposal.create",
+    event_type: designProposal ? "capability.design_proposal.created" : "capability.proposal.created",
+    capability: designProposal ? "capability.design_proposal.create" : "capability.proposal.create",
     caller_identity: caller,
     allowed: true,
+    proposal_type: proposal.type ?? "capability_proposal",
     proposal_id: proposal.id,
     proposal_status: proposal.status,
     requested_by: proposal.requested_by,
@@ -1968,6 +2008,13 @@ function createCapabilityProposalEvent({ proposal, caller }) {
     proposal_fallback: proposal.fallback,
     data_exposed: proposal.data_exposed,
     excluded_data: proposal.excluded_data,
+    proposed_name: proposal.proposed_name ?? "",
+    proposed_risk_class: proposal.proposed_risk_class ?? "",
+    proposed_reversibility: proposal.proposed_reversibility ?? null,
+    failure_mode: proposal.failure_mode ?? "",
+    provider_boundary: proposal.provider_boundary ?? "",
+    grant_eligible: proposal.grant_eligible ?? true,
+    catalog_mutation_performed: Boolean(proposal.catalog_mutation_performed),
     review_context_type: proposal.review_context?.capability ? "sensorium_grant_review" : "",
     review_provider: proposal.review_context?.provider ?? "",
     review_topic: proposal.review_context?.topic ?? "",
@@ -1983,13 +2030,17 @@ function createCapabilityProposalEvent({ proposal, caller }) {
 
 function createCapabilityProposalDecisionEvent({ proposal, caller }) {
   const approved = proposal.status === "approved";
+  const designProposal = proposal.type === "capability_design";
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
-    event_type: approved ? "capability.proposal.approved" : "capability.proposal.denied",
-    capability: "capability.proposal.decide",
+    event_type: designProposal
+      ? (approved ? "capability.design_proposal.approved" : "capability.design_proposal.denied")
+      : (approved ? "capability.proposal.approved" : "capability.proposal.denied"),
+    capability: designProposal ? "capability.design_proposal.decide" : "capability.proposal.decide",
     caller_identity: caller,
     allowed: true,
+    proposal_type: proposal.type ?? "capability_proposal",
     proposal_id: proposal.id,
     proposal_status: proposal.status,
     requested_by: proposal.requested_by,
@@ -2001,6 +2052,7 @@ function createCapabilityProposalDecisionEvent({ proposal, caller }) {
     decision_message: proposal.decision?.decision_message ?? "",
     feedback: proposal.decision?.feedback ?? "",
     feedback_included: Boolean(proposal.decision?.feedback),
+    grant_eligible: Boolean(proposal.decision?.grant_eligible),
     activation_performed: false,
     memory_written: false,
     remote_service_used: false,

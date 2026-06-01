@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sanitizeDisplayText } from "./textSanitization.js";
 
 const VALID_SCOPES = new Set(["once", "session"]);
+const VALID_RISK_CLASSES = new Set(["low", "sensitive", "high"]);
 const DECISION_FEEDBACK_MAX_CHARS = 500;
 
 export class CapabilityProposalStore {
@@ -13,6 +14,12 @@ export class CapabilityProposalStore {
 
   create(input, options = {}) {
     const proposal = normalizeProposal(input, this.now, options);
+    this.proposals.push(proposal);
+    return proposal;
+  }
+
+  createDesign(input, options = {}) {
+    const proposal = normalizeCapabilityDesignProposal(input, this.now, options);
     this.proposals.push(proposal);
     return proposal;
   }
@@ -43,8 +50,8 @@ export class CapabilityProposalStore {
     }
     const decidedAt = this.now().toISOString();
     const decisionRecord = decision === "approved"
-      ? normalizeApproval(input, decidedAt)
-      : normalizeDenial(input, decidedAt);
+      ? normalizeApproval(input, decidedAt, proposal)
+      : normalizeDenial(input, decidedAt, proposal);
     proposal.status = decision;
     proposal.decision = {
       decision,
@@ -70,7 +77,7 @@ export class CapabilityProposalStore {
 export function proposalNotification(proposal) {
   return {
     id: `notification-${proposal.id}`,
-    type: "capability_proposal",
+    type: proposal.type ?? "capability_proposal",
     status: proposal.status,
     title: proposal.notification?.title ?? "Capability requested",
     proposal_id: proposal.id,
@@ -82,6 +89,12 @@ export function proposalNotification(proposal) {
     excluded_data: proposal.excluded_data,
     risk: proposal.risk,
     fallback: proposal.fallback,
+    proposed_name: proposal.proposed_name ?? "",
+    proposed_risk_class: proposal.proposed_risk_class ?? "",
+    proposed_reversibility: proposal.proposed_reversibility ?? null,
+    failure_mode: proposal.failure_mode ?? "",
+    provider_boundary: proposal.provider_boundary ?? "",
+    grant_eligible: proposal.grant_eligible ?? true,
     choices: [
       {
         action: "show",
@@ -170,6 +183,37 @@ export function normalizeProposal(input, now = () => new Date(), { allowReviewMe
   return proposal;
 }
 
+export function normalizeCapabilityDesignProposal(input, now = () => new Date(), options = {}) {
+  const proposal = normalizeProposal(input, now, options);
+  const proposedName = requiredString(input?.proposed_name ?? input?.name, "proposed_name");
+  const failureMode = requiredString(input?.failure_mode, "failure_mode");
+  const providerBoundary = requiredString(input?.provider_boundary, "provider_boundary");
+  const proposedRiskClass = requiredRiskClass(input?.proposed_risk_class ?? input?.risk_class);
+  const proposedReversibility = requiredBoolean(input?.proposed_reversibility, "proposed_reversibility");
+
+  proposal.type = "capability_design";
+  proposal.proposed_name = proposedName;
+  proposal.failure_mode = failureMode;
+  proposal.provider_boundary = providerBoundary;
+  proposal.proposed_risk_class = proposedRiskClass;
+  proposal.proposed_reversibility = proposedReversibility;
+  proposal.review_only = true;
+  proposal.grant_eligible = false;
+  proposal.catalog_mutation_performed = false;
+  proposal.notification = {
+    ...proposal.notification,
+    title: "Capability design proposed",
+    type: "capability_design",
+    proposed_name: proposedName,
+    failure_mode: failureMode,
+    provider_boundary: providerBoundary,
+    proposed_risk_class: proposedRiskClass,
+    proposed_reversibility: proposedReversibility,
+  };
+
+  return proposal;
+}
+
 function requiredString(value, field) {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -186,25 +230,48 @@ function requiredScope(value) {
   return normalized;
 }
 
-function normalizeApproval(input, decidedAt) {
+function requiredRiskClass(value) {
+  const normalized = requiredString(value, "proposed_risk_class");
+  if (!VALID_RISK_CLASSES.has(normalized)) {
+    throw validationError("proposed_risk_class must be low, sensitive, or high.");
+  }
+  return normalized;
+}
+
+function requiredBoolean(value, field) {
+  if (value !== true && value !== false) {
+    throw validationError(`${field} must be a boolean.`);
+  }
+  return value;
+}
+
+function normalizeApproval(input, decidedAt, proposal = {}) {
   const feedback = optionalFeedback(input?.feedback);
+  const designProposal = proposal.type === "capability_design";
   return {
     approved_scope: requiredScope(input?.approved_scope ?? input?.scope),
     decided_by: requiredString(input?.decided_by ?? input?.approved_by ?? "user", "decided_by"),
     decided_at: decidedAt,
-    decision_message: "capability request was approved",
+    decision_message: designProposal
+      ? "capability design was approved for consideration"
+      : "capability request was approved",
     feedback,
+    grant_eligible: !designProposal,
   };
 }
 
-function normalizeDenial(input, decidedAt) {
+function normalizeDenial(input, decidedAt, proposal = {}) {
   const feedback = optionalFeedback(input?.feedback);
+  const designProposal = proposal.type === "capability_design";
   return {
     denial_reason: requiredString(input?.reason, "reason"),
     decided_by: requiredString(input?.decided_by ?? input?.denied_by ?? "user", "decided_by"),
     decided_at: decidedAt,
-    decision_message: "capability request was rejected",
+    decision_message: designProposal
+      ? "capability design was rejected"
+      : "capability request was rejected",
     feedback,
+    grant_eligible: false,
   };
 }
 

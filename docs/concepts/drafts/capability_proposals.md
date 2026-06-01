@@ -245,6 +245,10 @@ Phase 1:
 Current implementation status:
 
 - `POST /capability-proposals` creates an in-memory pending proposal.
+- `POST /capability-design-proposals` creates an in-memory `capability_design` proposal for
+  new-tooling design review. It uses the proposed capability key in `capability` and additionally
+  requires `proposed_name`, `failure_mode`, `proposed_reversibility`, `provider_boundary`, and
+  advisory `proposed_risk_class`.
 - `GET /capability-proposals` lists proposals and supports `status=pending`.
 - `GET /capability-proposals/:id` shows full review context for one proposal.
 - `GET /notifications` surfaces pending proposal notifications with show/approve/deny action
@@ -262,6 +266,9 @@ Current implementation status:
   optional sanitized feedback.
 - `POST /capability-proposals/:id/deny` records a denial decision with reason and optional
   sanitized feedback.
+- Approving a `capability_design` means approved for consideration only. It does not make the
+  capability usable, does not mutate the catalog, and cannot create a runtime grant; the runtime
+  grant route explicitly rejects `capability_design` proposals.
 - `npm run cli -- proposals approve proposal-id --scope session [--feedback text]` records
   approval.
 - `npm run cli -- proposals deny proposal-id --reason "reason" [--feedback text]` records denial.
@@ -269,6 +276,8 @@ Current implementation status:
 - `npm run cli -- status` includes concise pending proposal details.
 - `capability.proposal.created` provenance is recorded.
 - `capability.proposal.approved` and `capability.proposal.denied` provenance are recorded.
+- `capability.design_proposal.created`, `.approved`, and `.denied` provenance are recorded for
+  design-only proposals.
 - `desktop.notification.emitted` provenance records desktop notification `emitted`, `skipped`, or
   `failed` status separately from proposal approval and grant authority.
 - Decision records include a generic outcome message even when feedback is absent.

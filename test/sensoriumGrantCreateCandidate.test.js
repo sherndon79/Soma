@@ -126,6 +126,16 @@ test("buildSensoriumGrantCreateCandidateFromProposal rejects pending proposals",
   );
 });
 
+test("buildSensoriumGrantCreateCandidateFromProposal rejects capability design proposals", () => {
+  assertSensoriumCandidateError(
+    () => buildSensoriumGrantCreateCandidateFromProposal({
+      ...approvedProposal,
+      type: "capability_design",
+    }, context),
+    "sensorium_grant_candidate_rejects_capability_design",
+  );
+});
+
 test("buildSensoriumGrantCreateCandidateFromProposal requires approval provenance", () => {
   assertSensoriumCandidateError(
     () => buildSensoriumGrantCreateCandidateFromProposal({

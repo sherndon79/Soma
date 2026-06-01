@@ -15,6 +15,13 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
 ) {
   const errors = [];
 
+  if (proposal.type === "capability_design") {
+    throwModelVisualAttachGrantCandidateError(
+      ["capability design proposals are review-only and cannot create model visual attach grant candidates"],
+      "model_visual_attach_grant_candidate_rejects_capability_design",
+    );
+  }
+
   if (proposal.status !== "approved" || proposal.decision?.decision !== "approved") {
     errors.push("proposal must be approved before a model visual attach grant candidate can be built");
   }

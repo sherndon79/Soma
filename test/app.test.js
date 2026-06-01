@@ -614,6 +614,169 @@ test("capability proposals can be created and listed without activation", async 
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
+test("capability design proposals are review-only and grant-incapable", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-design-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.selected_text",
+      proposed_name: "Selected Desktop Text Inspection",
+      reason: "A narrower selected-text capability would avoid broad desktop text inspection.",
+      requested_scope: "session",
+      data_exposed: ["selected accessibility text", "focused application identity"],
+      excluded_data: ["screenshots", "full accessibility tree", "keyboard input"],
+      risk: "Could reveal selected user text if implemented.",
+      fallback: "Ask the user to paste the selected text.",
+      failure_mode: "May disclose private selected text to the local model if scoped too broadly.",
+      proposed_reversibility: false,
+      provider_boundary: "desktop broker exposes selected text only after an explicit grant",
+      proposed_risk_class: "sensitive",
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.proposal.type, "capability_design");
+  assert.equal(response.body.proposal.capability, "desktop.inspect.selected_text");
+  assert.equal(response.body.proposal.proposed_name, "Selected Desktop Text Inspection");
+  assert.equal(response.body.proposal.proposed_risk_class, "sensitive");
+  assert.equal(response.body.proposal.proposed_reversibility, false);
+  assert.equal(response.body.proposal.review_only, true);
+  assert.equal(response.body.proposal.grant_eligible, false);
+  assert.equal(response.body.notification.type, "capability_design");
+  assert.equal(response.body.notification.title, "Capability design proposed");
+  assert.equal(response.body.review_only, true);
+  assert.equal(response.body.catalog_mutation_performed, false);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.activation_performed, false);
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/notifications",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.notifications.length, 1);
+  assert.equal(response.body.notifications[0].type, "capability_design");
+  assert.equal(response.body.notifications[0].proposal_id, proposalId);
+  assert.equal(response.body.notifications[0].grant_eligible, false);
+  assert.equal(response.body.summary.by_type.capability_design, 1);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=capability.design_proposal.created",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].proposal_type, "capability_design");
+  assert.equal(response.body.entries[0].requested_capability, "desktop.inspect.selected_text");
+  assert.equal(response.body.entries[0].proposed_name, "Selected Desktop Text Inspection");
+  assert.equal(response.body.entries[0].grant_eligible, false);
+  assert.equal(response.body.entries[0].catalog_mutation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: {
+      approved_scope: "session",
+      decided_by: "user",
+      feedback: "Implement behind selected-text-only provider tests.",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.proposal.type, "capability_design");
+  assert.equal(response.body.decision.decision, "approved");
+  assert.equal(response.body.decision.decision_message, "capability design was approved for consideration");
+  assert.equal(response.body.decision.feedback, "Implement behind selected-text-only provider tests.");
+  assert.equal(response.body.decision.grant_eligible, false);
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: {
+      actor: "user",
+      provider: "desktop-broker",
+      constraints: { include_text: true },
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_rejects_capability_design");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
+test("capability design proposals cannot smuggle real catalog capabilities into grants", async () => {
+  const handler = makeHandler({
+    harness: focusedInspectionHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-design-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      proposed_name: "Focused Desktop Inspection Variant",
+      reason: "Try to smuggle an existing capability through the design route.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      excluded_data: ["text content", "screenshots"],
+      risk: "Should remain design-only even though the key is cataloged.",
+      fallback: "Use the normal capability proposal route.",
+      failure_mode: "If type checks run after catalog lookup this could become runtime authority.",
+      proposed_reversibility: true,
+      provider_boundary: "desktop broker focus metadata only",
+      proposed_risk_class: "sensitive",
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.proposal.type, "capability_design");
+  assert.equal(response.body.proposal.capability, "desktop.inspect.focus");
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: {
+      approved_scope: "session",
+      decided_by: "user",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decision.grant_eligible, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: {
+      actor: "user",
+      provider: "desktop-broker",
+      constraints: { include_text: false },
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_grant_create_rejects_capability_design");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/grants?status=active",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.grants.length, 0);
+});
+
 test("desktop proposal notification adapter is skipped by default without changing authority", async () => {
   const calls = [];
   const desktopNotificationAdapter = {

@@ -15,6 +15,13 @@ export function buildSensoriumGrantCreateCandidateFromProposal(
 ) {
   const errors = [];
 
+  if (proposal.type === "capability_design") {
+    throwSensoriumGrantCandidateError(
+      ["capability design proposals are review-only and cannot create Sensorium grant candidates"],
+      "sensorium_grant_candidate_rejects_capability_design",
+    );
+  }
+
   if (proposal.status !== "approved" || proposal.decision?.decision !== "approved") {
     errors.push("proposal must be approved before a Sensorium grant candidate can be built");
   }

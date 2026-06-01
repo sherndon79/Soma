@@ -198,6 +198,17 @@ test("model visual grant candidate emits byte-free provenance summary", () => {
   });
 });
 
+test("model visual grant candidate rejects capability design proposals", () => {
+  assertModelVisualCandidateError(
+    () => buildModelVisualAttachGrantCandidateFromProposal({
+      ...approvedProposal,
+      type: "capability_design",
+    }, context),
+    "model_visual_attach_grant_candidate_rejects_capability_design",
+    "capability design proposals are review-only",
+  );
+});
+
 test("model visual grant candidate rejects preview refusal before delivery", () => {
   assertModelVisualCandidateError(
     () => buildModelVisualAttachGrantCandidateFromProposal({

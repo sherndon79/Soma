@@ -38,6 +38,13 @@ export function buildRemoteGraphicalGrantCreateCandidateFromProposal(
 ) {
   const errors = [];
 
+  if (proposal.type === "capability_design") {
+    throwRemoteGraphicalGrantCandidateError(
+      ["capability design proposals are review-only and cannot create remote graphical grant candidates"],
+      "remote_graphical_grant_candidate_rejects_capability_design",
+    );
+  }
+
   if (proposal.status !== "approved" || proposal.decision?.decision !== "approved") {
     errors.push("proposal must be approved before a remote graphical grant candidate can be built");
   }

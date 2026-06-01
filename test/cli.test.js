@@ -555,15 +555,22 @@ test("runCli proposals show prints full review context", async () => {
       return {
         proposal: {
           id: "proposal-1",
+          type: "capability_design",
           status: "pending",
           requested_by: "assistant",
-          capability: "desktop.inspect.focus",
+          capability: "desktop.inspect.selected_text",
+          proposed_name: "Selected Desktop Text Inspection",
           requested_scope: "session",
-          reason: "Need focused object role.",
+          reason: "Need selected text only.",
           risk: "May reveal active application context.",
           fallback: "Continue with desktop summary.",
-          data_exposed: ["focused object role"],
+          data_exposed: ["selected text"],
           excluded_data: ["text content"],
+          proposed_risk_class: "sensitive",
+          proposed_reversibility: false,
+          failure_mode: "Could disclose selected private text.",
+          provider_boundary: "desktop broker selected-text-only boundary",
+          grant_eligible: false,
           provenance_id: "prov-1",
         },
         activation_performed: false,
@@ -574,8 +581,15 @@ test("runCli proposals show prints full review context", async () => {
   assert.equal(code, 0);
   assert.equal(capturedPath, "/capability-proposals/proposal-1");
   assert.match(writes.join(""), /Capability proposal/);
+  assert.match(writes.join(""), /type: capability_design/);
+  assert.match(writes.join(""), /proposed name: Selected Desktop Text Inspection/);
+  assert.match(writes.join(""), /proposed risk class: sensitive/);
+  assert.match(writes.join(""), /proposed reversible: no/);
+  assert.match(writes.join(""), /failure mode: Could disclose selected private text\./);
+  assert.match(writes.join(""), /provider boundary: desktop broker selected-text-only boundary/);
+  assert.match(writes.join(""), /grant eligible: no/);
   assert.match(writes.join(""), /risk: May reveal active application context\./);
-  assert.match(writes.join(""), /data exposed: focused object role/);
+  assert.match(writes.join(""), /data exposed: selected text/);
   assert.match(writes.join(""), /excluded data: text content/);
   assert.match(writes.join(""), /activation performed: no/);
 });

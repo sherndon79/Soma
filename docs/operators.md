@@ -352,7 +352,22 @@ npm run cli -- proposals deny proposal-id --reason "Not needed right now." --fee
 
 Decision feedback is optional. It is sanitized before storage and returned with the proposal
 decision so the requesting agent gets a clear outcome plus any operator note. When feedback is
-absent, the decision still includes a generic approval or rejection message.
+absent, the decision still includes a generic approval or rejection message. For Soma's local
+assistant, decided-but-undelivered proposal outcomes are inserted once into the next chat prompt as
+informational context. The notice does not create a grant or activate the approved capability.
+
+External requesters can inspect and consume their own decision outbox:
+
+```bash
+curl -s 'http://127.0.0.1:8765/capability-proposal-decisions?requested_by=external-agent&delivered=false'
+
+curl -s -X POST http://127.0.0.1:8765/capability-proposal-decisions/consume \
+  -H 'content-type: application/json' \
+  -d '{"requested_by":"external-agent","acknowledged_by":"external-agent","delivery_channel":"api"}'
+```
+
+The consume call marks returned decisions with `delivered_at`, `acknowledged_by`, and
+`delivery_channel` so the same decision is not delivered repeatedly.
 
 Full proposal JSON:
 

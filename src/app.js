@@ -361,6 +361,47 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/capability-proposal-decisions") {
+        const decisions = capabilityProposals.listDecisions({
+          requested_by: url.searchParams.get("requested_by") ?? "",
+          delivered: parseDeliveredFilter(url.searchParams),
+        });
+        writeJson(res, 200, {
+          decisions,
+          summary: summarizeDecisionDeliveries(decisions),
+          activation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/capability-proposal-decisions/consume") {
+        const body = await readJson(req);
+        const decisions = capabilityProposals.consumeDecisions({
+          requested_by: body?.requested_by,
+          acknowledged_by: body?.acknowledged_by,
+          delivery_channel: body?.delivery_channel ?? "api",
+          limit: body?.limit,
+        });
+        const event = provenanceLog.append(createCapabilityDecisionDeliveryEvent({
+          decisions,
+          requestedBy: body?.requested_by,
+          deliveryChannel: body?.delivery_channel ?? "api",
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          decisions,
+          delivered_count: decisions.length,
+          provenance_id: event.id,
+          activation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
+        return;
+      }
+
       const proposalShowMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)$/);
       if (req.method === "GET" && proposalShowMatch) {
         const [, proposalId] = proposalShowMatch;
@@ -1691,8 +1732,15 @@ export function createRequestHandler({
           throw error;
         }
 
+        const pendingDecisionDeliveries = capabilityProposals.listDecisions({
+          requested_by: "assistant",
+          delivered: false,
+        });
+        const promptedMessages = pendingDecisionDeliveries.length > 0
+          ? prependCapabilityDecisionDeliveries(messages, pendingDecisionDeliveries)
+          : messages;
         const profileClient = modelClient.withProfile ? modelClient.withProfile(runtimeProfile) : modelClient;
-        const modelMessages = memoryContext ? prependSessionMemory(messages, memoryContext) : messages;
+        const modelMessages = memoryContext ? prependSessionMemory(promptedMessages, memoryContext) : promptedMessages;
 
         const completion = await profileClient.chat({
           messages: modelMessages,
@@ -1728,6 +1776,23 @@ export function createRequestHandler({
             }),
           });
         }
+        const deliveredDecisionDeliveries = pendingDecisionDeliveries.length > 0
+          ? capabilityProposals.consumeDecisions({
+              requested_by: "assistant",
+              acknowledged_by: "assistant",
+              delivery_channel: "chat_prompt",
+              proposal_ids: pendingDecisionDeliveries.map((entry) => entry.proposal_id),
+            })
+          : [];
+        if (deliveredDecisionDeliveries.length > 0) {
+          const deliveryEvent = provenanceLog.append(createCapabilityDecisionDeliveryEvent({
+            decisions: deliveredDecisionDeliveries,
+            requestedBy: "assistant",
+            deliveryChannel: "chat_prompt",
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          logger.info?.("soma.provenance", deliveryEvent);
+        }
 
         const allowedProvenance = {
           ...provenance,
@@ -1760,6 +1825,7 @@ export function createRequestHandler({
           remote_service_used: Boolean(runtimeProfile.remote_service),
           memory_read: useSessionMemory,
           memory_written: writeSessionMemory,
+          decision_notifications_delivered: deliveredDecisionDeliveries.length,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
             ? {
@@ -2121,6 +2187,61 @@ function createCapabilityProposalDecisionEvent({ proposal, caller }) {
     memory_written: false,
     remote_service_used: false,
   };
+}
+
+function createCapabilityDecisionDeliveryEvent({
+  decisions = [],
+  requestedBy = "",
+  deliveryChannel = "api",
+  caller = "",
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "capability.proposal.decision.delivered",
+    capability: "capability.proposal.decision.deliver",
+    caller_identity: caller,
+    allowed: true,
+    requested_by: String(requestedBy ?? "").trim(),
+    delivery_channel: String(deliveryChannel ?? "api").trim() || "api",
+    delivered_count: decisions.length,
+    proposal_ids: decisions.map((entry) => entry.proposal_id),
+    requested_capabilities: decisions.map((entry) => entry.capability),
+    activation_performed: false,
+    grant_written: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function summarizeDecisionDeliveries(decisions = []) {
+  const byDecision = {};
+  const byDelivered = { delivered: 0, undelivered: 0 };
+  for (const entry of decisions) {
+    const decision = entry.decision?.decision ?? "unknown";
+    byDecision[decision] = (byDecision[decision] ?? 0) + 1;
+    if (entry.decision?.delivered_at) {
+      byDelivered.delivered += 1;
+    } else {
+      byDelivered.undelivered += 1;
+    }
+  }
+  return {
+    total: decisions.length,
+    by_decision: byDecision,
+    by_delivery_state: byDelivered,
+  };
+}
+
+function parseDeliveredFilter(searchParams) {
+  const raw = searchParams.get("delivered") ?? searchParams.get("delivery") ?? "";
+  if (raw === "true" || raw === "delivered") {
+    return true;
+  }
+  if (raw === "false" || raw === "undelivered") {
+    return false;
+  }
+  return null;
 }
 
 function buildStatusSnapshot({
@@ -2734,6 +2855,40 @@ function prependSessionMemory(messages, memoryContext) {
     },
     ...messages,
   ];
+}
+
+function prependCapabilityDecisionDeliveries(messages, decisions = []) {
+  return [
+    {
+      role: "system",
+      content: [
+        "Capability decision updates for your earlier requests. These notices are informational; approval is not activation and does not itself create a runtime grant.",
+        ...decisions.map(formatCapabilityDecisionDelivery),
+      ].join("\n"),
+    },
+    ...messages,
+  ];
+}
+
+function formatCapabilityDecisionDelivery(entry) {
+  const decision = entry.decision ?? {};
+  const parts = [
+    `proposal ${entry.proposal_id}`,
+    `capability ${entry.capability}`,
+    `decision ${decision.decision ?? entry.proposal_status ?? "unknown"}`,
+    `message ${decision.decision_message ?? ""}`,
+  ];
+  if (decision.approved_scope) {
+    parts.push(`approved_scope ${decision.approved_scope}`);
+  }
+  if (decision.denial_reason) {
+    parts.push(`denial_reason ${decision.denial_reason}`);
+  }
+  if (decision.feedback) {
+    parts.push(`feedback ${decision.feedback}`);
+  }
+  parts.push(`grant_eligible ${Boolean(decision.grant_eligible)}`);
+  return `- ${parts.join("; ")}`;
 }
 
 function normalizeMessages(messages) {

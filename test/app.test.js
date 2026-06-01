@@ -1407,6 +1407,77 @@ test("capability proposals can be approved without activation", async () => {
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
+test("capability proposal decisions can be consumed once by requester", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "external-agent",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: {
+      approved_scope: "session",
+      decided_by: "user",
+      feedback: "Use it only for the current troubleshooting task.",
+    },
+  });
+  assert.equal(response.body.decision.delivered_at, "");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/capability-proposal-decisions?requested_by=external-agent&delivered=false",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decisions.length, 1);
+  assert.equal(response.body.decisions[0].proposal_id, proposalId);
+  assert.equal(response.body.decisions[0].decision.feedback, "Use it only for the current troubleshooting task.");
+  assert.equal(response.body.summary.by_delivery_state.undelivered, 1);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposal-decisions/consume",
+    body: {
+      requested_by: "external-agent",
+      acknowledged_by: "external-agent",
+      delivery_channel: "api",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.delivered_count, 1);
+  assert.equal(response.body.decisions[0].decision.acknowledged_by, "external-agent");
+  assert.equal(response.body.decisions[0].decision.delivery_channel, "api");
+  assert.match(response.body.decisions[0].decision.delivered_at, /^\d{4}-/);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.grant_written, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/capability-proposal-decisions?requested_by=external-agent&delivered=false",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decisions.length, 0);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposal-decisions/consume",
+    body: { requested_by: "external-agent" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.delivered_count, 0);
+});
+
 test("approved generic capability proposal can create an existing-cap runtime grant", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -1895,6 +1966,80 @@ test("POST /chat routes through local model when capability is allowed", async (
   assert.equal(response.body.capability_used, "model.local.chat");
   assert.equal(response.body.remote_service_used, false);
   assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+});
+
+test("POST /chat delivers assistant proposal decisions once in model context", async () => {
+  const calls = [];
+  const modelClient = {
+    model: "local-test-model",
+    async chat({ messages, model }) {
+      calls.push(messages);
+      return {
+        text: "saw decision",
+        model,
+        finish_reason: "stop",
+        tokens_used: 4,
+      };
+    },
+  };
+  const handler = makeHandler({ harness: allowedHarness, modelClient });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "desktop.inspect.focus",
+      reason: "Need focused object role.",
+      requested_scope: "session",
+      data_exposed: ["focused object role"],
+      risk: "May reveal active application context.",
+      fallback: "Continue without focus.",
+    },
+  });
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/deny`,
+    body: {
+      reason: "Use the existing accessibility tree first.",
+      decided_by: "user",
+      feedback: "Narrow the request to role-only metadata.",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decision.delivered_at, "");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: { messages: [{ role: "user", content: "continue" }] },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decision_notifications_delivered, 1);
+  assert.equal(calls[0][0].role, "system");
+  assert.match(calls[0][0].content, /Capability decision updates/);
+  assert.match(calls[0][0].content, new RegExp(`proposal ${proposalId}`));
+  assert.match(calls[0][0].content, /decision denied/);
+  assert.match(calls[0][0].content, /feedback Narrow the request to role-only metadata/);
+  assert.match(calls[0][0].content, /approval is not activation/);
+  assert.deepEqual(calls[0][1], { role: "user", content: "continue" });
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/capability-proposal-decisions?requested_by=assistant&delivered=false",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decisions.length, 0);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: { messages: [{ role: "user", content: "continue again" }] },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.decision_notifications_delivered, 0);
+  assert.deepEqual(calls[1], [{ role: "user", content: "continue again" }]);
 });
 
 test("POST /chat fails closed when local chat is disabled", async () => {

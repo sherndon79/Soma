@@ -266,6 +266,13 @@ Current implementation status:
   optional sanitized feedback.
 - `POST /capability-proposals/:id/deny` records a denial decision with reason and optional
   sanitized feedback.
+- `GET /capability-proposal-decisions?requested_by=agent&delivered=false` lists decided proposal
+  outcomes for a requester without mutating delivery state.
+- `POST /capability-proposal-decisions/consume` returns decided-but-undelivered outcomes for a
+  requester and marks them delivered once.
+- `POST /chat` injects decided-but-undelivered outcomes for `requested_by=assistant` into the next
+  local model prompt, then marks those decisions delivered. The injected notice is informational
+  only and does not create grants or activate capabilities.
 - Approving a `capability_design` means approved for consideration only. It does not make the
   capability usable, does not mutate the catalog, and cannot create a runtime grant; the runtime
   grant route explicitly rejects `capability_design` proposals.
@@ -276,6 +283,8 @@ Current implementation status:
 - `npm run cli -- status` includes concise pending proposal details.
 - `capability.proposal.created` provenance is recorded.
 - `capability.proposal.approved` and `capability.proposal.denied` provenance are recorded.
+- `capability.proposal.decision.delivered` provenance records decision-outbox consumes and
+  chat-prompt decision deliveries.
 - `capability.design_proposal.created`, `.approved`, and `.denied` provenance are recorded for
   design-only proposals.
 - Implemented designs can be closed with durable repo receipts in

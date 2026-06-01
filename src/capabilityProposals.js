@@ -40,6 +40,64 @@ export class CapabilityProposalStore {
     return this.proposals.filter((proposal) => proposal.status === "pending").length;
   }
 
+  listDecisions({ requested_by = "", delivered = null } = {}) {
+    const requestedBy = String(requested_by ?? "").trim();
+    return this.proposals
+      .filter((proposal) => {
+        if (!proposal.decision) {
+          return false;
+        }
+        if (requestedBy && proposal.requested_by !== requestedBy) {
+          return false;
+        }
+        if (delivered === true && !proposal.decision.delivered_at) {
+          return false;
+        }
+        if (delivered === false && proposal.decision.delivered_at) {
+          return false;
+        }
+        return true;
+      })
+      .map(proposalDecisionDelivery);
+  }
+
+  consumeDecisions({
+    requested_by,
+    acknowledged_by,
+    delivery_channel = "api",
+    limit = 100,
+    proposal_ids,
+  } = {}) {
+    const requestedBy = requiredString(requested_by, "requested_by");
+    const acknowledgedBy = String(acknowledged_by ?? requestedBy).trim() || requestedBy;
+    const channel = String(delivery_channel ?? "api").trim() || "api";
+    const maxEntries = Number.isInteger(limit) && limit > 0 ? limit : 100;
+    const allowedProposalIds = Array.isArray(proposal_ids)
+      ? new Set(proposal_ids.map((id) => String(id ?? "").trim()).filter(Boolean))
+      : null;
+    const deliveredAt = this.now().toISOString();
+    const entries = [];
+
+    for (const proposal of this.proposals) {
+      if (entries.length >= maxEntries) {
+        break;
+      }
+      if (allowedProposalIds && !allowedProposalIds.has(proposal.id)) {
+        continue;
+      }
+      if (!proposal.decision || proposal.requested_by !== requestedBy || proposal.decision.delivered_at) {
+        continue;
+      }
+      proposal.decision.delivered_at = deliveredAt;
+      proposal.decision.acknowledged_by = acknowledgedBy;
+      proposal.decision.delivery_channel = channel;
+      proposal.updated_at = deliveredAt;
+      entries.push(proposalDecisionDelivery(proposal));
+    }
+
+    return entries;
+  }
+
   decide(id, input, decision) {
     if (!["approved", "denied"].includes(decision)) {
       throw validationError("decision must be approved or denied.");
@@ -131,6 +189,23 @@ export function summarizeNotifications(notifications = []) {
     total: notifications.length,
     by_type: byType,
     by_status: byStatus,
+  };
+}
+
+export function proposalDecisionDelivery(proposal) {
+  return {
+    id: `decision-${proposal.id}`,
+    type: "capability_proposal_decision",
+    proposal_type: proposal.type ?? "capability_proposal",
+    proposal_id: proposal.id,
+    requested_by: proposal.requested_by,
+    capability: proposal.capability,
+    requested_scope: proposal.requested_scope,
+    proposal_status: proposal.status,
+    decision: { ...(proposal.decision ?? {}) },
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
   };
 }
 
@@ -257,6 +332,9 @@ function normalizeApproval(input, decidedAt, proposal = {}) {
       : "capability request was approved",
     feedback,
     grant_eligible: !designProposal,
+    delivered_at: "",
+    acknowledged_by: "",
+    delivery_channel: "",
   };
 }
 
@@ -272,6 +350,9 @@ function normalizeDenial(input, decidedAt, proposal = {}) {
       : "capability request was rejected",
     feedback,
     grant_eligible: false,
+    delivered_at: "",
+    acknowledged_by: "",
+    delivery_channel: "",
   };
 }
 

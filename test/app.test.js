@@ -50,6 +50,14 @@ const focusedInspectionHarness = {
   ],
 };
 
+const windowInspectionHarness = {
+  ...allowedHarness,
+  capabilities: [
+    ...allowedHarness.capabilities,
+    { key: "desktop.inspect.windows", status: "allowed" },
+  ],
+};
+
 const runtimeProfiles = {
   schema_version: 1,
   default_profile: "local-test",
@@ -130,7 +138,11 @@ const moduleRegistry = {
         adoption_policy: "self_apply",
       },
       overlay: {
-        disabled_capabilities: ["desktop.inspect.accessibility_tree", "desktop.inspect.focus"],
+        disabled_capabilities: [
+          "desktop.inspect.accessibility_tree",
+          "desktop.inspect.focus",
+          "desktop.inspect.windows",
+        ],
       },
     },
   ],
@@ -160,6 +172,14 @@ const capabilityCatalog = {
       name: "Desktop Text Inspection",
       category: "desktop",
       risk_class: "high",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.inspect.windows",
+      name: "Desktop Window Inspection",
+      category: "desktop",
+      risk_class: "sensitive",
       default_status: "disabled",
       activation_policy: "explicit_grant",
     },
@@ -270,7 +290,7 @@ const providerRegistry = {
       runtime: "test",
       local_only: true,
       network_access: false,
-      capabilities: ["desktop.inspect.focus"],
+      capabilities: ["desktop.inspect.focus", "desktop.inspect.windows"],
     },
     {
       id: "soma.provider.status",
@@ -402,14 +422,15 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 9);
+  assert.equal(response.body.summary.total, 10);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 7);
+  assert.equal(response.body.summary.by_status.requestable, 8);
   assert.equal(response.body.summary.by_status.unsupported, 1);
-  assert.equal(response.body.grouped.desktop.total, 5);
+  assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.perception.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
+  const windows = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.windows");
   const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
   const sensoriumColor = response.body.capabilities.find((capability) => capability.key === "perception.sensorium.color.subscribe");
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
@@ -417,6 +438,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
+  assert.equal(windows.status, "requestable");
+  assert.equal(windows.providers[0].id, "desktop-broker");
   assert.equal(text.status, "unsupported");
   assert.equal(sensoriumColor.status, "requestable");
   assert.equal(remoteVideo.status, "requestable");
@@ -4066,6 +4089,114 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   }
 });
 
+test("desktop window inspection requires an active runtime grant", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/desktop/inspect/windows",
+    harness: windowInspectionHarness,
+    body: {},
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "desktop_windows_grant_required");
+});
+
+test("desktop window inspection returns bounded window metadata and provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-windows-endpoint-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+if [ "$1" = "inspect-windows" ]; then
+  printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1}],"windows":[{"service":":1.42","path":"/org/a11y/atspi/accessible/window","application":{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1},"role":"frame","child_count":2,"geometry":{"x":10,"y":20,"width":800,"height":600},"text_content_included":false,"titles_included":false}],"bounded":true,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","states","actions","screenshots"]}'
+else
+  printf '%s\\n' '{}'
+fi
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({
+      harness: windowInspectionHarness,
+      grantStore: windowGrantStore(),
+      desktopDisclosureRegistry,
+    });
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/windows",
+      body: { grant_id: "grant-windows" },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.grant_id, "grant-windows");
+    assert.equal(response.body.inspection.window_count, 1);
+    assert.equal(response.body.inspection.windows[0].role, "frame");
+    assert.equal(response.body.inspection.windows[0].geometry.width, 800);
+    assert.equal(response.body.inspection.text_content_included, false);
+    assert.equal(response.body.inspection.titles_included, false);
+    assert.equal("title" in response.body.inspection.windows[0], false);
+    assert.equal("name" in response.body.inspection.windows[0], false);
+    const provenanceId = response.body.provenance_id;
+    assert.equal(desktopDisclosureRegistry.windowInspectionCalls.length, 1);
+    assert.equal(desktopDisclosureRegistry.windowInspectionCalls[0].provenanceId, provenanceId);
+    assert.equal(desktopDisclosureRegistry.windowInspectionCalls[0].capability, "desktop.inspect.windows");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.windows",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].id, provenanceId);
+    assert.equal(response.body.entries[0].capability, "desktop.inspect.windows");
+    assert.equal(response.body.entries[0].window_count, 1);
+    assert.equal(response.body.entries[0].application_count, 1);
+    assert.equal(response.body.entries[0].text_content_included, false);
+    assert.equal(response.body.entries[0].titles_included, false);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
+test("desktop window inspection rejects helper over-disclosure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-windows-invalid-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+  await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1}],"windows":[{"service":":1.42","path":"/window","application":{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1},"role":"frame","child_count":0,"geometry":null,"title":"private title","text_content_included":false,"titles_included":false}],"bounded":true,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","states","actions","screenshots"]}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
+    const handler = makeHandler({
+      harness: windowInspectionHarness,
+      grantStore: windowGrantStore(),
+      desktopDisclosureRegistry,
+    });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/windows",
+      body: { grant_id: "grant-windows" },
+    });
+
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.body.error, "desktop_windows_inspection_schema_invalid");
+    assert.ok(response.body.validation_errors.includes("result.windows[0].title is not allowed"));
+    assert.equal(desktopDisclosureRegistry.windowInspectionCalls.length, 0);
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
 test("self-applied module disables desktop inspection", async () => {
   const handler = makeHandler({ harness: allowedHarness, moduleRegistry });
 
@@ -7087,10 +7218,39 @@ function focusGrantStore(overrides = {}) {
   };
 }
 
+function windowGrantStore(overrides = {}) {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-windows",
+        status: "active",
+        capability: "desktop.inspect.windows",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: { include_text: false, include_titles: false },
+        approved_by: "user",
+        approval_provenance_id: "prov-windows-approval",
+        reason: "Need bounded window structure for the current session.",
+        created_at: "2026-06-02T12:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+        ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
 function createDesktopDisclosureRegistrySpy() {
   return {
     accessibilityTreeCalls: [],
     focusedInspectionCalls: [],
+    windowInspectionCalls: [],
     authorizeRootRefCalls: [],
     recordFromAccessibilityTree(args) {
       this.accessibilityTreeCalls.push(args);
@@ -7098,6 +7258,10 @@ function createDesktopDisclosureRegistrySpy() {
     },
     recordFromFocusedInspection(args) {
       this.focusedInspectionCalls.push(args);
+      return [];
+    },
+    recordFromWindowInspection(args) {
+      this.windowInspectionCalls.push(args);
       return [];
     },
     authorizeRootRef(args) {

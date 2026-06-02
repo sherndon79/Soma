@@ -137,6 +137,12 @@
           "provider_contract": "soma.desktop.inspect.focus.v1",
           "output_schema": "soma.desktop.inspect.focus.response.v1",
           "command": "inspect-focus"
+        },
+        {
+          "key": "desktop.inspect.windows",
+          "provider_contract": "soma.desktop.inspect.windows.v1",
+          "output_schema": "soma.desktop.inspect.windows.response.v1",
+          "command": "inspect-windows"
         }
       ]
     },

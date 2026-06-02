@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertDesktopInspectionResult,
+  assertDesktopWindowsInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
 } from "./desktopInspectionSchema.js";
 import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
@@ -170,6 +171,21 @@ export async function inspectFocusedDesktopObject({
   }));
 }
 
+export async function inspectDesktopWindows({
+  env = process.env,
+  helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
+} = {}) {
+  const helperInspection = await inspectWindowsWithRustHelper(helperPath);
+  if (helperInspection) {
+    return assertDesktopWindowsInspectionResult(helperInspection);
+  }
+  return assertDesktopWindowsInspectionResult(windowsUnavailable({
+    brokerSource: "javascript_fallback",
+    env,
+    unavailableReason: "rust_helper_unavailable",
+  }));
+}
+
 export async function inspectDesktopTraversalWithRustHelper({
   authorizedRoot,
   maxDepth,
@@ -289,6 +305,26 @@ async function inspectFocusWithRustHelper(helperPath) {
   }
 }
 
+async function inspectWindowsWithRustHelper(helperPath) {
+  if (!helperPath || !(await isExecutable(helperPath))) {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync(helperPath, ["inspect-windows"], {
+      timeout: 2000,
+      maxBuffer: 256_000,
+    });
+    const payload = JSON.parse(stdout);
+    return {
+      ...payload,
+      broker_source: payload.broker_source ?? "rust_helper",
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function inspectTraversalWithRustHelper(helperPath, args) {
   if (!helperPath || !(await isExecutable(helperPath))) {
     return null;
@@ -318,6 +354,27 @@ function focusedObjectUnavailable({ brokerSource, env, unavailableReason }) {
     unavailable_reason: unavailableReason,
     text_content_included: false,
     withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+function windowsUnavailable({ brokerSource, env, unavailableReason }) {
+  return {
+    mode: "read_only_window_probe",
+    broker_source: brokerSource,
+    platform: process.platform,
+    release: os.release(),
+    desktop_session: env.XDG_CURRENT_DESKTOP ?? "",
+    session_type: env.XDG_SESSION_TYPE ?? "",
+    dbus_session_bus_available: Boolean(env.DBUS_SESSION_BUS_ADDRESS),
+    atspi_bus_address_available: false,
+    window_count: 0,
+    applications: [],
+    windows: [],
+    bounded: true,
+    text_content_included: false,
+    titles_included: false,
+    withheld_fields: ["name", "description", "text", "title", "states", "actions", "screenshots"],
+    unavailable_reason: unavailableReason,
   };
 }
 

@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
-import { inspectDesktopBrokerEnvironment, inspectFocusedDesktopObject } from "./desktopBroker.js";
+import {
+  inspectDesktopBrokerEnvironment,
+  inspectDesktopWindows,
+  inspectFocusedDesktopObject,
+} from "./desktopBroker.js";
 import {
   createDesktopNotificationAdapter,
   createDesktopNotificationProvenanceEvent,
@@ -1944,6 +1948,69 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/desktop/inspect/windows") {
+        const body = await readJson(req);
+        const windowsRequest = validateDesktopWindowsInspectionRequest(body);
+        windowsRequest.provider ||= providerForCapability(providerRegistry, "desktop.inspect.windows");
+        if (isCapabilityDisabledByActiveModule(activeModules, "desktop.inspect.windows")) {
+          writeError(res, {
+            statusCode: 403,
+            code: "capability_not_allowed",
+            message: "Capability desktop.inspect.windows is disabled by the active harness.",
+          });
+          return;
+        }
+        if (!windowsRequest.grant_id) {
+          writeError(res, {
+            statusCode: 403,
+            code: "desktop_windows_grant_required",
+            message: "Desktop window inspection requires an active grant id.",
+          });
+          return;
+        }
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: windowsRequest.grant_id,
+          capability: "desktop.inspect.windows",
+          provider: windowsRequest.provider,
+          scope: windowsRequest.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "desktop_windows_grant_not_authorized",
+            message: "Desktop window inspection requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const inspection = await inspectDesktopWindows();
+        const event = provenanceLog.append(createDesktopWindowsInspectionEvent({
+          inspection,
+          request: windowsRequest,
+          grant: authorization.grant,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        desktopDisclosureRegistry.recordFromWindowInspection?.({
+          inspection,
+          provenanceId: event.id,
+          capability: "desktop.inspect.windows",
+        });
+        writeJson(res, 200, {
+          inspection,
+          provenance_id: event.id,
+          grant_id: authorization.grant.id,
+          provider: authorization.grant.provider,
+          scope: authorization.grant.scope,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/chat") {
         const body = await readJson(req);
         const messages = normalizeMessages(body.messages);
@@ -2204,6 +2271,59 @@ function validateFocusedDesktopInspectionRequest(body) {
 
   return {
     include_text: false,
+    grant_id: String(body.grant_id ?? "").trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+  };
+}
+
+function validateDesktopWindowsInspectionRequest(body) {
+  const allowedKeys = new Set(["include_text", "include_titles", "grant_id", "provider", "scope"]);
+  const errors = [];
+
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+
+    if (body.include_text === true || body.include_titles === true) {
+      const error = new Error("Desktop window inspection does not include text content or titles.");
+      error.statusCode = 403;
+      error.code = "desktop_windows_text_not_allowed";
+      throw error;
+    }
+    if (body.include_text !== undefined && body.include_text !== false) {
+      errors.push("request.include_text must be false when provided");
+    }
+    if (body.include_titles !== undefined && body.include_titles !== false) {
+      errors.push("request.include_titles must be false when provided");
+    }
+    if (body.grant_id !== undefined && typeof body.grant_id !== "string") {
+      errors.push("request.grant_id must be a string when provided");
+    }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      errors.push("request.provider must be a string when provided");
+    }
+    if (body.scope !== undefined && !["once", "session"].includes(body.scope)) {
+      errors.push("request.scope must be once or session when provided");
+    }
+  }
+
+  if (errors.length > 0) {
+    const error = new Error(`Desktop window inspection request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "desktop_windows_inspection_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+
+  return {
+    include_text: false,
+    include_titles: false,
     grant_id: String(body.grant_id ?? "").trim(),
     provider: String(body.provider ?? "").trim(),
     scope: String(body.scope ?? "session").trim() || "session",
@@ -2945,6 +3065,32 @@ function createFocusedDesktopInspectionEvent({ inspection, request = {}, grant =
     focused_role: focusedObject.role ?? "",
     focused_child_count: focusedObject.child_count ?? null,
     text_content_included: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createDesktopWindowsInspectionEvent({ inspection, request = {}, grant = {}, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "desktop.inspect.windows",
+    capability: "desktop.inspect.windows",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? request.grant_id ?? "",
+    provider: grant.provider ?? request.provider ?? "",
+    scope: grant.scope ?? request.scope ?? "",
+    desktop_session: inspection.desktop_session,
+    session_type: inspection.session_type,
+    broker_source: inspection.broker_source,
+    inspection_mode: inspection.mode,
+    requested_include_text: request.include_text === true,
+    requested_include_titles: request.include_titles === true,
+    window_count: inspection.window_count ?? 0,
+    application_count: Array.isArray(inspection.applications) ? inspection.applications.length : 0,
+    text_content_included: false,
+    titles_included: false,
     memory_written: false,
     remote_service_used: false,
   };

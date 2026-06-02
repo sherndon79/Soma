@@ -9,6 +9,8 @@ const MAX_ROOT_CHILD_METADATA: usize = 4;
 const MAX_TRAVERSAL_DEPTH: usize = 4;
 const MAX_TRAVERSAL_NODES: usize = 256;
 const MAX_TRAVERSAL_CHILDREN_PER_NODE: usize = 32;
+const MAX_WINDOWS: usize = 64;
+const MAX_WINDOWS_PER_APPLICATION: usize = 16;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -31,6 +33,10 @@ fn main() -> ExitCode {
             println!("{}", inspect_focus_json());
             ExitCode::SUCCESS
         }
+        Some("inspect-windows") => {
+            println!("{}", inspect_windows_json());
+            ExitCode::SUCCESS
+        }
         Some("inspect-atspi-traversal") => match TraversalArgs::parse(args) {
             Ok(args) => {
                 println!("{}", inspect_atspi_traversal_json(&args));
@@ -42,7 +48,7 @@ fn main() -> ExitCode {
             }
         },
         Some("help") | Some("--help") | None => {
-            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi|inspect-focus|inspect-atspi-traversal");
+            eprintln!("usage: soma-desktop-broker inspect-environment|inspect-atspi|inspect-focus|inspect-windows|inspect-atspi-traversal");
             ExitCode::SUCCESS
         }
         Some(command) => {
@@ -258,6 +264,183 @@ fn focus_unavailable_json(
         json_escape(desktop_session),
         json_escape(session_type),
         json_escape(unavailable_reason),
+    )
+}
+
+fn inspect_windows_json() -> String {
+    let desktop_session = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let dbus_session_bus_available = env::var("DBUS_SESSION_BUS_ADDRESS").is_ok();
+
+    if !command_exists("busctl") {
+        return windows_unavailable_json(
+            &desktop_session,
+            &session_type,
+            dbus_session_bus_available,
+            "busctl_not_found",
+            "",
+        );
+    }
+
+    let Some(address) = get_atspi_bus_address() else {
+        return windows_unavailable_json(
+            &desktop_session,
+            &session_type,
+            dbus_session_bus_available,
+            "atspi_bus_address_unavailable",
+            "",
+        );
+    };
+
+    let list_output = Command::new("busctl")
+        .args(["--address", &address, "list", "--no-legend", "--no-pager"])
+        .output();
+    let list_output = match list_output {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            return windows_unavailable_json(
+                &desktop_session,
+                &session_type,
+                dbus_session_bus_available,
+                "atspi_bus_list_unavailable",
+                &command_error(&output),
+            );
+        }
+        Err(error) => {
+            return windows_unavailable_json(
+                &desktop_session,
+                &session_type,
+                dbus_session_bus_available,
+                "atspi_bus_list_command_failed",
+                &error.to_string(),
+            );
+        }
+    };
+
+    let mut applications = Vec::new();
+    let mut windows = Vec::new();
+    for application in parse_atspi_bus_list(
+        &String::from_utf8_lossy(&list_output.stdout),
+        MAX_APPLICATIONS,
+    ) {
+        if application.registry || !application.service.starts_with(':') {
+            continue;
+        }
+        let found_windows =
+            inspect_windows_for_application(&address, &application, MAX_WINDOWS_PER_APPLICATION)
+                .unwrap_or_default();
+        let window_count = found_windows.len();
+        applications.push(AtspiWindowApplication {
+            service: application.service.clone(),
+            pid: application.pid,
+            process: application.process.clone(),
+            registry: application.registry,
+            window_count,
+        });
+        for window in found_windows {
+            if windows.len() >= MAX_WINDOWS {
+                break;
+            }
+            windows.push(window);
+        }
+        if windows.len() >= MAX_WINDOWS {
+            break;
+        }
+    }
+
+    windows_available_json(
+        &desktop_session,
+        &session_type,
+        dbus_session_bus_available,
+        &applications,
+        &windows,
+    )
+}
+
+fn windows_unavailable_json(
+    desktop_session: &str,
+    session_type: &str,
+    dbus_session_bus_available: bool,
+    unavailable_reason: &str,
+    diagnostic: &str,
+) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"mode\":\"read_only_window_probe\",",
+            "\"broker_source\":\"rust_helper\",",
+            "\"platform\":\"{}\",",
+            "\"release\":\"{}\",",
+            "\"desktop_session\":\"{}\",",
+            "\"session_type\":\"{}\",",
+            "\"dbus_session_bus_available\":{},",
+            "\"atspi_bus_address_available\":false,",
+            "\"window_count\":0,",
+            "\"applications\":[],",
+            "\"windows\":[],",
+            "\"bounded\":true,",
+            "\"text_content_included\":false,",
+            "\"titles_included\":false,",
+            "\"withheld_fields\":[\"name\",\"description\",\"text\",\"title\",\"states\",\"actions\",\"screenshots\"],",
+            "\"unavailable_reason\":\"{}\",",
+            "\"diagnostic\":\"{}\"",
+            "}}"
+        ),
+        json_escape(env::consts::OS),
+        json_escape(&kernel_release()),
+        json_escape(desktop_session),
+        json_escape(session_type),
+        dbus_session_bus_available,
+        json_escape(unavailable_reason),
+        json_escape(diagnostic),
+    )
+}
+
+fn windows_available_json(
+    desktop_session: &str,
+    session_type: &str,
+    dbus_session_bus_available: bool,
+    applications: &[AtspiWindowApplication],
+    windows: &[AtspiWindow],
+) -> String {
+    let applications_json = applications
+        .iter()
+        .map(|application| application.to_json())
+        .collect::<Vec<_>>()
+        .join(",");
+    let windows_json = windows
+        .iter()
+        .map(|window| window.to_json())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{",
+            "\"mode\":\"read_only_window_probe\",",
+            "\"broker_source\":\"rust_helper\",",
+            "\"platform\":\"{}\",",
+            "\"release\":\"{}\",",
+            "\"desktop_session\":\"{}\",",
+            "\"session_type\":\"{}\",",
+            "\"dbus_session_bus_available\":{},",
+            "\"atspi_bus_address_available\":true,",
+            "\"window_count\":{},",
+            "\"applications\":[{}],",
+            "\"windows\":[{}],",
+            "\"bounded\":true,",
+            "\"text_content_included\":false,",
+            "\"titles_included\":false,",
+            "\"withheld_fields\":[\"name\",\"description\",\"text\",\"title\",\"states\",\"actions\",\"screenshots\"]",
+            "}}"
+        ),
+        json_escape(env::consts::OS),
+        json_escape(&kernel_release()),
+        json_escape(desktop_session),
+        json_escape(session_type),
+        dbus_session_bus_available,
+        windows.len(),
+        applications_json,
+        windows_json,
     )
 }
 
@@ -919,6 +1102,94 @@ struct AtspiFocusedObject {
     application: AtspiObjectRef,
 }
 
+struct AtspiWindowApplication {
+    service: String,
+    pid: Option<u32>,
+    process: String,
+    registry: bool,
+    window_count: usize,
+}
+
+impl AtspiWindowApplication {
+    fn to_json(&self) -> String {
+        format!(
+            concat!(
+                "{{",
+                "\"service\":\"{}\",",
+                "\"pid\":{},",
+                "\"process\":\"{}\",",
+                "\"registry\":{},",
+                "\"window_count\":{}",
+                "}}"
+            ),
+            json_escape(&self.service),
+            self.pid
+                .map(|pid| pid.to_string())
+                .unwrap_or_else(|| "null".to_string()),
+            json_escape(&self.process),
+            self.registry,
+            self.window_count,
+        )
+    }
+}
+
+struct AtspiWindow {
+    object_ref: AtspiObjectRef,
+    application: AtspiWindowApplication,
+    role: String,
+    child_count: i32,
+    geometry: Option<AtspiGeometry>,
+}
+
+impl AtspiWindow {
+    fn to_json(&self) -> String {
+        let geometry_json = self
+            .geometry
+            .as_ref()
+            .map(|geometry| geometry.to_json())
+            .unwrap_or_else(|| "null".to_string());
+        format!(
+            concat!(
+                "{{",
+                "\"service\":\"{}\",",
+                "\"path\":\"{}\",",
+                "\"application\":{},",
+                "\"role\":\"{}\",",
+                "\"child_count\":{},",
+                "\"geometry\":{},",
+                "\"text_content_included\":false,",
+                "\"titles_included\":false",
+                "}}"
+            ),
+            json_escape(&self.object_ref.service),
+            json_escape(&self.object_ref.path),
+            self.application.to_json(),
+            json_escape(&self.role),
+            self.child_count,
+            geometry_json,
+        )
+    }
+}
+
+struct AtspiGeometry {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+impl AtspiGeometry {
+    fn to_json(&self) -> String {
+        format!(
+            "{{\"x\":{},\"y\":{},\"width\":{},\"height\":{}}}",
+            self.x,
+            self.y,
+            self.width.max(0),
+            self.height.max(0),
+        )
+    }
+}
+
 struct AtspiChildMetadata {
     service: String,
     path: String,
@@ -1120,6 +1391,95 @@ fn inspect_focused_object_for_application(
     })
 }
 
+fn inspect_windows_for_application(
+    address: &str,
+    application: &AtspiApplication,
+    limit: usize,
+) -> Result<Vec<AtspiWindow>, String> {
+    const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
+    const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
+
+    let children_output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &application.service,
+        ROOT_PATH,
+        ACCESSIBLE_INTERFACE,
+        "GetChildren",
+    ])?;
+    let children = parse_atspi_object_refs(&children_output, limit);
+    let mut windows = Vec::new();
+    for child in children {
+        let role_output = busctl_output(&[
+            "--address",
+            address,
+            "call",
+            &child.service,
+            &child.path,
+            ACCESSIBLE_INTERFACE,
+            "GetRoleName",
+        ])?;
+        let role = parse_busctl_string(&role_output).unwrap_or_default();
+        if !is_window_role(&role) {
+            continue;
+        }
+        let child_count_output = busctl_output(&[
+            "--address",
+            address,
+            "get-property",
+            &child.service,
+            &child.path,
+            ACCESSIBLE_INTERFACE,
+            "ChildCount",
+        ])?;
+        let child_count = parse_busctl_int(&child_count_output).unwrap_or(0);
+        let geometry = inspect_window_geometry(address, &child);
+        windows.push(AtspiWindow {
+            object_ref: child,
+            application: AtspiWindowApplication {
+                service: application.service.clone(),
+                pid: application.pid,
+                process: application.process.clone(),
+                registry: application.registry,
+                window_count: 0,
+            },
+            role,
+            child_count,
+            geometry,
+        });
+    }
+    let window_count = windows.len();
+    for window in &mut windows {
+        window.application.window_count = window_count;
+    }
+    Ok(windows)
+}
+
+fn is_window_role(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "frame" | "dialog" | "window" | "alert" | "file chooser"
+    )
+}
+
+fn inspect_window_geometry(address: &str, object_ref: &AtspiObjectRef) -> Option<AtspiGeometry> {
+    const COMPONENT_INTERFACE: &str = "org.a11y.atspi.Component";
+    let output = busctl_output(&[
+        "--address",
+        address,
+        "call",
+        &object_ref.service,
+        &object_ref.path,
+        COMPONENT_INTERFACE,
+        "GetExtents",
+        "u",
+        "0",
+    ])
+    .ok()?;
+    parse_busctl_geometry(&output)
+}
+
 fn focused_object_json(
     desktop_session: &str,
     session_type: &str,
@@ -1232,6 +1592,22 @@ fn parse_busctl_int(value: &str) -> Option<i32> {
     value
         .split_whitespace()
         .find_map(|field| field.parse::<i32>().ok())
+}
+
+fn parse_busctl_geometry(value: &str) -> Option<AtspiGeometry> {
+    let numbers = value
+        .split_whitespace()
+        .filter_map(|field| field.parse::<i32>().ok())
+        .collect::<Vec<_>>();
+    if numbers.len() < 4 {
+        return None;
+    }
+    Some(AtspiGeometry {
+        x: numbers[0],
+        y: numbers[1],
+        width: numbers[2],
+        height: numbers[3],
+    })
 }
 
 fn parse_atspi_object_refs(value: &str, limit: usize) -> Vec<AtspiObjectRef> {

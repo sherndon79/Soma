@@ -408,7 +408,7 @@ MVP enables ephemeral session memory. Durable memory remains disabled.
 
 - `desktop.inspect.accessibility_tree` — inspect bounded desktop environment, application root
   objects, and shallow child role/count metadata
-- `desktop.inspect.windows` — inspect window-level metadata beyond the root-object sample
+- `desktop.inspect.windows` — inspect bounded window-level refs, roles, counts, and geometry
 - `desktop.inspect.focus` — inspect currently focused desktop or accessibility object metadata
 - `desktop.inspect.text` — inspect text content, child names, descriptions, or other sensitive UI
   text
@@ -591,7 +591,8 @@ The MVP includes only self-scoped narrowing modules:
 - `soma.module.no-session-memory` disables `memory.session.read` and `memory.session.write`
 - `soma.module.no-cognitive-load-stewardship` disables `stewardship.cognitive_load.assess`
 - `soma.module.no-file-read` disables `tool.files.read`
-- `soma.module.no-desktop-inspection` disables `desktop.inspect.accessibility_tree`
+- `soma.module.no-desktop-inspection` disables `desktop.inspect.accessibility_tree`,
+  `desktop.inspect.focus`, and `desktop.inspect.windows`
 
 The important behavior is enforcement: if a module disables `model.local.chat`, `/chat` fails
 closed until the module is dropped.

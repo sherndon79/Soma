@@ -109,13 +109,15 @@ Provider output validation:
 
 - `test/schema.test.js`: current AT-SPI shape is accepted
 - `test/schema.test.js`: child metadata over-disclosure is rejected
-- `test/schema.test.js`: window output is rejected until `desktop.inspect.windows` exists
+- `test/schema.test.js`: tree-embedded window output remains rejected; the live
+  `desktop.inspect.windows` route uses its own bounded validator
 - `test/schema.test.js`: traversal output is rejected until traversal exists
 - `test/schema.test.js`: traversal-shaped over-disclosure remains rejected while traversal is
   closed
 - `test/app.test.js`: rejected helper output is not returned and does not create desktop
   provenance
 - `test/app.test.js`: focused helper over-disclosure is rejected
+- `test/app.test.js`: window helper over-disclosure is rejected before provenance
 
 CLI validation:
 

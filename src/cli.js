@@ -558,6 +558,18 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "desktop" && subcommand === "windows") {
+    const response = await request(baseUrl, "POST", "/desktop/inspect/windows", {
+      grant_id: flags["grant-id"] ?? rest[0],
+      provider: flags.provider,
+      scope: flags.scope,
+      include_text: flags["include-text"],
+      include_titles: flags["include-titles"],
+    });
+    writeOutput(stdout, response, jsonOutput, desktopWindowsInspectionSummary(response));
+    return 0;
+  }
+
   if (command === "stewardship" && subcommand === "assess") {
     const content = rest.join(" ").trim();
     if (!content) {
@@ -1073,6 +1085,24 @@ function focusedDesktopInspectionSummary(response) {
   ];
   if (inspection.unavailable_reason) {
     lines.splice(4, 0, `  unavailable reason: ${inspection.unavailable_reason}`);
+  }
+  return lines.join("\n");
+}
+
+function desktopWindowsInspectionSummary(response) {
+  const inspection = response.inspection ?? {};
+  const lines = [
+    "Desktop windows",
+    `  broker: ${inspection.broker_source ?? "unknown"}`,
+    `  session: ${inspection.desktop_session ?? "unknown"} (${inspection.session_type ?? "unknown"})`,
+    `  windows: ${inspection.window_count ?? 0}`,
+    `  applications: ${Array.isArray(inspection.applications) ? inspection.applications.length : 0}`,
+    `  text content included: ${booleanText(inspection.text_content_included)}`,
+    `  titles included: ${booleanText(inspection.titles_included)}`,
+    `  provenance: ${response.provenance_id ?? "none"}`,
+  ];
+  if (inspection.unavailable_reason) {
+    lines.splice(3, 0, `  unavailable reason: ${inspection.unavailable_reason}`);
   }
   return lines.join("\n");
 }

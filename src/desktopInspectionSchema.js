@@ -55,6 +55,37 @@ const TRAVERSAL_AUTHORIZED_ROOT_OBJECT_KEYS = new Set([
 ]);
 const OBJECT_REF_KEYS = new Set(["service", "path"]);
 const CHILD_METADATA_KEYS = new Set(["service", "path", "role", "child_count"]);
+const WINDOWS_TOP_LEVEL_KEYS = new Set([
+  "mode",
+  "broker_source",
+  "platform",
+  "release",
+  "desktop_session",
+  "session_type",
+  "dbus_session_bus_available",
+  "atspi_bus_address_available",
+  "window_count",
+  "applications",
+  "windows",
+  "bounded",
+  "text_content_included",
+  "titles_included",
+  "withheld_fields",
+  "unavailable_reason",
+  "diagnostic",
+]);
+const WINDOWS_APPLICATION_KEYS = new Set(["service", "pid", "process", "registry", "window_count"]);
+const WINDOW_KEYS = new Set([
+  "service",
+  "path",
+  "application",
+  "role",
+  "child_count",
+  "geometry",
+  "text_content_included",
+  "titles_included",
+]);
+const WINDOW_GEOMETRY_KEYS = new Set(["x", "y", "width", "height"]);
 
 export function validateDesktopInspectionResult(value, options = {}) {
   const errors = [];
@@ -93,6 +124,27 @@ export function assertDesktopInspectionResult(value) {
     const error = new Error(`Desktop inspection result failed schema validation: ${result.errors.join("; ")}`);
     error.statusCode = 502;
     error.code = "desktop_inspection_schema_invalid";
+    error.validation_errors = result.errors;
+    throw error;
+  }
+  return value;
+}
+
+export function validateDesktopWindowsInspectionResult(value) {
+  const errors = [];
+  validateWindowsTopLevel(value, errors);
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+export function assertDesktopWindowsInspectionResult(value) {
+  const result = validateDesktopWindowsInspectionResult(value);
+  if (!result.valid) {
+    const error = new Error(`Desktop windows inspection result failed schema validation: ${result.errors.join("; ")}`);
+    error.statusCode = 502;
+    error.code = "desktop_windows_inspection_schema_invalid";
     error.validation_errors = result.errors;
     throw error;
   }
@@ -251,6 +303,109 @@ function validateChildMetadata(value, path, errors) {
   requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
 }
 
+function validateWindowsTopLevel(value, errors) {
+  if (!isPlainObject(value)) {
+    errors.push("result must be an object");
+    return;
+  }
+  rejectUnexpectedKeys(value, WINDOWS_TOP_LEVEL_KEYS, "result", errors);
+  requireStringEnum(value.mode, ["read_only_window_probe"], "result.mode", errors);
+  requireStringEnum(value.broker_source, ["rust_helper", "javascript_fallback"], "result.broker_source", errors);
+  requireString(value.platform, "result.platform", errors);
+  requireString(value.release, "result.release", errors);
+  requireString(value.desktop_session, "result.desktop_session", errors);
+  requireString(value.session_type, "result.session_type", errors);
+  requireBoolean(value.dbus_session_bus_available, "result.dbus_session_bus_available", errors);
+  optionalBoolean(value.atspi_bus_address_available, "result.atspi_bus_address_available", errors);
+  requireNonNegativeInteger(value.window_count, "result.window_count", errors);
+  requireBoolean(value.bounded, "result.bounded", errors);
+  if (value.bounded !== true) {
+    errors.push("result.bounded must be true");
+  }
+  if (value.text_content_included !== false) {
+    errors.push("result.text_content_included must be false");
+  }
+  if (value.titles_included !== false) {
+    errors.push("result.titles_included must be false");
+  }
+  if (!Array.isArray(value.withheld_fields)) {
+    errors.push("result.withheld_fields must be an array");
+  }
+  optionalString(value.unavailable_reason, "result.unavailable_reason", errors);
+  optionalString(value.diagnostic, "result.diagnostic", errors);
+  validateWindowsApplicationArray(value.applications, "result.applications", errors);
+  validateWindowArray(value.windows, "result.windows", errors);
+}
+
+function validateWindowsApplicationArray(value, path, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array`);
+    return;
+  }
+  if (value.length > 64) {
+    errors.push(`${path} must have at most 64 items`);
+  }
+  value.forEach((application, index) => validateWindowsApplication(application, `${path}[${index}]`, errors));
+}
+
+function validateWindowsApplication(value, path, errors) {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+  rejectUnexpectedKeys(value, WINDOWS_APPLICATION_KEYS, path, errors);
+  requireString(value.service, `${path}.service`, errors);
+  requireNullableNonNegativeInteger(value.pid, `${path}.pid`, errors);
+  requireString(value.process, `${path}.process`, errors);
+  requireBoolean(value.registry, `${path}.registry`, errors);
+  requireNonNegativeInteger(value.window_count, `${path}.window_count`, errors);
+}
+
+function validateWindowArray(value, path, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array`);
+    return;
+  }
+  if (value.length > 64) {
+    errors.push(`${path} must have at most 64 items`);
+  }
+  value.forEach((window, index) => validateWindow(window, `${path}[${index}]`, errors));
+}
+
+function validateWindow(value, path, errors) {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+  rejectUnexpectedKeys(value, WINDOW_KEYS, path, errors);
+  requireString(value.service, `${path}.service`, errors);
+  requireString(value.path, `${path}.path`, errors);
+  validateWindowsApplication(value.application, `${path}.application`, errors);
+  requireString(value.role, `${path}.role`, errors);
+  requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
+  if (value.geometry !== null) {
+    validateWindowGeometry(value.geometry, `${path}.geometry`, errors);
+  }
+  if (value.text_content_included !== false) {
+    errors.push(`${path}.text_content_included must be false`);
+  }
+  if (value.titles_included !== false) {
+    errors.push(`${path}.titles_included must be false`);
+  }
+}
+
+function validateWindowGeometry(value, path, errors) {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be null or an object`);
+    return;
+  }
+  rejectUnexpectedKeys(value, WINDOW_GEOMETRY_KEYS, path, errors);
+  requireInteger(value.x, `${path}.x`, errors);
+  requireInteger(value.y, `${path}.y`, errors);
+  requireNonNegativeInteger(value.width, `${path}.width`, errors);
+  requireNonNegativeInteger(value.height, `${path}.height`, errors);
+}
+
 function validateBooleanMap(value, keys, path, errors) {
   if (!isPlainObject(value)) {
     errors.push(`${path} must be an object`);
@@ -309,6 +464,12 @@ function optionalBoolean(value, path, errors) {
 function requireNonNegativeInteger(value, path, errors) {
   if (!Number.isInteger(value) || value < 0) {
     errors.push(`${path} must be a non-negative integer`);
+  }
+}
+
+function requireInteger(value, path, errors) {
+  if (!Number.isInteger(value)) {
+    errors.push(`${path} must be an integer`);
   }
 }
 

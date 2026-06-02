@@ -10,6 +10,7 @@ import {
   attachTraversalToDesktopInspectionResult,
   desktopBrokerHelperArgs,
   desktopTraversalHelperArgs,
+  inspectDesktopWindows,
   inspectDesktopTraversalWithRustHelper,
 } from "../src/desktopBroker.js";
 import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
@@ -190,6 +191,46 @@ printf '%s\\n' '${JSON.stringify({ ...traversal, text_content_included: true })}
     (error) => {
       assert.equal(error.code, "desktop_traversal_helper_output_invalid");
       assert.ok(error.validation_errors.includes("traversal.text_content_included must be false"));
+      return true;
+    },
+  );
+});
+
+test("inspectDesktopWindows invokes helper and validates bounded window output", async () => {
+  const output = {
+    mode: "read_only_window_probe",
+    broker_source: "rust_helper",
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+    dbus_session_bus_available: true,
+    atspi_bus_address_available: true,
+    window_count: 0,
+    applications: [],
+    windows: [],
+    bounded: true,
+    text_content_included: false,
+    titles_included: false,
+    withheld_fields: ["name", "description", "text", "title", "states", "actions", "screenshots"],
+  };
+  const helperPath = await executableScript("windows-helper", `#!/bin/sh
+printf '%s\\n' '${JSON.stringify(output)}'
+`);
+
+  assert.deepEqual(await inspectDesktopWindows({ helperPath }), output);
+});
+
+test("inspectDesktopWindows rejects schema-invalid helper output", async () => {
+  const helperPath = await executableScript("bad-windows-helper", `#!/bin/sh
+printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"window_count":1,"applications":[],"windows":[{"title":"private"}],"bounded":true,"text_content_included":false,"titles_included":false,"withheld_fields":[]}'
+`);
+
+  await assert.rejects(
+    inspectDesktopWindows({ helperPath }),
+    (error) => {
+      assert.equal(error.code, "desktop_windows_inspection_schema_invalid");
+      assert.ok(error.validation_errors.includes("result.windows[0].title is not allowed"));
       return true;
     },
   );

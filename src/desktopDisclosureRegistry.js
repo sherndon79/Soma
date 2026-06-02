@@ -105,6 +105,44 @@ export class DesktopDisclosureRegistry {
     return entries;
   }
 
+  recordFromWindowInspection({
+    inspection,
+    provenanceId,
+    capability = "desktop.inspect.windows",
+  } = {}) {
+    const entries = [];
+    if (!Array.isArray(inspection?.windows)) {
+      return entries;
+    }
+
+    for (const window of inspection.windows) {
+      if (isObjectRef(window)) {
+        entries.push(this.record({
+          sourceType: "window_object",
+          service: window.service,
+          path: window.path,
+          provenanceId,
+          capability,
+          desktopSession: inspection.desktop_session,
+          sessionType: inspection.session_type,
+        }));
+      }
+      if (isObjectRef(window?.application)) {
+        entries.push(this.record({
+          sourceType: "window_application",
+          service: window.application.service,
+          path: "/org/a11y/atspi/accessible/root",
+          provenanceId,
+          capability,
+          desktopSession: inspection.desktop_session,
+          sessionType: inspection.session_type,
+        }));
+      }
+    }
+
+    return entries;
+  }
+
   record({
     sourceType,
     service,

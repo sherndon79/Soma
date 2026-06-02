@@ -316,6 +316,16 @@ Try the disabled path:
 npm run cli -- desktop inspect --mode atspi
 ```
 
+Grant-bound focused and window probes stay separate from the base tree inspection. Window
+inspection uses:
+
+```bash
+npm run cli -- desktop windows <grant-id>
+```
+
+It returns bounded application/window refs, role, child count, and best-effort geometry. It does not
+return titles, names, descriptions, UI text, actions, screenshots, pointer state, or keyboard state.
+
 Restore by dropping the module:
 
 ```bash

@@ -3014,6 +3014,47 @@ test("runCli desktop focus sends include-text to server refusal path", async () 
   });
 });
 
+test("runCli desktop windows calls window inspection endpoint", async () => {
+  let captured;
+  const writes = [];
+
+  await runCli(parseCli(["node", "soma", "desktop", "windows", "grant-windows"]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, requestPath, body) => {
+      captured = { method, requestPath, body };
+      return {
+        provenance_id: "prov-windows",
+        inspection: {
+          mode: "read_only_window_probe",
+          broker_source: "rust_helper",
+          desktop_session: "GNOME",
+          session_type: "wayland",
+          window_count: 2,
+          applications: [{ service: ":1.42" }],
+          text_content_included: false,
+          titles_included: false,
+        },
+      };
+    },
+  });
+
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.requestPath, "/desktop/inspect/windows");
+  assert.deepEqual(captured.body, {
+    grant_id: "grant-windows",
+    provider: undefined,
+    scope: undefined,
+    include_text: undefined,
+    include_titles: undefined,
+  });
+  assert.match(writes.join(""), /Desktop windows/);
+  assert.match(writes.join(""), /windows: 2/);
+  assert.match(writes.join(""), /applications: 1/);
+  assert.match(writes.join(""), /text content included: no/);
+  assert.match(writes.join(""), /titles included: no/);
+  assert.match(writes.join(""), /provenance: prov-windows/);
+});
+
 function makeRemoteGraphicalSessionOpenFixtureResponse() {
   return {
     type: "remote_graphical_session_open_result",

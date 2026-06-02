@@ -4,8 +4,10 @@ import test from "node:test";
 
 import {
   assertDesktopInspectionResult,
+  assertDesktopWindowsInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
   validateDesktopInspectionResult,
+  validateDesktopWindowsInspectionResult,
   validateFutureDesktopInspectionResultWithTraversal,
   validateTraversalAuthorizedDesktopInspectionResult,
 } from "../src/desktopInspectionSchema.js";
@@ -264,6 +266,38 @@ test("desktop inspection runtime validator rejects windows until window inspecti
   assert.ok(result.errors.includes("result.tree.windows must be empty until desktop.inspect.windows is implemented"));
 });
 
+test("desktop windows inspection validator accepts bounded window structure", () => {
+  const windowsResult = baseWindowsResult();
+  const result = validateDesktopWindowsInspectionResult(windowsResult);
+
+  assert.deepEqual(result, { valid: true, errors: [] });
+  assert.equal(assertDesktopWindowsInspectionResult(windowsResult), windowsResult);
+});
+
+test("desktop windows inspection validator rejects text and title over-disclosure", () => {
+  for (const [field, value] of Object.entries({
+    title: "private title",
+    name: "private name",
+    description: "private description",
+    text: "private text",
+    actions: ["click"],
+    screenshots: ["image"],
+  })) {
+    const result = validateDesktopWindowsInspectionResult({
+      ...baseWindowsResult(),
+      windows: [
+        {
+          ...baseWindowsResult().windows[0],
+          [field]: value,
+        },
+      ],
+    });
+
+    assert.equal(result.valid, false, field);
+    assert.ok(result.errors.includes(`result.windows[0].${field} is not allowed`), field);
+  }
+});
+
 test("desktop inspection runtime validator rejects traversal output until traversal is implemented", () => {
   const result = validateDesktopInspectionResult(atspiResultWithRootObjectField("traversal", {
     root: { service: ":1.42", path: "/org/a11y/atspi/accessible/root" },
@@ -473,6 +507,51 @@ function withoutSchemaIdentity(schema) {
     ...rest
   } = schema;
   return rest;
+}
+
+function baseWindowsResult() {
+  return {
+    mode: "read_only_window_probe",
+    broker_source: "rust_helper",
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+    dbus_session_bus_available: true,
+    atspi_bus_address_available: true,
+    window_count: 1,
+    applications: [
+      {
+        service: ":1.42",
+        pid: 123,
+        process: "test-app",
+        registry: false,
+        window_count: 1,
+      },
+    ],
+    windows: [
+      {
+        service: ":1.42",
+        path: "/org/a11y/atspi/accessible/window",
+        application: {
+          service: ":1.42",
+          pid: 123,
+          process: "test-app",
+          registry: false,
+          window_count: 1,
+        },
+        role: "frame",
+        child_count: 2,
+        geometry: { x: 10, y: 20, width: 800, height: 600 },
+        text_content_included: false,
+        titles_included: false,
+      },
+    ],
+    bounded: true,
+    text_content_included: false,
+    titles_included: false,
+    withheld_fields: ["name", "description", "text", "title", "states", "actions", "screenshots"],
+  };
 }
 
 function baseAtspiResult(rootObjectOverrides = {}) {

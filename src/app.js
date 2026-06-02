@@ -193,8 +193,16 @@ export function createRequestHandler({
       const effectiveHarness = applyActiveModules(harness, activeModules);
 
       if (req.method === "GET" && url.pathname === "/health") {
+        const grantRecovery = summarizeGrantRecoveryInspection(
+          resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          { grantStore, runtimeWritePosture: writePosture },
+        );
         writeJson(res, 200, {
           status: "ok",
+          grant_store_status: grantRecovery.grant_store_status,
+          grant_store_degraded_reason: grantRecovery.grant_store_degraded_reason,
+          grant_recovery_degraded: grantRecovery.degraded,
+          grant_recovery_finding_count: grantRecovery.finding_count,
           runtime_writes_enabled: writePosture.runtime_writes_enabled,
           runtime_write_posture: writePosture,
         });
@@ -1266,6 +1274,10 @@ export function createRequestHandler({
       }
 
       if (req.method === "GET" && url.pathname === "/grants") {
+        const grantRecovery = summarizeGrantRecoveryInspection(
+          resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          { grantStore, runtimeWritePosture: writePosture },
+        );
         writeJson(res, 200, {
           grants: listGrants(grantStore, {
             status: url.searchParams.get("status") ?? "",
@@ -1275,6 +1287,9 @@ export function createRequestHandler({
           examples_available: Array.isArray(grantStore.examples) && grantStore.examples.length > 0,
           file_backed: true,
           writable: Boolean(writePosture.durable_grant_mutation_enabled),
+          grant_store_status: grantRecovery.grant_store_status,
+          grant_store_degraded_reason: grantRecovery.grant_store_degraded_reason,
+          recovery: grantRecovery,
           runtime_writes_enabled: writePosture.runtime_writes_enabled,
           runtime_write_posture: writePosture,
           activation_performed: false,
@@ -3258,6 +3273,8 @@ function summarizeGrantRecoveryInspection(report, { grantStore, runtimeWritePost
     recovery_inspection_available: Boolean(recoveryInspectionAvailable),
     ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
     degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    grant_store_status: grantStoreStatus(report),
+    grant_store_degraded_reason: grantStoreDegradedReason(report),
     grant_count: Number.isInteger(report?.grant_count)
       ? report.grant_count
       : (Array.isArray(grantStore?.grants) ? grantStore.grants.length : 0),
@@ -3326,7 +3343,31 @@ function publicGrantRecoveryFinding(finding = {}) {
     ...(finding.field ? { field: String(finding.field) } : {}),
     ...(finding.provenance_stage ? { provenance_stage: String(finding.provenance_stage) } : {}),
     ...(finding.provenance_error_code ? { provenance_error_code: String(finding.provenance_error_code) } : {}),
+    ...(finding.grant_store_status ? { grant_store_status: String(finding.grant_store_status) } : {}),
+    ...(finding.grant_store_stage ? { grant_store_stage: String(finding.grant_store_stage) } : {}),
+    ...(finding.grant_store_error_code ? { grant_store_error_code: String(finding.grant_store_error_code) } : {}),
   };
+}
+
+function grantStoreStatus(report) {
+  if (!report || typeof report !== "object") {
+    return "unknown";
+  }
+  if (report.grant_store_status) {
+    return String(report.grant_store_status);
+  }
+  return report.degraded === true ? "degraded" : "ok";
+}
+
+function grantStoreDegradedReason(report) {
+  if (!report || typeof report !== "object") {
+    return "";
+  }
+  if (report.grant_store_degraded_reason) {
+    return String(report.grant_store_degraded_reason);
+  }
+  const firstFinding = Array.isArray(report.findings) ? report.findings[0] : null;
+  return report.degraded === true ? String(firstFinding?.code ?? "grant_recovery_degraded") : "";
 }
 
 function providerHostMatchesTopic(provider = {}, topic = "") {

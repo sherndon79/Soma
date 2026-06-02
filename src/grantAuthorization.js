@@ -30,6 +30,15 @@ export function authorizeGrantUse({
   const recoveryFindings = Array.isArray(recoveryReport?.findings)
     ? recoveryReport.findings.filter((finding) => finding?.authorizing_safe === false)
     : [];
+  const globalRecoveryFindings = recoveryFindings.filter(
+    (finding) => !String(finding?.grant_id ?? "").trim(),
+  );
+  if (globalRecoveryFindings.length > 0) {
+    return denied("grant_recovery_degraded", {
+      grant_id: requested.grant_id,
+      findings: globalRecoveryFindings,
+    });
+  }
 
   const candidates = normalized.grants
     .map(publicGrant)

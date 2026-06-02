@@ -14,7 +14,21 @@ export async function loadGrantAuthority({
   grantStorePath = DEFAULT_GRANT_STORE_PATH,
   grantMutationProvenancePath = DEFAULT_GRANT_MUTATION_PROVENANCE_PATH,
 } = {}) {
-  const grantStore = await loadGrantStore(grantStorePath);
+  let grantStore;
+  try {
+    grantStore = await loadGrantStore(grantStorePath);
+  } catch (error) {
+    const emptyGrantStore = normalizeGrantStore({ schema_version: 1, grants: [], examples: [] });
+    return {
+      grantStore: emptyGrantStore,
+      grantRecoveryReport: unreadableGrantStoreRecoveryReport({
+        grantStorePath,
+        error,
+      }),
+      grantStorePath: pathString(grantStorePath),
+      grantMutationProvenancePath: pathString(grantMutationProvenancePath),
+    };
+  }
   const normalizedGrantStore = normalizeGrantStore(grantStore);
   let provenanceEvents = [];
   try {
@@ -46,6 +60,31 @@ function pathString(value) {
     return fileURLToPath(value);
   }
   return String(value ?? "");
+}
+
+function unreadableGrantStoreRecoveryReport({ grantStorePath, error } = {}) {
+  return {
+    ok: false,
+    degraded: true,
+    grant_store_status: "corrupt",
+    grant_store_degraded_reason: "grant_store_unreadable",
+    grant_count: 0,
+    finding_count: 1,
+    findings: [
+      {
+        code: "grant_store_unreadable",
+        grant_id: "",
+        status: "",
+        capability: "",
+        provider: "",
+        scope: "",
+        authorizing_safe: false,
+        grant_store_status: "corrupt",
+        grant_store_stage: "load",
+        grant_store_error_code: String(error?.code ?? error?.name ?? "unknown"),
+      },
+    ],
+  };
 }
 
 function unreadableProvenanceRecoveryReport(store, error) {

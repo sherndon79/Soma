@@ -9,6 +9,7 @@ import { createRequestHandler } from "../src/app.js";
 import { CapabilityProposalStore } from "../src/capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
+import { loadGrantAuthority } from "../src/grantAuthority.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -1028,6 +1029,98 @@ test("GET /grants/recovery exposes bounded degraded findings", async () => {
     event_type: "grant.created",
     field: "reason",
   });
+});
+
+test("corrupt grant store loads as loud degraded empty authority without overwriting file", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-corrupt-grants-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    const corruptGrantStore = "{\"schema_version\":1,\"grants\":[";
+    await writeFile(grantStorePath, corruptGrantStore, "utf8");
+    await writeFile(provenancePath, "", "utf8");
+    const authority = await loadGrantAuthority({
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+    });
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: authority.grantStore,
+      grantRecoveryReport: authority.grantRecoveryReport,
+      grantStorePath: authority.grantStorePath,
+      grantMutationProvenancePath: authority.grantMutationProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/health",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.status, "ok");
+    assert.equal(response.body.grant_store_status, "corrupt");
+    assert.equal(response.body.grant_store_degraded_reason, "grant_store_unreadable");
+    assert.equal(response.body.grant_recovery_degraded, true);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/grants",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.grants.length, 0);
+    assert.equal(response.body.grant_store_status, "corrupt");
+    assert.equal(response.body.grant_store_degraded_reason, "grant_store_unreadable");
+    assert.equal(response.body.recovery.degraded, true);
+    assert.equal(response.body.recovery.findings[0].code, "grant_store_unreadable");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/grants/recovery",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.degraded, true);
+    assert.equal(response.body.grant_store_status, "corrupt");
+    assert.equal(response.body.findings[0].code, "grant_store_unreadable");
+    assert.equal(response.body.findings[0].grant_store_status, "corrupt");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/status/snapshot",
+      body: { grant_id: "grant-forged" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "status_snapshot_grant_not_authorized");
+    assert.equal(response.body.authorization_code, "grant_recovery_degraded");
+    assert.equal(response.body.findings[0].code, "grant_store_unreadable");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/grants",
+      body: {
+        actor: "user",
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: { include_text: false },
+        reason: "Do not overwrite corrupt store.",
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "durable_grant_mutation_recovery_required");
+    assert.equal(response.body.grant_written, false);
+    assert.equal(response.body.provenance_appended, false);
+    assert.equal(await readFile(grantStorePath, "utf8"), corruptGrantStore);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { messages: [{ role: "user", content: "base chat remains up" }] },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.text, "ok");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("POST /grants returns explicit durable mutation disabled refusal without writing", async () => {

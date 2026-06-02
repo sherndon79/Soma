@@ -465,6 +465,12 @@ When no recovery inspection is available, the route reports
 When degraded findings exist, the route returns bounded finding metadata such as grant id,
 capability, provider, scope, event type, mismatched field name, or durable provenance read failure
 class; it does not copy mismatch values or grant reason text into the response.
+If `config/grants.json` is corrupt or unreadable at startup, Soma starts with an empty in-memory
+grant store, marks recovery degraded, and reports `grant_store_status: corrupt` plus
+`grant_store_degraded_reason: grant_store_unreadable` in `/health`, `GET /grants`, and
+`GET /grants/recovery`. Durable grants are not honored while this global recovery finding is
+present, and durable mutation routes refuse before writing, preserving the corrupt file for operator
+inspection.
 
 At server startup, Soma loads `config/grants.json` together with the append-only grant mutation
 provenance log and supplies the resulting recovery report to policy gates and this inspection route.

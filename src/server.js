@@ -21,6 +21,13 @@ const {
 } = await loadGrantAuthority({
   grantMutationProvenancePath: process.env.SOMA_GRANT_MUTATION_PROVENANCE_PATH,
 });
+if (grantRecoveryReport?.degraded === true) {
+  console.warn(
+    `Soma grant authority degraded: ${
+      grantRecoveryReport.grant_store_degraded_reason ?? "grant_recovery_degraded"
+    }; durable authority is disabled until recovery.`,
+  );
+}
 const moduleRegistry = await loadHarnessModules();
 const runtimeProfiles = await loadRuntimeProfiles();
 const runtimeWritePosture = runtimeWritePostureFromEnv(process.env);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -88,4 +88,28 @@ test("loadGrantAuthority converts unreadable provenance into non-authorizing fin
   assert.equal(authority.grantRecoveryReport.findings[0].grant_id, "grant-authority-test");
   assert.equal(authority.grantRecoveryReport.findings[0].provenance_stage, "read");
   assert.equal(authority.grantRecoveryReport.findings[0].authorizing_safe, false);
+});
+
+test("loadGrantAuthority degrades loudly to an empty store when grant store is corrupt", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-grant-authority-"));
+  const grantStorePath = path.join(workspace, "grants.json");
+  const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+  const corruptGrantStore = "{not json";
+  await writeFile(grantStorePath, corruptGrantStore, "utf8");
+  await writeFile(provenancePath, "", "utf8");
+
+  const authority = await loadGrantAuthority({
+    grantStorePath,
+    grantMutationProvenancePath: provenancePath,
+  });
+
+  assert.equal(authority.grantStore.grants.length, 0);
+  assert.equal(authority.grantRecoveryReport.ok, false);
+  assert.equal(authority.grantRecoveryReport.degraded, true);
+  assert.equal(authority.grantRecoveryReport.grant_store_status, "corrupt");
+  assert.equal(authority.grantRecoveryReport.grant_store_degraded_reason, "grant_store_unreadable");
+  assert.equal(authority.grantRecoveryReport.findings[0].code, "grant_store_unreadable");
+  assert.equal(authority.grantRecoveryReport.findings[0].grant_id, "");
+  assert.equal(authority.grantRecoveryReport.findings[0].authorizing_safe, false);
+  assert.equal(await readFile(grantStorePath, "utf8"), corruptGrantStore);
 });

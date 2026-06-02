@@ -216,7 +216,9 @@ are currently enabled without treating that posture as grant authority.
 The server startup path composes the read-only grant store with append-only grant mutation
 provenance inspection. Missing provenance for active durable grants produces degraded recovery
 findings; unreadable provenance produces non-authorizing findings instead of silently authorizing
-durable grants.
+durable grants. A corrupt grant store is loaded as empty in-memory authority with
+`grant_store_status: corrupt`, a global `grant_store_unreadable` finding, and durable writes blocked
+before any file rewrite.
 
 ### `POST /grants`
 

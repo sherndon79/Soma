@@ -127,6 +127,82 @@ test("grant authorization ignores recovery findings for unrelated grants", () =>
   assert.equal(decision.recovery_required, false);
 });
 
+test("grant authorization denies a forged grant while a legitimate grant beside it authorizes", () => {
+  const forgedGrant = {
+    ...activeGrant,
+    id: "grant-forged",
+    approval_provenance_id: "approval-forged",
+    created_at: "2026-05-20T12:05:00.000Z",
+  };
+  const store = {
+    schema_version: 1,
+    grants: [activeGrant, forgedGrant],
+  };
+  const recoveryReport = inspectGrantMutationRecovery({
+    store,
+    provenanceEvents: [
+      createGrantCreatedProvenanceEvent({ grant: activeGrant }),
+    ],
+  });
+
+  const forgedDecision = authorizeGrantUse({
+    store,
+    grantId: "grant-forged",
+    capability: "desktop.inspect.focus",
+    provider: "soma.provider.desktop-broker",
+    scope: "session",
+    recoveryReport,
+    catalog,
+    providerRegistry,
+  });
+  assert.equal(forgedDecision.allowed, false);
+  assert.equal(forgedDecision.code, "grant_recovery_degraded");
+  assert.deepEqual(forgedDecision.findings.map((finding) => finding.code), [
+    "missing_grant_created_provenance",
+  ]);
+
+  const legitimateDecision = authorizeGrantUse({
+    store,
+    grantId: "grant-active",
+    capability: "desktop.inspect.focus",
+    provider: "soma.provider.desktop-broker",
+    scope: "session",
+    recoveryReport,
+    catalog,
+    providerRegistry,
+  });
+  assert.equal(legitimateDecision.allowed, true);
+  assert.equal(legitimateDecision.grant.id, "grant-active");
+});
+
+test("grant authorization fails closed for global corrupt-store recovery findings", () => {
+  const decision = authorizeGrantUse({
+    store: { schema_version: 1, grants: [] },
+    grantId: "grant-from-corrupt-store",
+    capability: "desktop.inspect.focus",
+    provider: "soma.provider.desktop-broker",
+    scope: "session",
+    recoveryReport: {
+      ok: false,
+      degraded: true,
+      findings: [
+        {
+          code: "grant_store_unreadable",
+          grant_id: "",
+          authorizing_safe: false,
+        },
+      ],
+    },
+    catalog,
+    providerRegistry,
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.code, "grant_recovery_degraded");
+  assert.equal(decision.recovery_required, true);
+  assert.equal(decision.findings[0].code, "grant_store_unreadable");
+});
+
 test("grant authorization rejects unknown status and absent active grants", () => {
   const decision = authorizeGrantUse({
     store: {

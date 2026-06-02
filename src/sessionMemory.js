@@ -6,6 +6,24 @@ export class SessionMemory {
     this.entries = [];
   }
 
+  loadDurable(entries = []) {
+    for (const entry of entries) {
+      this.entries.push({
+        id: entry.id,
+        role: entry.role,
+        content: entry.content,
+        source: entry.source || "durable",
+        durable: true,
+        durable_memory_id: entry.id,
+        created_at: entry.created_at,
+      });
+    }
+    if (this.entries.length > this.maxEntries) {
+      this.entries.splice(0, this.entries.length - this.maxEntries);
+    }
+    return entries.length;
+  }
+
   list() {
     return [...this.entries];
   }

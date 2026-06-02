@@ -48,6 +48,11 @@
           "key": "memory.session.write",
           "provider_contract": "soma.memory.session.v1",
           "output_schema": "soma.memory.session.write.response.v1"
+        },
+        {
+          "key": "memory.durable.write",
+          "provider_contract": "soma.memory.durable.v1",
+          "output_schema": "soma.memory.durable.write.response.v1"
         }
       ]
     },

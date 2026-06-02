@@ -1067,6 +1067,25 @@ Clear session memory:
 npm run cli -- memory clear
 ```
 
+## Durable Memory
+
+Durable memory is opt-in and grant-bound. Start Soma with runtime writes enabled, then use an
+active `memory.durable.write` grant to persist only selected content:
+
+```bash
+SOMA_RUNTIME_WRITES_ENABLED=1 npm start
+npm run cli -- memory durable-add --grant-id <grant-id> "Selected durable memory." --role note
+```
+
+Remove a durable entry with the same authority:
+
+```bash
+npm run cli -- memory durable-remove <memory-id> --grant-id <grant-id> --reason "No longer needed"
+```
+
+Durable-memory provenance records metadata only, not the memory content. A corrupt durable-memory
+store degrades loudly, blocks durable-memory writes, and leaves base chat/session memory running.
+
 Clear provenance:
 
 ```bash

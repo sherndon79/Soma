@@ -15,16 +15,18 @@ export function resolveRuntimeWritePosture({ requested = false, source = "defaul
     return {
       runtime_writes_enabled: true,
       durable_grant_mutation_enabled: true,
+      durable_memory_write_enabled: true,
       activation_supported: true,
       requested: true,
       source: String(source || "default"),
       status: "enabled",
-      reason: "Runtime writes are explicitly enabled for durable grant mutation.",
+      reason: "Runtime writes are explicitly enabled for durable authority and memory mutation.",
     };
   }
   return {
     runtime_writes_enabled: false,
     durable_grant_mutation_enabled: false,
+    durable_memory_write_enabled: false,
     activation_supported: false,
     requested: false,
     source: String(source || "default"),

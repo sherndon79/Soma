@@ -14,6 +14,17 @@ import {
   createDesktopNotificationProvenanceEvent,
 } from "./desktopNotificationAdapter.js";
 import { DesktopDisclosureRegistry } from "./desktopDisclosureRegistry.js";
+import {
+  listDurableMemoryEntries,
+  loadDurableMemoryStore,
+  summarizeDurableMemoryStore,
+} from "./durableMemory.js";
+import { createDurableMemoryProvenanceFile } from "./durableMemoryProvenanceFile.js";
+import { inspectDurableMemoryRecovery } from "./durableMemoryRecovery.js";
+import {
+  writeDurableMemoryAddMutation,
+  writeDurableMemoryRemoveMutation,
+} from "./durableMemoryStoreWriter.js";
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
@@ -102,6 +113,10 @@ export function createApp({
   grantRecoveryReport,
   grantStorePath,
   grantMutationProvenancePath,
+  durableMemoryStore,
+  durableMemoryRecoveryReport,
+  durableMemoryStorePath,
+  durableMemoryProvenancePath,
   runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
@@ -123,6 +138,10 @@ export function createApp({
     grantRecoveryReport,
     grantStorePath,
     grantMutationProvenancePath,
+    durableMemoryStore,
+    durableMemoryRecoveryReport,
+    durableMemoryStorePath,
+    durableMemoryProvenancePath,
     runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
@@ -149,6 +168,13 @@ export function createRequestHandler({
   grantStoreIo = createGrantStoreFileIo(),
   grantStoreLock = createGrantStoreLock(),
   grantMutationProvenance = null,
+  durableMemoryStore = { schema_version: 1, entries: [] },
+  durableMemoryRecoveryReport = null,
+  durableMemoryStorePath = "",
+  durableMemoryProvenancePath = "",
+  durableMemoryStoreIo = createGrantStoreFileIo(),
+  durableMemoryStoreLock = createGrantStoreLock(),
+  durableMemoryProvenance = null,
   runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
@@ -171,6 +197,11 @@ export function createRequestHandler({
     ?? (grantMutationProvenancePath
       ? createGrantMutationProvenanceFile({ path: grantMutationProvenancePath })
       : null);
+  const durableMemoryMutationProvenance = durableMemoryProvenance
+    ?? (durableMemoryProvenancePath
+      ? createDurableMemoryProvenanceFile({ path: durableMemoryProvenancePath })
+      : null);
+  sessionMemory.loadDurable?.(listDurableMemoryEntries(durableMemoryStore));
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   const decisionWaiters = new Map();
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
@@ -1739,6 +1770,11 @@ export function createRequestHandler({
         writeJson(res, 200, {
           entries: sessionMemory.list(),
           durable: false,
+          durable_loaded: listDurableMemoryEntries(durableMemoryStore).length,
+          durable_memory_recovery: summarizeDurableMemoryRecoveryInspection(
+            durableMemoryRecoveryReport,
+            { durableMemoryStore, runtimeWritePosture: writePosture },
+          ),
         });
         return;
       }
@@ -1768,6 +1804,155 @@ export function createRequestHandler({
         }));
         logger.info?.("soma.provenance", event);
         writeJson(res, 200, { removed, durable: false, provenance_id: event.id });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/durable-memory/recovery") {
+        writeJson(res, 200, summarizeDurableMemoryRecoveryInspection(
+          durableMemoryRecoveryReport,
+          { durableMemoryStore, runtimeWritePosture: writePosture },
+        ));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/durable-memory") {
+        const body = await readJson(req);
+        const request = validateDurableMemoryWriteRequest(body);
+        request.provider ||= providerForCapability(providerRegistry, "memory.durable.write");
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: request.grant_id,
+          capability: "memory.durable.write",
+          provider: request.provider,
+          scope: request.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "memory_durable_write_grant_not_authorized",
+            message: "Durable memory write requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const guard = durableMemoryMutationGuard({
+          route: "POST /durable-memory",
+          mutationKind: "memory.durable.written",
+          runtimeWritePosture: writePosture,
+          durableMemoryStorePath,
+          durableMemoryProvenance: durableMemoryMutationProvenance,
+          recoveryReport: durableMemoryRecoveryReport,
+          durableMemoryStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const result = await writeDurableMemoryAddMutation({
+          durableMemoryStorePath,
+          mutationId: request.mutation_id || `memory-durable-write-${cryptoRandomId()}`,
+          io: durableMemoryStoreIo,
+          lock: durableMemoryStoreLock,
+          provenance: durableMemoryMutationProvenance,
+          input: {
+            ...request,
+            grant_id: authorization.grant.id,
+            provider: authorization.grant.provider,
+            scope: authorization.grant.scope,
+          },
+          context: durableMemoryMutationContext({ grant: authorization.grant }),
+        });
+        const refreshed = await refreshDurableMemoryAuthority({
+          durableMemoryStorePath,
+          durableMemoryProvenance: durableMemoryMutationProvenance,
+          fallbackStore: durableMemoryStore,
+        });
+        durableMemoryStore = refreshed.durableMemoryStore;
+        durableMemoryRecoveryReport = refreshed.durableMemoryRecoveryReport;
+        if (result.ok) {
+          sessionMemory.loadDurable?.([result.entry]);
+        }
+        writeJson(res, result.ok ? 201 : statusCodeForDurableMemoryMutationFailure(result), {
+          ...durableMemoryMutationResponseFields({
+            result,
+            recoveryReport: durableMemoryRecoveryReport,
+            durableMemoryStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "durable_memory",
+        });
+        return;
+      }
+
+      const durableMemoryRemoveMatch = url.pathname.match(/^\/durable-memory\/([^/]+)$/);
+      if (req.method === "DELETE" && durableMemoryRemoveMatch) {
+        const memoryId = decodeURIComponent(durableMemoryRemoveMatch[1] ?? "");
+        const body = await readJson(req);
+        const request = validateDurableMemoryRemoveRequest({ ...body, id: memoryId });
+        request.provider ||= providerForCapability(providerRegistry, "memory.durable.write");
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: request.grant_id,
+          capability: "memory.durable.write",
+          provider: request.provider,
+          scope: request.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "memory_durable_write_grant_not_authorized",
+            message: "Durable memory removal requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const guard = durableMemoryMutationGuard({
+          route: "DELETE /durable-memory/:id",
+          mutationKind: "memory.durable.removed",
+          memoryId,
+          runtimeWritePosture: writePosture,
+          durableMemoryStorePath,
+          durableMemoryProvenance: durableMemoryMutationProvenance,
+          recoveryReport: durableMemoryRecoveryReport,
+          durableMemoryStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const result = await writeDurableMemoryRemoveMutation({
+          durableMemoryStorePath,
+          mutationId: request.mutation_id || `memory-durable-remove-${cryptoRandomId()}`,
+          io: durableMemoryStoreIo,
+          lock: durableMemoryStoreLock,
+          provenance: durableMemoryMutationProvenance,
+          input: request,
+          context: durableMemoryMutationContext({ grant: authorization.grant }),
+        });
+        const refreshed = await refreshDurableMemoryAuthority({
+          durableMemoryStorePath,
+          durableMemoryProvenance: durableMemoryMutationProvenance,
+          fallbackStore: durableMemoryStore,
+        });
+        durableMemoryStore = refreshed.durableMemoryStore;
+        durableMemoryRecoveryReport = refreshed.durableMemoryRecoveryReport;
+        writeJson(res, result.ok ? 200 : statusCodeForDurableMemoryMutationFailure(result), {
+          ...durableMemoryMutationResponseFields({
+            result,
+            recoveryReport: durableMemoryRecoveryReport,
+            durableMemoryStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "durable_memory",
+        });
         return;
       }
 
@@ -2182,6 +2367,124 @@ function normalizeMemoryEntry(entry) {
     throw error;
   }
   return { role, content, source };
+}
+
+function validateDurableMemoryWriteRequest(body) {
+  const allowedKeys = new Set([
+    "role",
+    "content",
+    "source",
+    "grant_id",
+    "provider",
+    "scope",
+    "actor",
+    "mutation_id",
+  ]);
+  const errors = [];
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    if (!["system", "user", "assistant", "note"].includes(body.role)) {
+      errors.push("request.role must be system, user, assistant, or note");
+    }
+    if (typeof body.content !== "string" || body.content.trim().length === 0) {
+      errors.push("request.content must be a non-empty string");
+    }
+    if (typeof body.content === "string" && body.content.length > 4000) {
+      errors.push("request.content must be at most 4000 characters");
+    }
+    if (body.source !== undefined && typeof body.source !== "string") {
+      errors.push("request.source must be a string when provided");
+    }
+    if (typeof body.grant_id !== "string" || !body.grant_id.trim()) {
+      errors.push("request.grant_id must be a non-empty string");
+    }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      errors.push("request.provider must be a string when provided");
+    }
+    if (body.scope !== undefined && !["once", "session", "project"].includes(body.scope)) {
+      errors.push("request.scope must be once session or project when provided");
+    }
+    if (body.actor !== undefined && body.actor !== "user") {
+      errors.push("request.actor must be user when provided");
+    }
+    if (body.mutation_id !== undefined && typeof body.mutation_id !== "string") {
+      errors.push("request.mutation_id must be a string when provided");
+    }
+  }
+  if (errors.length > 0) {
+    const error = new Error(`Durable memory write request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "memory_durable_write_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+  return {
+    role: body.role,
+    content: body.content,
+    source: String(body.source ?? "manual").trim() || "manual",
+    grant_id: body.grant_id.trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    actor: "user",
+    mutation_id: String(body.mutation_id ?? "").trim(),
+  };
+}
+
+function validateDurableMemoryRemoveRequest(body) {
+  const allowedKeys = new Set(["id", "grant_id", "provider", "scope", "actor", "reason", "mutation_id"]);
+  const errors = [];
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    if (typeof body.id !== "string" || !body.id.trim()) {
+      errors.push("request.id must be a non-empty string");
+    }
+    if (typeof body.grant_id !== "string" || !body.grant_id.trim()) {
+      errors.push("request.grant_id must be a non-empty string");
+    }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      errors.push("request.provider must be a string when provided");
+    }
+    if (body.scope !== undefined && !["once", "session", "project"].includes(body.scope)) {
+      errors.push("request.scope must be once session or project when provided");
+    }
+    if (body.actor !== undefined && body.actor !== "user") {
+      errors.push("request.actor must be user when provided");
+    }
+    if (body.reason !== undefined && typeof body.reason !== "string") {
+      errors.push("request.reason must be a string when provided");
+    }
+    if (body.mutation_id !== undefined && typeof body.mutation_id !== "string") {
+      errors.push("request.mutation_id must be a string when provided");
+    }
+  }
+  if (errors.length > 0) {
+    const error = new Error(`Durable memory remove request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "memory_durable_remove_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+  return {
+    id: body.id.trim(),
+    grant_id: body.grant_id.trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    actor: "user",
+    reason: String(body.reason ?? "").trim(),
+    mutation_id: String(body.mutation_id ?? "").trim(),
+  };
 }
 
 function validateDesktopInspectionRequest(body) {
@@ -3385,6 +3688,215 @@ function statusCodeForDurableGrantMutationFailure(result = {}) {
     return 500;
   }
   return 409;
+}
+
+function durableMemoryMutationGuard({
+  route,
+  mutationKind,
+  memoryId = "",
+  runtimeWritePosture,
+  durableMemoryStorePath,
+  durableMemoryProvenance,
+  recoveryReport,
+  durableMemoryStore,
+} = {}) {
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  if (!writePosture.durable_memory_write_enabled) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: {
+        ok: false,
+        error: "memory_durable_write_not_enabled",
+        code: "memory_durable_write_not_enabled",
+        message: "Durable memory write routes are reserved but not enabled.",
+        route,
+        mutation_kind: mutationKind,
+        memory_id: memoryId,
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        memory_written: false,
+        file_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  if (!durableMemoryStorePath || !durableMemoryProvenance) {
+    return {
+      ok: false,
+      statusCode: 503,
+      response: {
+        ok: false,
+        error: "memory_durable_writer_unavailable",
+        code: "memory_durable_writer_unavailable",
+        message: "Durable memory write requires a configured memory store path and provenance file.",
+        route,
+        mutation_kind: mutationKind,
+        memory_id: memoryId,
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        memory_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  if (recoveryReport?.degraded === true) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: {
+        ok: false,
+        error: "memory_durable_recovery_required",
+        code: "memory_durable_recovery_required",
+        message: "Durable memory write requires clean recovery before writing persistent memory.",
+        route,
+        mutation_kind: mutationKind,
+        memory_id: memoryId,
+        recovery: summarizeDurableMemoryRecoveryInspection(recoveryReport, { durableMemoryStore, runtimeWritePosture: writePosture }),
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        memory_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+function durableMemoryMutationContext({ grant } = {}) {
+  return {
+    grant,
+    now: () => new Date().toISOString(),
+    createId: () => `memory-durable-${cryptoRandomId()}`,
+  };
+}
+
+async function refreshDurableMemoryAuthority({
+  durableMemoryStorePath,
+  durableMemoryProvenance,
+  fallbackStore,
+}) {
+  let nextStore = fallbackStore;
+  let provenanceEvents = [];
+  try {
+    nextStore = await loadDurableMemoryStore(durableMemoryStorePath);
+  } catch {
+    // The mutation result carries the write failure; keep the previous in-memory store.
+  }
+  try {
+    provenanceEvents = durableMemoryProvenance ? await durableMemoryProvenance.read() : [];
+  } catch (error) {
+    return {
+      durableMemoryStore: nextStore,
+      durableMemoryRecoveryReport: unreadableDurableMemoryProvenanceReport(nextStore, error),
+    };
+  }
+  return {
+    durableMemoryStore: nextStore,
+    durableMemoryRecoveryReport: inspectDurableMemoryRecovery({
+      store: nextStore,
+      provenanceEvents,
+    }),
+  };
+}
+
+function durableMemoryMutationResponseFields({
+  result = {},
+  recoveryReport,
+  durableMemoryStore,
+  runtimeWritePosture,
+} = {}) {
+  const receipt = result.receipt ?? {};
+  const committed = Boolean(receipt.memory_store_committed);
+  return {
+    ok: Boolean(result.ok),
+    error: result.ok ? "" : result.code ?? "memory_durable_write_failed",
+    code: result.ok ? "" : result.code ?? "memory_durable_write_failed",
+    message: result.ok ? "Durable memory mutation committed." : result.message ?? "Durable memory mutation failed.",
+    mutation_kind: receipt.mutation_kind ?? "",
+    mutation_id: receipt.mutation_id ?? "",
+    entry: result.entry ?? null,
+    event: result.event ?? null,
+    receipt,
+    recovery: summarizeDurableMemoryRecoveryInspection(recoveryReport, { durableMemoryStore, runtimeWritePosture }),
+    summary: summarizeDurableMemoryStore(durableMemoryStore),
+    runtime_writes_enabled: normalizeRuntimeWritePosture(runtimeWritePosture).runtime_writes_enabled,
+    runtime_write_posture: normalizeRuntimeWritePosture(runtimeWritePosture),
+    durable: Boolean(result.ok),
+    memory_written: committed,
+    file_written: committed,
+    provenance_appended: Boolean(receipt.provenance_appended),
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+    repair_performed: false,
+  };
+}
+
+function statusCodeForDurableMemoryMutationFailure(result = {}) {
+  if (result.retryable) {
+    return 409;
+  }
+  const code = String(result.code ?? "");
+  if (code.includes("_required") || code.includes("_invalid") || code.includes("_not_found")
+    || code.includes("_too_large")) {
+    return 400;
+  }
+  if (result.degraded) {
+    return 500;
+  }
+  return 409;
+}
+
+function unreadableDurableMemoryProvenanceReport(store = {}, error = {}) {
+  const entries = listDurableMemoryEntries(store);
+  const findings = entries.map((entry) => ({
+    code: "memory_durable_provenance_unreadable",
+    memory_id: entry.id,
+    role: entry.role,
+    source: entry.source,
+    grant_id: entry.grant_id,
+    provider: entry.provider,
+    scope: entry.scope,
+    authorizing_safe: false,
+    provenance_stage: String(error?.stage ?? "read"),
+    provenance_error_code: String(error?.code ?? "unknown"),
+  }));
+  return {
+    ok: findings.length === 0,
+    degraded: findings.length > 0,
+    entry_count: entries.length,
+    finding_count: findings.length,
+    findings,
+  };
+}
+
+function summarizeDurableMemoryRecoveryInspection(report, { durableMemoryStore, runtimeWritePosture } = {}) {
+  const recoveryInspectionAvailable = report && typeof report === "object";
+  const findings = Array.isArray(report?.findings) ? report.findings.map((finding) => ({ ...finding })) : [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  return {
+    recovery_inspection_available: Boolean(recoveryInspectionAvailable),
+    ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
+    degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    memory_store_status: report?.memory_store_status ?? (recoveryInspectionAvailable && report?.degraded ? "degraded" : "clean"),
+    memory_store_degraded_reason: report?.memory_store_degraded_reason ?? "",
+    entry_count: Number.isInteger(report?.entry_count)
+      ? report.entry_count
+      : listDurableMemoryEntries(durableMemoryStore).length,
+    finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
+    findings,
+    durable: false,
+    activation_performed: false,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
+  };
 }
 
 function unreadableDurableGrantProvenanceReport(store = {}, error = {}) {

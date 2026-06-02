@@ -184,6 +184,14 @@ const capabilityCatalog = {
       activation_policy: "explicit_grant",
     },
     {
+      key: "memory.durable.write",
+      name: "Durable Memory Write",
+      category: "memory",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
       key: "status.snapshot.read",
       name: "Status Snapshot Read",
       category: "status",
@@ -291,6 +299,14 @@ const providerRegistry = {
       local_only: true,
       network_access: false,
       capabilities: ["desktop.inspect.focus", "desktop.inspect.windows"],
+    },
+    {
+      id: "soma.provider.session-memory",
+      name: "Session Memory",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: ["memory.session.read", "memory.session.write", "memory.durable.write"],
     },
     {
       id: "soma.provider.status",
@@ -422,15 +438,17 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 10);
+  assert.equal(response.body.summary.total, 11);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 8);
+  assert.equal(response.body.summary.by_status.requestable, 9);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
+  assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.perception.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const windows = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.windows");
+  const durableMemory = response.body.capabilities.find((capability) => capability.key === "memory.durable.write");
   const text = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.text");
   const sensoriumColor = response.body.capabilities.find((capability) => capability.key === "perception.sensorium.color.subscribe");
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
@@ -440,6 +458,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(windows.status, "requestable");
   assert.equal(windows.providers[0].id, "desktop-broker");
+  assert.equal(durableMemory.status, "requestable");
+  assert.equal(durableMemory.providers[0].id, "soma.provider.session-memory");
   assert.equal(text.status, "unsupported");
   assert.equal(sensoriumColor.status, "requestable");
   assert.equal(remoteVideo.status, "requestable");
@@ -2926,6 +2946,161 @@ test("session memory can be written, read, and cleared when allowed", async () =
   assert.equal(response.body.summary.by_event_type["memory.session.cleared"], 1);
 });
 
+test("durable memory write is opt-in and grant-bound", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/durable-memory",
+    harness: allowedHarness,
+    grantStore: durableMemoryGrantStore(),
+    grantRecoveryReport: { ok: true, degraded: false, grant_count: 1, finding_count: 0, findings: [] },
+    body: {
+      role: "note",
+      content: "Persist this selected memory.",
+      grant_id: "grant-memory-durable",
+      actor: "user",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "memory_durable_write_not_enabled");
+  assert.equal(response.body.memory_written, false);
+  assert.equal(response.body.provenance_appended, false);
+});
+
+test("durable memory write persists and loads into session memory after restart", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-memory-"));
+  try {
+    const durableMemoryStorePath = path.join(workspace, "durable-memory.json");
+    const durableMemoryProvenancePath = path.join(workspace, "durable-memory.ndjson");
+    await writeFile(durableMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const common = {
+      harness: allowedHarness,
+      grantStore: durableMemoryGrantStore(),
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 1, finding_count: 0, findings: [] },
+      durableMemoryStore: { schema_version: 1, entries: [] },
+      durableMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableMemoryStorePath,
+      durableMemoryProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    };
+    let handler = makeHandler(common);
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/durable-memory",
+      body: {
+        role: "note",
+        content: "Seth prefers durable continuity when explicitly selected.",
+        source: "manual",
+        grant_id: "grant-memory-durable",
+        actor: "user",
+        mutation_id: "memory-write-1",
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.ok, true);
+    assert.equal(response.body.durable, true);
+    assert.equal(response.body.memory_written, true);
+    assert.equal(response.body.provenance_appended, true);
+    assert.equal(response.body.entry.content, "Seth prefers durable continuity when explicitly selected.");
+    assert.equal(response.body.event.content, undefined);
+    const memoryId = response.body.entry.id;
+
+    const persisted = JSON.parse(await readFile(durableMemoryStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].id, memoryId);
+    const provenanceLines = (await readFile(durableMemoryProvenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 1);
+    assert.equal(JSON.parse(provenanceLines[0]).event_type, "memory.durable.written");
+    assert.equal("content" in JSON.parse(provenanceLines[0]), false);
+
+    handler = makeHandler({
+      ...common,
+      durableMemoryStore: persisted,
+      durableMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 1, finding_count: 0, findings: [] },
+    });
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/session-memory",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].durable, true);
+    assert.equal(response.body.entries[0].durable_memory_id, memoryId);
+    assert.equal(response.body.entries[0].content, "Seth prefers durable continuity when explicitly selected.");
+
+    response = await invokeHandler(handler, {
+      method: "DELETE",
+      url: `/durable-memory/${memoryId}`,
+      body: {
+        grant_id: "grant-memory-durable",
+        actor: "user",
+        reason: "No longer needed.",
+        mutation_id: "memory-remove-1",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.ok, true);
+    assert.equal(response.body.entry.id, memoryId);
+    assert.equal(response.body.provenance_appended, true);
+    assert.equal(JSON.parse(await readFile(durableMemoryStorePath, "utf8")).entries.length, 0);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("corrupt durable memory store degrades loudly and blocks durable memory writes", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-memory-corrupt-"));
+  try {
+    const durableMemoryStorePath = path.join(workspace, "durable-memory.json");
+    const durableMemoryProvenancePath = path.join(workspace, "durable-memory.ndjson");
+    const corruptStore = "{not-json";
+    await writeFile(durableMemoryStorePath, corruptStore, "utf8");
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: durableMemoryGrantStore(),
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 1, finding_count: 0, findings: [] },
+      durableMemoryStore: { schema_version: 1, entries: [] },
+      durableMemoryRecoveryReport: {
+        ok: false,
+        degraded: true,
+        memory_store_status: "corrupt",
+        memory_store_degraded_reason: "memory_durable_store_unreadable",
+        entry_count: 0,
+        finding_count: 1,
+        findings: [{ code: "memory_durable_store_unreadable", authorizing_safe: false }],
+      },
+      durableMemoryStorePath,
+      durableMemoryProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/durable-memory",
+      body: {
+        role: "note",
+        content: "Do not overwrite corrupt durable memory.",
+        grant_id: "grant-memory-durable",
+        actor: "user",
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "memory_durable_recovery_required");
+    assert.equal(response.body.memory_written, false);
+    assert.equal(await readFile(durableMemoryStorePath, "utf8"), corruptStore);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { messages: [{ role: "user", content: "base chat remains up" }] },
+    });
+    assert.equal(response.statusCode, 200);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("chat can read and write ephemeral session memory when explicitly requested", async () => {
   const seenMessages = [];
   const modelClient = {
@@ -4736,6 +4911,10 @@ async function invoke({
   grantRecoveryReport,
   grantStorePath,
   grantMutationProvenancePath,
+  durableMemoryStore,
+  durableMemoryRecoveryReport,
+  durableMemoryStorePath,
+  durableMemoryProvenancePath,
   runtimeWritePosture,
   body,
 } = {}) {
@@ -4749,6 +4928,10 @@ async function invoke({
     grantRecoveryReport,
     grantStorePath,
     grantMutationProvenancePath,
+    durableMemoryStore,
+    durableMemoryRecoveryReport,
+    durableMemoryStorePath,
+    durableMemoryProvenancePath,
     runtimeWritePosture,
   }), {
     method,
@@ -7056,6 +7239,10 @@ function makeHandler({
   grantRecoveryReport,
   grantStorePath,
   grantMutationProvenancePath,
+  durableMemoryStore,
+  durableMemoryRecoveryReport,
+  durableMemoryStorePath,
+  durableMemoryProvenancePath,
   runtimeWritePosture,
   desktopDisclosureRegistry,
   desktopNotificationAdapter = {
@@ -7087,6 +7274,10 @@ function makeHandler({
     grantRecoveryReport,
     grantStorePath,
     grantMutationProvenancePath,
+    durableMemoryStore,
+    durableMemoryRecoveryReport,
+    durableMemoryStorePath,
+    durableMemoryProvenancePath,
     runtimeWritePosture,
     desktopDisclosureRegistry,
     desktopNotificationAdapter,
@@ -7232,6 +7423,34 @@ function windowGrantStore(overrides = {}) {
         approved_by: "user",
         approval_provenance_id: "prov-windows-approval",
         reason: "Need bounded window structure for the current session.",
+        created_at: "2026-06-02T12:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+        ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
+function durableMemoryGrantStore(overrides = {}) {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-memory-durable",
+        status: "active",
+        capability: "memory.durable.write",
+        provider: "soma.provider.session-memory",
+        scope: "session",
+        constraints: { selected_content_only: true },
+        approved_by: "user",
+        approval_provenance_id: "prov-memory-durable-approval",
+        reason: "Persist selected durable memory content.",
         created_at: "2026-06-02T12:00:00.000Z",
         review_required: false,
         revoked_at: null,

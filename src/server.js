@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { loadCapabilityCatalog, loadProviderRegistry } from "./capabilityCatalog.js";
 import { loadGrantAuthority } from "./grantAuthority.js";
+import { loadDurableMemoryAuthority } from "./durableMemoryAuthority.js";
 import { loadHarness } from "./harness.js";
 import { loadHarnessModules } from "./harnessModules.js";
 import { ModelClient } from "./modelClient.js";
@@ -21,11 +22,27 @@ const {
 } = await loadGrantAuthority({
   grantMutationProvenancePath: process.env.SOMA_GRANT_MUTATION_PROVENANCE_PATH,
 });
+const {
+  durableMemoryStore,
+  durableMemoryRecoveryReport,
+  durableMemoryStorePath,
+  durableMemoryProvenancePath,
+} = await loadDurableMemoryAuthority({
+  durableMemoryStorePath: process.env.SOMA_DURABLE_MEMORY_STORE_PATH,
+  durableMemoryProvenancePath: process.env.SOMA_DURABLE_MEMORY_PROVENANCE_PATH,
+});
 if (grantRecoveryReport?.degraded === true) {
   console.warn(
     `Soma grant authority degraded: ${
       grantRecoveryReport.grant_store_degraded_reason ?? "grant_recovery_degraded"
     }; durable authority is disabled until recovery.`,
+  );
+}
+if (durableMemoryRecoveryReport?.degraded === true) {
+  console.warn(
+    `Soma durable memory degraded: ${
+      durableMemoryRecoveryReport.memory_store_degraded_reason ?? "memory_durable_recovery_degraded"
+    }; durable memory writes are disabled until recovery.`,
   );
 }
 const moduleRegistry = await loadHarnessModules();
@@ -42,6 +59,10 @@ const app = createApp({
   grantRecoveryReport,
   grantStorePath,
   grantMutationProvenancePath,
+  durableMemoryStore,
+  durableMemoryRecoveryReport,
+  durableMemoryStorePath,
+  durableMemoryProvenancePath,
   runtimeWritePosture,
   moduleRegistry,
   runtimeProfiles,

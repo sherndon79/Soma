@@ -3055,6 +3055,86 @@ test("runCli desktop windows calls window inspection endpoint", async () => {
   assert.match(writes.join(""), /provenance: prov-windows/);
 });
 
+test("runCli memory durable-add calls durable memory endpoint", async () => {
+  let captured;
+  const writes = [];
+
+  await runCli(parseCli([
+    "node",
+    "soma",
+    "memory",
+    "durable-add",
+    "--grant-id",
+    "grant-memory",
+    "--mutation-id",
+    "memory-write-1",
+    "Remember this selected fact.",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, requestPath, body) => {
+      captured = { method, requestPath, body };
+      return {
+        ok: true,
+        mutation_kind: "memory.durable.written",
+        entry: { id: "memory-1" },
+        receipt: { memory_id: "memory-1" },
+        durable: true,
+        file_written: true,
+        provenance_appended: true,
+        runtime_writes_enabled: true,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.requestPath, "/durable-memory");
+  assert.equal(captured.body.content, "Remember this selected fact.");
+  assert.equal(captured.body.grant_id, "grant-memory");
+  assert.equal(captured.body.actor, "user");
+  assert.equal(captured.body.mutation_id, "memory-write-1");
+  assert.match(writes.join(""), /Durable memory mutation/);
+  assert.match(writes.join(""), /memory id: memory-1/);
+});
+
+test("runCli memory durable-remove calls durable memory removal endpoint", async () => {
+  let captured;
+
+  await runCli(parseCli([
+    "node",
+    "soma",
+    "memory",
+    "durable-remove",
+    "memory-1",
+    "--grant-id",
+    "grant-memory",
+    "--reason",
+    "No longer needed.",
+  ]), {
+    stdout: { write: () => {} },
+    request: async (_baseUrl, method, requestPath, body) => {
+      captured = { method, requestPath, body };
+      return {
+        ok: true,
+        mutation_kind: "memory.durable.removed",
+        entry: { id: "memory-1" },
+        receipt: { memory_id: "memory-1" },
+        durable: true,
+        file_written: true,
+        provenance_appended: true,
+        runtime_writes_enabled: true,
+        activation_performed: false,
+      };
+    },
+  });
+
+  assert.equal(captured.method, "DELETE");
+  assert.equal(captured.requestPath, "/durable-memory/memory-1");
+  assert.equal(captured.body.grant_id, "grant-memory");
+  assert.equal(captured.body.actor, "user");
+  assert.equal(captured.body.reason, "No longer needed.");
+});
+
 function makeRemoteGraphicalSessionOpenFixtureResponse() {
   return {
     type: "remote_graphical_session_open_result",

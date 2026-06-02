@@ -293,7 +293,31 @@ Records a `memory.session.written` provenance event with metadata only, not memo
 Clears ephemeral session memory when `memory.session.write` is allowed.
 Records a `memory.session.cleared` provenance event with the removed entry count.
 
-Session memory is not durable memory. It is lost when the Soma process stops.
+Session memory also loads selected durable memory entries at startup. Durable entries are still
+written only by the explicit durable-memory route below.
+
+### `POST /durable-memory`
+
+Persists selected durable memory content only when all gates pass:
+
+- an active `memory.durable.write` grant authorizes the request
+- the server was started with `SOMA_RUNTIME_WRITES_ENABLED=1`
+- durable-memory recovery is clean
+
+The route writes `config/durable-memory.json` atomically with lock, temp file, fsync, rename, and
+directory fsync. It appends `memory.durable.written` provenance metadata without memory content and
+loads the written entry into session memory for the running process. A corrupt durable-memory store
+starts as an empty in-process durable-memory view and blocks durable writes before any rewrite.
+
+### `DELETE /durable-memory/:id`
+
+Removes one durable memory entry under the same `memory.durable.write` grant and runtime-write
+opt-in. Removal appends metadata-only `memory.durable.removed` provenance.
+
+### `GET /durable-memory/recovery`
+
+Returns durable-memory recovery status and bounded findings. Findings do not include memory
+content.
 
 ### `GET /provenance`
 
@@ -393,7 +417,9 @@ planning remain disabled.
 - `memory.export` — export memory outside Soma
 - `memory.forget` — remove or tombstone stored memory
 
-MVP enables ephemeral session memory. Durable memory remains disabled.
+MVP enables ephemeral session memory and grant-bound durable memory writes. Durable memory reads
+are surfaced by loading selected durable entries into session memory at startup; a separate
+`memory.durable.read` route remains out of scope.
 
 ### Provenance
 

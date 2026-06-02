@@ -491,6 +491,44 @@ export async function runCli(
       writeOutput(stdout, await request(baseUrl, "DELETE", "/session-memory"), jsonOutput);
       return 0;
     }
+    if (subcommand === "durable-add") {
+      const content = rest.join(" ").trim();
+      if (!content) {
+        throw usageError("memory durable-add requires content.");
+      }
+      const response = await request(baseUrl, "POST", "/durable-memory", {
+        role: flags.role ?? "note",
+        source: flags.source ?? "manual",
+        content,
+        grant_id: flags["grant-id"],
+        provider: flags.provider,
+        scope: flags.scope,
+        actor: "user",
+        mutation_id: flags["mutation-id"],
+      });
+      writeOutput(stdout, response, jsonOutput, durableMemoryMutationSummary(response));
+      return 0;
+    }
+    if (subcommand === "durable-remove") {
+      const id = rest[0];
+      if (!id) {
+        throw usageError("memory durable-remove requires an entry id.");
+      }
+      const response = await request(baseUrl, "DELETE", `/durable-memory/${encodeURIComponent(id)}`, {
+        grant_id: flags["grant-id"],
+        provider: flags.provider,
+        scope: flags.scope,
+        actor: "user",
+        reason: flags.reason ?? "",
+        mutation_id: flags["mutation-id"],
+      });
+      writeOutput(stdout, response, jsonOutput, durableMemoryMutationSummary(response));
+      return 0;
+    }
+    if (subcommand === "durable-recovery") {
+      writeOutput(stdout, await request(baseUrl, "GET", "/durable-memory/recovery"), jsonOutput);
+      return 0;
+    }
   }
 
   if (command === "provenance") {
@@ -1463,6 +1501,22 @@ function grantRecoverySummary(response) {
   return lines.join("\n");
 }
 
+function durableMemoryMutationSummary(response) {
+  const receipt = response.receipt ?? {};
+  const entry = response.entry ?? {};
+  return [
+    "Durable memory mutation",
+    `  ok: ${booleanText(response.ok)}`,
+    `  durable: ${booleanText(response.durable)}`,
+    `  mutation: ${response.mutation_kind ?? receipt.mutation_kind ?? "unknown"}`,
+    `  memory id: ${entry.id ?? receipt.memory_id ?? "none"}`,
+    `  file written: ${booleanText(response.file_written)}`,
+    `  provenance appended: ${booleanText(response.provenance_appended)}`,
+    `  runtime writes enabled: ${booleanText(response.runtime_writes_enabled)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+  ].join("\n");
+}
+
 function grantMutationPreviewSummary(response) {
   return grantMutationPreviewReviewText(response);
 }
@@ -2055,6 +2109,10 @@ Usage:
   soma status [--json]
   soma status snapshot --grant-id grant-id [--json]
   soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--profile id] [--max-tokens n] [--temperature n] [--json]
+  soma memory list|add|clear [--json]
+  soma memory durable-add --grant-id grant-id "selected memory" [--role note] [--source manual] [--mutation-id id] [--json]
+  soma memory durable-remove entry-id --grant-id grant-id [--reason text] [--mutation-id id] [--json]
+  soma memory durable-recovery [--json]
   soma capabilities [--json]
   soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]

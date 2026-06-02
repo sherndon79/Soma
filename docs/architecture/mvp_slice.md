@@ -179,7 +179,7 @@ Marks a pending proposal denied with a denial reason. It records
 Returns the file-backed grant store in a read-only operator shape. Supports status filters such as
 `status=active` and `status=revoked`.
 
-The MVP grant route does not write grants, revoke grants, or activate capabilities. It exists so
+The grant list route does not write grants, revoke grants, or activate capabilities. It exists so
 grant records have an inspectable shape before any widening path can depend on them.
 Revoked grant records may include `revoked_at`, `revoked_by`, `revocation_reason`, and
 `replacement_grant_id`.
@@ -195,8 +195,8 @@ Recovery findings are bounded operator metadata: code, grant id, status, capabil
 scope, authorizing safety, and small mismatch descriptors such as event type or field name. The
 route may also report durable provenance read failure class. It does not expose mismatch values,
 grant reason text, payloads, activate capabilities, or mutate the grant store.
-The response includes `runtime_writes_enabled: false` and the runtime write posture so recovery
-inspection can show whether runtime writes were requested without treating that request as authority.
+The response includes runtime write posture so recovery inspection can show whether runtime writes
+are currently enabled without treating that posture as grant authority.
 
 The server startup path composes the read-only grant store with append-only grant mutation
 provenance inspection. Missing provenance for active durable grants produces degraded recovery
@@ -205,17 +205,19 @@ durable grants.
 
 ### `POST /grants`
 
-Reserved for future durable grant creation. In the MVP, this route returns
-`durable_grant_mutation_not_enabled` with `durable: false`, `grant_written: false`,
-`provenance_appended: false`, `activation_performed: false`, and the runtime write posture. It does
-not parse the request into authority or call durable writer helpers.
+Creates a durable grant only when the server is started with `SOMA_RUNTIME_WRITES_ENABLED=1`.
+Without that opt-in, this route returns `durable_grant_mutation_not_enabled` with `durable: false`,
+`grant_written: false`, `provenance_appended: false`, `activation_performed: false`, and the runtime
+write posture. With the opt-in, it validates the request, writes the grant store, appends mutation
+provenance, refreshes recovery inspection, and still does not activate capability use.
 
 ### `POST /grants/:id/revoke`
 
-Reserved for future durable grant revocation. In the MVP, this route returns
-`durable_grant_mutation_not_enabled` with the requested grant id and the same non-writing,
-non-activation flags as durable create denial. It does not mutate the grant store, append
-provenance, stop subscriptions, or repair recovery.
+Revokes a durable grant only when the server is started with `SOMA_RUNTIME_WRITES_ENABLED=1`.
+Without that opt-in, this route returns `durable_grant_mutation_not_enabled` with the requested
+grant id and the same non-writing, non-activation flags as durable create denial. With the opt-in,
+it writes terminal grant metadata, appends revocation provenance, refreshes recovery inspection, and
+does not repair recovery or activate/deactivate provider sessions outside the grant authority change.
 
 ### `POST /grants/mutation-previews`
 

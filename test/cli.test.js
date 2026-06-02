@@ -1171,54 +1171,105 @@ test("runCli grants review-preview validates preview JSON before request", async
   );
 });
 
-test("runCli grants create fails locally before any request", async () => {
-  await assert.rejects(
-    () => runCli(parseCli([
-      "node",
-      "soma",
-      "grants",
-      "create",
-      "--capability",
-      "desktop.inspect.focus",
-    ]), {
-      request: async () => {
-        throw new Error("request should not be called");
-      },
-    }),
-    (error) => {
-      assert.equal(error.code, "durable_grant_mutation_cli_not_enabled");
-      assert.equal(error.statusCode, 2);
-      assert.match(error.message, /grants create is reserved/);
-      assert.match(error.message, /grants preview-create/);
-      assert.match(error.message, /durable_grant_mutation_activation_policy\.md/);
-      return true;
+test("runCli grants create calls durable mutation route", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "create",
+    "--capability",
+    "desktop.inspect.focus",
+    "--provider",
+    "desktop-broker",
+    "--reason",
+    "Persist focused inspection authority.",
+    "--constraints-json",
+    "{\"include_text\":false}",
+    "--mutation-id",
+    "mutation-create",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        ok: true,
+        mutation_kind: "grant.created",
+        grant: { id: "grant-created", status: "active" },
+        receipt: {
+          mutation_id: "mutation-create",
+          mutation_kind: "grant.created",
+          grant_id: "grant-created",
+          status: "committed",
+        },
+        recovery: { ok: true, degraded: false },
+        durable: true,
+        grant_written: true,
+        provenance_appended: true,
+        activation_performed: false,
+      };
     },
-  );
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/grants");
+  assert.equal(captured.body.capability, "desktop.inspect.focus");
+  assert.equal(captured.body.provider, "desktop-broker");
+  assert.deepEqual(captured.body.constraints, { include_text: false });
+  assert.equal(captured.body.direct_user_action, true);
+  assert.equal(captured.body.mutation_id, "mutation-create");
+  assert.match(writes.join(""), /Grant mutation/);
+  assert.match(writes.join(""), /durable: yes/);
+  assert.match(writes.join(""), /provenance appended: yes/);
 });
 
-test("runCli grants revoke fails locally before any request", async () => {
-  await assert.rejects(
-    () => runCli(parseCli([
-      "node",
-      "soma",
-      "grants",
-      "revoke",
-      "grant-1",
-      "--reason",
-      "No longer needed.",
-    ]), {
-      request: async () => {
-        throw new Error("request should not be called");
-      },
-    }),
-    (error) => {
-      assert.equal(error.code, "durable_grant_mutation_cli_not_enabled");
-      assert.equal(error.statusCode, 2);
-      assert.match(error.message, /grants revoke is reserved/);
-      assert.match(error.message, /grants preview-revoke/);
-      return true;
+test("runCli grants revoke calls durable mutation route", async () => {
+  let captured;
+  const writes = [];
+  const code = await runCli(parseCli([
+    "node",
+    "soma",
+    "grants",
+    "revoke",
+    "grant-created",
+    "--reason",
+    "No longer needed.",
+    "--mutation-id",
+    "mutation-revoke",
+  ]), {
+    stdout: { write: (value) => writes.push(value) },
+    request: async (_baseUrl, method, path, body) => {
+      captured = { method, path, body };
+      return {
+        ok: true,
+        mutation_kind: "grant.revoked",
+        grant: { id: "grant-created", status: "revoked" },
+        receipt: {
+          mutation_id: "mutation-revoke",
+          mutation_kind: "grant.revoked",
+          grant_id: "grant-created",
+          status: "committed",
+        },
+        recovery: { ok: true, degraded: false },
+        durable: true,
+        grant_written: true,
+        provenance_appended: true,
+        activation_performed: false,
+      };
     },
-  );
+  });
+
+  assert.equal(code, 0);
+  assert.equal(captured.method, "POST");
+  assert.equal(captured.path, "/grants/grant-created/revoke");
+  assert.deepEqual(captured.body, {
+    actor: "user",
+    reason: "No longer needed.",
+    mutation_id: "mutation-revoke",
+  });
+  assert.match(writes.join(""), /mutation: grant\.revoked/);
 });
 
 test("runCli still throws non-preview HTTP failures", async () => {

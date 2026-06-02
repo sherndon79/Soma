@@ -11,15 +11,24 @@ export function runtimeWritePostureFromEnv(env = process.env) {
 
 export function resolveRuntimeWritePosture({ requested = false, source = "default" } = {}) {
   const requestedBoolean = Boolean(requested);
+  if (requestedBoolean) {
+    return {
+      runtime_writes_enabled: true,
+      durable_grant_mutation_enabled: true,
+      activation_supported: true,
+      requested: true,
+      source: String(source || "default"),
+      status: "enabled",
+      reason: "Runtime writes are explicitly enabled for durable grant mutation.",
+    };
+  }
   return {
     runtime_writes_enabled: false,
     durable_grant_mutation_enabled: false,
     activation_supported: false,
-    requested: requestedBoolean,
+    requested: false,
     source: String(source || "default"),
-    status: requestedBoolean ? "requested_but_disabled" : "disabled",
-    reason: requestedBoolean
-      ? "Runtime writes were requested, but durable grant mutation activation is not implemented."
-      : "Runtime writes are disabled by default.",
+    status: "disabled",
+    reason: "Runtime writes are disabled by default.",
   };
 }

@@ -16,6 +16,8 @@ const providerRegistry = await loadProviderRegistry();
 const {
   grantStore,
   grantRecoveryReport,
+  grantStorePath,
+  grantMutationProvenancePath,
 } = await loadGrantAuthority({
   grantMutationProvenancePath: process.env.SOMA_GRANT_MUTATION_PROVENANCE_PATH,
 });
@@ -31,6 +33,8 @@ const app = createApp({
   providerRegistry,
   grantStore,
   grantRecoveryReport,
+  grantStorePath,
+  grantMutationProvenancePath,
   runtimeWritePosture,
   moduleRegistry,
   runtimeProfiles,

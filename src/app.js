@@ -15,9 +15,25 @@ import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
 import { readScopedTextFile } from "./fileAccess.js";
 import { authorizeGrantUse } from "./grantAuthorization.js";
+import { createGrantMutationProvenanceFile } from "./grantMutationProvenanceFile.js";
+import { inspectGrantMutationRecovery } from "./grantMutationRecovery.js";
 import { previewGrantMutation } from "./grantMutationPreview.js";
 import { grantMutationPreviewReviewText } from "./grantMutationPreviewReviewSurface.js";
-import { createGrant, listGrants, revokeGrant, summarizeGrants } from "./grants.js";
+import {
+  createGrant,
+  listGrants,
+  loadGrantStore,
+  revokeGrant,
+  summarizeGrants,
+} from "./grants.js";
+import {
+  writeGrantCreateMutation,
+  writeGrantRevokeMutation,
+} from "./grantMutationStoreWriters.js";
+import {
+  createGrantStoreFileIo,
+  createGrantStoreLock,
+} from "./grantStoreFileAdapters.js";
 import { requireCapability } from "./harness.js";
 import {
   adoptSelfApplyModule,
@@ -80,6 +96,8 @@ export function createApp({
   capabilityProposals,
   grantStore,
   grantRecoveryReport,
+  grantStorePath,
+  grantMutationProvenancePath,
   runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
@@ -99,6 +117,8 @@ export function createApp({
     capabilityProposals,
     grantStore,
     grantRecoveryReport,
+    grantStorePath,
+    grantMutationProvenancePath,
     runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
@@ -120,6 +140,11 @@ export function createRequestHandler({
   capabilityProposals = new CapabilityProposalStore(),
   grantStore = { schema_version: 1, grants: [] },
   grantRecoveryReport = null,
+  grantStorePath = "",
+  grantMutationProvenancePath = "",
+  grantStoreIo = createGrantStoreFileIo(),
+  grantStoreLock = createGrantStoreLock(),
+  grantMutationProvenance = null,
   runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
@@ -138,6 +163,10 @@ export function createRequestHandler({
     throw new Error("createRequestHandler requires a modelClient.");
   }
   let activeModules = [];
+  const durableGrantProvenance = grantMutationProvenance
+    ?? (grantMutationProvenancePath
+      ? createGrantMutationProvenanceFile({ path: grantMutationProvenancePath })
+      : null);
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
@@ -1195,7 +1224,7 @@ export function createRequestHandler({
           schema_version: grantStore.schema_version ?? 1,
           examples_available: Array.isArray(grantStore.examples) && grantStore.examples.length > 0,
           file_backed: true,
-          writable: false,
+          writable: Boolean(writePosture.durable_grant_mutation_enabled),
           runtime_writes_enabled: writePosture.runtime_writes_enabled,
           runtime_write_posture: writePosture,
           activation_performed: false,
@@ -1212,22 +1241,117 @@ export function createRequestHandler({
       }
 
       if (req.method === "POST" && url.pathname === "/grants") {
-        writeJson(res, 403, durableGrantMutationNotEnabledResponse({
+        const body = await readJson(req);
+        const guard = durableGrantMutationGuard({
           route: "POST /grants",
           mutationKind: "grant.created",
           runtimeWritePosture: writePosture,
-        }));
+          grantStorePath,
+          durableGrantProvenance,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          grantStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "durable_grant_create_requires_user_actor",
+            message: "Durable grant creation requires an explicit user actor.",
+          });
+          return;
+        }
+        const result = await writeGrantCreateMutation({
+          grantStorePath,
+          mutationId: body?.mutation_id ?? `grant-create-${cryptoRandomId()}`,
+          io: grantStoreIo,
+          lock: grantStoreLock,
+          provenance: durableGrantProvenance,
+          input: {
+            ...body,
+            approved_by: actor,
+            direct_user_action: body?.approval_provenance_id ? body?.direct_user_action : true,
+          },
+          context: durableGrantMutationContext({ capabilityCatalog, providerRegistry }),
+        });
+        const refreshed = await refreshDurableGrantAuthority({
+          grantStorePath,
+          durableGrantProvenance,
+          fallbackStore: grantStore,
+        });
+        grantStore = refreshed.grantStore;
+        grantRecoveryReport = refreshed.grantRecoveryReport;
+        writeJson(res, result.ok ? 201 : statusCodeForDurableGrantMutationFailure(result), {
+          ...durableGrantMutationResponseFields({
+            result,
+            recoveryReport: grantRecoveryReport,
+            grantStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "durable_grants",
+        });
         return;
       }
 
       const durableGrantRevokeMatch = url.pathname.match(/^\/grants\/([^/]+)\/revoke$/);
       if (req.method === "POST" && durableGrantRevokeMatch) {
-        writeJson(res, 403, durableGrantMutationNotEnabledResponse({
+        const grantId = decodeURIComponent(durableGrantRevokeMatch[1] ?? "");
+        const body = await readJson(req);
+        const guard = durableGrantMutationGuard({
           route: "POST /grants/:id/revoke",
           mutationKind: "grant.revoked",
-          grantId: decodeURIComponent(durableGrantRevokeMatch[1] ?? ""),
+          grantId,
           runtimeWritePosture: writePosture,
-        }));
+          grantStorePath,
+          durableGrantProvenance,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          grantStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const actor = String(body?.actor ?? body?.revoked_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "durable_grant_revoke_requires_user_actor",
+            message: "Durable grant revocation requires an explicit user actor.",
+          });
+          return;
+        }
+        const result = await writeGrantRevokeMutation({
+          grantStorePath,
+          mutationId: body?.mutation_id ?? `grant-revoke-${cryptoRandomId()}`,
+          io: grantStoreIo,
+          lock: grantStoreLock,
+          provenance: durableGrantProvenance,
+          input: {
+            ...body,
+            id: grantId,
+            actor,
+          },
+          context: durableGrantMutationContext({ capabilityCatalog, providerRegistry }),
+        });
+        const refreshed = await refreshDurableGrantAuthority({
+          grantStorePath,
+          durableGrantProvenance,
+          fallbackStore: grantStore,
+        });
+        grantStore = refreshed.grantStore;
+        grantRecoveryReport = refreshed.grantRecoveryReport;
+        writeJson(res, result.ok ? 200 : statusCodeForDurableGrantMutationFailure(result), {
+          ...durableGrantMutationResponseFields({
+            result,
+            recoveryReport: grantRecoveryReport,
+            grantStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "durable_grants",
+        });
         return;
       }
 
@@ -2738,6 +2862,182 @@ function durableGrantMutationNotEnabledResponse({
     subscription_activated: false,
     model_delivery_performed: false,
     repair_performed: false,
+  };
+}
+
+function durableGrantMutationGuard({
+  route,
+  mutationKind,
+  grantId = "",
+  runtimeWritePosture,
+  grantStorePath,
+  durableGrantProvenance,
+  recoveryReport,
+  grantStore,
+} = {}) {
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  if (!writePosture.durable_grant_mutation_enabled) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: durableGrantMutationNotEnabledResponse({
+        route,
+        mutationKind,
+        grantId,
+        runtimeWritePosture: writePosture,
+      }),
+    };
+  }
+  if (!grantStorePath || !durableGrantProvenance) {
+    return {
+      ok: false,
+      statusCode: 503,
+      response: {
+        ok: false,
+        error: "durable_grant_mutation_writer_unavailable",
+        code: "durable_grant_mutation_writer_unavailable",
+        message: "Durable grant mutation requires a configured grant store path and provenance file.",
+        route,
+        mutation_kind: mutationKind,
+        grant_id: grantId,
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  if (recoveryReport?.degraded === true) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: {
+        ok: false,
+        error: "durable_grant_mutation_recovery_required",
+        code: "durable_grant_mutation_recovery_required",
+        message: "Durable grant mutation requires clean grant recovery before writing persistent authority.",
+        route,
+        mutation_kind: mutationKind,
+        grant_id: grantId,
+        recovery: summarizeGrantRecoveryInspection(recoveryReport, { grantStore, runtimeWritePosture: writePosture }),
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        grant_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+function durableGrantMutationContext({ capabilityCatalog, providerRegistry } = {}) {
+  return {
+    catalog: capabilityCatalog,
+    providerRegistry,
+    now: () => new Date().toISOString(),
+    createId: () => `grant-durable-${cryptoRandomId()}`,
+  };
+}
+
+async function refreshDurableGrantAuthority({
+  grantStorePath,
+  durableGrantProvenance,
+  fallbackStore,
+}) {
+  let nextGrantStore = fallbackStore;
+  let provenanceEvents = [];
+  try {
+    nextGrantStore = await loadGrantStore(grantStorePath);
+  } catch {
+    // The mutation result still carries the write failure receipt; keep the previous in-memory store.
+  }
+  try {
+    provenanceEvents = durableGrantProvenance ? await durableGrantProvenance.read() : [];
+  } catch (error) {
+    return {
+      grantStore: nextGrantStore,
+      grantRecoveryReport: unreadableDurableGrantProvenanceReport(nextGrantStore, error),
+    };
+  }
+  return {
+    grantStore: nextGrantStore,
+    grantRecoveryReport: inspectGrantMutationRecovery({
+      store: nextGrantStore,
+      provenanceEvents,
+    }),
+  };
+}
+
+function durableGrantMutationResponseFields({
+  result = {},
+  recoveryReport,
+  grantStore,
+  runtimeWritePosture,
+} = {}) {
+  const receipt = result.receipt ?? {};
+  return {
+    ok: Boolean(result.ok),
+    error: result.ok ? "" : result.code ?? "durable_grant_mutation_failed",
+    code: result.ok ? "" : result.code ?? "durable_grant_mutation_failed",
+    message: result.ok ? "Durable grant mutation committed." : result.message ?? "Durable grant mutation failed.",
+    mutation_kind: receipt.mutation_kind ?? "",
+    mutation_id: receipt.mutation_id ?? "",
+    grant: result.grant ?? null,
+    event: result.event ?? null,
+    receipt,
+    recovery: summarizeGrantRecoveryInspection(recoveryReport, { grantStore, runtimeWritePosture }),
+    runtime_writes_enabled: normalizeRuntimeWritePosture(runtimeWritePosture).runtime_writes_enabled,
+    runtime_write_posture: normalizeRuntimeWritePosture(runtimeWritePosture),
+    durable: Boolean(result.ok),
+    grant_written: Boolean(receipt.grant_store_committed),
+    file_written: Boolean(receipt.grant_store_committed),
+    provenance_appended: Boolean(receipt.provenance_appended),
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+    repair_performed: false,
+  };
+}
+
+function statusCodeForDurableGrantMutationFailure(result = {}) {
+  if (result.retryable) {
+    return 409;
+  }
+  const code = String(result.code ?? "");
+  if (code.startsWith("missing_") || code.startsWith("invalid_")
+    || code.startsWith("unknown_") || code.startsWith("unsupported_")
+    || code === "duplicate_grant_id") {
+    return 400;
+  }
+  if (result.degraded) {
+    return 500;
+  }
+  return 409;
+}
+
+function unreadableDurableGrantProvenanceReport(store = {}, error = {}) {
+  const grants = listGrants(store);
+  const findings = grants.map((grant) => ({
+    code: "grant_mutation_provenance_unreadable",
+    grant_id: grant.id,
+    status: grant.status,
+    capability: grant.capability,
+    provider: grant.provider,
+    scope: grant.scope,
+    authorizing_safe: false,
+    provenance_stage: String(error?.stage ?? "read"),
+    provenance_error_code: String(error?.code ?? "unknown"),
+  }));
+  return {
+    ok: findings.length === 0,
+    degraded: findings.length > 0,
+    grant_count: grants.length,
+    finding_count: findings.length,
+    findings,
   };
 }
 

@@ -2,6 +2,9 @@
 
 Review after adding read-only runtime write posture reporting.
 
+Superseded posture note: a later durability slice made `SOMA_RUNTIME_WRITES_ENABLED=1` activate
+durable grant create/revoke only. The review below describes the earlier read-only posture slice.
+
 ## Scope
 
 - `src/runtimeWritePosture.js`

@@ -178,7 +178,31 @@ export async function runCli(
   }
 
   if (command === "grants") {
-    if (subcommand === "create" || subcommand === "revoke" || subcommand === "supersede") {
+    if (subcommand === "create") {
+      const response = await request(
+        baseUrl,
+        "POST",
+        "/grants",
+        grantCreateRequestFromFlags(flags),
+      );
+      writeOutput(stdout, response, jsonOutput, grantMutationApplySummary(response));
+      return 0;
+    }
+    if (subcommand === "revoke") {
+      const grantId = rest[0];
+      if (!grantId) {
+        throw usageError("grants revoke requires a grant id.");
+      }
+      const response = await request(
+        baseUrl,
+        "POST",
+        `/grants/${encodeURIComponent(grantId)}/revoke`,
+        grantRevokeRequestFromFlags(flags),
+      );
+      writeOutput(stdout, response, jsonOutput, grantMutationApplySummary(response));
+      return 0;
+    }
+    if (subcommand === "supersede") {
       throw durableGrantMutationCliDisabledError(subcommand);
     }
     if (subcommand === "recovery") {
@@ -756,6 +780,14 @@ function grantPreviewCreateRequestFromFlags(flags) {
   };
 }
 
+function grantCreateRequestFromFlags(flags) {
+  const preview = grantPreviewCreateRequestFromFlags(flags);
+  return stripUndefined({
+    ...preview.input,
+    mutation_id: preview.mutation_id,
+  });
+}
+
 function grantPreviewRevokeRequestFromFlags(grantId, flags) {
   return {
     kind: "grant.revoked",
@@ -765,6 +797,14 @@ function grantPreviewRevokeRequestFromFlags(grantId, flags) {
       actor: flags.by ?? "user",
       reason: requiredFlag(flags.reason, "--reason", "grants preview-revoke"),
     },
+  };
+}
+
+function grantRevokeRequestFromFlags(flags) {
+  return {
+    actor: flags.by ?? "user",
+    reason: requiredFlag(flags.reason, "--reason", "grants revoke"),
+    mutation_id: flags["mutation-id"],
   };
 }
 
@@ -1397,6 +1437,25 @@ function grantMutationPreviewSummary(response) {
   return grantMutationPreviewReviewText(response);
 }
 
+function grantMutationApplySummary(response) {
+  const grant = response.grant ?? {};
+  const receipt = response.receipt ?? {};
+  const recovery = response.recovery ?? {};
+  return [
+    "Grant mutation",
+    `  ok: ${booleanText(response.ok)}`,
+    `  mutation: ${response.mutation_kind || receipt.mutation_kind || "unknown"}`,
+    `  grant: ${grant.id ?? receipt.grant_id ?? "unknown"}`,
+    `  status: ${grant.status ?? "unknown"}`,
+    `  durable: ${booleanText(response.durable)}`,
+    `  grant written: ${booleanText(response.grant_written)}`,
+    `  provenance appended: ${booleanText(response.provenance_appended)}`,
+    `  activation performed: ${booleanText(response.activation_performed)}`,
+    `  recovery ok: ${recovery.ok === null ? "not inspected" : booleanText(recovery.ok)}`,
+    `  recovery degraded: ${booleanText(recovery.degraded)}`,
+  ].join("\n");
+}
+
 function modelVisualAttachDryRunSummary(response) {
   const request = response.request ?? {};
   const futurePreview = response.future_provenance_preview ?? {};
@@ -1975,9 +2034,8 @@ Usage:
   soma grants review-preview --stdin [--json]
   soma grants preview-create --capability key --provider id --reason text [--scope session] [--constraints-json json] [--approval-provenance-id id] [--mutation-id id] [--json]
   soma grants preview-revoke grant-id --reason text [--by user] [--mutation-id id] [--json]
-  # reserved durable mutation commands fail locally until activation policy is satisfied:
-  # soma grants create
-  # soma grants revoke
+  soma grants create --capability key --provider id --reason text [--scope session] [--constraints-json json] [--approval-provenance-id id] [--mutation-id id] [--json]
+  soma grants revoke grant-id --reason text [--by user] [--mutation-id id] [--json]
   soma sensorium proposal-template --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium propose --capability key --provider id --topic topic --reason text --max-seconds n [--max-fps n] [--format jpeg|png] [--downsample WIDTHxHEIGHT] [--json]
   soma sensorium grant-create proposal-id [--by user] [--json]

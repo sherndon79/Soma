@@ -1,14 +1,17 @@
+import { fileURLToPath } from "node:url";
+
 import { createGrantMutationProvenanceFile } from "./grantMutationProvenanceFile.js";
 import { inspectGrantMutationRecovery } from "./grantMutationRecovery.js";
 import { loadGrantStore, normalizeGrantStore, publicGrant } from "./grants.js";
 
+const DEFAULT_GRANT_STORE_PATH = new URL("../config/grants.json", import.meta.url);
 const DEFAULT_GRANT_MUTATION_PROVENANCE_PATH = new URL(
   "../config/grant-mutations.ndjson",
   import.meta.url,
 );
 
 export async function loadGrantAuthority({
-  grantStorePath,
+  grantStorePath = DEFAULT_GRANT_STORE_PATH,
   grantMutationProvenancePath = DEFAULT_GRANT_MUTATION_PROVENANCE_PATH,
 } = {}) {
   const grantStore = await loadGrantStore(grantStorePath);
@@ -22,7 +25,8 @@ export async function loadGrantAuthority({
     return {
       grantStore: normalizedGrantStore,
       grantRecoveryReport: unreadableProvenanceRecoveryReport(normalizedGrantStore, error),
-      grantMutationProvenancePath: String(grantMutationProvenancePath ?? ""),
+      grantStorePath: pathString(grantStorePath),
+      grantMutationProvenancePath: pathString(grantMutationProvenancePath),
     };
   }
 
@@ -32,8 +36,16 @@ export async function loadGrantAuthority({
       store: normalizedGrantStore,
       provenanceEvents,
     }),
-    grantMutationProvenancePath: String(grantMutationProvenancePath ?? ""),
+    grantStorePath: pathString(grantStorePath),
+    grantMutationProvenancePath: pathString(grantMutationProvenancePath),
   };
+}
+
+function pathString(value) {
+  if (value instanceof URL) {
+    return fileURLToPath(value);
+  }
+  return String(value ?? "");
 }
 
 function unreadableProvenanceRecoveryReport(store, error) {

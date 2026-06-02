@@ -422,8 +422,10 @@ npm run cli -- grants list --json
 ```
 
 `GET /grants` does not create, approve, revoke, or activate capabilities.
-It also reports `runtime_writes_enabled` and `runtime_write_posture`. A requested runtime write
-configuration is visible as posture only; it does not enable durable grant mutation.
+It also reports `runtime_writes_enabled`, `writable`, and `runtime_write_posture`. By default
+runtime writes are disabled and the grant list is read-only. When the service is started with
+`SOMA_RUNTIME_WRITES_ENABLED=1`, `writable: true` means the durable create/revoke routes below may
+write the configured grant store.
 
 Grant recovery state is inspectable through the read-only HTTP route:
 
@@ -576,19 +578,39 @@ and after, inspects grant recovery, creates a dry-run preview, reviews the accep
 checks one refused review fixture. It refuses live execution unless
 `SOMA_GRANT_PREVIEW_REVIEW_SMOKE=1` is set and fails if the grant list changes.
 
-Future grant mutation command names are reserved. `grants create`, `grants revoke`, and
-`grants supersede` fail locally with `durable_grant_mutation_cli_not_enabled` before any HTTP
-request or filesystem write is attempted. Use `grants preview-create` or `grants preview-revoke`
-for dry-run review.
+Durable grant create and revoke are available only when the server is started with explicit runtime
+write opt-in:
 
-The reserved HTTP commit routes `POST /grants` and `POST /grants/:id/revoke` return
-`durable_grant_mutation_not_enabled`. The refusal includes runtime write posture and explicit
-non-write flags; it does not create, revoke, repair, activate, or append provenance.
+```bash
+SOMA_RUNTIME_WRITES_ENABLED=1 npm start
+```
 
-Durable writable grant mutation remains blocked until the grant lifecycle prerequisites are
-implemented: exact capability and provider validation, explicit user decision provenance, atomic
-grant-store writes, revocation auditability, migration behavior, and tests for create, revoke,
-supersede, expire, and failed-write behavior.
+The enabled posture sets `runtime_writes_enabled: true`,
+`durable_grant_mutation_enabled: true`, and `activation_supported: true`. Without that opt-in,
+`POST /grants`, `POST /grants/:id/revoke`, `grants create`, and `grants revoke` return
+`durable_grant_mutation_not_enabled` with explicit non-write flags.
+
+With the opt-in enabled, durable grant creation writes `config/grants.json` by default and appends
+metadata-only provenance to `config/grant-mutations.ndjson`:
+
+```bash
+npm run cli -- grants create \
+  --capability desktop.inspect.focus \
+  --provider soma.provider.desktop-broker \
+  --reason "Persist focused inspection authority." \
+  --constraints-json '{"include_text":false}'
+
+npm run cli -- grants revoke grant-id \
+  --reason "No longer needed."
+```
+
+Create/revoke require a user actor, validate capability/provider authority, reread the grant store
+under lock, write through the durable grant writer, append provenance, and refresh recovery
+inspection before returning. A degraded recovery report blocks further durable writes. Mutation does
+not activate capability use, start subscriptions, deliver model context, or repair recovery findings.
+`grants supersede` remains reserved and fails locally with
+`durable_grant_mutation_cli_not_enabled`.
+
 The activation boundary is captured in
 [Durable Grant Mutation Activation Policy](./concepts/drafts/durable_grant_mutation_activation_policy.md):
 preview and review surfaces are not commit surfaces, runtime writes require an explicit operator

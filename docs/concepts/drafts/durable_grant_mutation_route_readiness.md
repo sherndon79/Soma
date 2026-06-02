@@ -1,6 +1,6 @@
 # Durable Grant Mutation Route Readiness
 
-Status: readiness checklist, no writable grant routes or CLI mutation commands enabled
+Status: first create/revoke route slice implemented behind explicit runtime write opt-in
 
 This note defines the gate before Soma may expose durable grant mutation routes such as
 `POST /grants`, `POST /grants/:id/revoke`, `POST /grants/:id/supersede`, or matching CLI
@@ -16,20 +16,20 @@ Soma currently supports:
 - read-only grant recovery inspection through `GET /grants/recovery` and `soma grants recovery`
 - server startup composition of `config/grants.json` with append-only grant mutation provenance
 - recovery-aware authorization gates for grant-dependent capability use
+- durable `POST /grants` and `POST /grants/:id/revoke` when `SOMA_RUNTIME_WRITES_ENABLED=1`
+- CLI `grants create` and `grants revoke` wrappers over those HTTP routes
 - process-local Sensorium session grant create/revoke flows that do not mutate `config/grants.json`
 
 Soma does not currently support:
 
-- durable `POST /grants`
-- durable `POST /grants/:id/revoke`
-- durable grant mutation CLI commands
-- `runtime_writes_enabled: true`
 - grant repair routes
+- durable supersede or expire routes
 - grant mutation that implies capability activation
 
 ## Route Activation Gate
 
-Writable durable grant routes are not ready until all conditions below are true.
+The first writable durable grant routes are active only under `SOMA_RUNTIME_WRITES_ENABLED=1`.
+The conditions below are the invariants that must remain true for that slice.
 
 ### Authority Loading
 
@@ -128,7 +128,7 @@ After any durable mutation attempt:
 
 ### CLI Boundary
 
-CLI mutation commands may be added only as wrappers over the HTTP routes:
+CLI mutation commands are wrappers over the HTTP routes:
 
 ```bash
 npm run cli -- grants create --proposal proposal-id --provider provider-id
@@ -145,7 +145,7 @@ The CLI must:
 
 ## Tests Required For Route Activation
 
-Before any route is enabled, tests must prove:
+The activation slice must keep tests proving:
 
 - creation route rejects unknown capability and unsupported provider
 - creation route rejects missing user actor, missing reason, and malformed constraints

@@ -1,6 +1,6 @@
 # Durable Grant Mutation Activation Policy
 
-Status: policy draft, no writable grant routes or CLI mutation commands enabled
+Status: first activation slice implemented behind explicit runtime write opt-in
 
 This note defines the policy boundary for turning durable grant mutation from internal scaffolding
 and preview surfaces into writable runtime authority. It is intentionally shorter than the route
@@ -9,16 +9,18 @@ the boundary, what must already be true, and what must remain separate.
 
 ## Current Boundary
 
-Soma currently supports read-only grant inspection, recovery inspection, startup recovery loading,
-internal durable writer composition tests, and dry-run create/revoke previews. None of those surfaces
-write authority at runtime.
+Soma supports read-only grant inspection, recovery inspection, startup recovery loading, internal
+durable writer composition, dry-run create/revoke previews, and a first writable create/revoke slice
+behind explicit operator runtime write opt-in.
 
 The active boundary remains:
 
-- `runtime_writes_enabled: false`
-- no durable `POST /grants`
-- no durable `POST /grants/:id/revoke`
-- no grant mutation CLI commands such as `grants create` or `grants revoke`
+- default posture is `runtime_writes_enabled: false`
+- `SOMA_RUNTIME_WRITES_ENABLED=1` sets `runtime_writes_enabled: true`,
+  `durable_grant_mutation_enabled: true`, and `activation_supported: true`
+- `POST /grants` creates durable grants only under the enabled posture
+- `POST /grants/:id/revoke` revokes durable grants only under the enabled posture
+- CLI `grants create` and `grants revoke` are HTTP wrappers over those routes
 - no grant repair routes
 - no capability activation as a side effect of grant mutation
 
@@ -47,13 +49,14 @@ Preview and review surfaces are not commit surfaces.
 - Review text explains a planned mutation; it does not authorize a durable mutation.
 - `--json` output is inspection data; it is not a replayable write receipt.
 
-A future durable commit surface must have a different route name, different tests, explicit runtime
-write enablement, and durable writer delegation. It must not inherit preview-route HTTP exception
-handling or preview-only response semantics by accident.
+The durable commit surfaces use the distinct active route names `POST /grants` and
+`POST /grants/:id/revoke`, require explicit runtime write enablement, and delegate to the durable
+writer. They must not inherit preview-route HTTP exception handling or preview-only response
+semantics by accident.
 
 ## Preconditions
 
-Before enabling durable mutation, all of the following must be true:
+For the enabled create/revoke slice, all of the following must remain true:
 
 - startup authority loading pairs the grant store with durable mutation provenance
 - policy gateways fail closed on degraded recovery for matching grants
@@ -69,9 +72,9 @@ Before enabling durable mutation, all of the following must be true:
 
 ## Operator Controls
 
-The first activation mechanism should require an explicit runtime control such as
-`runtime_writes_enabled: true` plus an operator-facing configuration flag. The control should be
-visible in status, grant inspection, and mutation responses.
+The first activation mechanism requires `SOMA_RUNTIME_WRITES_ENABLED=1`, which resolves to
+`runtime_writes_enabled: true` and `durable_grant_mutation_enabled: true`. The control is visible in
+health, grant inspection, and mutation responses.
 
 Repair must remain a separate operator-controlled surface. A repair route or command may be added
 only after recovery finding classes have dedicated repair plans. Preview, create, revoke, and repair
@@ -79,7 +82,7 @@ must remain separate workflows so a failed write cannot silently repair or broad
 
 ## First Activation Slice
 
-The first writable slice should be limited to:
+The first writable slice is limited to:
 
 - durable create
 - durable revoke

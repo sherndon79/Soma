@@ -206,9 +206,7 @@ Writable grant mutation is not ready until tests prove:
 
 These tests should be added before flipping `runtime_writes_enabled` to `true`.
 
-## Reserved Future API
-
-These route names are reserved for future design. They are not implemented.
+## Durable API
 
 ```text
 POST /grants
@@ -216,16 +214,19 @@ POST /grants/:id/revoke
 POST /grants/:id/supersede
 ```
 
-Expected future CLI shape:
+`POST /grants` and `POST /grants/:id/revoke` are implemented for durable create/revoke only when
+runtime writes are explicitly enabled with `SOMA_RUNTIME_WRITES_ENABLED=1`. Without that opt-in,
+they return durable mutation disabled refusals. `POST /grants/:id/supersede` remains reserved.
+
+CLI shape:
 
 ```bash
-npm run cli -- grants create --proposal proposal-id --provider provider-id
+npm run cli -- grants create --capability capability-key --provider provider-id --reason "Reason"
 npm run cli -- grants revoke grant-id --reason "No longer needed"
 npm run cli -- grants supersede grant-id --replacement replacement-grant-id --reason "Narrower grant approved"
 ```
 
-Reserved names should not be implemented until the policy, provenance, review, and failure-mode
-requirements in this document are satisfied.
+`grants create` and `grants revoke` call the HTTP routes. `grants supersede` remains reserved.
 
 They should also satisfy the route-readiness checklist in
 [Durable Grant Mutation Route Readiness](./durable_grant_mutation_route_readiness.md).

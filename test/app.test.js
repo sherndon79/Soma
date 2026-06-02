@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -366,7 +366,7 @@ test("GET /health returns ok", async () => {
   assert.equal(response.body.runtime_write_posture.activation_supported, false);
 });
 
-test("GET /health reports requested runtime writes as disabled posture", async () => {
+test("GET /health reports explicitly enabled runtime writes posture", async () => {
   const response = await invoke({
     method: "GET",
     url: "/health",
@@ -377,11 +377,11 @@ test("GET /health reports requested runtime writes as disabled posture", async (
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.runtime_writes_enabled, false);
-  assert.equal(response.body.runtime_write_posture.status, "requested_but_disabled");
+  assert.equal(response.body.runtime_writes_enabled, true);
+  assert.equal(response.body.runtime_write_posture.status, "enabled");
   assert.equal(response.body.runtime_write_posture.requested, true);
   assert.equal(response.body.runtime_write_posture.source, "test");
-  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
+  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, true);
 });
 
 test("GET /harness returns active harness", async () => {
@@ -1036,10 +1036,6 @@ test("POST /grants returns explicit durable mutation disabled refusal without wr
     url: "/grants",
     harness: allowedHarness,
     grantStore,
-    runtimeWritePosture: {
-      requested: true,
-      source: "test",
-    },
     body: {
       capability: "desktop.inspect.focus",
       provider: "desktop-broker",
@@ -1054,7 +1050,7 @@ test("POST /grants returns explicit durable mutation disabled refusal without wr
   assert.equal(response.body.route, "POST /grants");
   assert.equal(response.body.mutation_kind, "grant.created");
   assert.equal(response.body.runtime_writes_enabled, false);
-  assert.equal(response.body.runtime_write_posture.status, "requested_but_disabled");
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
   assert.equal(response.body.activation_policy, "docs/concepts/drafts/durable_grant_mutation_activation_policy.md");
   assert.equal(response.body.durable, false);
   assert.equal(response.body.grant_written, false);
@@ -1064,6 +1060,203 @@ test("POST /grants returns explicit durable mutation disabled refusal without wr
   assert.equal(response.body.model_delivery_performed, false);
   assert.equal(response.body.repair_performed, false);
   assert.equal(grantStore.grants.length, 2);
+});
+
+test("POST /grants creates a durable grant and appends mutation provenance when explicitly enabled", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-grants-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/grants",
+      body: {
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: { include_text: false },
+        actor: "user",
+        reason: "Persist focused inspection authority for this session.",
+        mutation_id: "mutation-durable-create",
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.ok, true);
+    assert.match(response.body.grant.id, /^grant-durable-[0-9a-f-]{36}$/);
+    assert.equal(response.body.grant.status, "active");
+    assert.equal(response.body.receipt.status, "committed");
+    assert.equal(response.body.receipt.grant_store_committed, true);
+    assert.equal(response.body.provenance_appended, true);
+    assert.equal(response.body.durable, true);
+    assert.equal(response.body.grant_written, true);
+    assert.equal(response.body.activation_performed, false);
+    assert.equal(response.body.recovery.ok, true);
+
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.equal(persisted.grants.length, 1);
+    assert.equal(persisted.grants[0].capability, "desktop.inspect.focus");
+    const provenanceLines = (await readFile(provenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 1);
+    assert.equal(JSON.parse(provenanceLines[0]).event_type, "grant.created");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/grants?status=active",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.writable, true);
+    assert.equal(response.body.runtime_writes_enabled, true);
+    assert.equal(response.body.grants.length, 1);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("POST /grants/:id/revoke durably revokes an active grant and blocks authorization", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-grants-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    const activeGrant = {
+      id: "grant-durable-focus",
+      status: "active",
+      capability: "desktop.inspect.focus",
+      provider: "desktop-broker",
+      scope: "session",
+      constraints: { include_text: false },
+      approved_by: "user",
+      approval_provenance_id: "approval-1",
+      reason: "Persisted focus inspection.",
+      created_at: "2026-06-01T12:00:00.000Z",
+      review_required: false,
+      revoked_at: null,
+      revoked_by: "",
+      revocation_reason: "",
+      replacement_grant_id: "",
+      activation_performed: false,
+    };
+    await writeFile(grantStorePath, `${JSON.stringify({
+      schema_version: 1,
+      grants: [activeGrant],
+      examples: [],
+    }, null, 2)}\n`);
+    await writeFile(provenancePath, `${JSON.stringify({
+      event_type: "grant.created",
+      grant_id: activeGrant.id,
+      capability: activeGrant.capability,
+      provider: activeGrant.provider,
+      scope: activeGrant.scope,
+      actor: "user",
+      reason: activeGrant.reason,
+      timestamp: activeGrant.created_at,
+      source_proposal_id: "",
+      approval_provenance_id: "approval-1",
+      replacement_grant_id: "",
+      activation_performed: false,
+    })}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [activeGrant], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 1, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/grants/grant-durable-focus/revoke",
+      body: {
+        actor: "user",
+        reason: "No longer needed.",
+        mutation_id: "mutation-durable-revoke",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.ok, true);
+    assert.equal(response.body.grant.status, "revoked");
+    assert.equal(response.body.grant.revoked_by, "user");
+    assert.equal(response.body.grant.revocation_reason, "No longer needed.");
+    assert.equal(response.body.receipt.status, "committed");
+    assert.equal(response.body.durable, true);
+    assert.equal(response.body.grant_written, true);
+    assert.equal(response.body.provenance_appended, true);
+    assert.equal(response.body.activation_performed, false);
+    assert.equal(response.body.recovery.ok, true);
+
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.equal(persisted.grants[0].status, "revoked");
+    const provenanceLines = (await readFile(provenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 2);
+    assert.equal(JSON.parse(provenanceLines[1]).event_type, "grant.revoked");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/focus",
+      body: {
+        grant_id: "grant-durable-focus",
+        provider: "desktop-broker",
+        scope: "session",
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "desktop_focus_grant_not_authorized");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("durable grant mutation refuses degraded recovery before writing", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-grants-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const response = await invoke({
+      method: "POST",
+      url: "/grants",
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: {
+        ok: false,
+        degraded: true,
+        grant_count: 0,
+        finding_count: 1,
+        findings: [{ code: "grant_store_recovery_required", authorizing_safe: false }],
+      },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+      body: {
+        capability: "desktop.inspect.focus",
+        provider: "desktop-broker",
+        scope: "session",
+        constraints: {},
+        actor: "user",
+        reason: "Should not write while degraded.",
+      },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "durable_grant_mutation_recovery_required");
+    assert.equal(response.body.grant_written, false);
+    assert.equal(response.body.provenance_appended, false);
+    assert.equal((await readFile(grantStorePath, "utf8")).includes("desktop.inspect.focus"), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("POST /grants/:id/revoke returns explicit durable mutation disabled refusal without writing", async () => {
@@ -3886,6 +4079,8 @@ async function invoke({
   },
   grantStore: grants,
   grantRecoveryReport,
+  grantStorePath,
+  grantMutationProvenancePath,
   runtimeWritePosture,
   body,
 } = {}) {
@@ -3897,6 +4092,8 @@ async function invoke({
     modelClient,
     grantStore: grants,
     grantRecoveryReport,
+    grantStorePath,
+    grantMutationProvenancePath,
     runtimeWritePosture,
   }), {
     method,
@@ -6202,6 +6399,8 @@ function makeHandler({
   },
   grantStore: grants,
   grantRecoveryReport,
+  grantStorePath,
+  grantMutationProvenancePath,
   runtimeWritePosture,
   desktopDisclosureRegistry,
   desktopNotificationAdapter = {
@@ -6231,6 +6430,8 @@ function makeHandler({
     modelClient,
     grantStore: grants,
     grantRecoveryReport,
+    grantStorePath,
+    grantMutationProvenancePath,
     runtimeWritePosture,
     desktopDisclosureRegistry,
     desktopNotificationAdapter,

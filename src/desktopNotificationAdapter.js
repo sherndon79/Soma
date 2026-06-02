@@ -2,16 +2,21 @@ import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { sanitizeDisplayText } from "./textSanitization.js";
 
 export const DESKTOP_NOTIFICATION_TITLE = "Soma: capability requested";
 export const DESKTOP_NOTIFICATION_REASON_MAX_CHARS = 160;
+export const NOTIFICATION_BROKER_DEFAULT_BINARY = fileURLToPath(
+  new URL("../target/debug/soma-notification-broker", import.meta.url),
+);
 const ACTIONABLE_RISK_CLASSES = new Set(["low", "sensitive"]);
 
 export function createDesktopNotificationAdapter({
   enabled = isDesktopNotificationEnabled(),
   command = process.env.SOMA_DESKTOP_NOTIFY_COMMAND || "notify-send",
+  actionCommand = process.env.SOMA_NOTIFICATION_BROKER || NOTIFICATION_BROKER_DEFAULT_BINARY,
   actionBaseUrl = process.env.SOMA_DESKTOP_NOTIFY_ACTION_URL ?? process.env.SOMA_URL ?? "http://127.0.0.1:8765",
   timeoutMs = 1000,
   execFileFn = execFile,
@@ -33,13 +38,13 @@ export function createDesktopNotificationAdapter({
       const notification = buildCapabilityProposalDesktopNotification(proposal, context);
       if (notification.actionable) {
         try {
-          if (!commandExistsFn(command)) {
-            const error = new Error(`Command ${command} is not available.`);
+          if (!commandExistsFn(actionCommand)) {
+            const error = new Error(`Command ${actionCommand} is not available.`);
             error.code = "ENOENT";
             throw error;
           }
           startDesktopNotificationActionWaiter({
-            command,
+            command: actionCommand,
             args: notification.args,
             spawnFn,
             fetchFn,
@@ -53,16 +58,16 @@ export function createDesktopNotificationAdapter({
             proposal,
             context,
             notification,
-            command,
+            command: actionCommand,
           });
         } catch (error) {
           return desktopNotificationResult({
             status: "failed",
-            reason: error?.code === "ENOENT" ? "notify_send_unavailable" : "notify_send_failed",
+            reason: error?.code === "ENOENT" ? "notification_broker_unavailable" : "notification_broker_failed",
             proposal,
             context,
             notification,
-            command,
+            command: actionCommand,
             error,
           });
         }
@@ -112,14 +117,14 @@ export function buildCapabilityProposalDesktopNotification(proposal = {}, contex
   ].join("\n");
   const args = actionable
     ? [
-        "--expire-time=0",
-        "-A",
-        "approve=Approve",
-        "-A",
-        "deny=Deny",
-        "--",
+        "--summary",
         DESKTOP_NOTIFICATION_TITLE,
+        "--body",
         body,
+        "--action",
+        "approve=Approve",
+        "--action",
+        "deny=Deny",
       ]
     : [
         "--",

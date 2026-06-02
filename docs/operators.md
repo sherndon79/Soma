@@ -260,17 +260,28 @@ proposal:
 SOMA_DESKTOP_NOTIFY=1 npm start
 ```
 
-The push adapter is off by default. When enabled, it shells out to `notify-send` with a fixed
-Soma title and a bounded body containing the capability key, catalog risk class, sanitized/truncated
-reason, and review instructions. For low and sensitive capabilities, the notification includes
-fixed `Approve` and `Deny` buttons; clicking one calls the existing proposal decision route with
-`decided_by=user` and no free-form feedback, but only when the catalog marks the capability
-explicitly reversible. High-risk, irreversible, and unknown-reversibility capabilities are
-review-only and do not get one-click approval buttons. Failed or missing `notify-send` is
-non-fatal; proposal creation still succeeds and provenance records `desktop.notification.emitted`
-with `emitted`, `skipped`, or `failed` status. Desktop notification actions never create grants,
-activate capabilities, or add a
-catalog capability.
+The push adapter is off by default. When enabled, it emits a fixed Soma title and a bounded body
+containing the capability key, catalog risk class, sanitized/truncated reason, and review
+instructions. Review-only notifications use `notify-send`.
+
+For low and sensitive capabilities, the notification includes fixed `Approve` and `Deny` buttons
+only when the catalog marks the capability explicitly reversible. Build the Rust notification
+broker first so the D-Bus connection that creates an actionable notification remains alive to
+receive the clicked action:
+
+```bash
+npm run notification-broker:build
+SOMA_DESKTOP_NOTIFY=1 npm start
+```
+
+Override the actionable helper path with
+`SOMA_NOTIFICATION_BROKER=/path/to/soma-notification-broker`. Clicking an action calls the existing
+proposal decision route with `decided_by=user` and no free-form feedback. High-risk, irreversible,
+and unknown-reversibility capabilities are review-only and do not get one-click approval buttons.
+Failed or missing notification helpers are non-fatal; proposal creation still succeeds and
+provenance records `desktop.notification.emitted` with `emitted`, `skipped`, or `failed` status.
+Desktop notification actions never create grants, activate capabilities, or add a catalog
+capability.
 
 ## Revoke Desktop Inspection
 

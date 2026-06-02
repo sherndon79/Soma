@@ -255,10 +255,10 @@ Current implementation status:
   paths.
 - Optional desktop push notifications are off by default and can be enabled with
   `SOMA_DESKTOP_NOTIFY=1`. They use a fixed Soma title and bounded structured body via
-  `notify-send`; failures are non-fatal. Low and sensitive proposals get fixed Approve/Deny
-  actions only when the catalog marks the capability explicitly reversible; high-risk,
-  irreversible, or unknown-reversibility proposals are review-only and route to the deliberate
-  CLI/API flow.
+  `notify-send` for review-only notifications; failures are non-fatal. Low and sensitive
+  proposals get fixed Approve/Deny actions through `soma-notification-broker` only when the
+  catalog marks the capability explicitly reversible; high-risk, irreversible, or
+  unknown-reversibility proposals are review-only and route to the deliberate CLI/API flow.
 - `npm run cli -- proposals list` prints a concise proposal summary.
 - `npm run cli -- notifications` prints pending proposal-review notifications.
 - `npm run cli -- proposals show proposal-id` prints full review context.

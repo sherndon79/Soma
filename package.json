@@ -14,6 +14,7 @@
     "grant-preview:smoke": "node scripts/grant-preview-review-smoke.js",
     "graphical-node:smoke": "node scripts/graphical-node-smoke.js",
     "moonlight-broker:build": "cargo build -p soma-moonlight-broker",
+    "notification-broker:build": "cargo build -p soma-notification-broker",
     "sensorium:smoke": "node scripts/sensorium-live-smoke.js",
     "start": "node src/server.js",
     "test": "node --test"

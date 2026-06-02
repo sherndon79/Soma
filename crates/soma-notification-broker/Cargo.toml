@@ -1,0 +1,13 @@
+[package]
+name = "soma-notification-broker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "soma-notification-broker"
+path = "src/main.rs"
+
+[dependencies]
+notify-rust = "4"

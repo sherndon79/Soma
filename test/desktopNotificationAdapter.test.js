@@ -8,6 +8,7 @@ import {
   createDesktopNotificationProvenanceEvent,
   DESKTOP_NOTIFICATION_REASON_MAX_CHARS,
   DESKTOP_NOTIFICATION_TITLE,
+  NOTIFICATION_BROKER_DEFAULT_BINARY,
   sanitizeNotificationText,
 } from "../src/desktopNotificationAdapter.js";
 
@@ -33,11 +34,12 @@ test("desktop notification adapter is disabled by default and does not invoke no
   assert.deepEqual(calls, []);
 });
 
-test("desktop notification adapter invokes notify-send with fixed title and bounded body", async () => {
+test("desktop notification adapter invokes notification broker for actionable approvals", async () => {
   const calls = [];
   const adapter = createDesktopNotificationAdapter({
     enabled: true,
     command: "/usr/bin/notify-send",
+    actionCommand: "/usr/bin/soma-notification-broker",
     spawnFn(command, args, options) {
       calls.push({ command, args, options });
       return fakeChild();
@@ -54,27 +56,56 @@ test("desktop notification adapter invokes notify-send with fixed title and boun
 
   assert.equal(result.status, "emitted");
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, "/usr/bin/notify-send");
+  assert.equal(calls[0].command, "/usr/bin/soma-notification-broker");
   assert.deepEqual(calls[0].args.slice(0, 6), [
-    "--expire-time=0",
-    "-A",
+    "--summary",
+    DESKTOP_NOTIFICATION_TITLE,
+    "--body",
+    calls[0].args[3],
+    "--action",
     "approve=Approve",
-    "-A",
-    "deny=Deny",
-    "--",
   ]);
-  assert.equal(calls[0].args[6], DESKTOP_NOTIFICATION_TITLE);
-  assert.match(calls[0].args[7], /capability: desktop\.inspect\.focus/);
-  assert.match(calls[0].args[7], /risk_class: sensitive/);
-  assert.match(calls[0].args[7], /approve: soma proposals approve proposal-focus --scope session/);
-  assert.equal(calls[0].args[7].includes("\u0000"), false);
-  assert.equal(calls[0].args[7].includes("\u001b"), false);
+  assert.deepEqual(calls[0].args.slice(6, 8), [
+    "--action",
+    "deny=Deny",
+  ]);
+  assert.match(calls[0].args[3], /capability: desktop\.inspect\.focus/);
+  assert.match(calls[0].args[3], /risk_class: sensitive/);
+  assert.match(calls[0].args[3], /approve: soma proposals approve proposal-focus --scope session/);
+  assert.equal(calls[0].args[3].includes("\u0000"), false);
+  assert.equal(calls[0].args[3].includes("\u001b"), false);
   assert.equal(result.action_waiter_started, true);
   assert.equal(result.reason_preview.length, DESKTOP_NOTIFICATION_REASON_MAX_CHARS);
   assert.equal(result.reason_truncated, true);
 });
 
-test("desktop notification adapter treats missing notify-send and command failure as non-fatal", async () => {
+test("desktop notification adapter invokes notify-send for review-only notifications", async () => {
+  const calls = [];
+  const adapter = createDesktopNotificationAdapter({
+    enabled: true,
+    command: "/usr/bin/notify-send",
+    execFileFn(command, args, options, callback) {
+      calls.push({ command, args, options });
+      callback();
+    },
+  });
+
+  const result = await adapter.emitCapabilityProposal({
+    ...proposalFixture(),
+    capability: "capability.high",
+  }, {
+    catalog: highCatalogFixture(),
+  });
+
+  assert.equal(result.status, "emitted");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "/usr/bin/notify-send");
+  assert.deepEqual(calls[0].args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, calls[0].args[2]]);
+  assert.match(calls[0].args[2], /review required: soma proposals show proposal-focus/);
+  assert.equal(result.action_waiter_started, false);
+});
+
+test("desktop notification adapter treats missing notify-send and command failure as non-fatal for review-only notifications", async () => {
   for (const [name, error, expectedReason] of [
     ["missing", Object.assign(new Error("spawn notify-send ENOENT"), { code: "ENOENT" }), "notify_send_unavailable"],
     ["failed", Object.assign(new Error("notify failed"), { code: "EFAIL" }), "notify_send_failed"],
@@ -99,11 +130,11 @@ test("desktop notification adapter treats missing notify-send and command failur
   }
 });
 
-test("desktop notification adapter records missing notify-send before starting action waiter", async () => {
+test("desktop notification adapter records missing broker before starting action waiter", async () => {
   const calls = [];
   const adapter = createDesktopNotificationAdapter({
     enabled: true,
-    command: "notify-send-missing",
+    actionCommand: "soma-notification-broker-missing",
     commandExistsFn: () => false,
     spawnFn(command, args, options) {
       calls.push({ command, args, options });
@@ -116,7 +147,7 @@ test("desktop notification adapter records missing notify-send before starting a
   });
 
   assert.equal(result.status, "failed");
-  assert.equal(result.reason, "notify_send_unavailable");
+  assert.equal(result.reason, "notification_broker_unavailable");
   assert.deepEqual(calls, []);
 });
 
@@ -196,7 +227,7 @@ test("high-risk desktop notifications do not include one-click approval actions"
 
   assert.equal(notification.actionable, false);
   assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
-  assert.equal(notification.args.includes("--expire-time=0"), false);
+  assert.equal(notification.args.includes("--summary"), false);
   assert.equal(notification.args.includes("approve=Approve"), false);
   assert.equal(notification.args.includes("deny=Deny"), false);
   assert.match(notification.body, /review required: soma proposals show proposal-focus/);
@@ -213,7 +244,7 @@ test("irreversible desktop notifications do not include one-click approval actio
   assert.equal(notification.risk_class, "sensitive");
   assert.equal(notification.actionable, false);
   assert.deepEqual(notification.args.slice(0, 3), ["--", DESKTOP_NOTIFICATION_TITLE, notification.body]);
-  assert.equal(notification.args.includes("--expire-time=0"), false);
+  assert.equal(notification.args.includes("--summary"), false);
   assert.equal(notification.args.includes("approve=Approve"), false);
   assert.equal(notification.args.includes("deny=Deny"), false);
   assert.match(notification.body, /review required: soma proposals show proposal-focus/);
@@ -268,6 +299,10 @@ test("desktop notification provenance is non-authorizing", () => {
   assert.equal(event.approval_performed, false);
   assert.equal(event.activation_performed, false);
   assert.equal(event.grant_written, false);
+});
+
+test("notification broker default binary points at cargo target", () => {
+  assert.match(NOTIFICATION_BROKER_DEFAULT_BINARY, /target\/debug\/soma-notification-broker$/);
 });
 
 test("sanitizeNotificationText strips controls, collapses whitespace, and truncates", () => {

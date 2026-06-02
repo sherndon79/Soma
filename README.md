@@ -63,6 +63,17 @@ with `SOMA_DESKTOP_BROKER=/path/to/soma-desktop-broker`. The AT-SPI probe is rea
 bounded participant, root-object, and shallow child role/count metadata; it does not extract child
 names, text content, capture screenshots, or perform desktop actions.
 
+Actionable desktop approval notifications use a separate Rust helper so the same D-Bus connection
+that creates the notification remains alive to receive the clicked action:
+
+```bash
+npm run notification-broker:build
+SOMA_DESKTOP_NOTIFY=1 npm start
+```
+
+Override the helper path with `SOMA_NOTIFICATION_BROKER=/path/to/soma-notification-broker`.
+Review-only notifications still use `notify-send`.
+
 The current desktop inspection output contract is documented in
 [docs/schemas/desktop-inspection-result.schema.json](./docs/schemas/desktop-inspection-result.schema.json).
 Future recursive traversal is expected to depend on an in-process

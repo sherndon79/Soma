@@ -174,6 +174,19 @@ npm run cli -- desktop focus grant-runtime-id
 
 This writes only the in-memory runtime grant for the current process. It does not enable durable
 `POST /grants`, and proposal approval alone still does not activate focus inspection.
+To persist an approved proposal as durable authority, start Soma with
+`SOMA_RUNTIME_WRITES_ENABLED=1` and call the explicit bridge instead:
+
+```bash
+curl -X POST http://127.0.0.1:8765/capability-proposals/proposal-id/durable-grant \
+  -H 'content-type: application/json' \
+  -d '{"actor":"user"}'
+```
+
+The bridge derives capability, provider, approved scope, constraints, reason, `source_proposal_id`,
+and `approval_provenance_id` from the approved proposal. It requires a user-decided approved
+proposal, rejects capability-design proposals, delegates to the durable grant writer, and remains
+non-activating.
 
 ## Inspect Provenance
 
@@ -610,6 +623,18 @@ inspection before returning. A degraded recovery report blocks further durable w
 not activate capability use, start subscriptions, deliver model context, or repair recovery findings.
 `grants supersede` remains reserved and fails locally with
 `durable_grant_mutation_cli_not_enabled`.
+
+An approved proposal can also be persisted without re-specifying the grant body:
+
+```bash
+curl -X POST http://127.0.0.1:8765/capability-proposals/proposal-id/durable-grant \
+  -H 'content-type: application/json' \
+  -d '{"actor":"user","mutation_id":"persist-proposal-1"}'
+```
+
+This route is explicit durable create, not proposal approval. It refuses pending proposals,
+non-user approvals, capability-design proposals, degraded recovery, disabled runtime-write posture,
+and repeat persistence of the same `source_proposal_id`.
 
 The activation boundary is captured in
 [Durable Grant Mutation Activation Policy](./concepts/drafts/durable_grant_mutation_activation_policy.md):

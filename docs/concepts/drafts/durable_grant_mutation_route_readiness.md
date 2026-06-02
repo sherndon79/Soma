@@ -17,6 +17,8 @@ Soma currently supports:
 - server startup composition of `config/grants.json` with append-only grant mutation provenance
 - recovery-aware authorization gates for grant-dependent capability use
 - durable `POST /grants` and `POST /grants/:id/revoke` when `SOMA_RUNTIME_WRITES_ENABLED=1`
+- explicit approved-proposal persistence through `POST /capability-proposals/:id/durable-grant`
+  under the same enabled posture
 - CLI `grants create` and `grants revoke` wrappers over those HTTP routes
 - process-local Sensorium session grant create/revoke flows that do not mutate `config/grants.json`
 
@@ -45,6 +47,8 @@ The first durable route slice should expose only the smallest useful pair:
 
 - `POST /grants` for durable grant creation
 - `POST /grants/:id/revoke` for durable grant revocation
+- `POST /capability-proposals/:id/durable-grant` as an explicit approved-proposal bridge that
+  delegates to durable creation without making proposal approval itself persistent authority
 
 Supersede and expire should remain internal or deferred until create/revoke prove the durable
 boundary. Revocation is a safety/control path and should stay available even when capability use is
@@ -131,7 +135,7 @@ After any durable mutation attempt:
 CLI mutation commands are wrappers over the HTTP routes:
 
 ```bash
-npm run cli -- grants create --proposal proposal-id --provider provider-id
+npm run cli -- grants create --capability capability-key --provider provider-id --reason "Reason"
 npm run cli -- grants revoke grant-id --reason "No longer needed"
 ```
 

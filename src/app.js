@@ -1559,6 +1559,76 @@ export function createRequestHandler({
         return;
       }
 
+      const durableProposalGrantMatch = url.pathname.match(/^\/capability-proposals\/([^/]+)\/durable-grant$/);
+      if (req.method === "POST" && durableProposalGrantMatch) {
+        const [, proposalId] = durableProposalGrantMatch;
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? body?.approved_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "durable_proposal_grant_create_requires_user_actor",
+            message: "Durable proposal grant creation requires an explicit user actor.",
+          });
+          return;
+        }
+
+        const proposal = capabilityProposals.find(proposalId);
+        const guard = durableGrantMutationGuard({
+          route: "POST /capability-proposals/:id/durable-grant",
+          mutationKind: "grant.created",
+          runtimeWritePosture: writePosture,
+          grantStorePath,
+          durableGrantProvenance,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          grantStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const grantCreateInput = buildRuntimeGrantCreateInputFromProposal(proposal, {}, {
+          catalog: capabilityCatalog,
+          providerRegistry,
+          now: () => new Date().toISOString(),
+          createId: () => `grant-durable-proposal-${cryptoRandomId()}`,
+        });
+
+        const result = await writeGrantCreateMutation({
+          grantStorePath,
+          mutationId: body?.mutation_id ?? `grant-create-${cryptoRandomId()}`,
+          io: grantStoreIo,
+          lock: grantStoreLock,
+          provenance: durableGrantProvenance,
+          input: {
+            ...grantCreateInput,
+            approved_by: actor,
+            direct_user_action: false,
+            unique_source_proposal_id: true,
+          },
+          context: durableGrantMutationContext({ capabilityCatalog, providerRegistry }),
+        });
+        const refreshed = await refreshDurableGrantAuthority({
+          grantStorePath,
+          durableGrantProvenance,
+          fallbackStore: grantStore,
+        });
+        grantStore = refreshed.grantStore;
+        grantRecoveryReport = refreshed.grantRecoveryReport;
+        writeJson(res, result.ok ? 201 : statusCodeForDurableGrantMutationFailure(result), {
+          ...durableGrantMutationResponseFields({
+            result,
+            recoveryReport: grantRecoveryReport,
+            grantStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "durable_proposal_grants",
+          source_proposal_id: proposal.id,
+          approval_provenance_id: String(proposal.decision?.provenance_id ?? "").trim(),
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/harness-modules/adopt") {
         const body = await readJson(req);
         const moduleId = String(body.module_id ?? "");
@@ -2153,22 +2223,30 @@ function buildRuntimeGrantCreateInputFromProposal(proposal, body = {}, {
     );
   }
 
-  const scope = String(body.scope ?? proposal.decision.approved_scope ?? proposal.requested_scope ?? "").trim();
-  const provider = String(body.provider ?? providerForCapability(providerRegistry, capability) ?? "").trim();
+  const scope = String(
+    body.scope ?? proposal.decision.approved_scope ?? proposal.grant_intent?.scope ?? proposal.requested_scope ?? "",
+  ).trim();
+  const provider = String(
+    body.provider ?? proposal.grant_intent?.provider ?? providerForCapability(providerRegistry, capability) ?? "",
+  ).trim();
   if (body.constraints !== undefined && !isPlainObject(body.constraints)) {
     throwValidationError(
       "runtime_grant_create_invalid_constraints",
       "Runtime grant creation requires constraints to be an object when provided.",
     );
   }
+  const proposalConstraints = isPlainObject(proposal.grant_intent?.constraints)
+    ? proposal.grant_intent.constraints
+    : {};
   return {
     id: String(body.id ?? createId()).trim(),
     capability,
     provider,
     scope,
-    constraints: body.constraints ? structuredClone(body.constraints) : {},
+    constraints: body.constraints !== undefined ? structuredClone(body.constraints) : structuredClone(proposalConstraints),
     approved_by: "user",
     approval_provenance_id: String(proposal.decision.provenance_id ?? "").trim(),
+    source_proposal_id: String(proposal.id ?? "").trim(),
     reason: String(body.reason ?? proposal.reason ?? "").trim(),
     created_at: now(),
     review_required: Boolean(body.review_required),

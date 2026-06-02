@@ -174,6 +174,21 @@ Marks a pending proposal approved with an explicit approved scope. It records
 Marks a pending proposal denied with a denial reason. It records
 `capability.proposal.denied` provenance and does not activate any capability.
 
+### `POST /capability-proposals/:id/grants`
+
+Creates a process-local runtime grant from an approved, user-decided proposal. This route is the
+lightweight operational bridge for the current process. It rejects capability-design proposals and
+does not persist authority across restart.
+
+### `POST /capability-proposals/:id/durable-grant`
+
+Creates a durable grant from an approved, user-decided proposal only when
+`SOMA_RUNTIME_WRITES_ENABLED=1`. The caller supplies a user actor, but the route derives the grant
+body from the proposal and its approval record: capability, provider, approved scope, constraints,
+reason, `source_proposal_id`, and `approval_provenance_id`. It delegates to the durable grant writer,
+appends grant mutation provenance, rejects capability-design proposals, refuses repeat persistence
+of the same source proposal, and does not activate capability use.
+
 ### `GET /grants`
 
 Returns the file-backed grant store in a read-only operator shape. Supports status filters such as

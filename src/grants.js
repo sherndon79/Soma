@@ -52,6 +52,7 @@ export function publicGrant(grant = {}) {
     constraints: objectOrEmpty(grant.constraints),
     approved_by: String(grant.approved_by ?? ""),
     approval_provenance_id: String(grant.approval_provenance_id ?? ""),
+    source_proposal_id: String(grant.source_proposal_id ?? ""),
     reason: String(grant.reason ?? ""),
     created_at: String(grant.created_at ?? ""),
     review_required: Boolean(grant.review_required),
@@ -81,6 +82,7 @@ export function validateGrantCreate(input = {}, context = {}) {
   const reason = String(input.reason ?? "").trim();
   const createdAt = String(input.created_at ?? context.now?.() ?? new Date().toISOString());
   const approvalProvenanceId = String(input.approval_provenance_id ?? "").trim();
+  const sourceProposalId = String(input.source_proposal_id ?? "").trim();
   const directUserAction = Boolean(input.direct_user_action);
 
   requireNonEmpty(capability, "missing_capability", "Grant creation requires a capability.");
@@ -148,6 +150,7 @@ export function validateGrantCreate(input = {}, context = {}) {
     reason,
     created_at: createdAt,
     approval_provenance_id: approvalProvenanceId,
+    source_proposal_id: sourceProposalId,
     review_required: Boolean(input.review_required),
     revoked_at: null,
     revoked_by: "",
@@ -171,6 +174,14 @@ export function createGrant(store = normalizeGrantStore(), input = {}, context =
       "duplicate_grant_id",
       "Grant creation requires a unique grant id.",
       { id: grant.id },
+    );
+  }
+  if (input.unique_source_proposal_id === true && grant.source_proposal_id
+    && normalized.grants.some((existing) => existing.source_proposal_id === grant.source_proposal_id)) {
+    throw new GrantMutationError(
+      "duplicate_source_proposal_id",
+      "Grant creation already persisted authority for this source proposal.",
+      { source_proposal_id: grant.source_proposal_id },
     );
   }
   return {

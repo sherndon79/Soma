@@ -20,7 +20,10 @@ The active boundary remains:
   `durable_grant_mutation_enabled: true`, and `activation_supported: true`
 - `POST /grants` creates durable grants only under the enabled posture
 - `POST /grants/:id/revoke` revokes durable grants only under the enabled posture
-- CLI `grants create` and `grants revoke` are HTTP wrappers over those routes
+- `POST /capability-proposals/:id/durable-grant` explicitly persists an approved user-decided
+  proposal through the same durable create writer under the enabled posture
+- CLI `grants create` and `grants revoke` are HTTP wrappers over `POST /grants` and
+  `POST /grants/:id/revoke`
 - no grant repair routes
 - no capability activation as a side effect of grant mutation
 
@@ -50,9 +53,10 @@ Preview and review surfaces are not commit surfaces.
 - `--json` output is inspection data; it is not a replayable write receipt.
 
 The durable commit surfaces use the distinct active route names `POST /grants` and
-`POST /grants/:id/revoke`, require explicit runtime write enablement, and delegate to the durable
-writer. They must not inherit preview-route HTTP exception handling or preview-only response
-semantics by accident.
+`POST /grants/:id/revoke`, plus the proposal-derived bridge
+`POST /capability-proposals/:id/durable-grant`. They require explicit runtime write enablement and
+delegate to the durable writer. They must not inherit preview-route HTTP exception handling or
+preview-only response semantics by accident.
 
 ## Preconditions
 

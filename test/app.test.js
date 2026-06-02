@@ -1835,6 +1835,300 @@ test("status snapshot full loop proposal approval grant and route use", async ()
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
+test("approved proposal can be explicitly persisted as a durable grant", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-proposal-grant-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "status.snapshot.read",
+        reason: "Need a bounded operational status snapshot for this session.",
+        requested_scope: "session",
+        data_exposed: ["runtime posture", "module ids", "summary counts"],
+        excluded_data: ["raw provenance entries", "memory contents", "desktop content"],
+        risk: "Aggregated status metadata can reveal workflow shape.",
+        fallback: "Use separate operator status commands.",
+      },
+    });
+    const proposalId = response.body.proposal.id;
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${proposalId}/approve`,
+      body: { approved_scope: "session", decided_by: "user" },
+    });
+    const approvalProvenanceId = response.body.provenance_id;
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${proposalId}/durable-grant`,
+      body: { actor: "user", mutation_id: "mutation-persist-proposal" },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.source, "durable_proposal_grants");
+    assert.equal(response.body.source_proposal_id, proposalId);
+    assert.equal(response.body.approval_provenance_id, approvalProvenanceId);
+    assert.equal(response.body.durable, true);
+    assert.equal(response.body.grant_written, true);
+    assert.equal(response.body.provenance_appended, true);
+    assert.equal(response.body.activation_performed, false);
+    assert.equal(response.body.grant.capability, "status.snapshot.read");
+    assert.equal(response.body.grant.provider, "soma.provider.status");
+    assert.equal(response.body.grant.scope, "session");
+    assert.deepEqual(response.body.grant.constraints, {});
+    assert.equal(response.body.grant.source_proposal_id, proposalId);
+    assert.equal(response.body.grant.approval_provenance_id, approvalProvenanceId);
+    const grantId = response.body.grant.id;
+
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.equal(persisted.grants.length, 1);
+    assert.equal(persisted.grants[0].id, grantId);
+    assert.equal(persisted.grants[0].source_proposal_id, proposalId);
+    assert.equal(persisted.grants[0].approval_provenance_id, approvalProvenanceId);
+
+    const provenanceLines = (await readFile(provenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 1);
+    const event = JSON.parse(provenanceLines[0]);
+    assert.equal(event.event_type, "grant.created");
+    assert.equal(event.grant_id, grantId);
+    assert.equal(event.source_proposal_id, proposalId);
+    assert.equal(event.approval_provenance_id, approvalProvenanceId);
+    assert.equal(event.activation_performed, false);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/status/snapshot",
+      body: { grant_id: grantId },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.grant_id, grantId);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("durable proposal grant refuses duplicate persistence for the same approved proposal", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-proposal-duplicate-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "status.snapshot.read",
+        reason: "Need a bounded operational status snapshot for this session.",
+        requested_scope: "session",
+        data_exposed: ["runtime posture"],
+        risk: "Aggregated status metadata can reveal workflow shape.",
+        fallback: "Use separate operator status commands.",
+      },
+    });
+    const proposalId = response.body.proposal.id;
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${proposalId}/approve`,
+      body: { approved_scope: "session", decided_by: "user" },
+    });
+    assert.equal(response.statusCode, 200);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${proposalId}/durable-grant`,
+      body: { actor: "user", mutation_id: "mutation-persist-proposal-1" },
+    });
+    assert.equal(response.statusCode, 201);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${proposalId}/durable-grant`,
+      body: { actor: "user", mutation_id: "mutation-persist-proposal-2" },
+    });
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.body.error, "duplicate_source_proposal_id");
+    assert.equal(response.body.grant_written, false);
+    assert.equal(response.body.provenance_appended, false);
+
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.equal(persisted.grants.length, 1);
+    const provenanceLines = (await readFile(provenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 1);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("durable proposal grant keeps runtime-write and proposal safety gates", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-proposal-gates-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const proposals = new CapabilityProposalStore();
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+      capabilityProposals: proposals,
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "status.snapshot.read",
+        reason: "Need a bounded operational status snapshot for this session.",
+        requested_scope: "session",
+        data_exposed: ["runtime posture"],
+        risk: "Aggregated status metadata can reveal workflow shape.",
+        fallback: "Use separate operator status commands.",
+      },
+    });
+    const pendingProposalId = response.body.proposal.id;
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${pendingProposalId}/durable-grant`,
+      body: { actor: "user" },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "runtime_grant_create_requires_approved_proposal");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "status.snapshot.read",
+        reason: "Need a bounded operational status snapshot for this session.",
+        requested_scope: "session",
+        data_exposed: ["runtime posture"],
+        risk: "Aggregated status metadata can reveal workflow shape.",
+        fallback: "Use separate operator status commands.",
+      },
+    });
+    const assistantApprovedProposalId = response.body.proposal.id;
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${assistantApprovedProposalId}/approve`,
+      body: { approved_scope: "session", decided_by: "assistant" },
+    });
+    assert.equal(response.statusCode, 200);
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${assistantApprovedProposalId}/durable-grant`,
+      body: { actor: "user" },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "runtime_grant_create_requires_user_approval");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-design-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "desktop.inspect.selected_text",
+        proposed_name: "Selected Desktop Text Inspection",
+        reason: "A narrower selected-text capability would avoid broad desktop text inspection.",
+        requested_scope: "session",
+        data_exposed: ["selected accessibility text"],
+        risk: "Could reveal selected user text if implemented.",
+        fallback: "Ask the user to paste the selected text.",
+        failure_mode: "May disclose private selected text to the local model if scoped too broadly.",
+        provider_boundary: "desktop broker exposes selected text only after an explicit grant",
+        proposed_risk_class: "sensitive",
+        proposed_reversibility: false,
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    const designProposalId = response.body.proposal.id;
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${designProposalId}/approve`,
+      body: { approved_scope: "session", decided_by: "user" },
+    });
+    assert.equal(response.statusCode, 200);
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${designProposalId}/durable-grant`,
+      body: { actor: "user" },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "runtime_grant_create_rejects_capability_design");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/capability-proposals",
+      body: {
+        requested_by: "assistant",
+        capability: "status.snapshot.read",
+        reason: "Need a bounded operational status snapshot for this session.",
+        requested_scope: "session",
+        data_exposed: ["runtime posture"],
+        risk: "Aggregated status metadata can reveal workflow shape.",
+        fallback: "Use separate operator status commands.",
+      },
+    });
+    const approvedForDisabledPostureId = response.body.proposal.id;
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/capability-proposals/${approvedForDisabledPostureId}/approve`,
+      body: { approved_scope: "session", decided_by: "user" },
+    });
+    assert.equal(response.statusCode, 200);
+
+    const disabledHandler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      capabilityProposals: proposals,
+    });
+    response = await invokeHandler(disabledHandler, {
+      method: "POST",
+      url: `/capability-proposals/${approvedForDisabledPostureId}/durable-grant`,
+      body: { actor: "user" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "durable_grant_mutation_not_enabled");
+
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.equal(persisted.grants.length, 0);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("runtime grant creation rejects non-user actors and missing proposals before grant write", async () => {
   const handler = makeHandler({
     harness: allowedHarness,

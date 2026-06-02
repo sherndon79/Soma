@@ -38,13 +38,14 @@ scope and provenance, but it must not create authority by itself.
 Required invariant:
 
 - proposal approval does not activate a capability
-- proposal approval does not create a grant unless a future explicit grant-write path does so
+- proposal approval does not create a grant unless a separate explicit grant-write path is called
 - approved proposal fields remain inspectable for audit
 
 ### Grant Created
 
-A future grant creation path may convert an approved proposal, or a direct explicit user action,
-into a grant record.
+Grant creation may convert an approved proposal, or a direct explicit user action, into a grant
+record. The proposal-derived durable path is explicit:
+`POST /capability-proposals/:id/durable-grant`.
 
 Grant creation should require:
 
@@ -211,10 +212,12 @@ These tests should be added before flipping `runtime_writes_enabled` to `true`.
 ```text
 POST /grants
 POST /grants/:id/revoke
+POST /capability-proposals/:id/durable-grant
 POST /grants/:id/supersede
 ```
 
-`POST /grants` and `POST /grants/:id/revoke` are implemented for durable create/revoke only when
+`POST /grants`, `POST /grants/:id/revoke`, and
+`POST /capability-proposals/:id/durable-grant` are implemented for durable create/revoke only when
 runtime writes are explicitly enabled with `SOMA_RUNTIME_WRITES_ENABLED=1`. Without that opt-in,
 they return durable mutation disabled refusals. `POST /grants/:id/supersede` remains reserved.
 

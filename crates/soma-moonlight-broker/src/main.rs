@@ -123,7 +123,10 @@ mod tests {
                 r#"{{"jsonrpc":"2.0","method":"{method}","id":"test"}}"#
             ));
             assert_eq!(response["error"]["code"], METHOD_IMPLEMENTATION_PENDING);
-            assert_eq!(response["error"]["code_name"], "method_implementation_pending");
+            assert_eq!(
+                response["error"]["code_name"],
+                "method_implementation_pending"
+            );
             assert_eq!(response["id"], "test");
         }
     }

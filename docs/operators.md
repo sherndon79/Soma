@@ -385,10 +385,17 @@ External requesters can inspect and consume their own decision outbox:
 ```bash
 curl -s 'http://127.0.0.1:8765/capability-proposal-decisions?requested_by=external-agent&delivered=false'
 
+curl -s 'http://127.0.0.1:8765/capability-proposal-decisions/wait?requested_by=external-agent&timeout_ms=30000'
+
 curl -s -X POST http://127.0.0.1:8765/capability-proposal-decisions/consume \
   -H 'content-type: application/json' \
   -d '{"requested_by":"external-agent","acknowledged_by":"external-agent","delivery_channel":"api"}'
 ```
+
+The wait route is a bounded long-poll. It returns immediately when undelivered decisions already
+exist, otherwise waits until one is decided or the timeout elapses. Decisions returned by the wait
+route are marked delivered with `delivery_channel: longpoll`; timeout responses return an empty
+decision list with `timeout: true`.
 
 The consume call marks returned decisions with `delivered_at`, `acknowledged_by`, and
 `delivery_channel` so the same decision is not delivered repeatedly.

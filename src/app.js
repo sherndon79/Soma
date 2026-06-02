@@ -168,6 +168,7 @@ export function createRequestHandler({
       ? createGrantMutationProvenanceFile({ path: grantMutationProvenancePath })
       : null);
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  const decisionWaiters = new Map();
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
       if (!endSummary) {
@@ -398,6 +399,55 @@ export function createRequestHandler({
         writeJson(res, 200, {
           decisions,
           summary: summarizeDecisionDeliveries(decisions),
+          activation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/capability-proposal-decisions/wait") {
+        const requestedBy = String(url.searchParams.get("requested_by") ?? "").trim();
+        if (!requestedBy) {
+          writeError(res, {
+            statusCode: 400,
+            code: "capability_decision_wait_requires_requested_by",
+            message: "Decision wait requires requested_by.",
+          });
+          return;
+        }
+        const timeoutMs = boundedWaitTimeoutMs(url.searchParams.get("timeout_ms"));
+        const limit = boundedDecisionLimit(url.searchParams.get("limit"));
+        const pendingDecisions = await waitForCapabilityDecisions({
+          store: capabilityProposals,
+          waiters: decisionWaiters,
+          requestedBy,
+          timeoutMs,
+          limit,
+        });
+        const decisions = pendingDecisions.length > 0
+          ? capabilityProposals.consumeDecisions({
+              requested_by: requestedBy,
+              acknowledged_by: requestedBy,
+              delivery_channel: "longpoll",
+              limit,
+              proposal_ids: pendingDecisions.map((entry) => entry.proposal_id),
+            })
+          : [];
+        const event = provenanceLog.append(createCapabilityDecisionDeliveryEvent({
+          decisions,
+          requestedBy,
+          deliveryChannel: "longpoll",
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          decisions,
+          delivered_count: decisions.length,
+          timeout: decisions.length === 0,
+          wait_timeout_ms: timeoutMs,
+          delivery_channel: "longpoll",
+          provenance_id: event.id,
           activation_performed: false,
           grant_written: false,
           durable: false,
@@ -1492,6 +1542,7 @@ export function createRequestHandler({
         }));
         proposal.decision.provenance_id = event.id;
         logger.info?.("soma.provenance", event);
+        notifyCapabilityDecisionWaiters(decisionWaiters, proposal.requested_by);
         writeJson(res, 200, {
           proposal,
           decision: proposal.decision,
@@ -2444,6 +2495,84 @@ function parseDeliveredFilter(searchParams) {
     return false;
   }
   return null;
+}
+
+async function waitForCapabilityDecisions({
+  store,
+  waiters,
+  requestedBy,
+  timeoutMs,
+  limit,
+} = {}) {
+  const existing = listUndeliveredDecisions(store, requestedBy, limit);
+  if (existing.length > 0 || timeoutMs <= 0) {
+    return existing;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout = null;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      removeDecisionWaiter(waiters, requestedBy, waiter);
+      resolve(listUndeliveredDecisions(store, requestedBy, limit));
+    };
+    const waiter = { finish };
+    addDecisionWaiter(waiters, requestedBy, waiter);
+    timeout = setTimeout(finish, timeoutMs);
+  });
+}
+
+function listUndeliveredDecisions(store, requestedBy, limit) {
+  return store.listDecisions({
+    requested_by: requestedBy,
+    delivered: false,
+  }).slice(0, limit);
+}
+
+function notifyCapabilityDecisionWaiters(waiters, requestedBy) {
+  const key = String(requestedBy ?? "").trim();
+  const entries = waiters.get(key) ?? [];
+  for (const waiter of [...entries]) {
+    waiter.finish();
+  }
+}
+
+function addDecisionWaiter(waiters, requestedBy, waiter) {
+  const key = String(requestedBy ?? "").trim();
+  const entries = waiters.get(key) ?? [];
+  entries.push(waiter);
+  waiters.set(key, entries);
+}
+
+function removeDecisionWaiter(waiters, requestedBy, waiter) {
+  const key = String(requestedBy ?? "").trim();
+  const entries = (waiters.get(key) ?? []).filter((entry) => entry !== waiter);
+  if (entries.length === 0) {
+    waiters.delete(key);
+    return;
+  }
+  waiters.set(key, entries);
+}
+
+function boundedWaitTimeoutMs(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isInteger(parsed)) {
+    return 30_000;
+  }
+  return Math.min(Math.max(parsed, 0), 60_000);
+}
+
+function boundedDecisionLimit(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return 100;
+  }
+  return Math.min(parsed, 100);
 }
 
 function buildStatusSnapshot({

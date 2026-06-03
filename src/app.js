@@ -2203,6 +2203,8 @@ export function createRequestHandler({
         const writeSessionMemory = Boolean(body.write_session_memory);
         const assessLoad = Boolean(body.assess_cognitive_load);
         const assessEscalation = Boolean(body.assess_escalation);
+        const useToolCalls = Boolean(body.use_tool_calls);
+        let toolCallAuthorization = null;
         let cognitiveLoadAssessment = null;
         let escalationAssessment = null;
         if (assessLoad) {
@@ -2232,6 +2234,44 @@ export function createRequestHandler({
             requireCapability(effectiveHarness, "memory.session.write");
           }
           requireCapability(effectiveHarness, capability);
+          if (useToolCalls) {
+            const grantId = String(body.tool_call_grant_id ?? body.grant_id ?? "").trim();
+            const provider = String(
+              body.tool_call_provider
+                ?? body.provider
+                ?? providerForCapability(providerRegistry, "model.local.tool_calls")
+                ?? "",
+            ).trim();
+            const scope = String(body.tool_call_scope ?? body.scope ?? "session").trim() || "session";
+            if (!grantId) {
+              writeError(res, {
+                statusCode: 403,
+                code: "model_tool_calls_grant_required",
+                message: "Local model tool-call intent handling requires an active runtime grant id.",
+              });
+              return;
+            }
+            toolCallAuthorization = authorizeGrantUse({
+              store: grantStore,
+              grantId,
+              capability: "model.local.tool_calls",
+              provider,
+              scope,
+              recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+              catalog: capabilityCatalog,
+              providerRegistry,
+            });
+            if (!toolCallAuthorization.allowed) {
+              writeJson(res, 403, {
+                error: "model_tool_calls_grant_not_authorized",
+                message: "Local model tool-call intent handling requires an active, matching runtime grant.",
+                authorization_code: toolCallAuthorization.code,
+                recovery_required: toolCallAuthorization.recovery_required,
+                findings: toolCallAuthorization.findings,
+              });
+              return;
+            }
+          }
         } catch (error) {
           const deniedProvenance = {
             ...provenance,
@@ -2272,7 +2312,7 @@ export function createRequestHandler({
           }
           sessionMemory.add({
             role: "assistant",
-            content: completion.text,
+            content: String(completion.text ?? ""),
             source: "chat",
           });
         }
@@ -2305,6 +2345,17 @@ export function createRequestHandler({
           }));
           logger.info?.("soma.provenance", deliveryEvent);
         }
+        const toolCallIntents = useToolCalls
+          ? await processModelToolCallIntents({
+              completion,
+              effectiveHarness,
+              capabilityCatalog,
+              capabilityProposals,
+              provenanceLog,
+              logger,
+              caller: req.headers["x-soma-caller"] ?? "",
+            })
+          : [];
 
         const allowedProvenance = {
           ...provenance,
@@ -2313,6 +2364,9 @@ export function createRequestHandler({
           escalation_triggers_fired: escalationAssessment?.triggers_fired ?? false,
           escalation_trigger_families: escalationAssessment?.trigger_families ?? [],
           remote_planning_status: escalationAssessment?.remote_planning_status ?? "",
+          model_tool_calls_enabled: useToolCalls,
+          model_tool_call_intent_count: toolCallIntents.length,
+          model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2327,7 +2381,7 @@ export function createRequestHandler({
         }
 
         writeJson(res, 200, {
-          text: completion.text,
+          text: String(completion.text ?? ""),
           model: completion.model,
           model_profile: runtimeProfile.id,
           finish_reason: completion.finish_reason,
@@ -2337,6 +2391,9 @@ export function createRequestHandler({
           remote_service_used: Boolean(runtimeProfile.remote_service),
           memory_read: useSessionMemory,
           memory_written: writeSessionMemory,
+          tool_calls_enabled: useToolCalls,
+          tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
+          tool_call_intents: toolCallIntents,
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -3013,6 +3070,226 @@ function boundedDecisionLimit(value) {
   return Math.min(parsed, 100);
 }
 
+async function processModelToolCallIntents({
+  completion = {},
+  effectiveHarness,
+  capabilityCatalog,
+  capabilityProposals,
+  provenanceLog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const rawIntents = extractStructuredToolCallIntents(completion);
+  const results = [];
+  for (const rawIntent of rawIntents) {
+    const intent = normalizeModelToolCallIntent(rawIntent);
+    let result;
+    if (!intent) {
+      result = {
+        id: "",
+        name: "",
+        capability: "",
+        disposition: "refused",
+        refusal_reason: "invalid_tool_call_intent",
+      };
+    } else if (intent.capability === "tool.files.read") {
+      result = await executeModelFileReadIntent({
+        intent,
+        effectiveHarness,
+        provenanceLog,
+        logger,
+        caller,
+      });
+    } else {
+      result = proposeOrRefuseModelToolCallIntent({
+        intent,
+        capabilityCatalog,
+        capabilityProposals,
+        provenanceLog,
+        logger,
+        caller,
+      });
+    }
+
+    const event = provenanceLog.append(createModelToolCallIntentEvent({
+      intent,
+      result,
+      caller,
+    }));
+    logger.info?.("soma.provenance", event);
+    results.push({
+      ...result,
+      provenance_id: event.id,
+    });
+  }
+  return results;
+}
+
+function extractStructuredToolCallIntents(completion = {}) {
+  const candidates = [
+    completion.tool_call_intents,
+    completion.tool_calls,
+    completion.message?.tool_calls,
+  ];
+  const intents = candidates.find((entry) => Array.isArray(entry));
+  return Array.isArray(intents) ? intents.slice(0, 8) : [];
+}
+
+function normalizeModelToolCallIntent(rawIntent) {
+  if (!isPlainObject(rawIntent)) {
+    return null;
+  }
+  const name = String(rawIntent.name ?? rawIntent.tool ?? rawIntent.function?.name ?? "").trim();
+  const id = String(rawIntent.id ?? rawIntent.call_id ?? name ?? "").trim();
+  const args = normalizeToolCallArguments(rawIntent.arguments ?? rawIntent.function?.arguments ?? {});
+  const capability = normalizeToolCallCapability(rawIntent.capability, name);
+  if (!name || !capability || !isPlainObject(args)) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    capability,
+    arguments: args,
+  };
+}
+
+function normalizeToolCallArguments(value) {
+  if (isPlainObject(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isPlainObject(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeToolCallCapability(rawCapability, toolName) {
+  const capability = String(rawCapability ?? "").trim();
+  if (capability) {
+    return capability;
+  }
+  const normalizedTool = String(toolName ?? "").trim();
+  const aliases = {
+    "files.read": "tool.files.read",
+    "file.read": "tool.files.read",
+    "tool.files.read": "tool.files.read",
+    "desktop.inspect.focus": "desktop.inspect.focus",
+    "inspect.focus": "desktop.inspect.focus",
+    "status.snapshot": "status.snapshot.read",
+    "status.snapshot.read": "status.snapshot.read",
+  };
+  return aliases[normalizedTool] ?? normalizedTool;
+}
+
+async function executeModelFileReadIntent({
+  intent,
+  effectiveHarness,
+  provenanceLog,
+  logger = console,
+  caller = "",
+} = {}) {
+  try {
+    requireCapability(effectiveHarness, "tool.files.read");
+    const file = await readScopedTextFile({
+      requestedPath: intent.arguments.path,
+      roots: effectiveHarness.filesystem?.read_roots ?? [],
+      maxBytes: effectiveHarness.filesystem?.max_read_bytes,
+    });
+    const event = provenanceLog.append(createFileReadEvent({
+      file,
+      caller,
+    }));
+    logger.info?.("soma.provenance", event);
+    return {
+      id: intent.id,
+      name: intent.name,
+      capability: intent.capability,
+      disposition: "executed",
+      result: {
+        path: file.path,
+        bytes: file.bytes,
+        content_included: false,
+        provenance_id: event.id,
+      },
+    };
+  } catch (error) {
+    return {
+      id: intent.id,
+      name: intent.name,
+      capability: intent.capability,
+      disposition: "refused",
+      refusal_reason: error.code ?? "tool_execution_refused",
+    };
+  }
+}
+
+function proposeOrRefuseModelToolCallIntent({
+  intent,
+  capabilityCatalog,
+  capabilityProposals,
+  provenanceLog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const definition = findCatalogCapability(capabilityCatalog, intent.capability);
+  if (!definition) {
+    return {
+      id: intent.id,
+      name: intent.name,
+      capability: intent.capability,
+      disposition: "refused",
+      refusal_reason: "tool_capability_not_in_catalog",
+    };
+  }
+  const proposal = capabilityProposals.create({
+    requested_by: "assistant",
+    capability: intent.capability,
+    reason: `Local model emitted a ${intent.name} tool-call intent that needs separate capability approval.`,
+    requested_scope: firstAllowedScope(definition),
+    data_exposed: normalizeCatalogStringArray(definition.data_exposed, ["tool arguments", "tool results"]),
+    excluded_data: normalizeCatalogStringArray(definition.excluded_by_default, ["unapproved tool execution"]),
+    risk: capabilityRiskText(definition),
+    fallback: "Continue without executing this tool call.",
+  });
+  const event = provenanceLog.append(createCapabilityProposalEvent({
+    proposal,
+    caller,
+  }));
+  proposal.provenance_id = event.id;
+  logger.info?.("soma.provenance", event);
+  return {
+    id: intent.id,
+    name: intent.name,
+    capability: intent.capability,
+    disposition: "proposed",
+    proposal_id: proposal.id,
+    proposal_provenance_id: event.id,
+  };
+}
+
+function firstAllowedScope(definition = {}) {
+  const scopes = Array.isArray(definition.allowed_scopes) ? definition.allowed_scopes : [];
+  return scopes.includes("session") ? "session" : (scopes[0] ?? "session");
+}
+
+function normalizeCatalogStringArray(value, fallback) {
+  const entries = Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  return entries.length > 0 ? entries : fallback;
+}
+
+function capabilityRiskText(definition = {}) {
+  const riskClass = String(definition.risk_class ?? "sensitive").trim() || "sensitive";
+  return `Model-emitted tool-call intent targets a ${riskClass} capability and may expose its declared data classes.`;
+}
+
 function buildStatusSnapshot({
   activeModules = [],
   capabilityCatalog,
@@ -3296,6 +3573,33 @@ function createFileReadEvent({ file, caller }) {
     file_bytes: file.bytes,
     memory_written: false,
     remote_service_used: false,
+  };
+}
+
+function createModelToolCallIntentEvent({ intent = null, result = {}, caller = "" } = {}) {
+  const safeIntent = intent ?? {};
+  const disposition = String(result?.disposition ?? "refused").trim() || "refused";
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "model.local.tool_call_intent",
+    capability: "model.local.tool_calls",
+    caller_identity: caller,
+    allowed: disposition !== "refused",
+    tool_call_id: safeIntent.id ?? result?.id ?? "",
+    tool_name: safeIntent.name ?? result?.name ?? "",
+    requested_capability: safeIntent.capability ?? result?.capability ?? "",
+    disposition,
+    refusal_reason: result?.refusal_reason ?? "",
+    proposal_id: result?.proposal_id ?? "",
+    executed_capability_provenance_id: result?.result?.provenance_id ?? "",
+    argument_keys: Object.keys(safeIntent.arguments ?? {}).slice(0, 20),
+    argument_content_included: false,
+    result_content_included: false,
+    memory_written: false,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
   };
 }
 

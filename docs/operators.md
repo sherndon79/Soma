@@ -92,11 +92,15 @@ per request:
 ```bash
 npm run cli -- chat "help me keep track of this" --memory --write-memory --assess-load
 npm run cli -- chat "this architecture task may be too large" --assess-escalation --json
+npm run cli -- chat "use any available structured tool intents" --tool-calls --tool-call-grant-id grant-tool-calls --json
 ```
 
 Session memory is in-process only. It is lost when the service stops.
 Escalation assessment does not route to a remote model; it only reports local trigger metadata and
 records metadata-only provenance if triggers fire.
+Local tool-call intent handling requires an active `model.local.tool_calls` runtime grant. That
+grant permits structured intent routing only; the target tool still needs its own existing authority
+to execute, otherwise Soma stores a normal capability proposal or refuses the intent.
 
 ## Inspect Desktop State
 

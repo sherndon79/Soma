@@ -160,6 +160,18 @@ const capabilityCatalog = {
       activation_policy: "base_harness",
     },
     {
+      key: "model.local.tool_calls",
+      name: "Local Model Tool Calls",
+      category: "model",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["tool arguments", "tool results"],
+      excluded_by_default: ["unapproved tool execution"],
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.model.tool_calls.v1",
+    },
+    {
       key: "desktop.inspect.focus",
       name: "Focused Desktop Inspection",
       category: "desktop",
@@ -290,7 +302,7 @@ const providerRegistry = {
       runtime: "test",
       local_only: true,
       network_access: false,
-      capabilities: ["model.local.chat"],
+      capabilities: ["model.local.chat", "model.local.tool_calls"],
     },
     {
       id: "desktop-broker",
@@ -438,14 +450,16 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 11);
+  assert.equal(response.body.summary.total, 12);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 9);
+  assert.equal(response.body.summary.by_status.requestable, 10);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.memory.total, 1);
+  assert.equal(response.body.grouped.model.total, 2);
   assert.equal(response.body.grouped.perception.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
+  const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const windows = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.windows");
   const durableMemory = response.body.capabilities.find((capability) => capability.key === "memory.durable.write");
@@ -454,6 +468,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
   const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
   const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
+  assert.equal(localToolCalls.status, "requestable");
+  assert.equal(localToolCalls.providers[0].id, "local-model");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(windows.status, "requestable");
@@ -2726,6 +2742,200 @@ test("POST /chat routes through local model when capability is allowed", async (
   assert.equal(response.body.capability_used, "model.local.chat");
   assert.equal(response.body.remote_service_used, false);
   assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+});
+
+test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
+  let calls = 0;
+  const modelClient = {
+    model: "local-test-model",
+    async chat() {
+      calls += 1;
+      return {
+        text: "should not be called",
+        model: "local-test-model",
+        finish_reason: "stop",
+        tokens_used: 1,
+        tool_calls: [
+          { id: "call-1", name: "files.read", arguments: { path: "package.json" } },
+        ],
+      };
+    },
+  };
+  const response = await invoke({
+    method: "POST",
+    url: "/chat",
+    harness: allowedHarness,
+    modelClient,
+    body: {
+      use_tool_calls: true,
+      messages: [{ role: "user", content: "read package.json" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_tool_calls_grant_required");
+  assert.equal(calls, 0);
+});
+
+test("POST /chat executes structured file-read intents through existing file gates", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-chat-tool-file-"));
+  try {
+    const filePath = path.join(root, "note.txt");
+    await writeFile(filePath, "Scoped chat read ok.", "utf8");
+    const modelClient = {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: "I emitted a file-read intent.",
+          model: "local-test-model",
+          finish_reason: "tool_calls",
+          tokens_used: 8,
+          tool_calls: [
+            { id: "call-file-1", name: "files.read", arguments: { path: filePath } },
+          ],
+        };
+      },
+    };
+    const handler = makeHandler({
+      harness: {
+        ...allowedHarness,
+        filesystem: {
+          read_roots: [root],
+          max_read_bytes: 1024,
+        },
+      },
+      modelClient,
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-tool-calls",
+            status: "active",
+            capability: "model.local.tool_calls",
+            provider: "local-model",
+            scope: "session",
+            constraints: {},
+            approved_by: "user",
+            reason: "Allow local model tool-call intent handling for this session.",
+            created_at: "2026-06-03T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        use_tool_calls: true,
+        tool_call_grant_id: "grant-tool-calls",
+        messages: [{ role: "user", content: "read the note" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.tool_calls_enabled, true);
+    assert.equal(response.body.tool_call_grant_id, "grant-tool-calls");
+    assert.equal(response.body.tool_call_intents.length, 1);
+    assert.equal(response.body.tool_call_intents[0].disposition, "executed");
+    assert.equal(response.body.tool_call_intents[0].capability, "tool.files.read");
+    assert.equal(response.body.tool_call_intents[0].result.path, filePath);
+    assert.equal(response.body.tool_call_intents[0].result.bytes, 20);
+    assert.equal(response.body.tool_call_intents[0].result.content_included, false);
+    assert.equal("content" in response.body.tool_call_intents[0].result, false);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=model.local.tool_call_intent",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].disposition, "executed");
+    assert.equal(response.body.entries[0].requested_capability, "tool.files.read");
+    assert.deepEqual(response.body.entries[0].argument_keys, ["path"]);
+    assert.equal(response.body.entries[0].argument_content_included, false);
+    assert.equal(response.body.entries[0].result_content_included, false);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=tool.files.read",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].file_path, filePath);
+    assert.equal("content" in response.body.entries[0], false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("POST /chat proposes unexecuted tool-call intents without target-tool activation", async () => {
+  const proposals = new CapabilityProposalStore();
+  const modelClient = {
+    model: "local-test-model",
+    async chat() {
+      return {
+        text: "I emitted a focus intent.",
+        model: "local-test-model",
+        finish_reason: "tool_calls",
+        tokens_used: 6,
+        tool_calls: [
+          { id: "call-focus-1", name: "desktop.inspect.focus", arguments: { include_text: true } },
+        ],
+      };
+    },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient,
+    capabilityProposals: proposals,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-tool-calls",
+          status: "active",
+          capability: "model.local.tool_calls",
+          provider: "local-model",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Allow local model tool-call intent handling for this session.",
+          created_at: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      use_tool_calls: true,
+      tool_call_grant_id: "grant-tool-calls",
+      messages: [{ role: "user", content: "inspect focus" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.tool_call_intents.length, 1);
+  assert.equal(response.body.tool_call_intents[0].disposition, "proposed");
+  assert.equal(response.body.tool_call_intents[0].capability, "desktop.inspect.focus");
+  const proposalId = response.body.tool_call_intents[0].proposal_id;
+  assert.match(proposalId, /^[0-9a-f-]{36}$/);
+  assert.equal(proposals.pendingCount(), 1);
+  assert.equal(proposals.list({ status: "pending" })[0].id, proposalId);
+  assert.equal(proposals.list({ status: "pending" })[0].capability, "desktop.inspect.focus");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.local.tool_call_intent",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].disposition, "proposed");
+  assert.equal(response.body.entries[0].proposal_id, proposalId);
+  assert.deepEqual(response.body.entries[0].argument_keys, ["include_text"]);
 });
 
 test("POST /chat delivers assistant proposal decisions once in model context", async () => {

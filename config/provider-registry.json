@@ -15,6 +15,11 @@
           "output_schema": "soma.model.chat.response.v1"
         },
         {
+          "key": "model.local.tool_calls",
+          "provider_contract": "soma.model.tool_calls.v1",
+          "output_schema": "soma.model.tool_calls.response.v1"
+        },
+        {
           "key": "model.context.visual.color.attach",
           "provider_contract": "soma.model.context.visual.color.attach.v1",
           "output_schema": "soma.model.context.visual.attach.proposal.v1"

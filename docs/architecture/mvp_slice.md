@@ -264,6 +264,8 @@ The request should include:
 - optional temperature
 - optional `use_session_memory`
 - optional `write_session_memory`
+- optional `use_tool_calls`
+- optional `tool_call_grant_id`, `tool_call_provider`, and `tool_call_scope`
 
 The response should include:
 
@@ -273,8 +275,17 @@ The response should include:
 - provenance id
 - whether any remote service was used
 - whether ephemeral session memory was read or written
+- structured tool-call intent dispositions when `use_tool_calls` is enabled
 
-For MVP, remote service should always be `false`.
+`model.local.tool_calls` is explicit-grant and only authorizes structured local-model tool-call
+intent handling. It does not authorize target tool execution. Each emitted intent is routed through
+the target capability's existing gate; approved target routes may execute, known gated target
+capabilities become capability proposals, and unknown or invalid targets are refused. The first live
+slice accepts structured `tool_calls` / `tool_call_intents` returned by the model client and does not
+parse natural-language response text into actions. Tool-call provenance records the tool name,
+target capability, argument keys, and disposition without raw argument or result content.
+
+For MVP local chat, remote service should always be `false`.
 
 Unknown runtime profiles fail closed. Remote profiles require `model.remote.chat`, which is
 disabled in the MVP base harness.
@@ -405,8 +416,8 @@ manifests, modules, audit records, UI, and future tools.
   user-facing response. See
   [Escalation and Planning](../concepts/drafts/escalation_and_planning.md).
 
-MVP enables local chat only for model routing. Tool-call planning, remote chat, and remote
-planning remain disabled.
+MVP enables local chat by default and local tool-call intent handling by explicit runtime grant.
+Remote chat, remote tool calls, and remote planning remain disabled.
 
 ### Memory
 

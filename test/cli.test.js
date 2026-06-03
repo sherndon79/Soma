@@ -156,6 +156,13 @@ test("runCli chat sends expected request body", async () => {
     "--write-memory",
     "--assess-load",
     "--assess-escalation",
+    "--tool-calls",
+    "--tool-call-grant-id",
+    "grant-tool-calls",
+    "--tool-call-provider",
+    "local-model",
+    "--tool-call-scope",
+    "session",
     "--max-tokens",
     "10",
   ]), {
@@ -175,6 +182,10 @@ test("runCli chat sends expected request body", async () => {
   assert.equal(captured.body.write_session_memory, true);
   assert.equal(captured.body.assess_cognitive_load, true);
   assert.equal(captured.body.assess_escalation, true);
+  assert.equal(captured.body.use_tool_calls, true);
+  assert.equal(captured.body.tool_call_grant_id, "grant-tool-calls");
+  assert.equal(captured.body.tool_call_provider, "local-model");
+  assert.equal(captured.body.tool_call_scope, "session");
   assert.equal(captured.body.max_tokens, 10);
 });
 

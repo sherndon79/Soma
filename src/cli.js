@@ -96,6 +96,10 @@ export async function runCli(
       write_session_memory: Boolean(flags["write-memory"]),
       assess_cognitive_load: Boolean(flags["assess-load"]),
       assess_escalation: Boolean(flags["assess-escalation"]),
+      use_tool_calls: Boolean(flags["tool-calls"]),
+      tool_call_grant_id: flags["tool-call-grant-id"] ?? flags["grant-id"],
+      tool_call_provider: flags["tool-call-provider"],
+      tool_call_scope: flags["tool-call-scope"],
     });
     writeOutput(stdout, response, jsonOutput, response.text);
     return 0;
@@ -2108,7 +2112,7 @@ function helpText() {
 Usage:
   soma status [--json]
   soma status snapshot --grant-id grant-id [--json]
-  soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--profile id] [--max-tokens n] [--temperature n] [--json]
+  soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--tool-calls --tool-call-grant-id id] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma memory list|add|clear [--json]
   soma memory durable-add --grant-id grant-id "selected memory" [--role note] [--source manual] [--mutation-id id] [--json]
   soma memory durable-remove entry-id --grant-id grant-id [--reason text] [--mutation-id id] [--json]

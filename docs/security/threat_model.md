@@ -178,11 +178,20 @@ Risk:
 - remote planner influences local execution paths through a generated plan
 - planner proposes steps that require disabled, unsupported, or overly broad capabilities
 - planner receives more context than the task requires
+- forced remote profiles hide or blur actual routing
+- remote chat exports memory, file, desktop, proposal-decision, or tool-result context beyond the
+  selected profile's allowed data classes
 
 Current controls:
 
 - base harness disables `model.remote.chat`
 - base harness disables `model.remote.plan`
+- `model.remote.chat` requires an explicit runtime grant even when a provider is installed
+- `claude-remote` allows only `submitted_text` for the first-breath posture
+- remote chat egress fails closed with `model_remote_egress_not_allowed` when a request would send
+  context outside the effective profile's `allowed_data_classes`
+- `SOMA_FORCE_PROFILE` is visible in health/harness surfaces and rejects explicit profile
+  mismatches instead of silently overriding them
 - provider registry has no `model.remote.plan` provider, so the capability is currently
   unsupported rather than requestable
 - runtime profile marks remote service use

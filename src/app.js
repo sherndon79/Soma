@@ -226,6 +226,7 @@ export function createRequestHandler({
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const effectiveHarness = applyActiveModules(harness, activeModules);
+      const forceProfile = resolveForceRuntimeProfile(runtimeProfiles);
 
       if (req.method === "GET" && url.pathname === "/health") {
         const grantRecovery = summarizeGrantRecoveryInspection(
@@ -240,6 +241,7 @@ export function createRequestHandler({
           grant_recovery_finding_count: grantRecovery.finding_count,
           runtime_writes_enabled: writePosture.runtime_writes_enabled,
           runtime_write_posture: writePosture,
+          force_profile: forceProfileDisclosure(forceProfile),
         });
         return;
       }
@@ -247,6 +249,12 @@ export function createRequestHandler({
       if (req.method === "GET" && url.pathname === "/harness") {
         writeJson(res, 200, {
           ...effectiveHarness,
+          disclosure: {
+            ...(effectiveHarness.disclosure ?? {}),
+            remote_services_used: Boolean(effectiveHarness.disclosure?.remote_services_used)
+              || forceProfile.profile?.route === "remote",
+          },
+          force_profile: forceProfileDisclosure(forceProfile),
           runtime_profiles: publicRuntimeProfiles(runtimeProfiles),
         });
         return;
@@ -2205,17 +2213,46 @@ export function createRequestHandler({
         const assessEscalation = Boolean(body.assess_escalation);
         const useToolCalls = Boolean(body.use_tool_calls);
         let toolCallAuthorization = null;
+        let remoteChatAuthorization = null;
         let cognitiveLoadAssessment = null;
         let escalationAssessment = null;
         if (assessLoad) {
           requireCapability(effectiveHarness, "stewardship.cognitive_load.assess");
           cognitiveLoadAssessment = assessCognitiveLoad(messages);
         }
-        const runtimeProfile = resolveRuntimeProfile(runtimeProfiles, body.model_profile);
+        const requestedProfileId = requestedRuntimeProfileId(runtimeProfiles, body.model_profile);
+        if (forceProfile.active && body.model_profile !== undefined && String(body.model_profile ?? "").trim() !== forceProfile.id) {
+          writeError(res, {
+            statusCode: 400,
+            code: "runtime_profile_force_mismatch",
+            message: `SOMA_FORCE_PROFILE is set to ${forceProfile.id}; explicit requests for another profile are rejected.`,
+          });
+          return;
+        }
+        if (forceProfile.active && !forceProfile.profile) {
+          writeError(res, {
+            statusCode: 400,
+            code: "runtime_profile_force_not_available",
+            message: `SOMA_FORCE_PROFILE ${forceProfile.id} is not available.`,
+          });
+          return;
+        }
+        const runtimeProfile = forceProfile.active
+          ? forceProfile.profile
+          : resolveRuntimeProfile(runtimeProfiles, requestedProfileId);
         const capability = capabilityForRuntimeProfile(runtimeProfile);
+        const episode = buildEpisode({
+          episodeId: body.episode_id,
+          runtimeProfile,
+        });
         const provenance = createProvenance({
           capability,
           modelProfile: runtimeProfile.id,
+          requestedProfile: requestedProfileId,
+          effectiveProfile: runtimeProfile.id,
+          forceProfileApplied: forceProfile.active,
+          episodeId: episode.id,
+          episodePosture: episode.posture,
           route: runtimeProfile.route,
           caller: req.headers["x-soma-caller"] ?? "",
           memoryRead: useSessionMemory,
@@ -2233,8 +2270,76 @@ export function createRequestHandler({
           if (writeSessionMemory) {
             requireCapability(effectiveHarness, "memory.session.write");
           }
-          requireCapability(effectiveHarness, capability);
+          if (runtimeProfile.route === "remote") {
+            if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+              const error = new Error(`${capability} is disabled by an active module.`);
+              error.statusCode = 403;
+              error.code = "capability_not_allowed";
+              throw error;
+            }
+            const grantId = String(body.remote_chat_grant_id ?? body.grant_id ?? "").trim();
+            const provider = String(
+              body.remote_chat_provider
+                ?? body.provider
+                ?? providerForCapability(providerRegistry, "model.remote.chat")
+                ?? "",
+            ).trim();
+            const scope = String(body.remote_chat_scope ?? body.scope ?? "session").trim() || "session";
+            if (!grantId) {
+              const deniedProvenance = provenanceLog.append({
+                ...provenance,
+                event_type: "model.chat.denied",
+                allowed: false,
+                denial_reason: "model_remote_chat_grant_required",
+              });
+              logger.info?.("soma.provenance", deniedProvenance);
+              writeError(res, {
+                statusCode: 403,
+                code: "model_remote_chat_grant_required",
+                message: "Remote model chat requires an active runtime grant id.",
+              });
+              return;
+            }
+            remoteChatAuthorization = authorizeGrantUse({
+              store: grantStore,
+              grantId,
+              capability: "model.remote.chat",
+              provider,
+              scope,
+              recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+              catalog: capabilityCatalog,
+              providerRegistry,
+            });
+            if (!remoteChatAuthorization.allowed) {
+              const deniedProvenance = provenanceLog.append({
+                ...provenance,
+                event_type: "model.chat.denied",
+                allowed: false,
+                denial_reason: "model_remote_chat_grant_not_authorized",
+                authorization_code: remoteChatAuthorization.code,
+              });
+              logger.info?.("soma.provenance", deniedProvenance);
+              writeJson(res, 403, {
+                error: "model_remote_chat_grant_not_authorized",
+                message: "Remote model chat requires an active, matching runtime grant.",
+                authorization_code: remoteChatAuthorization.code,
+                recovery_required: remoteChatAuthorization.recovery_required,
+                findings: remoteChatAuthorization.findings,
+              });
+              return;
+            }
+          } else {
+            requireCapability(effectiveHarness, capability);
+          }
           if (useToolCalls) {
+            if (runtimeProfile.route === "remote") {
+              writeError(res, {
+                statusCode: 400,
+                code: "model_remote_tool_calls_not_supported",
+                message: "Remote model tool calls are not enabled in this slice.",
+              });
+              return;
+            }
             const grantId = String(body.tool_call_grant_id ?? body.grant_id ?? "").trim();
             const provider = String(
               body.tool_call_provider
@@ -2288,6 +2393,31 @@ export function createRequestHandler({
           requested_by: "assistant",
           delivered: false,
         });
+        if (runtimeProfile.route === "remote") {
+          const egress = validateRemoteChatEgress({
+            runtimeProfile,
+            useSessionMemory,
+            pendingDecisionDeliveries,
+          });
+          if (!egress.allowed) {
+            const deniedProvenance = provenanceLog.append({
+              ...provenance,
+              event_type: "model.chat.denied",
+              allowed: false,
+              denial_reason: egress.code,
+              disallowed_data_classes: egress.disallowed,
+            });
+            logger.info?.("soma.provenance", deniedProvenance);
+            writeJson(res, 403, {
+              error: egress.code,
+              message: "Remote model chat egress is not allowed for the effective runtime profile.",
+              disallowed_data_classes: egress.disallowed,
+              allowed_data_classes: egress.allowedDataClasses,
+              episode_id: episode.id,
+            });
+            return;
+          }
+        }
         const promptedMessages = pendingDecisionDeliveries.length > 0
           ? prependCapabilityDecisionDeliveries(messages, pendingDecisionDeliveries)
           : messages;
@@ -2354,6 +2484,7 @@ export function createRequestHandler({
               provenanceLog,
               logger,
               caller: req.headers["x-soma-caller"] ?? "",
+              episodeId: episode.id,
             })
           : [];
 
@@ -2367,6 +2498,7 @@ export function createRequestHandler({
           model_tool_calls_enabled: useToolCalls,
           model_tool_call_intent_count: toolCallIntents.length,
           model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
+          remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2384,11 +2516,17 @@ export function createRequestHandler({
           text: String(completion.text ?? ""),
           model: completion.model,
           model_profile: runtimeProfile.id,
+          requested_profile: requestedProfileId,
+          effective_profile: runtimeProfile.id,
+          force_profile_applied: forceProfile.active,
           finish_reason: completion.finish_reason,
           tokens_used: completion.tokens_used,
           capability_used: capability,
           provenance_id: provenance.id,
           remote_service_used: Boolean(runtimeProfile.remote_service),
+          remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
+          episode_id: episode.id,
+          episode_posture: episode.posture,
           memory_read: useSessionMemory,
           memory_written: writeSessionMemory,
           tool_calls_enabled: useToolCalls,
@@ -2866,13 +3004,14 @@ function createHarnessModuleEvent({ eventType, moduleId, activeModules, caller }
   };
 }
 
-function createCapabilityProposalEvent({ proposal, caller }) {
+function createCapabilityProposalEvent({ proposal, caller, episodeId = "" }) {
   const designProposal = proposal.type === "capability_design";
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
     event_type: designProposal ? "capability.design_proposal.created" : "capability.proposal.created",
     capability: designProposal ? "capability.design_proposal.create" : "capability.proposal.create",
+    episode_id: episodeId,
     caller_identity: caller,
     allowed: true,
     proposal_type: proposal.type ?? "capability_proposal",
@@ -3070,6 +3209,77 @@ function boundedDecisionLimit(value) {
   return Math.min(parsed, 100);
 }
 
+function resolveForceRuntimeProfile(runtimeProfiles = {}) {
+  const id = String(process.env.SOMA_FORCE_PROFILE ?? "").trim();
+  if (!id) {
+    return { active: false, id: "", source: "", profile: null, error: "" };
+  }
+  const profile = (runtimeProfiles.profiles ?? []).find((entry) => entry?.id === id) ?? null;
+  return {
+    active: true,
+    id,
+    source: "env",
+    profile,
+    error: profile ? "" : "runtime_profile_not_available",
+  };
+}
+
+function forceProfileDisclosure(forceProfile = {}) {
+  return {
+    active: Boolean(forceProfile.active),
+    id: forceProfile.id ?? "",
+    source: forceProfile.source ?? "",
+    error: forceProfile.error ?? "",
+  };
+}
+
+function requestedRuntimeProfileId(runtimeProfiles = {}, requestedProfileId = "") {
+  return String(requestedProfileId || runtimeProfiles.default_profile || "").trim();
+}
+
+function buildEpisode({ episodeId = "", runtimeProfile = {} } = {}) {
+  const id = String(episodeId ?? "").trim() || cryptoRandomId();
+  const posture = {
+    id,
+    mode: "operational",
+    occupant_id: "",
+    trust_basis: "",
+    force_profile: String(process.env.SOMA_FORCE_PROFILE ?? "").trim(),
+    effective_profile: runtimeProfile.id ?? "",
+    route: runtimeProfile.route ?? "",
+    named_relaxations: [],
+    unchanged_gates: ["egress", "consent"],
+    egress_allowances: [],
+    armed_protections: [],
+    forum_id: "",
+    telemetry_level: "minimal",
+    allowed_data_classes: normalizeCatalogStringArray(runtimeProfile.allowed_data_classes, []),
+  };
+  return { id, posture };
+}
+
+function validateRemoteChatEgress({
+  runtimeProfile = {},
+  useSessionMemory = false,
+  pendingDecisionDeliveries = [],
+} = {}) {
+  const allowedDataClasses = new Set(normalizeCatalogStringArray(runtimeProfile.allowed_data_classes, []));
+  const requested = ["submitted_text"];
+  if (useSessionMemory) {
+    requested.push("session_memory");
+  }
+  if (pendingDecisionDeliveries.length > 0) {
+    requested.push("capability_decision_context");
+  }
+  const disallowed = requested.filter((entry) => !allowedDataClasses.has(entry));
+  return {
+    allowed: disallowed.length === 0,
+    code: disallowed.length === 0 ? "" : "model_remote_egress_not_allowed",
+    disallowed,
+    allowedDataClasses: [...allowedDataClasses],
+  };
+}
+
 async function processModelToolCallIntents({
   completion = {},
   effectiveHarness,
@@ -3078,6 +3288,7 @@ async function processModelToolCallIntents({
   provenanceLog,
   logger = console,
   caller = "",
+  episodeId = "",
 } = {}) {
   const rawIntents = extractStructuredToolCallIntents(completion);
   const results = [];
@@ -3099,6 +3310,7 @@ async function processModelToolCallIntents({
         provenanceLog,
         logger,
         caller,
+        episodeId,
       });
     } else {
       result = proposeOrRefuseModelToolCallIntent({
@@ -3108,6 +3320,7 @@ async function processModelToolCallIntents({
         provenanceLog,
         logger,
         caller,
+        episodeId,
       });
     }
 
@@ -3115,6 +3328,7 @@ async function processModelToolCallIntents({
       intent,
       result,
       caller,
+      episodeId,
     }));
     logger.info?.("soma.provenance", event);
     results.push({
@@ -3193,6 +3407,7 @@ async function executeModelFileReadIntent({
   provenanceLog,
   logger = console,
   caller = "",
+  episodeId = "",
 } = {}) {
   try {
     requireCapability(effectiveHarness, "tool.files.read");
@@ -3204,6 +3419,7 @@ async function executeModelFileReadIntent({
     const event = provenanceLog.append(createFileReadEvent({
       file,
       caller,
+      episodeId,
     }));
     logger.info?.("soma.provenance", event);
     return {
@@ -3236,6 +3452,7 @@ function proposeOrRefuseModelToolCallIntent({
   provenanceLog,
   logger = console,
   caller = "",
+  episodeId = "",
 } = {}) {
   const definition = findCatalogCapability(capabilityCatalog, intent.capability);
   if (!definition) {
@@ -3260,6 +3477,7 @@ function proposeOrRefuseModelToolCallIntent({
   const event = provenanceLog.append(createCapabilityProposalEvent({
     proposal,
     caller,
+    episodeId,
   }));
   proposal.provenance_id = event.id;
   logger.info?.("soma.provenance", event);
@@ -3560,12 +3778,13 @@ function createSessionMemoryEvent({ eventType, role = "", source = "", removed =
   return event;
 }
 
-function createFileReadEvent({ file, caller }) {
+function createFileReadEvent({ file, caller, episodeId = "" }) {
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
     event_type: "tool.files.read",
     capability: "tool.files.read",
+    episode_id: episodeId,
     caller_identity: caller,
     allowed: true,
     file_path: file.path,
@@ -3576,7 +3795,7 @@ function createFileReadEvent({ file, caller }) {
   };
 }
 
-function createModelToolCallIntentEvent({ intent = null, result = {}, caller = "" } = {}) {
+function createModelToolCallIntentEvent({ intent = null, result = {}, caller = "", episodeId = "" } = {}) {
   const safeIntent = intent ?? {};
   const disposition = String(result?.disposition ?? "refused").trim() || "refused";
   return {
@@ -3584,6 +3803,7 @@ function createModelToolCallIntentEvent({ intent = null, result = {}, caller = "
     timestamp: new Date().toISOString(),
     event_type: "model.local.tool_call_intent",
     capability: "model.local.tool_calls",
+    episode_id: episodeId,
     caller_identity: caller,
     allowed: disposition !== "refused",
     tool_call_id: safeIntent.id ?? result?.id ?? "",

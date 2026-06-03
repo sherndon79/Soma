@@ -156,6 +156,8 @@ test("runCli chat sends expected request body", async () => {
     "--write-memory",
     "--assess-load",
     "--assess-escalation",
+    "--grant-id",
+    "grant-remote-chat",
     "--tool-calls",
     "--tool-call-grant-id",
     "grant-tool-calls",
@@ -182,6 +184,7 @@ test("runCli chat sends expected request body", async () => {
   assert.equal(captured.body.write_session_memory, true);
   assert.equal(captured.body.assess_cognitive_load, true);
   assert.equal(captured.body.assess_escalation, true);
+  assert.equal(captured.body.grant_id, "grant-remote-chat");
   assert.equal(captured.body.use_tool_calls, true);
   assert.equal(captured.body.tool_call_grant_id, "grant-tool-calls");
   assert.equal(captured.body.tool_call_provider, "local-model");

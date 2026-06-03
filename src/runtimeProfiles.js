@@ -37,6 +37,7 @@ export function publicRuntimeProfile(profile) {
     id: profile.id,
     name: profile.name,
     route: profile.route,
+    runtime: profile.runtime ?? "",
     model: profile.model,
     max_context_tokens: profile.max_context_tokens,
     tool_calls_supported: Boolean(profile.tool_calls_supported),

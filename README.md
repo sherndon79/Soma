@@ -4,8 +4,8 @@ Soma is a local-first agent harness for desktop interaction, memory, tools, perc
 embodied presence.
 
 The first implementation slice is intentionally narrow: a dependency-free local service that
-exposes a conservative base harness, routes chat to a local vLLM/OpenAI-compatible model, and
-puts early local capabilities behind policy checks and provenance.
+exposes a conservative base harness, routes chat to configured runtime profiles, and puts early
+local and remote capabilities behind policy checks and provenance.
 
 Current capabilities include policy-gated local chat, ephemeral session memory and in-process
 provenance, scoped read-only file access, text-only cognitive-load stewardship, and read-only
@@ -39,12 +39,19 @@ Environment variables:
 - `SOMA_PORT`
 - `SOMA_LLM_URL`
 - `SOMA_LLM_MODEL`
+- `SOMA_FORCE_PROFILE`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_VERSION`
 - `SOMA_SENSORIUM_ENABLED`
 - `SOMA_SENSORIUM_LIVE_SMOKE`
 - `SOMA_SENSOR_BROKER`
 - `SOMA_SENSORIUM_ZENOH_CONFIG`
 
 Runtime profiles are defined in [config/runtime-profiles.json](./config/runtime-profiles.json).
+`claude-remote` uses the Anthropic Messages API and requires `ANTHROPIC_API_KEY`, an explicit
+`model.remote.chat` runtime grant, and an egress profile that allows the outbound data classes.
+`SOMA_FORCE_PROFILE=claude-remote` pins the effective profile for eval runs and rejects explicit
+requests for any other profile.
 Self-scoped narrowing modules are defined in [config/harness-modules.json](./config/harness-modules.json).
 
 ## Desktop Broker Helper

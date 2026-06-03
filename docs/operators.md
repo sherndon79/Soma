@@ -102,6 +102,22 @@ Local tool-call intent handling requires an active `model.local.tool_calls` runt
 grant permits structured intent routing only; the target tool still needs its own existing authority
 to execute, otherwise Soma stores a normal capability proposal or refuses the intent.
 
+## Remote Chat First-Breath Profile
+
+`claude-remote` is a remote runtime profile for the Anthropic Messages API. Provider installation
+makes `model.remote.chat` supported and grantable, but it does not authorize use. A remote chat turn
+requires an explicit runtime grant, normally created from an approved capability proposal:
+
+```bash
+ANTHROPIC_API_KEY=... SOMA_FORCE_PROFILE=claude-remote npm start
+npm run cli -- chat "first breath" --grant-id grant-remote-chat --json
+```
+
+`SOMA_FORCE_PROFILE` is visible in `/health` and `/harness`. When set, explicit requests for a
+different profile are rejected rather than silently overridden. The first-breath profile allows only
+`submitted_text`; remote requests that would include session memory, proposal-decision context, file
+content, desktop content, or tool results fail with `model_remote_egress_not_allowed`.
+
 ## Inspect Desktop State
 
 Build the Rust helper first:

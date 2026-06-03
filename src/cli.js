@@ -90,6 +90,10 @@ export async function runCli(
     const response = await request(baseUrl, "POST", "/chat", {
       messages: [{ role: "user", content }],
       model_profile: flags.profile,
+      grant_id: flags["grant-id"],
+      remote_chat_grant_id: flags["remote-chat-grant-id"],
+      remote_chat_provider: flags["remote-chat-provider"],
+      remote_chat_scope: flags["remote-chat-scope"],
       max_tokens: numberFlag(flags["max-tokens"]),
       temperature: numberFlag(flags.temperature),
       use_session_memory: Boolean(flags.memory),
@@ -97,7 +101,7 @@ export async function runCli(
       assess_cognitive_load: Boolean(flags["assess-load"]),
       assess_escalation: Boolean(flags["assess-escalation"]),
       use_tool_calls: Boolean(flags["tool-calls"]),
-      tool_call_grant_id: flags["tool-call-grant-id"] ?? flags["grant-id"],
+      tool_call_grant_id: flags["tool-call-grant-id"],
       tool_call_provider: flags["tool-call-provider"],
       tool_call_scope: flags["tool-call-scope"],
     });
@@ -2112,7 +2116,7 @@ function helpText() {
 Usage:
   soma status [--json]
   soma status snapshot --grant-id grant-id [--json]
-  soma chat "message" [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--tool-calls --tool-call-grant-id id] [--profile id] [--max-tokens n] [--temperature n] [--json]
+  soma chat "message" [--grant-id id] [--memory] [--write-memory] [--assess-load] [--assess-escalation] [--tool-calls --tool-call-grant-id id] [--profile id] [--max-tokens n] [--temperature n] [--json]
   soma memory list|add|clear [--json]
   soma memory durable-add --grant-id grant-id "selected memory" [--role note] [--source manual] [--mutation-id id] [--json]
   soma memory durable-remove entry-id --grant-id grant-id [--reason text] [--mutation-id id] [--json]

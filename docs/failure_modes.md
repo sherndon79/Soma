@@ -62,6 +62,35 @@ Provenance:
 - denied policy checks are provenanced; transport-level model failures may be summarized in future
   operational logs without raw prompt content
 
+### Remote Model Chat Blocked
+
+Current behavior:
+
+- remote profiles require an active `model.remote.chat` runtime grant; missing grants fail with
+  `model_remote_chat_grant_required`
+- mismatched or inactive grants fail with `model_remote_chat_grant_not_authorized`
+- remote requests that would export data outside the effective profile's `allowed_data_classes`
+  fail with `model_remote_egress_not_allowed`
+- `SOMA_FORCE_PROFILE` rejects explicit requests for another profile with
+  `runtime_profile_force_mismatch`
+- invalid forced profiles fail closed with `runtime_profile_force_not_available`
+- Anthropic runtime calls fail with `anthropic_api_key_missing` when `ANTHROPIC_API_KEY` is absent
+
+Recovery:
+
+- create or choose an explicit runtime grant through the normal capability proposal and grant flow
+- remove disallowed context from the request, or deliberately widen the profile/grant in a later
+  reviewed slice
+- set `ANTHROPIC_API_KEY` only in the process environment
+- unset or correct `SOMA_FORCE_PROFILE`
+
+Provenance:
+
+- denied egress records the denied event, route/profile metadata, episode id, and disallowed data
+  classes without raw prompt content or secrets
+- completed remote chat records requested/effective profile, force-profile application, remote
+  route, remote grant id, and episode id without raw chat content
+
 ### Model Returns Malformed Eval Or Tool-Planning Output
 
 Current behavior:

@@ -254,12 +254,15 @@ implemented in the MVP.
 
 ### `POST /chat`
 
-Sends a chat request to the local model runtime only when `model.local.chat` is allowed.
+Sends a chat request through the effective runtime profile. Local profiles require
+`model.local.chat`; remote profiles require an active `model.remote.chat` runtime grant.
 
 The request should include:
 
 - messages
 - optional `model_profile`
+- optional `grant_id` / `remote_chat_grant_id` for remote chat
+- optional `episode_id`
 - optional max tokens
 - optional temperature
 - optional `use_session_memory`
@@ -271,8 +274,10 @@ The response should include:
 
 - model response text
 - model id/profile actually used
+- requested/effective profile
 - capability used
 - provenance id
+- episode id
 - whether any remote service was used
 - whether ephemeral session memory was read or written
 - structured tool-call intent dispositions when `use_tool_calls` is enabled
@@ -285,10 +290,15 @@ slice accepts structured `tool_calls` / `tool_call_intents` returned by the mode
 parse natural-language response text into actions. Tool-call provenance records the tool name,
 target capability, argument keys, and disposition without raw argument or result content.
 
-For MVP local chat, remote service should always be `false`.
+For remote profiles, egress is constrained by the effective profile's `allowed_data_classes`.
+Requests that would send session memory, proposal-decision context, file content, desktop content,
+or tool results when those classes are not allowed fail closed with
+`model_remote_egress_not_allowed`; Soma does not silently strip context. `SOMA_FORCE_PROFILE` pins
+the effective profile for eval runs, exposes the force in health/harness surfaces, and rejects
+explicit requests for a different profile.
 
-Unknown runtime profiles fail closed. Remote profiles require `model.remote.chat`, which is
-disabled in the MVP base harness.
+Unknown runtime profiles fail closed. Remote chat is provider-backed and grantable, but remains
+disabled in the base harness until an explicit runtime grant authorizes a specific use.
 
 ### `GET /session-memory`
 
@@ -416,8 +426,9 @@ manifests, modules, audit records, UI, and future tools.
   user-facing response. See
   [Escalation and Planning](../concepts/drafts/escalation_and_planning.md).
 
-MVP enables local chat by default and local tool-call intent handling by explicit runtime grant.
-Remote chat, remote tool calls, and remote planning remain disabled.
+MVP enables local chat by default, local tool-call intent handling by explicit runtime grant, and
+remote chat only by explicit runtime grant plus remote-profile egress enforcement. Remote tool calls
+and remote planning remain disabled.
 
 ### Memory
 

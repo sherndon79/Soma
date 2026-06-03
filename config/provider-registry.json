@@ -62,6 +62,21 @@
       ]
     },
     {
+      "id": "soma.provider.anthropic",
+      "name": "Anthropic Messages API",
+      "version": "0.1.0",
+      "runtime": "anthropic-messages",
+      "local_only": false,
+      "network_access": true,
+      "capabilities": [
+        {
+          "key": "model.remote.chat",
+          "provider_contract": "soma.model.chat.v1",
+          "output_schema": "soma.model.chat.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.provenance-log",
       "name": "In-Process Provenance Log",
       "version": "0.1.0",

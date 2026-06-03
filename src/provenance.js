@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 export function createProvenance({
   capability,
   modelProfile,
+  requestedProfile = "",
+  effectiveProfile = "",
+  forceProfileApplied = false,
+  episodeId = "",
+  episodePosture = null,
   route = "local",
   caller = "",
   memoryRead = false,
@@ -19,6 +24,10 @@ export function createProvenance({
     capability,
     route,
     model_profile: modelProfile,
+    requested_profile: requestedProfile || modelProfile,
+    effective_profile: effectiveProfile || modelProfile,
+    force_profile_applied: Boolean(forceProfileApplied),
+    episode_id: episodeId,
     caller_identity: caller,
     memory_read: memoryRead,
     memory_written: memoryWritten,
@@ -27,6 +36,10 @@ export function createProvenance({
     tools_available: false,
     remote_service_used: route !== "local",
   };
+
+  if (episodePosture) {
+    provenance.episode_posture = episodePosture;
+  }
 
   if (allowed !== null) {
     provenance.allowed = allowed;

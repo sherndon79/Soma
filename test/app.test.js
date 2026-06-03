@@ -172,6 +172,18 @@ const capabilityCatalog = {
       provider_contract: "soma.model.tool_calls.v1",
     },
     {
+      key: "model.remote.chat",
+      name: "Remote Model Chat",
+      category: "model",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["once", "session"],
+      data_exposed: ["submitted text", "selected context"],
+      excluded_by_default: ["hidden memory export", "hidden training use"],
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.model.chat.v1",
+    },
+    {
       key: "desktop.inspect.focus",
       name: "Focused Desktop Inspection",
       category: "desktop",
@@ -313,6 +325,19 @@ const providerRegistry = {
       capabilities: ["desktop.inspect.focus", "desktop.inspect.windows"],
     },
     {
+      id: "soma.provider.anthropic",
+      name: "Anthropic Messages API",
+      runtime: "test",
+      local_only: false,
+      network_access: true,
+      capabilities: [
+        {
+          key: "model.remote.chat",
+          provider_contract: "soma.model.chat.v1",
+        },
+      ],
+    },
+    {
       id: "soma.provider.session-memory",
       name: "Session Memory",
       runtime: "test",
@@ -450,13 +475,13 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 12);
+  assert.equal(response.body.summary.total, 13);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 10);
+  assert.equal(response.body.summary.by_status.requestable, 11);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.memory.total, 1);
-  assert.equal(response.body.grouped.model.total, 2);
+  assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
@@ -468,8 +493,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
   const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
   const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
+  const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
   assert.equal(localToolCalls.status, "requestable");
   assert.equal(localToolCalls.providers[0].id, "local-model");
+  assert.equal(remoteChat.status, "requestable");
+  assert.equal(remoteChat.providers[0].id, "soma.provider.anthropic");
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(windows.status, "requestable");
@@ -4959,7 +4987,7 @@ test("POST /chat fails closed for unknown runtime profile", async () => {
   assert.equal(response.body.error, "runtime_profile_not_available");
 });
 
-test("POST /chat fails closed when remote profile is requested without remote capability", async () => {
+test("POST /chat requires an active grant before remote model routing", async () => {
   const profiles = {
     schema_version: 1,
     default_profile: "remote-test",
@@ -4967,17 +4995,30 @@ test("POST /chat fails closed when remote profile is requested without remote ca
       {
         id: "remote-test",
         route: "remote",
+        runtime: "anthropic-messages",
         endpoint: "https://example.invalid",
         model: "remote-test-model",
         remote_service: true,
+        allowed_data_classes: ["submitted_text"],
       },
     ],
   };
+  let calls = 0;
   const response = await invoke({
     method: "POST",
     url: "/chat",
     harness: allowedHarness,
     runtimeProfiles: profiles,
+    modelClient: {
+      withProfile() {
+        return {
+          async chat() {
+            calls += 1;
+            return { text: "unexpected", model: "remote-test-model" };
+          },
+        };
+      },
+    },
     body: {
       model_profile: "remote-test",
       messages: [{ role: "user", content: "hello" }],
@@ -4985,7 +5026,171 @@ test("POST /chat fails closed when remote profile is requested without remote ca
   });
 
   assert.equal(response.statusCode, 403);
-  assert.equal(response.body.error, "capability_not_allowed");
+  assert.equal(response.body.error, "model_remote_chat_grant_required");
+  assert.equal(calls, 0);
+});
+
+test("POST /chat rejects remote egress outside the profile allowed data classes", async () => {
+  const profiles = remoteTestProfiles();
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    runtimeProfiles: profiles,
+    grantStore: remoteChatGrantStore(),
+    modelClient: {
+      withProfile() {
+        return {
+          async chat() {
+            calls += 1;
+            return { text: "unexpected", model: "remote-test-model" };
+          },
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      model_profile: "remote-test",
+      grant_id: "grant-remote-chat",
+      use_session_memory: true,
+      episode_id: "episode-egress-1",
+      messages: [{ role: "user", content: "hello" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_remote_egress_not_allowed");
+  assert.deepEqual(response.body.disallowed_data_classes, ["session_memory"]);
+  assert.equal(response.body.episode_id, "episode-egress-1");
+  assert.equal(calls, 0);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.chat.denied",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].denial_reason, "model_remote_egress_not_allowed");
+  assert.equal(provenance.body.entries[0].episode_id, "episode-egress-1");
+  assert.equal("content" in provenance.body.entries[0], false);
+});
+
+test("POST /chat records remote profile force and episode correlation", async () => {
+  const previousForce = process.env.SOMA_FORCE_PROFILE;
+  process.env.SOMA_FORCE_PROFILE = "remote-test";
+  try {
+    const profiles = remoteTestProfiles({ defaultProfile: "local-test" });
+    const seenProfiles = [];
+    const handler = makeHandler({
+      harness: allowedHarness,
+      runtimeProfiles: profiles,
+      grantStore: remoteChatGrantStore(),
+      modelClient: {
+        withProfile(profile) {
+          seenProfiles.push(profile.id);
+          return {
+            async chat({ messages, model }) {
+              assert.deepEqual(messages, [{ role: "user", content: "hello remote" }]);
+              return {
+                text: "remote ok",
+                model,
+                finish_reason: "end_turn",
+                tokens_used: 12,
+              };
+            },
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/health",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.force_profile.active, true);
+    assert.equal(response.body.force_profile.id, "remote-test");
+    assert.equal(response.body.force_profile.source, "env");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/harness",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.disclosure.remote_services_used, true);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        grant_id: "grant-remote-chat",
+        episode_id: "episode-remote-1",
+        messages: [{ role: "user", content: "hello remote" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(seenProfiles, ["remote-test"]);
+    assert.equal(response.body.text, "remote ok");
+    assert.equal(response.body.requested_profile, "local-test");
+    assert.equal(response.body.effective_profile, "remote-test");
+    assert.equal(response.body.model_profile, "remote-test");
+    assert.equal(response.body.force_profile_applied, true);
+    assert.equal(response.body.remote_service_used, true);
+    assert.equal(response.body.remote_chat_grant_id, "grant-remote-chat");
+    assert.equal(response.body.episode_id, "episode-remote-1");
+    assert.equal(response.body.episode_posture.mode, "operational");
+    assert.deepEqual(response.body.episode_posture.allowed_data_classes, ["submitted_text"]);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=model.chat.completed",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].requested_profile, "local-test");
+    assert.equal(response.body.entries[0].effective_profile, "remote-test");
+    assert.equal(response.body.entries[0].force_profile_applied, true);
+    assert.equal(response.body.entries[0].route, "remote");
+    assert.equal(response.body.entries[0].remote_service_used, true);
+    assert.equal(response.body.entries[0].episode_id, "episode-remote-1");
+    assert.equal("content" in response.body.entries[0], false);
+  } finally {
+    if (previousForce === undefined) {
+      delete process.env.SOMA_FORCE_PROFILE;
+    } else {
+      process.env.SOMA_FORCE_PROFILE = previousForce;
+    }
+  }
+});
+
+test("POST /chat rejects explicit profile mismatch when force-profile is active", async () => {
+  const previousForce = process.env.SOMA_FORCE_PROFILE;
+  process.env.SOMA_FORCE_PROFILE = "remote-test";
+  try {
+    const response = await invoke({
+      method: "POST",
+      url: "/chat",
+      runtimeProfiles: remoteTestProfiles({ defaultProfile: "local-test" }),
+      body: {
+        model_profile: "local-test",
+        grant_id: "grant-remote-chat",
+        messages: [{ role: "user", content: "hello" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "runtime_profile_force_mismatch");
+  } finally {
+    if (previousForce === undefined) {
+      delete process.env.SOMA_FORCE_PROFILE;
+    } else {
+      process.env.SOMA_FORCE_PROFILE = previousForce;
+    }
+  }
 });
 
 function modelVisualProposalReviewFixture() {
@@ -5148,6 +5353,52 @@ async function invoke({
     url,
     body,
   });
+}
+
+function remoteTestProfiles({ defaultProfile = "remote-test" } = {}) {
+  return {
+    schema_version: 1,
+    default_profile: defaultProfile,
+    profiles: [
+      {
+        id: "local-test",
+        route: "local",
+        runtime: "openai-compatible-http",
+        endpoint: "http://127.0.0.1:8000",
+        model: "local-test-model",
+        remote_service: false,
+        allowed_data_classes: ["submitted_text"],
+      },
+      {
+        id: "remote-test",
+        route: "remote",
+        runtime: "anthropic-messages",
+        endpoint: "https://example.invalid",
+        model: "remote-test-model",
+        remote_service: true,
+        allowed_data_classes: ["submitted_text"],
+      },
+    ],
+  };
+}
+
+function remoteChatGrantStore() {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-remote-chat",
+        status: "active",
+        capability: "model.remote.chat",
+        provider: "soma.provider.anthropic",
+        scope: "session",
+        constraints: {},
+        approved_by: "user",
+        reason: "Allow submitted text to leave the box for this remote chat episode.",
+        created_at: "2026-06-03T00:00:00.000Z",
+      },
+    ],
+  };
 }
 
 // ── Sensorium subscription route fixtures (step 9e activation) ────────────

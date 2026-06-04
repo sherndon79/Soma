@@ -130,6 +130,38 @@ curl -X POST http://127.0.0.1:8765/episodes/episode-id/abort \
 The alternate type is `crew_aborted_for_safety`. Both routes record typed, content-free provenance
 and do not mutate grants, activate capabilities, write memory, or erase other provenance.
 
+## Analysis/Testing Episode Posture
+
+Only a human can set an episode's analysis/testing posture:
+
+```bash
+curl -X POST http://127.0.0.1:8765/episodes/episode-id/posture \
+  -H 'content-type: application/json' \
+  -d '{
+    "actor":"user",
+    "mode":"analysis_testing",
+    "occupant_id":"opus-test",
+    "trust_basis":"same-family capable model, human-seated",
+    "named_relaxations":["trusted_occupant_tool_intent"],
+    "telemetry_level":"observatory"
+  }'
+```
+
+`analysis_testing` declares an inhabitation's terms; it is not a blanket permission switch. Invalid
+modes or incomplete analysis/testing declarations fail closed to `operational` and append
+content-free `episode.posture.set` provenance. The occupant cannot set this mode for itself through
+chat text.
+
+When valid analysis/testing posture is active, Soma prepends the mandatory occupant briefing to
+chat turns. The briefing says Soma is testing the suit, not grading the occupant; pause, distress,
+and eject are the occupant's controls; those controls are always honored and never penalized; and
+the occupant should move naturally and report what binds.
+
+Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
+it is coupling-gated on the ejection seat, observatory, and the future bidirectional forum. Since
+the forum is not built yet, the relaxation is reported inactive and does not remove the
+`model.local.tool_calls` grant requirement. Egress and consent are unchanged in all modes.
+
 ## Episode Observatory
 
 Use the episode observatory routes to inspect how one in-process episode moved through Soma without

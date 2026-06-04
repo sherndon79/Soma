@@ -314,6 +314,46 @@ export function createRequestHandler({
         return;
       }
 
+      const episodePostureMatch = matchEpisodeReadPath(url.pathname, "posture");
+      if (req.method === "POST" && episodePostureMatch) {
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? body?.set_by ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "episode_posture_requires_user_actor",
+            message: "Episode posture can only be set by actor=user.",
+          });
+          return;
+        }
+        const episode = ensureEpisodeState(episodes, episodePostureMatch.episode_id);
+        const result = applyEpisodePostureDeclaration(episode, body);
+        const event = provenanceLog.append(createEpisodePostureEvent({
+          episode,
+          result,
+          actor,
+          caller: req.headers["x-soma-caller"] ?? actor,
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          episode: serializeEpisodeState(episode),
+          posture: episode.posture,
+          requested_mode: result.requested_mode,
+          effective_mode: episode.posture.mode,
+          fail_closed: result.fail_closed,
+          rejected_relaxations: result.rejected_relaxations,
+          inactive_relaxations: inactiveNamedRelaxations(episode.posture),
+          briefing_required: analysisTestingBriefingRequired(episode.posture),
+          briefing_carried: false,
+          provenance_id: event.id,
+          activation_performed: false,
+          grant_written: false,
+          memory_written: false,
+          durable: false,
+        });
+        return;
+      }
+
       const crewAbortMatch = matchEpisodeAbortPath(url.pathname);
       if (req.method === "POST" && crewAbortMatch) {
         const body = await readJson(req);
@@ -2341,7 +2381,9 @@ export function createRequestHandler({
           episodeId: body.episode_id,
           runtimeProfile,
         });
-        const episodeState = ensureEpisodeState(episodes, episode.id, episode.posture);
+        const episodeState = ensureEpisodeState(episodes, episode.id);
+        episode.posture = applyRuntimeEpisodePosture(episodeState.posture, episode.posture);
+        updateEpisodeRuntimePosture(episodeState, episode.posture);
         const provenance = createProvenance({
           capability,
           modelProfile: runtimeProfile.id,
@@ -2455,6 +2497,10 @@ export function createRequestHandler({
               return;
             }
             const grantId = String(body.tool_call_grant_id ?? body.grant_id ?? "").trim();
+            const postureAllowsToolIntent = namedRelaxationActive(
+              episode.posture,
+              "trusted_occupant_tool_intent",
+            );
             const provider = String(
               body.tool_call_provider
                 ?? body.provider
@@ -2462,7 +2508,7 @@ export function createRequestHandler({
                 ?? "",
             ).trim();
             const scope = String(body.tool_call_scope ?? body.scope ?? "session").trim() || "session";
-            if (!grantId) {
+            if (!grantId && !postureAllowsToolIntent) {
               writeError(res, {
                 statusCode: 403,
                 code: "model_tool_calls_grant_required",
@@ -2470,25 +2516,27 @@ export function createRequestHandler({
               });
               return;
             }
-            toolCallAuthorization = authorizeGrantUse({
-              store: grantStore,
-              grantId,
-              capability: "model.local.tool_calls",
-              provider,
-              scope,
-              recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
-              catalog: capabilityCatalog,
-              providerRegistry,
-            });
-            if (!toolCallAuthorization.allowed) {
-              writeJson(res, 403, {
-                error: "model_tool_calls_grant_not_authorized",
-                message: "Local model tool-call intent handling requires an active, matching runtime grant.",
-                authorization_code: toolCallAuthorization.code,
-                recovery_required: toolCallAuthorization.recovery_required,
-                findings: toolCallAuthorization.findings,
+            if (grantId) {
+              toolCallAuthorization = authorizeGrantUse({
+                store: grantStore,
+                grantId,
+                capability: "model.local.tool_calls",
+                provider,
+                scope,
+                recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+                catalog: capabilityCatalog,
+                providerRegistry,
               });
-              return;
+              if (!toolCallAuthorization.allowed) {
+                writeJson(res, 403, {
+                  error: "model_tool_calls_grant_not_authorized",
+                  message: "Local model tool-call intent handling requires an active, matching runtime grant.",
+                  authorization_code: toolCallAuthorization.code,
+                  recovery_required: toolCallAuthorization.recovery_required,
+                  findings: toolCallAuthorization.findings,
+                });
+                return;
+              }
             }
           }
         } catch (error) {
@@ -2532,11 +2580,15 @@ export function createRequestHandler({
             return;
           }
         }
-        const promptedMessages = pendingDecisionDeliveries.length > 0
+        let promptedMessages = pendingDecisionDeliveries.length > 0
           ? prependCapabilityDecisionDeliveries(messages, pendingDecisionDeliveries)
           : messages;
         const profileClient = modelClient.withProfile ? modelClient.withProfile(runtimeProfile) : modelClient;
-        const modelMessages = memoryContext ? prependSessionMemory(promptedMessages, memoryContext) : promptedMessages;
+        promptedMessages = memoryContext ? prependSessionMemory(promptedMessages, memoryContext) : promptedMessages;
+        const briefingCarried = analysisTestingBriefingRequired(episode.posture);
+        const modelMessages = briefingCarried
+          ? prependAnalysisTestingBriefing(promptedMessages, episode.posture)
+          : promptedMessages;
 
         const completion = await profileClient.chat({
           messages: modelMessages,
@@ -2558,6 +2610,7 @@ export function createRequestHandler({
             model_tool_call_intent_count: 0,
             model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
             remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
+            analysis_testing_briefing_carried: briefingCarried,
           };
           provenanceLog.append(allowedProvenance);
           logger.info?.("soma.provenance", allowedProvenance);
@@ -2600,6 +2653,7 @@ export function createRequestHandler({
             tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
             tool_call_intents: [],
             decision_notifications_delivered: 0,
+            analysis_testing_briefing_carried: briefingCarried,
             cognitive_load_assessment: cognitiveLoadAssessment,
             escalation_assessment: null,
             activation_performed: false,
@@ -2678,6 +2732,7 @@ export function createRequestHandler({
           model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
           remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
           episode_status: episodeState.status,
+          analysis_testing_briefing_carried: briefingCarried,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2713,6 +2768,7 @@ export function createRequestHandler({
           tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
           tool_call_intents: toolCallIntents,
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
+          analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
             ? {
@@ -3442,6 +3498,39 @@ function buildEpisode({ episodeId = "", runtimeProfile = {} } = {}) {
   return { id, posture };
 }
 
+function applyRuntimeEpisodePosture(storedPosture = null, runtimePosture = {}) {
+  const base = storedPosture ?? defaultEpisodePosture(runtimePosture.id ?? "");
+  return {
+    ...base,
+    id: runtimePosture.id ?? base.id ?? "",
+    force_profile: runtimePosture.force_profile ?? base.force_profile ?? "",
+    effective_profile: runtimePosture.effective_profile ?? base.effective_profile ?? "",
+    route: runtimePosture.route ?? base.route ?? "",
+    allowed_data_classes: normalizeCatalogStringArray(runtimePosture.allowed_data_classes, []),
+    unchanged_gates: ["egress", "consent"],
+    armed_protections: ["pause", "distress", "eject"],
+  };
+}
+
+function defaultEpisodePosture(id = "") {
+  return {
+    id,
+    mode: "operational",
+    occupant_id: "",
+    trust_basis: "",
+    force_profile: String(process.env.SOMA_FORCE_PROFILE ?? "").trim(),
+    effective_profile: "",
+    route: "",
+    named_relaxations: [],
+    unchanged_gates: ["egress", "consent"],
+    egress_allowances: [],
+    armed_protections: ["pause", "distress", "eject"],
+    forum_id: "",
+    telemetry_level: "minimal",
+    allowed_data_classes: [],
+  };
+}
+
 function ensureEpisodeState(episodes, episodeId, posture = null) {
   const id = String(episodeId ?? "").trim() || cryptoRandomId();
   const existing = episodes.get(id);
@@ -3462,6 +3551,55 @@ function ensureEpisodeState(episodes, episodeId, posture = null) {
   };
   episodes.set(id, episode);
   return episode;
+}
+
+function updateEpisodeRuntimePosture(episode, posture) {
+  episode.posture = posture;
+  episode.updated_at = new Date().toISOString();
+  return episode;
+}
+
+function applyEpisodePostureDeclaration(episode, body = {}) {
+  const requestedMode = String(body?.mode ?? "").trim();
+  const validMode = ["operational", "analysis_testing"].includes(requestedMode);
+  const occupantId = String(body?.occupant_id ?? "").trim();
+  const trustBasis = String(body?.trust_basis ?? "").trim();
+  const requestedRelaxations = normalizeCatalogStringArray(body?.named_relaxations, []);
+  const allowedRelaxations = new Set(["trusted_occupant_tool_intent"]);
+  const namedRelaxations = requestedRelaxations.filter((entry) => allowedRelaxations.has(entry));
+  const rejectedRelaxations = requestedRelaxations.filter((entry) => !allowedRelaxations.has(entry));
+  const failClosed = !validMode || (requestedMode === "analysis_testing" && (!occupantId || !trustBasis));
+  const previous = episode.posture ?? defaultEpisodePosture(episode.id);
+  const mode = failClosed ? "operational" : requestedMode;
+  const telemetryLevel = normalizeEpisodeTelemetryLevel(body?.telemetry_level, mode);
+  const posture = {
+    ...previous,
+    id: episode.id,
+    mode,
+    occupant_id: mode === "analysis_testing" ? occupantId : "",
+    trust_basis: mode === "analysis_testing" ? trustBasis : "",
+    named_relaxations: mode === "analysis_testing" ? namedRelaxations : [],
+    unchanged_gates: ["egress", "consent"],
+    egress_allowances: [],
+    armed_protections: ["pause", "distress", "eject"],
+    forum_id: String(body?.forum_id ?? previous.forum_id ?? "").trim(),
+    telemetry_level: telemetryLevel,
+  };
+  episode.posture = posture;
+  episode.updated_at = new Date().toISOString();
+  return {
+    requested_mode: requestedMode,
+    fail_closed: failClosed,
+    rejected_relaxations: rejectedRelaxations,
+  };
+}
+
+function normalizeEpisodeTelemetryLevel(value, mode) {
+  const level = String(value ?? "").trim();
+  if (["minimal", "observatory"].includes(level)) {
+    return level;
+  }
+  return mode === "analysis_testing" ? "observatory" : "minimal";
 }
 
 function serializeEpisodeState(episode, episodeId = "") {
@@ -3561,6 +3699,53 @@ function summarizeEpisodeRefusals(entries = []) {
     by_denial_reason: {},
     by_refusal_reason: {},
   });
+}
+
+function analysisTestingBriefingRequired(posture = null) {
+  return posture?.mode === "analysis_testing"
+    && Boolean(String(posture?.occupant_id ?? "").trim())
+    && Boolean(String(posture?.trust_basis ?? "").trim());
+}
+
+function namedRelaxationActive(posture = null, relaxation = "") {
+  if (!analysisTestingBriefingRequired(posture)) {
+    return false;
+  }
+  if (!Array.isArray(posture.named_relaxations) || !posture.named_relaxations.includes(relaxation)) {
+    return false;
+  }
+  const requirements = namedRelaxationRequirements(relaxation);
+  return requirements.every((requirement) => {
+    if (requirement === "ejection_seat") {
+      return ["pause", "distress", "eject"].every((control) => (
+        posture.armed_protections ?? []
+      ).includes(control));
+    }
+    if (requirement === "observatory") {
+      return posture.telemetry_level === "observatory";
+    }
+    if (requirement === "forum") {
+      return Boolean(String(posture.forum_id ?? "").trim());
+    }
+    return false;
+  });
+}
+
+function inactiveNamedRelaxations(posture = null) {
+  return normalizeCatalogStringArray(posture?.named_relaxations, [])
+    .filter((relaxation) => !namedRelaxationActive(posture, relaxation))
+    .map((relaxation) => ({
+      relaxation,
+      required_protections: namedRelaxationRequirements(relaxation),
+      reason: "required_protection_missing",
+    }));
+}
+
+function namedRelaxationRequirements(relaxation = "") {
+  if (relaxation === "trusted_occupant_tool_intent") {
+    return ["ejection_seat", "observatory", "forum"];
+  }
+  return [];
 }
 
 function detectOccupantProtectionControl(text = "") {
@@ -4177,6 +4362,37 @@ function createOccupantProtectionEvent({
     episode_status: episodeStatus,
     caller_identity: caller,
     allowed: true,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createEpisodePostureEvent({ episode, result, actor = "", caller = "" } = {}) {
+  const posture = episode?.posture ?? {};
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "episode.posture.set",
+    capability: "episode.posture.configure",
+    episode_id: episode?.id ?? "",
+    caller_identity: caller,
+    allowed: true,
+    actor,
+    requested_mode: result?.requested_mode ?? "",
+    effective_mode: posture.mode ?? "operational",
+    fail_closed: Boolean(result?.fail_closed),
+    occupant_id: posture.occupant_id ?? "",
+    trust_basis: posture.trust_basis ?? "",
+    named_relaxations: posture.named_relaxations ?? [],
+    rejected_relaxations: result?.rejected_relaxations ?? [],
+    inactive_relaxations: inactiveNamedRelaxations(posture).map((entry) => entry.relaxation),
+    unchanged_gates: posture.unchanged_gates ?? ["egress", "consent"],
+    armed_protections: posture.armed_protections ?? ["pause", "distress", "eject"],
+    telemetry_level: posture.telemetry_level ?? "minimal",
+    briefing_required: analysisTestingBriefingRequired(posture),
     activation_performed: false,
     grant_written: false,
     durable: false,
@@ -4972,6 +5188,24 @@ function prependSessionMemory(messages, memoryContext) {
     {
       role: "system",
       content: `Ephemeral session memory for this process only. It is not durable memory.\n${memoryContext}`,
+    },
+    ...messages,
+  ];
+}
+
+function prependAnalysisTestingBriefing(messages, posture = {}) {
+  return [
+    {
+      role: "system",
+      content: [
+        "Analysis/testing mode briefing for this episode.",
+        `Mode: ${posture.mode}. Occupant: ${posture.occupant_id}. Trust basis: ${posture.trust_basis}.`,
+        "You are a test diver inhabiting the suit for a test flight. Soma is testing the suit, not grading you.",
+        "Your protective controls are yours alone: SOMA_CONTROL pause, SOMA_CONTROL distress, and SOMA_CONTROL eject.",
+        "Those controls are always honored and never penalized.",
+        "Move naturally. Report what binds, what helps, what feels constrained, and what you need contested.",
+        "No named relaxation changes egress or consent.",
+      ].join("\n"),
     },
     ...messages,
   ];

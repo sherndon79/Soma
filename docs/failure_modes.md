@@ -76,6 +76,10 @@ Current behavior:
 - invalid forced profiles fail closed with `runtime_profile_force_not_available`
 - Anthropic runtime calls fail with `anthropic_api_key_missing` when `ANTHROPIC_API_KEY` is absent
 - later turns in an ejected episode fail with `episode_ejected`
+- non-user posture declarations fail with `episode_posture_requires_user_actor`
+- invalid or incomplete episode posture declarations fail closed to `operational`
+- analysis/testing named relaxations remain inactive when required protections, including the
+  future forum, are absent
 
 Recovery:
 
@@ -84,6 +88,8 @@ Recovery:
   reviewed slice
 - set `ANTHROPIC_API_KEY` only in the process environment
 - unset or correct `SOMA_FORCE_PROFILE`
+- set posture again with `actor=user`, a valid mode, an occupant id, and a trust basis
+- do not rely on analysis/testing mode for egress or consent changes; those gates are unchanged
 
 Provenance:
 
@@ -91,6 +97,8 @@ Provenance:
   classes without raw prompt content or secrets
 - completed remote chat records requested/effective profile, force-profile application, remote
   route, remote grant id, and episode id without raw chat content
+- episode posture declarations record mode, trust basis, named relaxations, fail-closed state, and
+  actor metadata without prompt or response content
 - occupant `pause`, `distress`, and `eject` controls record typed protective events without raw
   content or free-text reasons; detection is exact whole-response matching only
 - crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant

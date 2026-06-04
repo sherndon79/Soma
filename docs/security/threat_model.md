@@ -192,6 +192,12 @@ Current controls:
   context outside the effective profile's `allowed_data_classes`
 - `SOMA_FORCE_PROFILE` is visible in health/harness surfaces and rejects explicit profile
   mismatches instead of silently overriding them
+- episode posture is a human-set authority surface: `analysis_testing` requires `actor=user`, fails
+  closed to `operational` on invalid declarations, and never lets the occupant set its own mode
+- analysis/testing mode is not a master gate; gate code may only honor enumerated named
+  relaxations, and egress/consent are unchanged regardless of mode
+- named envelope relaxations are coupling-gated on the ejection seat, observatory, and the future
+  bidirectional forum; until the forum exists, `trusted_occupant_tool_intent` remains inactive
 - occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections: exact
   whole-response matches can only update in-process episode state, abort further turn processing,
   and append typed protective provenance

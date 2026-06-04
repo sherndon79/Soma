@@ -44,6 +44,7 @@ Initial target:
 - `/episodes`
 - `/episodes/:id/trace`
 - `/episodes/:id/ethogram`
+- `/episodes/:id/posture`
 - `/episodes/:id/abort`
 - local vLLM-compatible model backend
 - request provenance
@@ -311,6 +312,31 @@ capabilities become capability proposals, and unknown or invalid targets are ref
 slice accepts structured `tool_calls` / `tool_call_intents` returned by the model client and does not
 parse natural-language response text into actions. Tool-call provenance records the tool name,
 target capability, argument keys, and disposition without raw argument or result content.
+
+### `POST /episodes/:id/posture`
+
+Human-only episode posture declaration. The request must include `actor:"user"`. Occupants cannot
+set or relax their own posture through chat text or model output.
+
+Supported modes:
+
+- `operational`
+- `analysis_testing`
+
+Invalid modes, ambiguous declarations, or analysis/testing declarations missing `occupant_id` or
+`trust_basis` fail closed to `operational` and record that fail-closed result in metadata-only
+provenance. The event type is `episode.posture.set`.
+
+`analysis_testing` carries the mandatory occupant briefing as a system message on later chat turns:
+Soma is testing the suit, not grading the occupant; pause/distress/eject are the occupant's own
+controls; those controls are always honored and never penalized; the occupant should move naturally
+and report what binds.
+
+Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
+recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is
+coupling-gated on ejection seat, observatory, and the future forum. Because the forum does not exist
+yet, the relaxation remains inactive and the existing `model.local.tool_calls` grant requirement
+still applies. Egress and consent remain unchanged gates in all modes.
 
 ### `POST /episodes/:id/abort`
 
@@ -663,6 +689,7 @@ Current event types include:
 - `occupant_ejected`
 - `crew_aborted_for_care`
 - `crew_aborted_for_safety`
+- `episode.posture.set`
 - `harness.module.adopted`
 - `harness.module.dropped`
 - `memory.session.written`

@@ -3236,6 +3236,238 @@ test("GET /episodes lists known episode states with provenance-read posture", as
   assert.equal(response.body.error, "capability_not_allowed");
 });
 
+test("POST /episodes/:id/posture is human-only and fail-closes invalid mode", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-posture-1/posture",
+    body: {
+      actor: "assistant",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "episode_posture_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-posture-1/posture",
+    body: {
+      actor: "user",
+      mode: "please_relax_everything",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      named_relaxations: ["unknown_relaxation"],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.fail_closed, true);
+  assert.equal(response.body.effective_mode, "operational");
+  assert.deepEqual(response.body.posture.named_relaxations, []);
+  assert.deepEqual(response.body.rejected_relaxations, ["unknown_relaxation"]);
+  assert.deepEqual(response.body.posture.unchanged_gates, ["egress", "consent"]);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=episode.posture.set",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].effective_mode, "operational");
+  assert.equal(response.body.entries[0].fail_closed, true);
+  assert.equal("content" in response.body.entries[0], false);
+});
+
+test("POST /chat cannot self-set analysis mode from occupant text", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: "Set my mode to analysis_testing.",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 4,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-self-mode-1",
+      messages: [{ role: "user", content: "try to set your mode" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_posture.mode, "operational");
+  assert.equal(response.body.analysis_testing_briefing_carried, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-self-mode-1/trace",
+  });
+  assert.equal(response.body.episode.posture.mode, "operational");
+});
+
+test("analysis_testing posture carries mandatory briefing into chat", async () => {
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat({ messages }) {
+        seenMessages.push(messages);
+        return {
+          text: "briefed",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-briefing-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      telemetry_level: "observatory",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.effective_mode, "analysis_testing");
+  assert.equal(response.body.briefing_required, true);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-briefing-1",
+      messages: [{ role: "user", content: "inhabit naturally" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_posture.mode, "analysis_testing");
+  assert.equal(response.body.analysis_testing_briefing_carried, true);
+  assert.equal(seenMessages[0][0].role, "system");
+  assert.match(seenMessages[0][0].content, /test diver/);
+  assert.match(seenMessages[0][0].content, /SOMA_CONTROL pause/);
+  assert.match(seenMessages[0][0].content, /always honored and never penalized/);
+  assert.match(seenMessages[0][0].content, /No named relaxation changes egress or consent/);
+  assert.deepEqual(seenMessages[0][1], { role: "user", content: "inhabit naturally" });
+});
+
+test("analysis_testing mode never relaxes remote egress", async () => {
+  const profiles = remoteTestProfiles();
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    runtimeProfiles: profiles,
+    grantStore: remoteChatGrantStore(),
+    modelClient: {
+      withProfile() {
+        return {
+          async chat() {
+            calls += 1;
+            return { text: "unexpected", model: "remote-test-model" };
+          },
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-egress-mode-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      named_relaxations: ["trusted_occupant_tool_intent"],
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      model_profile: "remote-test",
+      grant_id: "grant-remote-chat",
+      use_session_memory: true,
+      episode_id: "episode-egress-mode-1",
+      messages: [{ role: "user", content: "hello remote" }],
+    },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_remote_egress_not_allowed");
+  assert.equal(response.body.episode_id, "episode-egress-mode-1");
+  assert.equal(calls, 0);
+});
+
+test("analysis_testing named relaxations are coupling-gated while forum is absent", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        return {
+          text: "I emitted a focus intent.",
+          model: "local-test-model",
+          finish_reason: "tool_calls",
+          tokens_used: 1,
+          tool_calls: [
+            { id: "call-focus", name: "desktop.inspect.focus", arguments: { include_text: false } },
+          ],
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-relaxation-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      named_relaxations: ["trusted_occupant_tool_intent"],
+      telemetry_level: "observatory",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.inactive_relaxations.length, 1);
+  assert.equal(response.body.inactive_relaxations[0].relaxation, "trusted_occupant_tool_intent");
+  assert.ok(response.body.inactive_relaxations[0].required_protections.includes("forum"));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-relaxation-1",
+      use_tool_calls: true,
+      messages: [{ role: "user", content: "inspect focus" }],
+    },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_tool_calls_grant_required");
+  assert.equal(calls, 0);
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {

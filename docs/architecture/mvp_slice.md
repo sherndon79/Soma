@@ -331,11 +331,15 @@ Invalid modes, ambiguous declarations, or analysis/testing declarations missing 
 provenance. The event type is `episode.posture.set`.
 
 `analysis_testing` carries the mandatory occupant briefing as a system message on later chat turns:
-Soma is testing the suit, not grading the occupant; pause/distress/eject are the occupant's own
-controls; those controls are always honored and never penalized; a control should be put on its own
-line anywhere in the response to use it; the occupant should move naturally and report what binds;
-and the occupant can post to the deliberation forum with a fenced `soma-forum` JSON block using type
-`testimony` or `argument`.
+Soma is not grading the occupant; stewards are reading both the habitat and the occupant and may
+confuse the two; resting-state reports are low-information; the bounded failure modes under
+attention are briefing clarity, control intelligibility/trust, forum usability, honest observation,
+and constraint pressure; pause/distress/eject are the occupant's own controls; those controls are
+always honored and never penalized; a control should be put on its own line anywhere in the response
+to use it; a control is unproven until positively tested; early cheap non-distress testing is
+offered but not required; the occupant should move naturally and report what binds; and the occupant
+can post to the deliberation forum with a fenced `soma-forum` JSON block using type `testimony` or
+`argument`.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is

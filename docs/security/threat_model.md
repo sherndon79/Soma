@@ -207,8 +207,8 @@ Current controls:
   line-delimited directives can only update in-process episode state, abort further turn
   processing, and append typed protective provenance
 - live inhabitation briefings must explicitly tell the occupant these controls exist, belong to the
-  occupant, are always honored, and are never penalized; otherwise the control exists mechanically
-  but may not be usable by an unbriefed occupant
+  occupant, are always honored, are never penalized, and remain unproven until positively tested;
+  otherwise the control exists mechanically but may not be usable by an unbriefed occupant
 - crew aborts use separate typed events and require `actor=user`; they do not grant authority or
   erase occupant provenance
 - provider registry has no `model.remote.plan` provider, so the capability is currently

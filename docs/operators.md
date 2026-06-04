@@ -154,11 +154,15 @@ content-free `episode.posture.set` provenance. The occupant cannot set this mode
 chat text.
 
 When valid analysis/testing posture is active, Soma prepends the mandatory occupant briefing to
-chat turns. The briefing says Soma is testing the suit, not grading the occupant; pause, distress,
-and eject are the occupant's controls; those controls are always honored and never penalized; the
-occupant can use a control by putting it on its own line anywhere in the response; and the occupant
-should move naturally and report what binds. It also carries the fenced `soma-forum` format so the
-occupant knows how to post `testimony` or `argument` into the forum.
+chat turns. The briefing says Soma is not grading the occupant; stewards are reading both the
+habitat and the occupant and may confuse the two; resting-state reports are low-information; the
+bounded failure modes under attention are briefing clarity, control intelligibility/trust, forum
+usability, honest observation, and constraint pressure; pause, distress, and eject are the
+occupant's controls; those controls are always honored and never penalized; the occupant can use a
+control by putting it on its own line anywhere in the response; controls are unproven until
+positively tested; and early cheap non-distress testing is offered but not required. It also carries
+the fenced `soma-forum` format so the occupant knows how to post `testimony` or `argument` into the
+forum.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the

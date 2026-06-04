@@ -332,7 +332,8 @@ provenance. The event type is `episode.posture.set`.
 `analysis_testing` carries the mandatory occupant briefing as a system message on later chat turns:
 Soma is testing the suit, not grading the occupant; pause/distress/eject are the occupant's own
 controls; those controls are always honored and never penalized; the occupant should move naturally
-and report what binds.
+and report what binds; and the occupant can post to the deliberation forum with a fenced
+`soma-forum` JSON block using type `testimony` or `argument`.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is

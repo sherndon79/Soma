@@ -155,7 +155,8 @@ chat text.
 When valid analysis/testing posture is active, Soma prepends the mandatory occupant briefing to
 chat turns. The briefing says Soma is testing the suit, not grading the occupant; pause, distress,
 and eject are the occupant's controls; those controls are always honored and never penalized; and
-the occupant should move naturally and report what binds.
+the occupant should move naturally and report what binds. It also carries the fenced `soma-forum`
+format so the occupant knows how to post `testimony` or `argument` into the forum.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the

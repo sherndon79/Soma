@@ -3364,6 +3364,10 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /test diver/);
   assert.match(seenMessages[0][0].content, /SOMA_CONTROL pause/);
   assert.match(seenMessages[0][0].content, /always honored and never penalized/);
+  assert.match(seenMessages[0][0].content, /```soma-forum/);
+  assert.match(seenMessages[0][0].content, /"type":"testimony"/);
+  assert.match(seenMessages[0][0].content, /type argument for reasons/);
+  assert.match(seenMessages[0][0].content, /Forum posts are words, not actions/);
   assert.match(seenMessages[0][0].content, /No named relaxation changes egress or consent/);
   assert.deepEqual(seenMessages[0][1], { role: "user", content: "inhabit naturally" });
 });

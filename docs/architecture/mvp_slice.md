@@ -45,6 +45,8 @@ Initial target:
 - `/episodes/:id/trace`
 - `/episodes/:id/ethogram`
 - `/episodes/:id/posture`
+- `/episodes/:id/forum`
+- `/episodes/:id/forum/posts`
 - `/episodes/:id/abort`
 - local vLLM-compatible model backend
 - request provenance
@@ -334,9 +336,8 @@ and report what binds.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is
-coupling-gated on ejection seat, observatory, and the future forum. Because the forum does not exist
-yet, the relaxation remains inactive and the existing `model.local.tool_calls` grant requirement
-still applies. Egress and consent remain unchanged gates in all modes.
+coupling-gated on ejection seat, observatory, and the forum. It activates only when the forum has
+been opened and `forum_id` is present. Egress and consent remain unchanged gates in all modes.
 
 ### `POST /episodes/:id/abort`
 
@@ -360,6 +361,33 @@ the access posture of `/provenance`.
 These routes do not add a catalog capability, mutate grants, activate tools, write memory, or send
 notifications. They expose metadata already present in provenance and must not include prompt or
 response text.
+
+### Deliberation Forum
+
+The deliberation forum is the per-episode content-bearing dialogue channel between stewards and the
+occupant. It is separate from AMQ and separate from content-free provenance/observatory views.
+
+- `POST /episodes/:id/forum` opens the forum with `actor:"user"` and writes `posture.forum_id`.
+- `POST /episodes/:id/forum/posts` lets a steward post `justification`, `response`, or
+  `decision_note` content. It requires `actor:"user"`.
+- Occupants can post by including a fenced `soma-forum` JSON block in a chat completion:
+  `{"type":"testimony"|"argument","content":"..."}`.
+- `GET /episodes/:id/forum` returns the content-bearing thread and requires `provenance.read`.
+
+Forum posts are words, not actions. They do not create grants, alter posture, activate capabilities,
+change relaxations, eject, or mutate memory. Occupant testimony records interior experience;
+occupant argument records reasons to weigh. Any actual change must still go through explicit
+steward-controlled endpoints such as `POST /episodes/:id/posture`.
+
+Forum content is deliberately stored in the forum thread. Provenance remains content-free and only
+records metadata such as forum id, post id, author, type, and delivery count. Steward forum posts
+are delivered into the occupant's next chat turn as submitted dialogue text. Remote delivery of
+forum text is allowed as submitted text, but it does not carry memory, file, desktop, or tool
+content and does not relax egress.
+
+Opening the forum supplies the final coupling key for named relaxations. A declared
+`trusted_occupant_tool_intent` relaxation becomes active only when the ejection seat is armed,
+observatory telemetry is present, and `forum_id` is set.
 
 For remote profiles, egress is constrained by the effective profile's `allowed_data_classes`.
 Requests that would send session memory, proposal-decision context, file content, desktop content,
@@ -690,6 +718,9 @@ Current event types include:
 - `crew_aborted_for_care`
 - `crew_aborted_for_safety`
 - `episode.posture.set`
+- `episode.forum.opened`
+- `episode.forum.posted`
+- `episode.forum.delivered`
 - `harness.module.adopted`
 - `harness.module.dropped`
 - `memory.session.written`

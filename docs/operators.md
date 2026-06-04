@@ -158,9 +158,49 @@ and eject are the occupant's controls; those controls are always honored and nev
 the occupant should move naturally and report what binds.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
-it is coupling-gated on the ejection seat, observatory, and the future bidirectional forum. Since
-the forum is not built yet, the relaxation is reported inactive and does not remove the
-`model.local.tool_calls` grant requirement. Egress and consent are unchanged in all modes.
+it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the
+forum sets `forum_id`, the final coupling key; without that key, the relaxation remains inactive.
+Egress and consent are unchanged in all modes.
+
+## Deliberation Forum
+
+Open a content-bearing forum for an episode:
+
+```bash
+curl -X POST http://127.0.0.1:8765/episodes/episode-id/forum \
+  -H 'content-type: application/json' \
+  -d '{"actor":"user"}'
+```
+
+Post steward dialogue:
+
+```bash
+curl -X POST http://127.0.0.1:8765/episodes/episode-id/forum/posts \
+  -H 'content-type: application/json' \
+  -d '{
+    "actor":"user",
+    "steward_id":"seth",
+    "type":"justification",
+    "content":"We are keeping egress closed because memory is not part of this test."
+  }'
+```
+
+Read the thread:
+
+```bash
+curl http://127.0.0.1:8765/episodes/episode-id/forum
+```
+
+Steward post types are `justification`, `response`, and `decision_note`. Occupants post from chat
+by emitting a fenced `soma-forum` JSON block with type `testimony` or `argument`. The block is
+recorded in the forum and removed from the normal model response text.
+
+Forum posts are words, not actions. A post never creates a grant, changes posture, activates a
+capability, changes a relaxation, ejects, or writes memory. An occupant can argue for a relaxation
+in the forum, but a human must still declare any posture change through `POST /episodes/:id/posture`.
+Forum content is stored in the forum thread; provenance records only metadata and never includes
+the post body. Steward posts are delivered into the occupant's next chat turn as submitted dialogue
+text.
 
 ## Episode Observatory
 

@@ -248,6 +248,9 @@ records stay behind `--json`.
 - `GET /episodes/:id/trace`
 - `GET /episodes/:id/ethogram`
 - `POST /episodes/:id/posture`
+- `GET /episodes/:id/forum`
+- `POST /episodes/:id/forum`
+- `POST /episodes/:id/forum/posts`
 - `POST /episodes/:id/abort`
 
 ## Test

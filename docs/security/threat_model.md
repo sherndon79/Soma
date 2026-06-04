@@ -196,8 +196,13 @@ Current controls:
   closed to `operational` on invalid declarations, and never lets the occupant set its own mode
 - analysis/testing mode is not a master gate; gate code may only honor enumerated named
   relaxations, and egress/consent are unchanged regardless of mode
-- named envelope relaxations are coupling-gated on the ejection seat, observatory, and the future
-  bidirectional forum; until the forum exists, `trusted_occupant_tool_intent` remains inactive
+- named envelope relaxations are coupling-gated on the ejection seat, observatory, and the
+  bidirectional forum; forum opening supplies `forum_id`, the final coupling key
+- the deliberation forum is the deliberate content-bearing steward/occupant channel; provenance
+  records only forum metadata, and forum text never mutates grants, posture, capabilities,
+  relaxations, memory, or ejection state
+- occupant testimony and argument are persuasion surfaces, not procedural authority; reasons must
+  resolve into explicit human decisions through existing gated endpoints
 - occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections: exact
   whole-response matches can only update in-process episode state, abort further turn processing,
   and append typed protective provenance

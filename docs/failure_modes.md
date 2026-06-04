@@ -78,8 +78,11 @@ Current behavior:
 - later turns in an ejected episode fail with `episode_ejected`
 - non-user posture declarations fail with `episode_posture_requires_user_actor`
 - invalid or incomplete episode posture declarations fail closed to `operational`
-- analysis/testing named relaxations remain inactive when required protections, including the
-  future forum, are absent
+- analysis/testing named relaxations remain inactive when required protections, including
+  `forum_id`, are absent
+- non-user forum opens fail with `episode_forum_open_requires_user_actor`
+- non-user steward forum posts fail with `episode_forum_post_requires_user_actor`
+- forum posts are words, not actions; occupant arguments do not directly change posture or grants
 
 Recovery:
 
@@ -89,6 +92,7 @@ Recovery:
 - set `ANTHROPIC_API_KEY` only in the process environment
 - unset or correct `SOMA_FORCE_PROFILE`
 - set posture again with `actor=user`, a valid mode, an occupant id, and a trust basis
+- open the forum with `actor=user` before relying on forum-coupled named relaxations
 - do not rely on analysis/testing mode for egress or consent changes; those gates are unchanged
 
 Provenance:
@@ -99,6 +103,8 @@ Provenance:
   route, remote grant id, and episode id without raw chat content
 - episode posture declarations record mode, trust basis, named relaxations, fail-closed state, and
   actor metadata without prompt or response content
+- forum provenance records only metadata such as forum id, post id, author, type, and delivery
+  count; forum post content is stored only in the forum thread
 - occupant `pause`, `distress`, and `eject` controls record typed protective events without raw
   content or free-text reasons; detection is exact whole-response matching only
 - crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant

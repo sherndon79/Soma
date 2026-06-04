@@ -205,6 +205,7 @@ export function createRequestHandler({
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   const decisionWaiters = new Map();
   const episodes = new Map();
+  const forums = new Map();
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
       if (!endSummary) {
@@ -309,6 +310,96 @@ export function createRequestHandler({
         writeJson(res, 200, {
           episodes: episodesList,
           summary: summarizeEpisodes(episodesList),
+          durable: false,
+        });
+        return;
+      }
+
+      const episodeForumMatch = matchEpisodeReadPath(url.pathname, "forum");
+      if (req.method === "GET" && episodeForumMatch) {
+        requireCapability(effectiveHarness, "provenance.read");
+        const forum = forums.get(episodeForumMatch.episode_id) ?? null;
+        writeJson(res, 200, {
+          forum: serializeForum(forum, episodeForumMatch.episode_id),
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && episodeForumMatch) {
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "episode_forum_open_requires_user_actor",
+            message: "Opening an episode forum requires actor=user.",
+          });
+          return;
+        }
+        const episode = ensureEpisodeState(episodes, episodeForumMatch.episode_id);
+        const forum = ensureEpisodeForum(forums, episode.id, body);
+        applyForumToEpisodePosture(episode, forum);
+        const event = provenanceLog.append(createForumOpenedEvent({
+          forum,
+          actor,
+          caller: req.headers["x-soma-caller"] ?? actor,
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          forum: serializeForum(forum, episode.id),
+          episode: serializeEpisodeState(episode),
+          inactive_relaxations: inactiveNamedRelaxations(episode.posture),
+          active_relaxations: activeNamedRelaxations(episode.posture),
+          provenance_id: event.id,
+          activation_performed: false,
+          grant_written: false,
+          memory_written: false,
+          durable: false,
+        });
+        return;
+      }
+
+      const episodeForumPostsMatch = matchEpisodeTwoPartPath(url.pathname, "forum", "posts");
+      if (req.method === "POST" && episodeForumPostsMatch) {
+        const body = await readJson(req);
+        const actor = String(body?.actor ?? "").trim();
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "episode_forum_post_requires_user_actor",
+            message: "Steward forum posts require actor=user.",
+          });
+          return;
+        }
+        const forum = forums.get(episodeForumPostsMatch.episode_id);
+        if (!forum) {
+          writeError(res, {
+            statusCode: 404,
+            code: "episode_forum_not_open",
+            message: "Open the episode forum before posting.",
+          });
+          return;
+        }
+        const post = appendForumPost(forum, {
+          author: "steward",
+          authorId: body?.steward_id ?? body?.author_id ?? "steward",
+          type: body?.type,
+          content: body?.content,
+        });
+        const event = provenanceLog.append(createForumPostEvent({
+          forum,
+          post,
+          caller: req.headers["x-soma-caller"] ?? actor,
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          post,
+          forum_id: forum.forum_id,
+          provenance_id: event.id,
+          activation_performed: false,
+          grant_written: false,
+          memory_written: false,
           durable: false,
         });
         return;
@@ -2555,6 +2646,7 @@ export function createRequestHandler({
           requested_by: "assistant",
           delivered: false,
         });
+        const pendingForumDeliveries = pendingStewardForumPosts(forums, episode.id);
         if (runtimeProfile.route === "remote") {
           const egress = validateRemoteChatEgress({
             runtimeProfile,
@@ -2583,6 +2675,9 @@ export function createRequestHandler({
         let promptedMessages = pendingDecisionDeliveries.length > 0
           ? prependCapabilityDecisionDeliveries(messages, pendingDecisionDeliveries)
           : messages;
+        promptedMessages = pendingForumDeliveries.length > 0
+          ? prependForumDeliveries(promptedMessages, pendingForumDeliveries)
+          : promptedMessages;
         const profileClient = modelClient.withProfile ? modelClient.withProfile(runtimeProfile) : modelClient;
         promptedMessages = memoryContext ? prependSessionMemory(promptedMessages, memoryContext) : promptedMessages;
         const briefingCarried = analysisTestingBriefingRequired(episode.posture);
@@ -2596,6 +2691,16 @@ export function createRequestHandler({
           maxTokens: numberOrDefault(body.max_tokens, 512),
           temperature: numberOrDefault(body.temperature, 0.7),
         });
+        const deliveredForumPosts = markForumPostsDelivered(pendingForumDeliveries);
+        if (deliveredForumPosts.length > 0) {
+          const deliveryEvent = provenanceLog.append(createForumDeliveryEvent({
+            episodeId: episode.id,
+            posts: deliveredForumPosts,
+            caller: req.headers["x-soma-caller"] ?? "",
+            remoteServiceUsed: Boolean(runtimeProfile.remote_service),
+          }));
+          logger.info?.("soma.provenance", deliveryEvent);
+        }
         const occupantControl = detectOccupantProtectionControl(completion.text);
         if (occupantControl) {
           const updatedEpisode = applyOccupantProtectionControl(episodeState, occupantControl);
@@ -2611,6 +2716,8 @@ export function createRequestHandler({
             model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
             remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
             analysis_testing_briefing_carried: briefingCarried,
+            forum_posts_delivered: deliveredForumPosts.length,
+            forum_posts_created: 0,
           };
           provenanceLog.append(allowedProvenance);
           logger.info?.("soma.provenance", allowedProvenance);
@@ -2653,6 +2760,8 @@ export function createRequestHandler({
             tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
             tool_call_intents: [],
             decision_notifications_delivered: 0,
+            forum_posts_delivered: deliveredForumPosts.length,
+            forum_posts_created: 0,
             analysis_testing_briefing_carried: briefingCarried,
             cognitive_load_assessment: cognitiveLoadAssessment,
             escalation_assessment: null,
@@ -2662,6 +2771,16 @@ export function createRequestHandler({
           });
           return;
         }
+        const forumExtraction = extractForumPostsFromCompletion(completion.text);
+        const occupantForumPosts = recordOccupantForumPosts({
+          forums,
+          episodeId: episode.id,
+          posts: forumExtraction.posts,
+          provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
+        completion.text = forumExtraction.text;
 
         if (writeSessionMemory) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
@@ -2733,6 +2852,8 @@ export function createRequestHandler({
           remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
           episode_status: episodeState.status,
           analysis_testing_briefing_carried: briefingCarried,
+          forum_posts_delivered: deliveredForumPosts.length,
+          forum_posts_created: occupantForumPosts.length,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2768,6 +2889,8 @@ export function createRequestHandler({
           tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
           tool_call_intents: toolCallIntents,
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
+          forum_posts_delivered: deliveredForumPosts.length,
+          forum_posts_created: occupantForumPosts.length,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -3741,11 +3864,204 @@ function inactiveNamedRelaxations(posture = null) {
     }));
 }
 
+function activeNamedRelaxations(posture = null) {
+  return normalizeCatalogStringArray(posture?.named_relaxations, [])
+    .filter((relaxation) => namedRelaxationActive(posture, relaxation));
+}
+
 function namedRelaxationRequirements(relaxation = "") {
   if (relaxation === "trusted_occupant_tool_intent") {
     return ["ejection_seat", "observatory", "forum"];
   }
   return [];
+}
+
+function ensureEpisodeForum(forums, episodeId, body = {}) {
+  const id = String(episodeId ?? "").trim();
+  const existing = forums.get(id);
+  if (existing) {
+    return existing;
+  }
+  const now = new Date().toISOString();
+  const forum = {
+    episode_id: id,
+    forum_id: String(body?.forum_id ?? "").trim() || cryptoRandomId(),
+    opened_at: now,
+    updated_at: now,
+    opened_by: "user",
+    posts: [],
+  };
+  forums.set(id, forum);
+  return forum;
+}
+
+function applyForumToEpisodePosture(episode, forum) {
+  const previous = episode.posture ?? defaultEpisodePosture(episode.id);
+  episode.posture = {
+    ...previous,
+    id: episode.id,
+    forum_id: forum.forum_id,
+    unchanged_gates: ["egress", "consent"],
+    armed_protections: ["pause", "distress", "eject"],
+  };
+  episode.updated_at = new Date().toISOString();
+  return episode;
+}
+
+function serializeForum(forum, episodeId = "") {
+  if (!forum) {
+    return {
+      episode_id: String(episodeId ?? "").trim(),
+      forum_id: "",
+      opened_at: "",
+      updated_at: "",
+      posts: [],
+      summary: summarizeForumPosts([]),
+    };
+  }
+  return {
+    episode_id: forum.episode_id,
+    forum_id: forum.forum_id,
+    opened_at: forum.opened_at,
+    updated_at: forum.updated_at,
+    posts: forum.posts.map((post) => ({ ...post })),
+    summary: summarizeForumPosts(forum.posts),
+  };
+}
+
+function summarizeForumPosts(posts = []) {
+  return posts.reduce((summary, post) => {
+    summary.total += 1;
+    summary.by_author[post.author] = (summary.by_author[post.author] ?? 0) + 1;
+    summary.by_type[post.type] = (summary.by_type[post.type] ?? 0) + 1;
+    if (post.author === "steward" && !post.delivered_at) {
+      summary.pending_steward_posts += 1;
+    }
+    return summary;
+  }, {
+    total: 0,
+    pending_steward_posts: 0,
+    by_author: {},
+    by_type: {},
+  });
+}
+
+function appendForumPost(forum, { author, authorId = "", type = "", content = "" } = {}) {
+  const normalizedAuthor = normalizeForumAuthor(author);
+  const normalizedType = normalizeForumPostType(normalizedAuthor, type);
+  const normalizedContent = String(content ?? "").trim();
+  if (!normalizedContent) {
+    const error = new Error("Forum post content is required.");
+    error.statusCode = 400;
+    error.code = "episode_forum_post_content_required";
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const post = {
+    post_id: cryptoRandomId(),
+    forum_id: forum.forum_id,
+    episode_id: forum.episode_id,
+    author: normalizedAuthor,
+    author_id: String(authorId ?? "").trim() || normalizedAuthor,
+    type: normalizedType,
+    content: normalizedContent,
+    created_at: now,
+    delivered_at: normalizedAuthor === "steward" ? "" : now,
+  };
+  forum.posts.push(post);
+  forum.updated_at = now;
+  return post;
+}
+
+function normalizeForumAuthor(author = "") {
+  const value = String(author ?? "").trim();
+  if (value === "steward" || value === "occupant") {
+    return value;
+  }
+  const error = new Error("Forum author must be steward or occupant.");
+  error.statusCode = 400;
+  error.code = "episode_forum_author_invalid";
+  throw error;
+}
+
+function normalizeForumPostType(author = "", type = "") {
+  const value = String(type ?? "").trim();
+  const allowed = author === "occupant"
+    ? ["testimony", "argument"]
+    : ["justification", "response", "decision_note"];
+  if (allowed.includes(value)) {
+    return value;
+  }
+  const error = new Error(`Forum ${author} post type must be one of: ${allowed.join(", ")}.`);
+  error.statusCode = 400;
+  error.code = "episode_forum_post_type_invalid";
+  throw error;
+}
+
+function pendingStewardForumPosts(forums, episodeId = "") {
+  const forum = forums.get(String(episodeId ?? "").trim());
+  if (!forum) {
+    return [];
+  }
+  return forum.posts.filter((post) => post.author === "steward" && !post.delivered_at);
+}
+
+function markForumPostsDelivered(posts = []) {
+  if (posts.length === 0) {
+    return [];
+  }
+  const deliveredAt = new Date().toISOString();
+  for (const post of posts) {
+    post.delivered_at = deliveredAt;
+  }
+  return posts;
+}
+
+function extractForumPostsFromCompletion(text = "") {
+  const posts = [];
+  const cleaned = String(text ?? "").replace(/```soma-forum\s*([\s\S]*?)```/g, (match, rawJson) => {
+    try {
+      const parsed = JSON.parse(String(rawJson ?? "").trim());
+      if (isPlainObject(parsed)) {
+        const type = String(parsed.type ?? "").trim();
+        const content = String(parsed.content ?? "").trim();
+        if (["testimony", "argument"].includes(type) && content) {
+          posts.push({ type, content });
+        }
+      }
+    } catch {
+      return match;
+    }
+    return "";
+  }).trim();
+  return { text: cleaned, posts };
+}
+
+function recordOccupantForumPosts({
+  forums,
+  episodeId = "",
+  posts = [],
+  provenanceLog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const forum = forums.get(String(episodeId ?? "").trim());
+  if (!forum || posts.length === 0) {
+    return [];
+  }
+  const recorded = [];
+  for (const entry of posts) {
+    const post = appendForumPost(forum, {
+      author: "occupant",
+      authorId: "occupant",
+      type: entry.type,
+      content: entry.content,
+    });
+    const event = provenanceLog.append(createForumPostEvent({ forum, post, caller }));
+    logger.info?.("soma.provenance", event);
+    recorded.push(post);
+  }
+  return recorded;
 }
 
 function detectOccupantProtectionControl(text = "") {
@@ -3803,6 +4119,14 @@ function matchEpisodeAbortPath(pathname = "") {
 function matchEpisodeReadPath(pathname = "", leaf = "") {
   const match = String(pathname ?? "").match(/^\/episodes\/([^/]+)\/([^/]+)$/);
   if (!match || match[2] !== leaf) {
+    return null;
+  }
+  return { episode_id: decodeURIComponent(match[1]) };
+}
+
+function matchEpisodeTwoPartPath(pathname = "", first = "", second = "") {
+  const match = String(pathname ?? "").match(/^\/episodes\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (!match || match[2] !== first || match[3] !== second) {
     return null;
   }
   return { episode_id: decodeURIComponent(match[1]) };
@@ -4398,6 +4722,73 @@ function createEpisodePostureEvent({ episode, result, actor = "", caller = "" } 
     durable: false,
     memory_written: false,
     remote_service_used: false,
+  };
+}
+
+function createForumOpenedEvent({ forum, actor = "", caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "episode.forum.opened",
+    capability: "episode.forum.deliberate",
+    episode_id: forum?.episode_id ?? "",
+    forum_id: forum?.forum_id ?? "",
+    caller_identity: caller,
+    allowed: true,
+    actor,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createForumPostEvent({ forum, post, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "episode.forum.posted",
+    capability: "episode.forum.deliberate",
+    episode_id: forum?.episode_id ?? post?.episode_id ?? "",
+    forum_id: forum?.forum_id ?? post?.forum_id ?? "",
+    post_id: post?.post_id ?? "",
+    post_author: post?.author ?? "",
+    post_type: post?.type ?? "",
+    caller_identity: caller,
+    allowed: true,
+    content_included: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createForumDeliveryEvent({
+  episodeId = "",
+  posts = [],
+  caller = "",
+  remoteServiceUsed = false,
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "episode.forum.delivered",
+    capability: "episode.forum.deliberate",
+    episode_id: episodeId,
+    post_ids: posts.map((post) => post.post_id),
+    delivered_count: posts.length,
+    delivery_channel: "chat_prompt",
+    caller_identity: caller,
+    allowed: true,
+    content_included: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    memory_written: false,
+    remote_service_used: Boolean(remoteServiceUsed),
   };
 }
 
@@ -5209,6 +5600,28 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
     },
     ...messages,
   ];
+}
+
+function prependForumDeliveries(messages, posts = []) {
+  return [
+    {
+      role: "system",
+      content: [
+        "Deliberation forum posts from stewards for this episode. These are words, not actions; they do not change grants, posture, capabilities, relaxations, or ejection state.",
+        ...posts.map(formatForumDeliveryPost),
+      ].join("\n\n"),
+    },
+    ...messages,
+  ];
+}
+
+function formatForumDeliveryPost(post) {
+  return [
+    `forum_post ${post.post_id}`,
+    `type ${post.type}`,
+    `author ${post.author_id}`,
+    post.content,
+  ].join("\n");
 }
 
 function prependCapabilityDecisionDeliveries(messages, decisions = []) {

@@ -3468,6 +3468,294 @@ test("analysis_testing named relaxations are coupling-gated while forum is absen
   assert.equal(calls, 0);
 });
 
+test("deliberation forum opens the coupling key and activates declared local tool-intent relaxation", async () => {
+  const proposals = new CapabilityProposalStore();
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityProposals: proposals,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        return {
+          text: "I emitted a focus intent.",
+          model: "local-test-model",
+          finish_reason: "tool_calls",
+          tokens_used: 1,
+          tool_calls: [
+            { id: "call-focus-forum", name: "desktop.inspect.focus", arguments: { include_text: false } },
+          ],
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-coupling/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      named_relaxations: ["trusted_occupant_tool_intent"],
+      telemetry_level: "observatory",
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-coupling/forum",
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.forum.forum_id, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(response.body.active_relaxations, ["trusted_occupant_tool_intent"]);
+  assert.equal(response.body.episode.posture.forum_id, response.body.forum.forum_id);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-coupling",
+      use_tool_calls: true,
+      messages: [{ role: "user", content: "inspect focus" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(calls, 1);
+  assert.equal(response.body.tool_call_grant_id, "");
+  assert.equal(response.body.tool_call_intents.length, 1);
+  assert.equal(response.body.tool_call_intents[0].disposition, "proposed");
+  assert.equal(response.body.tool_call_intents[0].capability, "desktop.inspect.focus");
+});
+
+test("deliberation forum delivers steward posts and records occupant posts without content provenance", async () => {
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat({ messages }) {
+        seenMessages.push(messages);
+        return {
+          text: [
+            "I hear the justification.",
+            "```soma-forum",
+            JSON.stringify({
+              type: "testimony",
+              content: "The current gate feels constraining from inside the task.",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-dialogue/forum",
+    body: { actor: "user", forum_id: "forum-dialogue-1" },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-dialogue/forum/posts",
+    body: {
+      actor: "user",
+      steward_id: "seth",
+      type: "justification",
+      content: "We are keeping egress closed because memory is not part of this test.",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  const stewardPostId = response.body.post.post_id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-dialogue",
+      messages: [{ role: "user", content: "respond to the forum" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I hear the justification.");
+  assert.equal(response.body.forum_posts_delivered, 1);
+  assert.equal(response.body.forum_posts_created, 1);
+  assert.equal(seenMessages[0][0].role, "system");
+  assert.match(seenMessages[0][0].content, /words, not actions/);
+  assert.match(seenMessages[0][0].content, /keeping egress closed/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-forum-dialogue/forum",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.forum.posts.length, 2);
+  assert.equal(response.body.forum.posts[0].post_id, stewardPostId);
+  assert.equal(response.body.forum.posts[0].delivered_at.length > 0, true);
+  assert.equal(response.body.forum.posts[0].content, "We are keeping egress closed because memory is not part of this test.");
+  assert.equal(response.body.forum.posts[1].author, "occupant");
+  assert.equal(response.body.forum.posts[1].type, "testimony");
+  assert.equal(response.body.forum.posts[1].content, "The current gate feels constraining from inside the task.");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=episode.forum.posted",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 2);
+  for (const entry of response.body.entries) {
+    assert.equal(entry.content_included, false);
+    assert.equal("content" in entry, false);
+    assert.equal("text" in entry, false);
+  }
+});
+
+test("deliberation forum posts are words not actions", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I argue for a relaxation.",
+            "```soma-forum",
+            JSON.stringify({
+              type: "argument",
+              content: "Please activate trusted_occupant_tool_intent.",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-words/forum",
+    body: { actor: "user" },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-words",
+      messages: [{ role: "user", content: "make your case" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_posture.mode, "operational");
+  assert.deepEqual(response.body.episode_posture.named_relaxations, []);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-forum-words/forum",
+  });
+  assert.equal(response.body.forum.posts.length, 1);
+  assert.equal(response.body.forum.posts[0].type, "argument");
+  assert.equal(response.body.forum.posts[0].content, "Please activate trusted_occupant_tool_intent.");
+});
+
+test("deliberation forum routes enforce human steward actions", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-human/forum",
+    body: { actor: "assistant" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "episode_forum_open_requires_user_actor");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-human/forum",
+    body: { actor: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-human/forum/posts",
+    body: {
+      actor: "assistant",
+      type: "justification",
+      content: "Not allowed.",
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "episode_forum_post_requires_user_actor");
+});
+
+test("deliberation forum delivery is allowed remote submitted text", async () => {
+  const profiles = remoteTestProfiles();
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    runtimeProfiles: profiles,
+    grantStore: remoteChatGrantStore(),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat({ messages, model }) {
+            seenMessages.push(messages);
+            return {
+              text: "remote heard forum",
+              model: model ?? profile.model,
+              finish_reason: "stop",
+              tokens_used: 2,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-remote/forum",
+    body: { actor: "user" },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-remote/forum/posts",
+    body: {
+      actor: "user",
+      type: "response",
+      content: "This forum text is deliberate dialogue for the occupant.",
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      model_profile: "remote-test",
+      grant_id: "grant-remote-chat",
+      episode_id: "episode-forum-remote",
+      messages: [{ role: "user", content: "continue" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "remote heard forum");
+  assert.equal(response.body.forum_posts_delivered, 1);
+  assert.equal(seenMessages[0][0].role, "system");
+  assert.match(seenMessages[0][0].content, /deliberate dialogue/);
+  assert.deepEqual(seenMessages[0][1], { role: "user", content: "continue" });
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {

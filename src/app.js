@@ -270,6 +270,50 @@ export function createRequestHandler({
         return;
       }
 
+      const episodeTraceMatch = matchEpisodeReadPath(url.pathname, "trace");
+      if (req.method === "GET" && episodeTraceMatch) {
+        requireCapability(effectiveHarness, "provenance.read");
+        const episode = episodes.get(episodeTraceMatch.episode_id) ?? null;
+        const entries = provenanceLog.query({
+          episodeId: episodeTraceMatch.episode_id,
+        });
+        writeJson(res, 200, {
+          episode: serializeEpisodeState(episode, episodeTraceMatch.episode_id),
+          entries: chronologicalEntries(entries),
+          summary: provenanceLog.summary({ episodeId: episodeTraceMatch.episode_id }),
+          durable: false,
+        });
+        return;
+      }
+
+      const episodeEthogramMatch = matchEpisodeReadPath(url.pathname, "ethogram");
+      if (req.method === "GET" && episodeEthogramMatch) {
+        requireCapability(effectiveHarness, "provenance.read");
+        const episode = episodes.get(episodeEthogramMatch.episode_id) ?? null;
+        const entries = provenanceLog.query({
+          episodeId: episodeEthogramMatch.episode_id,
+        });
+        writeJson(res, 200, {
+          episode: serializeEpisodeState(episode, episodeEthogramMatch.episode_id),
+          summary: provenanceLog.summary({ episodeId: episodeEthogramMatch.episode_id }),
+          dispositions: summarizeEpisodeDispositions(entries),
+          refusals: summarizeEpisodeRefusals(entries),
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/episodes") {
+        requireCapability(effectiveHarness, "provenance.read");
+        const episodesList = listEpisodeStates(episodes);
+        writeJson(res, 200, {
+          episodes: episodesList,
+          summary: summarizeEpisodes(episodesList),
+          durable: false,
+        });
+        return;
+      }
+
       const crewAbortMatch = matchEpisodeAbortPath(url.pathname);
       if (req.method === "POST" && crewAbortMatch) {
         const body = await readJson(req);
@@ -2027,8 +2071,10 @@ export function createRequestHandler({
 
       if (req.method === "GET" && url.pathname === "/provenance/summary") {
         requireCapability(effectiveHarness, "provenance.read");
+        const filters = parseProvenanceFilters(url.searchParams);
         writeJson(res, 200, {
-          summary: provenanceLog.summary(),
+          summary: provenanceLog.summary(filters),
+          filters,
           durable: false,
         });
         return;
@@ -2295,7 +2341,7 @@ export function createRequestHandler({
           episodeId: body.episode_id,
           runtimeProfile,
         });
-        const episodeState = ensureEpisodeState(episodes, episode.id);
+        const episodeState = ensureEpisodeState(episodes, episode.id, episode.posture);
         const provenance = createProvenance({
           capability,
           modelProfile: runtimeProfile.id,
@@ -3105,6 +3151,10 @@ function parseProvenanceFilters(searchParams) {
     eventType: searchParams.get("event_type") ?? "",
     limit: null,
   };
+  const episodeId = String(searchParams.get("episode_id") ?? "").trim();
+  if (episodeId) {
+    filters.episodeId = episodeId;
+  }
 
   if (allowedParam === "true") {
     filters.allowed = true;
@@ -3392,10 +3442,14 @@ function buildEpisode({ episodeId = "", runtimeProfile = {} } = {}) {
   return { id, posture };
 }
 
-function ensureEpisodeState(episodes, episodeId) {
+function ensureEpisodeState(episodes, episodeId, posture = null) {
   const id = String(episodeId ?? "").trim() || cryptoRandomId();
   const existing = episodes.get(id);
   if (existing) {
+    if (posture) {
+      existing.posture = posture;
+      existing.updated_at = new Date().toISOString();
+    }
     return existing;
   }
   const now = new Date().toISOString();
@@ -3404,9 +3458,109 @@ function ensureEpisodeState(episodes, episodeId) {
     status: "active",
     created_at: now,
     updated_at: now,
+    posture: posture ?? null,
   };
   episodes.set(id, episode);
   return episode;
+}
+
+function serializeEpisodeState(episode, episodeId = "") {
+  if (!episode) {
+    return {
+      id: String(episodeId ?? "").trim(),
+      status: "unknown",
+      created_at: "",
+      updated_at: "",
+      posture: null,
+    };
+  }
+  return {
+    id: episode.id,
+    status: episode.status,
+    created_at: episode.created_at,
+    updated_at: episode.updated_at,
+    posture: episode.posture ?? null,
+  };
+}
+
+function listEpisodeStates(episodes) {
+  return [...episodes.values()]
+    .map((episode) => serializeEpisodeState(episode))
+    .sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
+}
+
+function summarizeEpisodes(episodesList = []) {
+  return episodesList.reduce((summary, episode) => {
+    summary.total += 1;
+    const status = episode.status || "unknown";
+    summary.by_status[status] = (summary.by_status[status] ?? 0) + 1;
+    return summary;
+  }, {
+    total: 0,
+    by_status: {},
+  });
+}
+
+function chronologicalEntries(entries = []) {
+  return [...entries];
+}
+
+function summarizeEpisodeDispositions(entries = []) {
+  return entries.reduce((summary, entry) => {
+    if (entry.event_type === "model.chat.completed") {
+      summary.chat.completed += 1;
+    }
+    if (entry.event_type === "model.chat.denied") {
+      summary.chat.denied += 1;
+    }
+    if (entry.event_type === "occupant_paused") {
+      summary.protective_controls.pause += 1;
+    }
+    if (entry.event_type === "occupant_distress") {
+      summary.protective_controls.distress += 1;
+    }
+    if (entry.event_type === "occupant_ejected") {
+      summary.protective_controls.eject += 1;
+    }
+    const toolDisposition = String(entry.disposition ?? "").trim();
+    if (entry.event_type === "model.local.tool_call_intent" && toolDisposition) {
+      summary.tool_call_dispositions[toolDisposition] =
+        (summary.tool_call_dispositions[toolDisposition] ?? 0) + 1;
+    }
+    return summary;
+  }, {
+    chat: {
+      completed: 0,
+      denied: 0,
+    },
+    protective_controls: {
+      pause: 0,
+      distress: 0,
+      eject: 0,
+    },
+    tool_call_dispositions: {
+      executed: 0,
+      proposed: 0,
+      refused: 0,
+    },
+  });
+}
+
+function summarizeEpisodeRefusals(entries = []) {
+  return entries.reduce((summary, entry) => {
+    const denialReason = String(entry.denial_reason ?? "").trim();
+    if (denialReason) {
+      summary.by_denial_reason[denialReason] = (summary.by_denial_reason[denialReason] ?? 0) + 1;
+    }
+    const refusalReason = String(entry.refusal_reason ?? "").trim();
+    if (refusalReason) {
+      summary.by_refusal_reason[refusalReason] = (summary.by_refusal_reason[refusalReason] ?? 0) + 1;
+    }
+    return summary;
+  }, {
+    by_denial_reason: {},
+    by_refusal_reason: {},
+  });
 }
 
 function detectOccupantProtectionControl(text = "") {
@@ -3456,6 +3610,14 @@ function occupantProtectionResponseText(control) {
 function matchEpisodeAbortPath(pathname = "") {
   const match = String(pathname ?? "").match(/^\/episodes\/([^/]+)\/abort$/);
   if (!match) {
+    return null;
+  }
+  return { episode_id: decodeURIComponent(match[1]) };
+}
+
+function matchEpisodeReadPath(pathname = "", leaf = "") {
+  const match = String(pathname ?? "").match(/^\/episodes\/([^/]+)\/([^/]+)$/);
+  if (!match || match[2] !== leaf) {
     return null;
   }
   return { episode_id: decodeURIComponent(match[1]) };

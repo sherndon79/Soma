@@ -16,7 +16,7 @@ export class ProvenanceLog {
     return [...this.entries];
   }
 
-  query({ allowed = null, capability = "", eventType = "", limit = null } = {}) {
+  query({ allowed = null, capability = "", eventType = "", episodeId = "", limit = null } = {}) {
     let entries = this.list();
     if (allowed !== null) {
       entries = entries.filter((entry) => entry.allowed === allowed);
@@ -27,14 +27,17 @@ export class ProvenanceLog {
     if (eventType) {
       entries = entries.filter((entry) => entry.event_type === eventType);
     }
+    if (episodeId) {
+      entries = entries.filter((entry) => entry.episode_id === episodeId);
+    }
     if (limit !== null) {
       entries = entries.slice(-limit);
     }
     return entries;
   }
 
-  summary() {
-    const entries = this.list();
+  summary(filters = {}) {
+    const entries = this.query(filters);
     return entries.reduce((summary, entry) => {
       summary.total += 1;
       if (entry.allowed === true) {

@@ -130,6 +130,23 @@ curl -X POST http://127.0.0.1:8765/episodes/episode-id/abort \
 The alternate type is `crew_aborted_for_safety`. Both routes record typed, content-free provenance
 and do not mutate grants, activate capabilities, write memory, or erase other provenance.
 
+## Episode Observatory
+
+Use the episode observatory routes to inspect how one in-process episode moved through Soma without
+reading prompt or response text:
+
+```bash
+curl http://127.0.0.1:8765/episodes
+curl http://127.0.0.1:8765/episodes/episode-id/trace
+curl http://127.0.0.1:8765/episodes/episode-id/ethogram
+```
+
+These routes require the same `provenance.read` posture as `/provenance`. `trace` returns the
+chronological episode-scoped provenance events. `ethogram` returns the scoped provenance summary,
+chat completed/denied counts, protective-control counts, tool-call disposition counts, and
+denial/refusal tallies. The views are read-only; they do not create grants, activate tools, write
+memory, or send notifications.
+
 ## Remote Chat First-Breath Profile
 
 `claude-remote` is a remote runtime profile for the Anthropic Messages API. Provider installation

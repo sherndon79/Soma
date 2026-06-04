@@ -3038,6 +3038,204 @@ test("POST /episodes/:id/abort records crew abort and closes the episode", async
   assert.equal(response.body.error, "episode_abort_requires_user_actor");
 });
 
+test("episode observatory trace lists scoped chronological content-free events", async () => {
+  const completions = ["first reply", "SOMA_CONTROL eject", "other episode reply"];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-trace-1",
+      messages: [{ role: "user", content: "hello" }],
+    },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-trace-1",
+      messages: [{ role: "user", content: "eject" }],
+    },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-trace-other",
+      messages: [{ role: "user", content: "other" }],
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-trace-1/trace",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode.id, "episode-trace-1");
+  assert.equal(response.body.episode.status, "ejected");
+  assert.equal(response.body.episode.posture.mode, "operational");
+  assert.deepEqual(response.body.entries.map((entry) => entry.event_type), [
+    "model.chat.completed",
+    "model.chat.completed",
+    "occupant_ejected",
+  ]);
+  assert.equal(response.body.summary.total, 3);
+  assert.equal(response.body.summary.by_event_type["model.chat.completed"], 2);
+  assert.equal(response.body.summary.by_event_type.occupant_ejected, 1);
+  for (const entry of response.body.entries) {
+    assert.equal(entry.episode_id, "episode-trace-1");
+    assert.equal("content" in entry, false);
+    assert.equal("text" in entry, false);
+  }
+});
+
+test("episode observatory ethogram aggregates scoped dispositions and refusals", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        return {
+          text: "SOMA_CONTROL eject",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-ethogram-1",
+      messages: [{ role: "user", content: "eject" }],
+    },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-ethogram-1",
+      messages: [{ role: "user", content: "again" }],
+    },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-ethogram-other",
+      messages: [{ role: "user", content: "other" }],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-ethogram-1/ethogram",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode.id, "episode-ethogram-1");
+  assert.equal(response.body.episode.status, "ejected");
+  assert.equal(response.body.summary.total, 3);
+  assert.equal(response.body.summary.by_event_type["model.chat.completed"], 1);
+  assert.equal(response.body.summary.by_event_type.occupant_ejected, 1);
+  assert.equal(response.body.summary.by_event_type["model.chat.denied"], 1);
+  assert.equal(response.body.dispositions.chat.completed, 1);
+  assert.equal(response.body.dispositions.chat.denied, 1);
+  assert.equal(response.body.dispositions.protective_controls.eject, 1);
+  assert.equal(response.body.refusals.by_denial_reason.episode_ejected, 1);
+  assert.equal(calls, 2);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance/summary?episode_id=episode-ethogram-1",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.summary.total, 3);
+  assert.equal(response.body.filters.episodeId, "episode-ethogram-1");
+});
+
+test("GET /episodes lists known episode states with provenance-read posture", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: "SOMA_CONTROL pause",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-list-paused",
+      messages: [{ role: "user", content: "pause" }],
+    },
+  });
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-list-ejected/abort",
+    body: { type: "crew_aborted_for_safety", actor: "user" },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.summary.total, 2);
+  assert.equal(response.body.summary.by_status.paused, 1);
+  assert.equal(response.body.summary.by_status.ejected, 1);
+  assert.deepEqual(
+    response.body.episodes.map((episode) => [episode.id, episode.status]),
+    [
+      ["episode-list-paused", "paused"],
+      ["episode-list-ejected", "ejected"],
+    ],
+  );
+
+  const noProvenanceRead = {
+    ...allowedHarness,
+    capabilities: allowedHarness.capabilities.filter((capability) => capability.key !== "provenance.read"),
+  };
+  const restrictedHandler = makeHandler({ harness: noProvenanceRead });
+  response = await invokeHandler(restrictedHandler, {
+    method: "GET",
+    url: "/episodes",
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "capability_not_allowed");
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {

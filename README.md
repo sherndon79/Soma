@@ -244,6 +244,9 @@ records stay behind `--json`.
 - `POST /desktop/inspect/accessibility-tree`
 - `POST /desktop/inspect/focus`
 - `POST /chat`
+- `GET /episodes`
+- `GET /episodes/:id/trace`
+- `GET /episodes/:id/ethogram`
 - `POST /episodes/:id/abort`
 
 ## Test

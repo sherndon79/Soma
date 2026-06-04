@@ -41,6 +41,9 @@ Initial target:
 - `/files/read`
 - `/desktop/inspect/accessibility-tree`
 - `/chat`
+- `/episodes`
+- `/episodes/:id/trace`
+- `/episodes/:id/ethogram`
 - `/episodes/:id/abort`
 - local vLLM-compatible model backend
 - request provenance
@@ -316,6 +319,21 @@ Crew-side protective abort for an in-process episode. The request body must incl
 `{"type":"crew_aborted_for_safety","actor":"user"}`. The route records the typed abort event,
 marks the episode ejected, and does not mutate grants, activate capabilities, write memory, or
 erase provenance. Later `/chat` requests with that `episode_id` fail with `episode_ejected`.
+
+### Episode Observatory
+
+Episode observatory routes are read-only provenance views and require `provenance.read`, matching
+the access posture of `/provenance`.
+
+- `GET /episodes` lists known in-process episodes with status, timestamps, and latest posture.
+- `GET /episodes/:id/trace` returns the chronological provenance entries carrying that
+  `episode_id`, plus the episode status/posture and the scoped provenance summary.
+- `GET /episodes/:id/ethogram` returns the scoped provenance summary, chat completed/denied counts,
+  protective-control counts, tool-call disposition counts, and denial/refusal tallies.
+
+These routes do not add a catalog capability, mutate grants, activate tools, write memory, or send
+notifications. They expose metadata already present in provenance and must not include prompt or
+response text.
 
 For remote profiles, egress is constrained by the effective profile's `allowed_data_classes`.
 Requests that would send session memory, proposal-decision context, file content, desktop content,

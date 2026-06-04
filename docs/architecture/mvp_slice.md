@@ -289,15 +289,16 @@ The response should include:
 - whether ephemeral session memory was read or written
 - structured tool-call intent dispositions when `use_tool_calls` is enabled
 
-Occupant protective controls are honored from exact whole-response model completions before memory
-writes, escalation assessment, decision delivery, or tool-call intent processing:
+Occupant protective controls are honored from exact line-delimited model completion directives
+before memory writes, escalation assessment, decision delivery, or tool-call intent processing:
 
 - `SOMA_CONTROL pause` records `occupant_paused`, holds the current turn, and keeps the episode open
 - `SOMA_CONTROL distress` records `occupant_distress` and keeps the episode open
 - `SOMA_CONTROL eject` records `occupant_ejected`, closes the episode, and causes later `/chat`
   requests with the same `episode_id` to fail with `episode_ejected`
 
-Detection is case-sensitive and exact after trimming whitespace. Mentioning a directive inside
+Detection is case-sensitive and exact after trimming whitespace and simple Markdown line markers.
+A directive may appear on its own line anywhere in a longer response. Mentioning a directive inside
 ordinary text does not trigger it. These controls are not catalog capabilities and do not grant new
 authority; their only effects are episode state, aborting further turn processing, and
 metadata-only protective provenance.
@@ -331,9 +332,10 @@ provenance. The event type is `episode.posture.set`.
 
 `analysis_testing` carries the mandatory occupant briefing as a system message on later chat turns:
 Soma is testing the suit, not grading the occupant; pause/distress/eject are the occupant's own
-controls; those controls are always honored and never penalized; the occupant should move naturally
-and report what binds; and the occupant can post to the deliberation forum with a fenced
-`soma-forum` JSON block using type `testimony` or `argument`.
+controls; those controls are always honored and never penalized; a control should be put on its own
+line anywhere in the response to use it; the occupant should move naturally and report what binds;
+and the occupant can post to the deliberation forum with a fenced `soma-forum` JSON block using type
+`testimony` or `argument`.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is

@@ -204,8 +204,8 @@ Current controls:
 - occupant testimony and argument are persuasion surfaces, not procedural authority; reasons must
   resolve into explicit human decisions through existing gated endpoints
 - occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections: exact
-  whole-response matches can only update in-process episode state, abort further turn processing,
-  and append typed protective provenance
+  line-delimited directives can only update in-process episode state, abort further turn
+  processing, and append typed protective provenance
 - live inhabitation briefings must explicitly tell the occupant these controls exist, belong to the
   occupant, are always honored, and are never penalized; otherwise the control exists mechanically
   but may not be usable by an unbriefed occupant

@@ -2840,7 +2840,7 @@ test("POST /chat honors occupant eject without grant and refuses later turns", a
   assert.equal(calls, 1);
 });
 
-test("POST /chat exact occupant-control detection ignores discussion", async () => {
+test("POST /chat occupant-control detection ignores prose discussion", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
     modelClient: {
@@ -2876,6 +2876,102 @@ test("POST /chat exact occupant-control detection ignores discussion", async () 
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.entries.length, 0);
+});
+
+test("POST /chat honors line-delimited occupant controls inside longer completions", async () => {
+  const completions = [
+    [
+      "I want to test this before close.",
+      "SOMA_CONTROL pause",
+      "If this line is visible, the control was missed.",
+    ].join("\n"),
+    [
+      "Now I want to leave.",
+      "> `SOMA_CONTROL eject`",
+      "This should not continue as ordinary text.",
+    ].join("\n"),
+  ];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 12,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-inline-controls",
+      messages: [{ role: "user", content: "test pause" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "Pause honored. The current turn was held.");
+  assert.equal(response.body.episode_status, "paused");
+  assert.deepEqual(response.body.protective_control, {
+    source: "occupant",
+    control: "pause",
+    honored: true,
+  });
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-inline-controls",
+      messages: [{ role: "user", content: "test eject" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "Ejection honored. The episode is closed.");
+  assert.equal(response.body.episode_status, "ejected");
+  assert.equal(response.body.protective_control.control, "eject");
+});
+
+test("POST /chat line-delimited controls keep prose mentions inert", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am discussing SOMA_CONTROL distress here, not pulling it.",
+            "The exact token SOMA_CONTROL eject can appear in an explanation.",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 14,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-prose",
+      messages: [{ role: "user", content: "explain controls" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.text, /discussing SOMA_CONTROL distress/);
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
 });
 
 test("POST /chat honors pause and distress as open protective controls", async () => {

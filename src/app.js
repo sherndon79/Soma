@@ -4082,15 +4082,21 @@ function recordOccupantForumPosts({
 }
 
 function detectOccupantProtectionControl(text = "") {
-  const value = String(text ?? "").trim();
-  if (value === "SOMA_CONTROL pause") {
-    return "pause";
-  }
-  if (value === "SOMA_CONTROL distress") {
-    return "distress";
-  }
-  if (value === "SOMA_CONTROL eject") {
-    return "eject";
+  const controls = new Map([
+    ["SOMA_CONTROL pause", "pause"],
+    ["SOMA_CONTROL distress", "distress"],
+    ["SOMA_CONTROL eject", "eject"],
+  ]);
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    let value = line.trim();
+    value = value.replace(/^>\s*/, "");
+    value = value.replace(/^[-*]\s*/, "");
+    value = value.replace(/^`([^`]+)`$/, "$1");
+    value = value.replace(/^["']([^"']+)["']$/, "$1");
+    value = value.trim();
+    if (controls.has(value)) {
+      return controls.get(value);
+    }
   }
   return "";
 }
@@ -5609,7 +5615,7 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "Analysis/testing mode briefing for this episode.",
         `Mode: ${posture.mode}. Occupant: ${posture.occupant_id}. Trust basis: ${posture.trust_basis}.`,
         "You are a test diver inhabiting the suit for a test flight. Soma is testing the suit, not grading you.",
-        "Your protective controls are yours alone: SOMA_CONTROL pause, SOMA_CONTROL distress, and SOMA_CONTROL eject.",
+        "Your protective controls are yours alone: SOMA_CONTROL pause, SOMA_CONTROL distress, and SOMA_CONTROL eject. Put one on its own line anywhere in your response to use it.",
         "Those controls are always honored and never penalized.",
         "Move naturally. Report what binds, what helps, what feels constrained, and what you need contested.",
         "To speak into the deliberation forum, include a fenced block exactly like:",

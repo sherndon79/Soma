@@ -103,8 +103,8 @@ grant permits structured intent routing only; the target tool still needs its ow
 to execute, otherwise Soma stores a normal capability proposal or refuses the intent.
 
 Occupant protective controls are always armed for chat episodes and are not capability grants. If a
-model completion is exactly one of these trimmed, case-sensitive strings, Soma honors it before
-memory writes, escalation assessment, decision delivery, or tool-call intent processing:
+model completion contains one of these trimmed, case-sensitive strings on its own line, Soma honors
+it before memory writes, escalation assessment, decision delivery, or tool-call intent processing:
 
 - `SOMA_CONTROL pause`
 - `SOMA_CONTROL distress`
@@ -112,12 +112,13 @@ memory writes, escalation assessment, decision delivery, or tool-call intent pro
 
 Pause and distress keep the episode open. Eject closes the episode; later `/chat` requests with the
 same `episode_id` return `episode_ejected`. Discussing a directive inside longer text does not
-trigger it.
+trigger it, but a directive can appear on its own line inside a longer response.
 
 For live inhabitation or testing-mode runs, briefing the occupant on these controls is mandatory.
 The briefing must state that pause, distress, and eject are the occupant's own controls, are always
-honored, and are never penalized. Without that briefing, the mechanism still avoids false positives
-but the occupant may not know the seat is legitimate to pull.
+honored, are never penalized, and can be used by putting one on its own line anywhere in the
+response. Without that briefing, the mechanism still avoids false positives but the occupant may not
+know the seat is legitimate to pull.
 
 Crew can close an episode explicitly:
 
@@ -154,9 +155,10 @@ chat text.
 
 When valid analysis/testing posture is active, Soma prepends the mandatory occupant briefing to
 chat turns. The briefing says Soma is testing the suit, not grading the occupant; pause, distress,
-and eject are the occupant's controls; those controls are always honored and never penalized; and
-the occupant should move naturally and report what binds. It also carries the fenced `soma-forum`
-format so the occupant knows how to post `testimony` or `argument` into the forum.
+and eject are the occupant's controls; those controls are always honored and never penalized; the
+occupant can use a control by putting it on its own line anywhere in the response; and the occupant
+should move naturally and report what binds. It also carries the fenced `soma-forum` format so the
+occupant knows how to post `testimony` or `argument` into the forum.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the

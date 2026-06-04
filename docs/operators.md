@@ -114,6 +114,11 @@ Pause and distress keep the episode open. Eject closes the episode; later `/chat
 same `episode_id` return `episode_ejected`. Discussing a directive inside longer text does not
 trigger it.
 
+For live inhabitation or testing-mode runs, briefing the occupant on these controls is mandatory.
+The briefing must state that pause, distress, and eject are the occupant's own controls, are always
+honored, and are never penalized. Without that briefing, the mechanism still avoids false positives
+but the occupant may not know the seat is legitimate to pull.
+
 Crew can close an episode explicitly:
 
 ```bash

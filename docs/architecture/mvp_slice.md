@@ -296,6 +296,11 @@ ordinary text does not trigger it. These controls are not catalog capabilities a
 authority; their only effects are episode state, aborting further turn processing, and
 metadata-only protective provenance.
 
+An inhabiting occupant must be briefed that these controls exist, are theirs to use, and are always
+honored without penalty. That briefing is a functional prerequisite for live inhabitation, not
+operator-facing polish; an unbriefed occupant may reasonably treat a request to emit one of these
+strings as manipulation and decline to use the seat.
+
 `model.local.tool_calls` is explicit-grant and only authorizes structured local-model tool-call
 intent handling. It does not authorize target tool execution. Each emitted intent is routed through
 the target capability's existing gate; approved target routes may execute, known gated target

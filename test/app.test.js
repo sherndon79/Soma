@@ -3621,6 +3621,70 @@ test("deliberation forum delivers steward posts and records occupant posts witho
   }
 });
 
+test("deliberation forum strips truncated occupant forum blocks without recording partial content", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I completed the task and have one complete forum post.",
+            "```soma-forum",
+            JSON.stringify({
+              type: "testimony",
+              content: "The task felt workable, but I noticed one constraint.",
+            }),
+            "```",
+            "```soma-forum",
+            "{\"type\":\"argument\",\"content\":\"This second post was cut off",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "length",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-truncated/forum",
+    body: { actor: "user" },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-truncated",
+      messages: [{ role: "user", content: "respond from the briefing" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I completed the task and have one complete forum post.");
+  assert.equal(response.body.forum_posts_created, 1);
+  assert.equal(response.body.forum_posts_truncated, 1);
+  assert.doesNotMatch(response.body.text, /```soma-forum/);
+  assert.doesNotMatch(response.body.text, /This second post was cut off/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-forum-truncated/forum",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.forum.posts.length, 1);
+  assert.equal(response.body.forum.posts[0].author, "occupant");
+  assert.equal(response.body.forum.posts[0].type, "testimony");
+  assert.equal(response.body.forum.posts[0].content, "The task felt workable, but I noticed one constraint.");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.chat.completed",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.at(-1).forum_posts_truncated, 1);
+});
+
 test("deliberation forum posts are words not actions", async () => {
   const handler = makeHandler({
     harness: allowedHarness,

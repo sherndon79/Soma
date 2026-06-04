@@ -2854,6 +2854,7 @@ export function createRequestHandler({
           analysis_testing_briefing_carried: briefingCarried,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
+          forum_posts_truncated: forumExtraction.truncatedPosts,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2891,6 +2892,7 @@ export function createRequestHandler({
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
+          forum_posts_truncated: forumExtraction.truncatedPosts,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -4019,7 +4021,7 @@ function markForumPostsDelivered(posts = []) {
 
 function extractForumPostsFromCompletion(text = "") {
   const posts = [];
-  const cleaned = String(text ?? "").replace(/```soma-forum\s*([\s\S]*?)```/g, (match, rawJson) => {
+  let cleaned = String(text ?? "").replace(/```soma-forum\s*([\s\S]*?)```/g, (match, rawJson) => {
     try {
       const parsed = JSON.parse(String(rawJson ?? "").trim());
       if (isPlainObject(parsed)) {
@@ -4033,8 +4035,23 @@ function extractForumPostsFromCompletion(text = "") {
       return match;
     }
     return "";
-  }).trim();
-  return { text: cleaned, posts };
+  });
+  let truncatedPosts = 0;
+  let searchFrom = 0;
+  while (true) {
+    const openingIndex = cleaned.indexOf("```soma-forum", searchFrom);
+    if (openingIndex === -1) {
+      break;
+    }
+    const closingIndex = cleaned.indexOf("```", openingIndex + "```soma-forum".length);
+    if (closingIndex === -1) {
+      cleaned = cleaned.slice(0, openingIndex);
+      truncatedPosts += 1;
+      break;
+    }
+    searchFrom = closingIndex + 3;
+  }
+  return { text: cleaned.trim(), posts, truncatedPosts };
 }
 
 function recordOccupantForumPosts({

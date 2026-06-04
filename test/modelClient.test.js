@@ -55,7 +55,7 @@ test("ModelClient maps anthropic-messages chat without logging or configuring th
     assert.equal(body.system, "system posture");
     assert.equal(body.model, "claude-test-model");
     assert.equal(body.max_tokens, 32);
-    assert.equal(body.temperature, 0.2);
+    assert.ok(!("temperature" in body), "temperature must be omitted on the Anthropic path (deprecated for newer models)");
     assert.deepEqual(body.messages, [
       { role: "user", content: "hello" },
       { role: "assistant", content: "hi" },

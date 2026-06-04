@@ -27,7 +27,7 @@ const FORBIDDEN_FIELDS = new Set([
 ]);
 
 export function createDurableMemoryProvenanceFile({ path }) {
-  const filePath = String(path ?? "").trim();
+  const filePath = normalizeFilePath(path);
   return {
     append: (event) => appendDurableMemoryProvenanceEvent(filePath, event),
     read: () => readDurableMemoryProvenanceEvents(filePath),
@@ -140,4 +140,15 @@ function stageError(stage, cause) {
   error.stage = stage;
   error.code = cause?.code || stage;
   return error;
+}
+
+function normalizeFilePath(value) {
+  if (value instanceof URL) {
+    return value;
+  }
+  const filePath = String(value ?? "").trim();
+  if (filePath.startsWith("file:")) {
+    return new URL(filePath);
+  }
+  return filePath;
 }

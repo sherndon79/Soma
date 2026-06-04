@@ -55,7 +55,7 @@ export class ModelClient {
     };
   }
 
-  async #anthropicMessagesChat({ messages, maxTokens, temperature, model }) {
+  async #anthropicMessagesChat({ messages, maxTokens, model }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       const error = new Error("Anthropic API key is not configured.");
@@ -65,11 +65,12 @@ export class ModelClient {
     }
 
     const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
+    // Newer Anthropic models (e.g. Opus 4.8) reject the deprecated `temperature`
+    // parameter, returning HTTP 400. Omit it on the Anthropic path.
     const body = {
       model,
       messages: anthropicMessages,
       max_tokens: maxTokens,
-      temperature,
     };
     if (system) {
       body.system = system;

@@ -22,7 +22,7 @@
       "route": "remote",
       "runtime": "anthropic-messages",
       "endpoint": "https://api.anthropic.com",
-      "model": "claude-sonnet-4-20250514",
+      "model": "claude-opus-4-8",
       "max_context_tokens": 200000,
       "tool_calls_supported": false,
       "tool_calls_enabled": false,

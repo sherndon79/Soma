@@ -32,7 +32,7 @@ const FORBIDDEN_GRANT_MUTATION_EVENT_FIELDS = new Set([
 ]);
 
 export function createGrantMutationProvenanceFile({ path }) {
-  const filePath = String(path ?? "").trim();
+  const filePath = normalizeFilePath(path);
   return {
     append: (event) => appendGrantMutationProvenanceEvent(filePath, event),
     read: () => readGrantMutationProvenanceEvents(filePath),
@@ -138,4 +138,15 @@ function stageError(stage, cause) {
   error.stage = stage;
   error.code = cause?.code || stage;
   return error;
+}
+
+function normalizeFilePath(value) {
+  if (value instanceof URL) {
+    return value;
+  }
+  const filePath = String(value ?? "").trim();
+  if (filePath.startsWith("file:")) {
+    return new URL(filePath);
+  }
+  return filePath;
 }

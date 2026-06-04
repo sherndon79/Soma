@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { createGrantCreatedProvenanceEvent } from "../src/grantMutationProvenance.js";
@@ -87,6 +88,21 @@ test("grant mutation provenance file appends multiple events without replacing p
     const readBack = await readGrantMutationProvenanceEvents(provenancePath);
     assert.equal(readBack.length, 2);
     assert.deepEqual(readBack.map((entry) => entry.grant_id), ["grant-created", "grant-second"]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("grant mutation provenance file accepts file URL paths", async () => {
+  const workspace = await makeWorkspace();
+  try {
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    const adapter = createGrantMutationProvenanceFile({ path: pathToFileURL(provenancePath) });
+    const event = createGrantCreatedProvenanceEvent({ grant });
+
+    await adapter.append(event);
+
+    assert.deepEqual(await adapter.read(), [event]);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

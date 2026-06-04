@@ -75,6 +75,7 @@ Current behavior:
   `runtime_profile_force_mismatch`
 - invalid forced profiles fail closed with `runtime_profile_force_not_available`
 - Anthropic runtime calls fail with `anthropic_api_key_missing` when `ANTHROPIC_API_KEY` is absent
+- later turns in an ejected episode fail with `episode_ejected`
 
 Recovery:
 
@@ -90,6 +91,10 @@ Provenance:
   classes without raw prompt content or secrets
 - completed remote chat records requested/effective profile, force-profile application, remote
   route, remote grant id, and episode id without raw chat content
+- occupant `pause`, `distress`, and `eject` controls record typed protective events without raw
+  content or free-text reasons; detection is exact whole-response matching only
+- crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant
+  ejection
 
 ### Model Returns Malformed Eval Or Tool-Planning Output
 

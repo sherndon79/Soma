@@ -192,6 +192,11 @@ Current controls:
   context outside the effective profile's `allowed_data_classes`
 - `SOMA_FORCE_PROFILE` is visible in health/harness surfaces and rejects explicit profile
   mismatches instead of silently overriding them
+- occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections: exact
+  whole-response matches can only update in-process episode state, abort further turn processing,
+  and append typed protective provenance
+- crew aborts use separate typed events and require `actor=user`; they do not grant authority or
+  erase occupant provenance
 - provider registry has no `model.remote.plan` provider, so the capability is currently
   unsupported rather than requestable
 - runtime profile marks remote service use

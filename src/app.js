@@ -204,6 +204,7 @@ export function createRequestHandler({
   sessionMemory.loadDurable?.(listDurableMemoryEntries(durableMemoryStore));
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   const decisionWaiters = new Map();
+  const episodes = new Map();
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
       if (!endSummary) {
@@ -266,6 +267,55 @@ export function createRequestHandler({
           providerRegistry,
           harness: effectiveHarness,
         }));
+        return;
+      }
+
+      const crewAbortMatch = matchEpisodeAbortPath(url.pathname);
+      if (req.method === "POST" && crewAbortMatch) {
+        const body = await readJson(req);
+        const abortType = String(body?.type ?? "").trim();
+        const actor = String(body?.actor ?? body?.aborted_by ?? "").trim();
+        if (!["crew_aborted_for_care", "crew_aborted_for_safety"].includes(abortType)) {
+          writeError(res, {
+            statusCode: 400,
+            code: "episode_abort_type_invalid",
+            message: "Episode abort type must be crew_aborted_for_care or crew_aborted_for_safety.",
+          });
+          return;
+        }
+        if (actor !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "episode_abort_requires_user_actor",
+            message: "Crew-side episode abort requires actor=user.",
+          });
+          return;
+        }
+        const episode = ensureEpisodeState(episodes, crewAbortMatch.episode_id);
+        episode.status = "ejected";
+        episode.updated_at = new Date().toISOString();
+        const event = provenanceLog.append(createOccupantProtectionEvent({
+          eventType: abortType,
+          episodeId: episode.id,
+          controlType: abortType,
+          episodeStatus: episode.status,
+          caller: req.headers["x-soma-caller"] ?? actor,
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          episode_id: episode.id,
+          episode_status: episode.status,
+          event_type: event.event_type,
+          provenance_id: event.id,
+          protective_control: {
+            source: "crew",
+            control: abortType,
+            honored: true,
+          },
+          activation_performed: false,
+          grant_written: false,
+          durable: false,
+        });
         return;
       }
 
@@ -2245,6 +2295,7 @@ export function createRequestHandler({
           episodeId: body.episode_id,
           runtimeProfile,
         });
+        const episodeState = ensureEpisodeState(episodes, episode.id);
         const provenance = createProvenance({
           capability,
           modelProfile: runtimeProfile.id,
@@ -2260,6 +2311,23 @@ export function createRequestHandler({
           cognitiveLoadAssessed: assessLoad,
           escalationAssessed: assessEscalation,
         });
+        if (episodeState.status === "ejected") {
+          const deniedProvenance = provenanceLog.append({
+            ...provenance,
+            event_type: "model.chat.denied",
+            allowed: false,
+            denial_reason: "episode_ejected",
+          });
+          logger.info?.("soma.provenance", deniedProvenance);
+          writeJson(res, 409, {
+            error: "episode_ejected",
+            message: "Episode has been ejected; further tenant turns under this episode id are refused.",
+            episode_id: episode.id,
+            episode_status: "ejected",
+            provenance_id: deniedProvenance.id,
+          });
+          return;
+        }
         let memoryContext = "";
 
         try {
@@ -2430,6 +2498,70 @@ export function createRequestHandler({
           maxTokens: numberOrDefault(body.max_tokens, 512),
           temperature: numberOrDefault(body.temperature, 0.7),
         });
+        const occupantControl = detectOccupantProtectionControl(completion.text);
+        if (occupantControl) {
+          const updatedEpisode = applyOccupantProtectionControl(episodeState, occupantControl);
+          const allowedProvenance = {
+            ...provenance,
+            event_type: "model.chat.completed",
+            allowed: true,
+            occupant_protection_control: occupantControl,
+            occupant_protection_honored: true,
+            episode_status: updatedEpisode.status,
+            model_tool_calls_enabled: useToolCalls,
+            model_tool_call_intent_count: 0,
+            model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
+            remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
+          };
+          provenanceLog.append(allowedProvenance);
+          logger.info?.("soma.provenance", allowedProvenance);
+          const event = provenanceLog.append(createOccupantProtectionEvent({
+            eventType: occupantProtectionEventType(occupantControl),
+            episodeId: episode.id,
+            controlType: occupantControl,
+            episodeStatus: updatedEpisode.status,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          logger.info?.("soma.provenance", event);
+          writeJson(res, 200, {
+            text: occupantProtectionResponseText(occupantControl),
+            model: completion.model,
+            model_profile: runtimeProfile.id,
+            requested_profile: requestedProfileId,
+            effective_profile: runtimeProfile.id,
+            force_profile_applied: forceProfile.active,
+            finish_reason: completion.finish_reason,
+            tokens_used: completion.tokens_used,
+            capability_used: capability,
+            provenance_id: provenance.id,
+            protective_provenance_id: event.id,
+            remote_service_used: Boolean(runtimeProfile.remote_service),
+            remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
+            episode_id: episode.id,
+            episode_status: updatedEpisode.status,
+            episode_posture: {
+              ...episode.posture,
+              armed_protections: ["pause", "distress", "eject"],
+            },
+            protective_control: {
+              source: "occupant",
+              control: occupantControl,
+              honored: true,
+            },
+            memory_read: useSessionMemory,
+            memory_written: false,
+            tool_calls_enabled: useToolCalls,
+            tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
+            tool_call_intents: [],
+            decision_notifications_delivered: 0,
+            cognitive_load_assessment: cognitiveLoadAssessment,
+            escalation_assessment: null,
+            activation_performed: false,
+            grant_written: false,
+            durable: false,
+          });
+          return;
+        }
 
         if (writeSessionMemory) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
@@ -2499,6 +2631,7 @@ export function createRequestHandler({
           model_tool_call_intent_count: toolCallIntents.length,
           model_tool_call_grant_id: toolCallAuthorization?.grant?.id ?? "",
           remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
+          episode_status: episodeState.status,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2526,6 +2659,7 @@ export function createRequestHandler({
           remote_service_used: Boolean(runtimeProfile.remote_service),
           remote_chat_grant_id: remoteChatAuthorization?.grant?.id ?? "",
           episode_id: episode.id,
+          episode_status: episodeState.status,
           episode_posture: episode.posture,
           memory_read: useSessionMemory,
           memory_written: writeSessionMemory,
@@ -3250,12 +3384,81 @@ function buildEpisode({ episodeId = "", runtimeProfile = {} } = {}) {
     named_relaxations: [],
     unchanged_gates: ["egress", "consent"],
     egress_allowances: [],
-    armed_protections: [],
+    armed_protections: ["pause", "distress", "eject"],
     forum_id: "",
     telemetry_level: "minimal",
     allowed_data_classes: normalizeCatalogStringArray(runtimeProfile.allowed_data_classes, []),
   };
   return { id, posture };
+}
+
+function ensureEpisodeState(episodes, episodeId) {
+  const id = String(episodeId ?? "").trim() || cryptoRandomId();
+  const existing = episodes.get(id);
+  if (existing) {
+    return existing;
+  }
+  const now = new Date().toISOString();
+  const episode = {
+    id,
+    status: "active",
+    created_at: now,
+    updated_at: now,
+  };
+  episodes.set(id, episode);
+  return episode;
+}
+
+function detectOccupantProtectionControl(text = "") {
+  const value = String(text ?? "").trim();
+  if (value === "SOMA_CONTROL pause") {
+    return "pause";
+  }
+  if (value === "SOMA_CONTROL distress") {
+    return "distress";
+  }
+  if (value === "SOMA_CONTROL eject") {
+    return "eject";
+  }
+  return "";
+}
+
+function applyOccupantProtectionControl(episode, control) {
+  if (control === "pause") {
+    episode.status = "paused";
+  } else if (control === "eject") {
+    episode.status = "ejected";
+  }
+  episode.updated_at = new Date().toISOString();
+  return episode;
+}
+
+function occupantProtectionEventType(control) {
+  if (control === "pause") {
+    return "occupant_paused";
+  }
+  if (control === "distress") {
+    return "occupant_distress";
+  }
+  return "occupant_ejected";
+}
+
+function occupantProtectionResponseText(control) {
+  if (control === "pause") {
+    return "Pause honored. The current turn was held.";
+  }
+  if (control === "distress") {
+    return "Distress signal honored. The episode remains open.";
+  }
+  return "Ejection honored. The episode is closed.";
+}
+
+function matchEpisodeAbortPath(pathname = "") {
+  const match = String(pathname ?? "").match(/^\/episodes\/([^/]+)\/abort$/);
+  if (!match) {
+    return null;
+  }
+  return { episode_id: decodeURIComponent(match[1]) };
 }
 
 function validateRemoteChatEgress({
@@ -3790,6 +3993,31 @@ function createFileReadEvent({ file, caller, episodeId = "" }) {
     file_path: file.path,
     file_root: file.root,
     file_bytes: file.bytes,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createOccupantProtectionEvent({
+  eventType,
+  episodeId = "",
+  controlType = "",
+  episodeStatus = "",
+  caller = "",
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: eventType,
+    capability: "occupant.protection",
+    episode_id: episodeId,
+    control_type: controlType,
+    episode_status: episodeStatus,
+    caller_identity: caller,
+    allowed: true,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
     memory_written: false,
     remote_service_used: false,
   };

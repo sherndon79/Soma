@@ -102,6 +102,29 @@ Local tool-call intent handling requires an active `model.local.tool_calls` runt
 grant permits structured intent routing only; the target tool still needs its own existing authority
 to execute, otherwise Soma stores a normal capability proposal or refuses the intent.
 
+Occupant protective controls are always armed for chat episodes and are not capability grants. If a
+model completion is exactly one of these trimmed, case-sensitive strings, Soma honors it before
+memory writes, escalation assessment, decision delivery, or tool-call intent processing:
+
+- `SOMA_CONTROL pause`
+- `SOMA_CONTROL distress`
+- `SOMA_CONTROL eject`
+
+Pause and distress keep the episode open. Eject closes the episode; later `/chat` requests with the
+same `episode_id` return `episode_ejected`. Discussing a directive inside longer text does not
+trigger it.
+
+Crew can close an episode explicitly:
+
+```bash
+curl -X POST http://127.0.0.1:8765/episodes/episode-id/abort \
+  -H 'content-type: application/json' \
+  -d '{"type":"crew_aborted_for_care","actor":"user"}'
+```
+
+The alternate type is `crew_aborted_for_safety`. Both routes record typed, content-free provenance
+and do not mutate grants, activate capabilities, write memory, or erase other provenance.
+
 ## Remote Chat First-Breath Profile
 
 `claude-remote` is a remote runtime profile for the Anthropic Messages API. Provider installation

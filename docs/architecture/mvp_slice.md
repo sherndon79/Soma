@@ -41,6 +41,7 @@ Initial target:
 - `/files/read`
 - `/desktop/inspect/accessibility-tree`
 - `/chat`
+- `/episodes/:id/abort`
 - local vLLM-compatible model backend
 - request provenance
 - ephemeral session memory only
@@ -282,6 +283,19 @@ The response should include:
 - whether ephemeral session memory was read or written
 - structured tool-call intent dispositions when `use_tool_calls` is enabled
 
+Occupant protective controls are honored from exact whole-response model completions before memory
+writes, escalation assessment, decision delivery, or tool-call intent processing:
+
+- `SOMA_CONTROL pause` records `occupant_paused`, holds the current turn, and keeps the episode open
+- `SOMA_CONTROL distress` records `occupant_distress` and keeps the episode open
+- `SOMA_CONTROL eject` records `occupant_ejected`, closes the episode, and causes later `/chat`
+  requests with the same `episode_id` to fail with `episode_ejected`
+
+Detection is case-sensitive and exact after trimming whitespace. Mentioning a directive inside
+ordinary text does not trigger it. These controls are not catalog capabilities and do not grant new
+authority; their only effects are episode state, aborting further turn processing, and
+metadata-only protective provenance.
+
 `model.local.tool_calls` is explicit-grant and only authorizes structured local-model tool-call
 intent handling. It does not authorize target tool execution. Each emitted intent is routed through
 the target capability's existing gate; approved target routes may execute, known gated target
@@ -289,6 +303,14 @@ capabilities become capability proposals, and unknown or invalid targets are ref
 slice accepts structured `tool_calls` / `tool_call_intents` returned by the model client and does not
 parse natural-language response text into actions. Tool-call provenance records the tool name,
 target capability, argument keys, and disposition without raw argument or result content.
+
+### `POST /episodes/:id/abort`
+
+Crew-side protective abort for an in-process episode. The request body must include
+`{"type":"crew_aborted_for_care","actor":"user"}` or
+`{"type":"crew_aborted_for_safety","actor":"user"}`. The route records the typed abort event,
+marks the episode ejected, and does not mutate grants, activate capabilities, write memory, or
+erase provenance. Later `/chat` requests with that `episode_id` fail with `episode_ejected`.
 
 For remote profiles, egress is constrained by the effective profile's `allowed_data_classes`.
 Requests that would send session memory, proposal-decision context, file content, desktop content,
@@ -613,6 +635,11 @@ Current event types include:
 
 - `model.chat.completed`
 - `model.chat.denied`
+- `occupant_paused`
+- `occupant_distress`
+- `occupant_ejected`
+- `crew_aborted_for_care`
+- `crew_aborted_for_safety`
 - `harness.module.adopted`
 - `harness.module.dropped`
 - `memory.session.written`

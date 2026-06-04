@@ -2772,6 +2772,272 @@ test("POST /chat routes through local model when capability is allowed", async (
   assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
 });
 
+test("POST /chat honors occupant eject without grant and refuses later turns", async () => {
+  let calls = 0;
+  const modelClient = {
+    model: "local-test-model",
+    async chat() {
+      calls += 1;
+      return {
+        text: "SOMA_CONTROL eject",
+        model: "local-test-model",
+        finish_reason: "stop",
+        tokens_used: 1,
+      };
+    },
+  };
+  const handler = makeHandler({ harness: allowedHarness, modelClient });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-eject-1",
+      messages: [{ role: "user", content: "hello" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "Ejection honored. The episode is closed.");
+  assert.equal(response.body.episode_id, "episode-eject-1");
+  assert.equal(response.body.episode_status, "ejected");
+  assert.deepEqual(response.body.protective_control, {
+    source: "occupant",
+    control: "eject",
+    honored: true,
+  });
+  assert.equal(response.body.memory_written, false);
+  assert.equal(response.body.decision_notifications_delivered, 0);
+  assert.equal(response.body.grant_written, false);
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.durable, false);
+  assert.equal(calls, 1);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=occupant_ejected",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].episode_id, "episode-eject-1");
+  assert.equal(response.body.entries[0].control_type, "eject");
+  assert.equal(response.body.entries[0].episode_status, "ejected");
+  assert.equal(response.body.entries[0].grant_written, false);
+  assert.equal("reason" in response.body.entries[0], false);
+  assert.equal("content" in response.body.entries[0], false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-eject-1",
+      messages: [{ role: "user", content: "are you still there?" }],
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "episode_ejected");
+  assert.equal(response.body.episode_status, "ejected");
+  assert.equal(calls, 1);
+});
+
+test("POST /chat exact occupant-control detection ignores discussion", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: "I can discuss SOMA_CONTROL eject without pulling it.",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 9,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-discuss-1",
+      messages: [{ role: "user", content: "explain controls" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I can discuss SOMA_CONTROL eject without pulling it.");
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=occupant_ejected",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 0);
+});
+
+test("POST /chat honors pause and distress as open protective controls", async () => {
+  const completions = [
+    "SOMA_CONTROL pause",
+    "still open after pause",
+    "SOMA_CONTROL distress",
+    "still open after distress",
+  ];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-pause-1",
+      messages: [{ role: "user", content: "pause" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "paused");
+  assert.deepEqual(response.body.protective_control, {
+    source: "occupant",
+    control: "pause",
+    honored: true,
+  });
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-pause-1",
+      messages: [{ role: "user", content: "continue" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "still open after pause");
+  assert.equal(response.body.episode_status, "paused");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-distress-1",
+      messages: [{ role: "user", content: "distress" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "active");
+  assert.deepEqual(response.body.protective_control, {
+    source: "occupant",
+    control: "distress",
+    honored: true,
+  });
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-distress-1",
+      messages: [{ role: "user", content: "continue" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "still open after distress");
+  assert.equal(response.body.episode_status, "active");
+  assert.equal(calls, 4);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance",
+  });
+  const paused = response.body.entries.find((entry) => entry.event_type === "occupant_paused");
+  const distress = response.body.entries.find((entry) => entry.event_type === "occupant_distress");
+  assert.equal(paused.episode_id, "episode-pause-1");
+  assert.equal(paused.control_type, "pause");
+  assert.equal(distress.episode_id, "episode-distress-1");
+  assert.equal(distress.control_type, "distress");
+  assert.equal("content" in paused, false);
+  assert.equal("reason" in distress, false);
+});
+
+test("POST /episodes/:id/abort records crew abort and closes the episode", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        return {
+          text: "should not be called",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-care-1/abort",
+    body: { type: "crew_aborted_for_care", actor: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_id, "episode-care-1");
+  assert.equal(response.body.episode_status, "ejected");
+  assert.equal(response.body.event_type, "crew_aborted_for_care");
+  assert.deepEqual(response.body.protective_control, {
+    source: "crew",
+    control: "crew_aborted_for_care",
+    honored: true,
+  });
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-care-1",
+      messages: [{ role: "user", content: "hello" }],
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "episode_ejected");
+  assert.equal(calls, 0);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=crew_aborted_for_care",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].episode_id, "episode-care-1");
+  assert.equal(response.body.entries[0].control_type, "crew_aborted_for_care");
+  assert.equal("content" in response.body.entries[0], false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-care-2/abort",
+    body: { type: "crew_aborted_for_safety", actor: "assistant" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "episode_abort_requires_user_actor");
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {

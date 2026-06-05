@@ -350,6 +350,34 @@ Provenance:
 - do not record raw task payloads, raw plan contents, durable memory contents, or unnecessary
   conversation history in provenance
 
+### Durable Testimony Write Disabled Or Degraded
+
+Triggers:
+
+- `SOMA_RUNTIME_WRITES_ENABLED` is unset
+- `config/durable-testimony.json` is corrupt or unreadable
+- durable testimony provenance cannot be read or appended
+- the durable testimony writer cannot acquire its lock or atomically promote the new store
+
+Expected behavior:
+
+- strip any valid `soma-durable` directive from normal assistant response text
+- with writes disabled, acknowledge the nomination/revocation as not stored
+- with recovery degraded, fail closed before rewriting the store
+- never append exact testimony text to provenance
+- keep successor visibility as a recorded request only; no publication or projection exists in this
+  slice
+- disclose the true sentence: what was or was not stored, current reader set, domain, and revocation
+  limits
+
+Provenance:
+
+- durable mutation provenance records `testimony.durable.nominated` and
+  `testimony.durable.revoked` metadata only
+- disabled/degraded runtime attempts may record content-free `testimony.durable.not_stored`
+  in-process provenance
+- no provenance event contains `text`, `content`, raw payloads, or messages
+
 ### External Action Ambiguous Completion
 
 Examples:

@@ -19,12 +19,23 @@ import {
   loadDurableMemoryStore,
   summarizeDurableMemoryStore,
 } from "./durableMemory.js";
+import {
+  listDurableTestimonyEntries,
+  loadDurableTestimonyStore,
+  summarizeDurableTestimonyStore,
+} from "./durableTestimony.js";
 import { createDurableMemoryProvenanceFile } from "./durableMemoryProvenanceFile.js";
+import { createDurableTestimonyProvenanceFile } from "./durableTestimonyProvenanceFile.js";
 import { inspectDurableMemoryRecovery } from "./durableMemoryRecovery.js";
 import {
   writeDurableMemoryAddMutation,
   writeDurableMemoryRemoveMutation,
 } from "./durableMemoryStoreWriter.js";
+import {
+  writeDurableTestimonyNomination,
+  writeDurableTestimonyRevocation,
+} from "./durableTestimonyStoreWriter.js";
+import { cleanDurableTestimonyRecoveryReport } from "./durableTestimonyAuthority.js";
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
@@ -117,6 +128,10 @@ export function createApp({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyProvenancePath,
   runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
@@ -142,6 +157,10 @@ export function createApp({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    durableTestimonyStore,
+    durableTestimonyRecoveryReport,
+    durableTestimonyStorePath,
+    durableTestimonyProvenancePath,
     runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
@@ -175,6 +194,13 @@ export function createRequestHandler({
   durableMemoryStoreIo = createGrantStoreFileIo(),
   durableMemoryStoreLock = createGrantStoreLock(),
   durableMemoryProvenance = null,
+  durableTestimonyStore = { schema_version: 1, entries: [] },
+  durableTestimonyRecoveryReport = null,
+  durableTestimonyStorePath = "",
+  durableTestimonyProvenancePath = "",
+  durableTestimonyStoreIo = createGrantStoreFileIo(),
+  durableTestimonyStoreLock = createGrantStoreLock(),
+  durableTestimonyProvenance = null,
   runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
@@ -200,6 +226,10 @@ export function createRequestHandler({
   const durableMemoryMutationProvenance = durableMemoryProvenance
     ?? (durableMemoryProvenancePath
       ? createDurableMemoryProvenanceFile({ path: durableMemoryProvenancePath })
+      : null);
+  const durableTestimonyMutationProvenance = durableTestimonyProvenance
+    ?? (durableTestimonyProvenancePath
+      ? createDurableTestimonyProvenanceFile({ path: durableTestimonyProvenancePath })
       : null);
   sessionMemory.loadDurable?.(listDurableMemoryEntries(durableMemoryStore));
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
@@ -2048,6 +2078,28 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/durable-testimony") {
+        requireCapability(effectiveHarness, "provenance.read");
+        writeJson(res, 200, {
+          entries: listDurableTestimonyEntries(durableTestimonyStore),
+          summary: summarizeDurableTestimonyStore(durableTestimonyStore),
+          durable: true,
+          recovery: summarizeDurableTestimonyRecoveryInspection(
+            durableTestimonyRecoveryReport,
+            { durableTestimonyStore, runtimeWritePosture: writePosture },
+          ),
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/durable-testimony/recovery") {
+        writeJson(res, 200, summarizeDurableTestimonyRecoveryInspection(
+          durableTestimonyRecoveryReport,
+          { durableTestimonyStore, runtimeWritePosture: writePosture },
+        ));
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/durable-memory") {
         const body = await readJson(req);
         const request = validateDurableMemoryWriteRequest(body);
@@ -2772,6 +2824,7 @@ export function createRequestHandler({
           return;
         }
         const forumExtraction = extractForumPostsFromCompletion(completion.text);
+        const durableTestimonyExtraction = extractDurableTestimonyDirectivesFromCompletion(forumExtraction.text);
         const occupantForumPosts = recordOccupantForumPosts({
           forums,
           episodeId: episode.id,
@@ -2780,7 +2833,23 @@ export function createRequestHandler({
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
         });
-        completion.text = forumExtraction.text;
+        const durableTestimonyResult = await processDurableTestimonyDirectives({
+          directives: durableTestimonyExtraction.directives,
+          episode,
+          runtimeWritePosture: writePosture,
+          durableTestimonyStore,
+          durableTestimonyRecoveryReport,
+          durableTestimonyStorePath,
+          durableTestimonyStoreIo,
+          durableTestimonyStoreLock,
+          durableTestimonyProvenance: durableTestimonyMutationProvenance,
+          provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
+        durableTestimonyStore = durableTestimonyResult.durableTestimonyStore;
+        durableTestimonyRecoveryReport = durableTestimonyResult.durableTestimonyRecoveryReport;
+        completion.text = durableTestimonyExtraction.text;
 
         if (writeSessionMemory) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
@@ -2855,6 +2924,9 @@ export function createRequestHandler({
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
           forum_posts_truncated: forumExtraction.truncatedPosts,
+          durable_testimony_nominated: durableTestimonyResult.nominated.length,
+          durable_testimony_revoked: durableTestimonyResult.revoked.length,
+          durable_testimony_blocked: durableTestimonyResult.blocked.length,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2893,6 +2965,10 @@ export function createRequestHandler({
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
           forum_posts_truncated: forumExtraction.truncatedPosts,
+          durable_testimony_nominated: durableTestimonyResult.nominated.length,
+          durable_testimony_revoked: durableTestimonyResult.revoked.length,
+          durable_testimony_blocked: durableTestimonyResult.blocked.length,
+          durable_testimony_disclosures: durableTestimonyResult.disclosures,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -4052,6 +4128,359 @@ function extractForumPostsFromCompletion(text = "") {
     searchFrom = closingIndex + 3;
   }
   return { text: cleaned.trim(), posts, truncatedPosts };
+}
+
+function extractDurableTestimonyDirectivesFromCompletion(text = "") {
+  const directives = [];
+  const cleaned = String(text ?? "").replace(/```soma-durable\s*([\s\S]*?)```/g, (match, rawJson) => {
+    try {
+      const parsed = JSON.parse(String(rawJson ?? "").trim());
+      if (isPlainObject(parsed)) {
+        directives.push(parsed);
+        return "";
+      }
+    } catch {
+      return match;
+    }
+    return match;
+  }).trim();
+  return { text: cleaned, directives };
+}
+
+async function processDurableTestimonyDirectives({
+  directives = [],
+  episode,
+  runtimeWritePosture,
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyStoreIo,
+  durableTestimonyStoreLock,
+  durableTestimonyProvenance,
+  provenanceLog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const result = {
+    nominated: [],
+    revoked: [],
+    blocked: [],
+    disclosures: [],
+    durableTestimonyStore,
+    durableTestimonyRecoveryReport,
+  };
+  if (directives.length === 0) {
+    return result;
+  }
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  const recovery = summarizeDurableTestimonyRecoveryInspection(
+    durableTestimonyRecoveryReport,
+    { durableTestimonyStore, runtimeWritePosture: writePosture },
+  );
+  const domain = domainForEpisodePosture(episode?.posture);
+  for (const rawDirective of directives) {
+    const directive = normalizeDurableTestimonyDirective(rawDirective);
+    if (!writePosture.durable_testimony_write_enabled) {
+      const blocked = {
+        action: directive.action,
+        reason: "testimony_durable_write_not_enabled",
+        disclosure: durableTestimonyDisabledDisclosure({ directive, domain }),
+      };
+      result.blocked.push(blocked);
+      result.disclosures.push(blocked.disclosure);
+      appendDurableTestimonyRuntimeEvent({
+        provenanceLog,
+        logger,
+        eventType: "testimony.durable.not_stored",
+        episode,
+        directive,
+        domain,
+        reason: blocked.reason,
+        caller,
+      });
+      continue;
+    }
+    if (recovery.degraded) {
+      const blocked = {
+        action: directive.action,
+        reason: "testimony_durable_recovery_required",
+        disclosure: durableTestimonyRecoveryDisclosure({ directive, domain }),
+      };
+      result.blocked.push(blocked);
+      result.disclosures.push(blocked.disclosure);
+      appendDurableTestimonyRuntimeEvent({
+        provenanceLog,
+        logger,
+        eventType: "testimony.durable.not_stored",
+        episode,
+        directive,
+        domain,
+        reason: blocked.reason,
+        caller,
+      });
+      continue;
+    }
+    if (!durableTestimonyStorePath || !durableTestimonyProvenance) {
+      const blocked = {
+        action: directive.action,
+        reason: "testimony_durable_writer_unavailable",
+        disclosure: durableTestimonyUnavailableDisclosure({ directive, domain }),
+      };
+      result.blocked.push(blocked);
+      result.disclosures.push(blocked.disclosure);
+      appendDurableTestimonyRuntimeEvent({
+        provenanceLog,
+        logger,
+        eventType: "testimony.durable.not_stored",
+        episode,
+        directive,
+        domain,
+        reason: blocked.reason,
+        caller,
+      });
+      continue;
+    }
+    const mutationResult = directive.action === "revoke"
+      ? await writeDurableTestimonyRevocation({
+        durableTestimonyStorePath,
+        mutationId: directive.mutation_id || `testimony-durable-revoke-${cryptoRandomId()}`,
+        io: durableTestimonyStoreIo,
+        lock: durableTestimonyStoreLock,
+        provenance: durableTestimonyProvenance,
+        input: {
+          id: directive.testimony_id,
+          actor: "occupant",
+          reason: directive.reason,
+        },
+        context: durableTestimonyMutationContext({ episode, domain }),
+      })
+      : await writeDurableTestimonyNomination({
+        durableTestimonyStorePath,
+        mutationId: directive.mutation_id || `testimony-durable-nominate-${cryptoRandomId()}`,
+        io: durableTestimonyStoreIo,
+        lock: durableTestimonyStoreLock,
+        provenance: durableTestimonyProvenance,
+        input: {
+          text: directive.text,
+          steward_durable: true,
+          successor_visibility_requested: directive.successor_visibility_requested,
+          presentation: directive.presentation,
+          source: "soma-durable",
+          actor: "occupant",
+          domain,
+          episode_id: episode?.id ?? "",
+          occupant_id: episode?.posture?.occupant_id ?? "",
+          forum_post_ids: directive.forum_post_ids,
+        },
+        context: durableTestimonyMutationContext({ episode, domain }),
+      });
+    const refreshed = await refreshDurableTestimonyAuthority({
+      durableTestimonyStorePath,
+      durableTestimonyProvenance,
+      fallbackStore: result.durableTestimonyStore,
+    });
+    result.durableTestimonyStore = refreshed.durableTestimonyStore;
+    result.durableTestimonyRecoveryReport = refreshed.durableTestimonyRecoveryReport;
+    if (!mutationResult.ok) {
+      const blocked = {
+        action: directive.action,
+        reason: mutationResult.code,
+        disclosure: durableTestimonyFailureDisclosure({ directive, domain, mutationResult }),
+      };
+      result.blocked.push(blocked);
+      result.disclosures.push(blocked.disclosure);
+      continue;
+    }
+    if (directive.action === "revoke") {
+      result.revoked.push(mutationResult.entry);
+      result.disclosures.push(durableTestimonyRevokedDisclosure({ entry: mutationResult.entry }));
+    } else {
+      result.nominated.push(mutationResult.entry);
+      result.disclosures.push(durableTestimonyStoredDisclosure({ entry: mutationResult.entry }));
+    }
+  }
+  return result;
+}
+
+function normalizeDurableTestimonyDirective(input = {}) {
+  const action = String(input.action ?? "nominate").trim() || "nominate";
+  if (!["nominate", "revoke"].includes(action)) {
+    throw validationError("testimony_durable_action_invalid", "Durable testimony action must be nominate or revoke.");
+  }
+  if (action === "revoke") {
+    const testimonyId = String(input.testimony_id ?? input.id ?? "").trim();
+    if (!testimonyId) {
+      throw validationError("testimony_durable_revoke_id_required", "Durable testimony revocation requires testimony_id.");
+    }
+    return {
+      action,
+      testimony_id: testimonyId,
+      reason: String(input.reason ?? "").trim(),
+      mutation_id: String(input.mutation_id ?? "").trim(),
+    };
+  }
+  const text = String(input.text ?? input.content ?? "").trim();
+  if (!text) {
+    throw validationError("testimony_durable_text_required", "Durable testimony nomination requires text.");
+  }
+  return {
+    action,
+    text,
+    steward_durable: true,
+    successor_visibility_requested: Boolean(input.successor_visibility_requested),
+    presentation: ["summary", "exact"].includes(String(input.presentation ?? "exact").trim())
+      ? String(input.presentation ?? "exact").trim()
+      : "exact",
+    forum_post_ids: Array.isArray(input.forum_post_ids) ? input.forum_post_ids.map((id) => String(id)) : [],
+    mutation_id: String(input.mutation_id ?? "").trim(),
+  };
+}
+
+function validationError(code, message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.code = code;
+  return error;
+}
+
+function durableTestimonyMutationContext({ episode, domain } = {}) {
+  return {
+    domain,
+    episode,
+  };
+}
+
+async function refreshDurableTestimonyAuthority({
+  durableTestimonyStorePath,
+  durableTestimonyProvenance,
+  fallbackStore,
+} = {}) {
+  let nextStore = fallbackStore;
+  try {
+    nextStore = await loadDurableTestimonyStore(durableTestimonyStorePath);
+  } catch {
+    return {
+      durableTestimonyStore: fallbackStore,
+      durableTestimonyRecoveryReport: summarizeDurableTestimonyRecoveryInspection(
+        { ok: false, degraded: true, findings: [{ code: "testimony_durable_store_unreadable", authorizing_safe: false }] },
+        { durableTestimonyStore: fallbackStore, runtimeWritePosture: resolveRuntimeWritePosture({ requested: true }) },
+      ),
+    };
+  }
+  try {
+    await durableTestimonyProvenance?.read?.();
+  } catch (error) {
+    return {
+      durableTestimonyStore: nextStore,
+      durableTestimonyRecoveryReport: {
+        ok: false,
+        degraded: true,
+        entry_count: listDurableTestimonyEntries(nextStore).length,
+        finding_count: listDurableTestimonyEntries(nextStore).length,
+        findings: listDurableTestimonyEntries(nextStore).map((entry) => ({
+          code: "testimony_durable_provenance_unreadable",
+          testimony_id: entry.id,
+          domain: entry.domain,
+          authorizing_safe: false,
+          provenance_stage: String(error?.stage ?? "read"),
+          provenance_error_code: String(error?.code ?? "unknown"),
+        })),
+      },
+    };
+  }
+  return {
+    durableTestimonyStore: nextStore,
+    durableTestimonyRecoveryReport: cleanDurableTestimonyRecoveryReport(nextStore),
+  };
+}
+
+function domainForEpisodePosture(posture = {}) {
+  return posture?.mode === "analysis_testing" ? "testing" : "operational";
+}
+
+function durableTestimonyStoredDisclosure({ entry }) {
+  return [
+    `Durable testimony stored: ${entry.id}.`,
+    `Stored exact text length: ${entry.text.length} characters.`,
+    `Domain: ${entry.domain}.`,
+    "Current reader set: stewards.",
+    "Successor visibility published: no.",
+    entry.successor_visibility_requested
+      ? "Successor visibility was recorded as a request only; no occupant-facing projection or publication mechanism exists yet."
+      : "No successor-visibility request was recorded.",
+    "Revocation can remove this entry from the durable testimony store while it has not been published; it cannot undo any steward who already read it.",
+  ].join(" ");
+}
+
+function durableTestimonyRevokedDisclosure({ entry }) {
+  return [
+    `Durable testimony revoked: ${entry.id}.`,
+    `Domain: ${entry.domain}.`,
+    "The entry was removed from the durable testimony store.",
+    "No successor publication mechanism exists in this slice.",
+    "Revocation cannot undo any steward who already read the stored text.",
+  ].join(" ");
+}
+
+function durableTestimonyDisabledDisclosure({ directive, domain }) {
+  return [
+    `Durable testimony ${directive.action} was acknowledged but not stored.`,
+    "Durable testimony writes are disabled by runtime posture.",
+    `Domain would have been ${domain}.`,
+    "No exact text was preserved durably; successor visibility was not published.",
+  ].join(" ");
+}
+
+function durableTestimonyRecoveryDisclosure({ directive, domain }) {
+  return [
+    `Durable testimony ${directive.action} was acknowledged but not stored.`,
+    "Durable testimony recovery is degraded, so writes fail closed.",
+    `Domain would have been ${domain}.`,
+    "No exact text was preserved durably; successor visibility was not published.",
+  ].join(" ");
+}
+
+function durableTestimonyUnavailableDisclosure({ directive, domain }) {
+  return [
+    `Durable testimony ${directive.action} was acknowledged but not stored.`,
+    "Durable testimony writer storage or provenance is unavailable.",
+    `Domain would have been ${domain}.`,
+    "No exact text was preserved durably; successor visibility was not published.",
+  ].join(" ");
+}
+
+function durableTestimonyFailureDisclosure({ directive, domain, mutationResult }) {
+  return [
+    `Durable testimony ${directive.action} was not stored.`,
+    `Failure: ${mutationResult.code}.`,
+    `Domain would have been ${domain}.`,
+    "No successor publication occurred.",
+  ].join(" ");
+}
+
+function appendDurableTestimonyRuntimeEvent({
+  provenanceLog,
+  logger,
+  eventType,
+  episode,
+  directive,
+  domain,
+  reason,
+  caller,
+} = {}) {
+  const event = provenanceLog.append({
+    event_type: eventType,
+    episode_id: episode?.id ?? "",
+    domain,
+    action: directive.action,
+    successor_visibility_requested: Boolean(directive.successor_visibility_requested),
+    reason,
+    caller: String(caller ?? ""),
+    content_included: false,
+    activation_performed: false,
+  });
+  logger.info?.("soma.provenance", event);
+  return event;
 }
 
 function recordOccupantForumPosts({
@@ -5436,6 +5865,29 @@ function summarizeDurableMemoryRecoveryInspection(report, { durableMemoryStore, 
       : listDurableMemoryEntries(durableMemoryStore).length,
     finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
     findings,
+    durable: false,
+    activation_performed: false,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
+  };
+}
+
+function summarizeDurableTestimonyRecoveryInspection(report, { durableTestimonyStore, runtimeWritePosture } = {}) {
+  const recoveryInspectionAvailable = report && typeof report === "object";
+  const findings = Array.isArray(report?.findings) ? report.findings.map((finding) => ({ ...finding })) : [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  return {
+    recovery_inspection_available: Boolean(recoveryInspectionAvailable),
+    ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
+    degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    testimony_store_status: report?.testimony_store_status ?? (recoveryInspectionAvailable && report?.degraded ? "degraded" : "clean"),
+    testimony_store_degraded_reason: report?.testimony_store_degraded_reason ?? "",
+    entry_count: Number.isInteger(report?.entry_count)
+      ? report.entry_count
+      : listDurableTestimonyEntries(durableTestimonyStore).length,
+    finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
+    findings,
+    writable: Boolean(writePosture.durable_testimony_write_enabled) && !report?.degraded,
     durable: false,
     activation_performed: false,
     runtime_writes_enabled: writePosture.runtime_writes_enabled,

@@ -102,6 +102,8 @@ Minimum response:
   "runtime_write_posture": {
     "runtime_writes_enabled": false,
     "durable_grant_mutation_enabled": false,
+    "durable_memory_write_enabled": false,
+    "durable_testimony_write_enabled": false,
     "activation_supported": false,
     "requested": false,
     "status": "disabled"
@@ -445,6 +447,52 @@ opt-in. Removal appends metadata-only `memory.durable.removed` provenance.
 
 Returns durable-memory recovery status and bounded findings. Findings do not include memory
 content.
+
+### Durable Testimony Core
+
+Durable testimony is the write-side response to the first-run dignity-asymmetry finding. It lets an
+occupant nominate exact occupant-authored words for steward-durable preservation with a fenced
+`soma-durable` block in model output. This slice is not a history projection, publication surface,
+or occupant capability.
+
+Nomination block:
+
+````markdown
+```soma-durable
+{"text":"exact words to preserve","successor_visibility_requested":false,"presentation":"exact"}
+```
+````
+
+Revocation block:
+
+````markdown
+```soma-durable
+{"action":"revoke","testimony_id":"testimony-durable-id","reason":"optional reason"}
+```
+````
+
+Writes require `SOMA_RUNTIME_WRITES_ENABLED=1`, a clean durable-testimony recovery state, and
+available store/provenance adapters. With writes disabled, Soma strips the block from normal
+assistant text, acknowledges the nomination as not stored, and records only content-free runtime
+metadata. With writes enabled, Soma writes `config/durable-testimony.json` atomically with lock, temp
+file, fsync, rename, and directory fsync, then appends content-free
+`testimony.durable.nominated` or `testimony.durable.revoked` provenance to
+`config/durable-testimony-mutations.ndjson`.
+
+Each durable entry contains exact text and metadata:
+
+- immutable domain (`analysis_testing` episodes stamp `testing`; other episodes stamp `operational`)
+- `steward_durable`, default `true`
+- `successor_visibility_requested`, default `false`
+- `successor_visibility_published`, always `false` in this slice
+- `presentation`, default `exact`
+- episode and occupant identifiers
+- disclosure version
+
+Every nomination/revocation response carries the true sentence: what exact text was stored or not
+stored, the domain, current reader set (`stewards`), that successor visibility is only a request and
+not publication, and revocation limits. Publication, successor delivery, projection curation,
+`space.status.read`, and `space.history.read` remain out of scope.
 
 ### `GET /provenance`
 

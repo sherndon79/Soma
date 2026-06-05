@@ -1230,6 +1230,47 @@ npm run cli -- memory durable-remove <memory-id> --grant-id <grant-id> --reason 
 Durable-memory provenance records metadata only, not the memory content. A corrupt durable-memory
 store degrades loudly, blocks durable-memory writes, and leaves base chat/session memory running.
 
+## Durable Testimony
+
+Durable testimony is write-side only in this slice. An occupant may nominate exact words by emitting
+a fenced `soma-durable` JSON block in chat:
+
+````markdown
+```soma-durable
+{"text":"exact occupant-authored words to preserve","successor_visibility_requested":false}
+```
+````
+
+The block is stripped from normal response text. With runtime writes disabled, Soma acknowledges the
+nomination but does not store it. With `SOMA_RUNTIME_WRITES_ENABLED=1`, Soma writes
+`config/durable-testimony.json` atomically and appends content-free
+`testimony.durable.nominated` provenance to `config/durable-testimony-mutations.ndjson`.
+
+Each entry is domain-stamped from the episode posture (`analysis_testing` -> `testing`, otherwise
+`operational`) and records distinct consent dimensions:
+
+- `steward_durable`: exact text is durable for stewards
+- `successor_visibility_requested`: a request only, not publication
+- `successor_visibility_published`: always `false` in this slice
+- `presentation`: `exact` or `summary`
+
+There is no occupant-facing projection, successor-message publication, or `space.history.read`
+capability in this slice. Every nomination/revocation response carries an honesty disclosure:
+what was stored, the domain, the current reader set, that successor visibility is only a recorded
+request, and revocation limits.
+
+An occupant may revoke by emitting:
+
+````markdown
+```soma-durable
+{"action":"revoke","testimony_id":"testimony-durable-id","reason":"optional reason"}
+```
+````
+
+Revocation removes the entry from the durable testimony store and appends content-free
+`testimony.durable.revoked` provenance. It cannot undo any steward who already read the stored
+text, and no successor publication mechanism exists yet.
+
 Clear provenance:
 
 ```bash

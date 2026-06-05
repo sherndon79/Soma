@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { loadCapabilityCatalog, loadProviderRegistry } from "./capabilityCatalog.js";
 import { loadGrantAuthority } from "./grantAuthority.js";
 import { loadDurableMemoryAuthority } from "./durableMemoryAuthority.js";
+import { loadDurableTestimonyAuthority } from "./durableTestimonyAuthority.js";
 import { loadHarness } from "./harness.js";
 import { loadHarnessModules } from "./harnessModules.js";
 import { ModelClient } from "./modelClient.js";
@@ -31,6 +32,15 @@ const {
   durableMemoryStorePath: process.env.SOMA_DURABLE_MEMORY_STORE_PATH,
   durableMemoryProvenancePath: process.env.SOMA_DURABLE_MEMORY_PROVENANCE_PATH,
 });
+const {
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyProvenancePath,
+} = await loadDurableTestimonyAuthority({
+  durableTestimonyStorePath: process.env.SOMA_DURABLE_TESTIMONY_STORE_PATH,
+  durableTestimonyProvenancePath: process.env.SOMA_DURABLE_TESTIMONY_PROVENANCE_PATH,
+});
 if (grantRecoveryReport?.degraded === true) {
   console.warn(
     `Soma grant authority degraded: ${
@@ -43,6 +53,13 @@ if (durableMemoryRecoveryReport?.degraded === true) {
     `Soma durable memory degraded: ${
       durableMemoryRecoveryReport.memory_store_degraded_reason ?? "memory_durable_recovery_degraded"
     }; durable memory writes are disabled until recovery.`,
+  );
+}
+if (durableTestimonyRecoveryReport?.degraded === true) {
+  console.warn(
+    `Soma durable testimony degraded: ${
+      durableTestimonyRecoveryReport.testimony_store_degraded_reason ?? "testimony_durable_recovery_degraded"
+    }; durable testimony writes are disabled until recovery.`,
   );
 }
 const moduleRegistry = await loadHarnessModules();
@@ -63,6 +80,10 @@ const app = createApp({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyProvenancePath,
   runtimeWritePosture,
   moduleRegistry,
   runtimeProfiles,

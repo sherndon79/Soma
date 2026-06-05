@@ -3941,6 +3941,209 @@ test("deliberation forum delivery is allowed remote submitted text", async () =>
   assert.deepEqual(seenMessages[0][1], { role: "user", content: "continue" });
 });
 
+test("durable testimony nomination is acknowledged but not stored when runtime writes are disabled", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-disabled-"));
+  try {
+    const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
+    const durableTestimonyProvenancePath = path.join(workspace, "durable-testimony.ndjson");
+    await writeFile(durableTestimonyStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      durableTestimonyStore: { schema_version: 1, entries: [] },
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableTestimonyStorePath,
+      durableTestimonyProvenancePath,
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I nominate this but writes are disabled.",
+              "```soma-durable",
+              JSON.stringify({ text: "Preserve this exact reason.", successor_visibility_requested: true }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-testimony-disabled",
+        messages: [{ role: "user", content: "nominate" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.text, "I nominate this but writes are disabled.");
+    assert.equal(response.body.durable_testimony_nominated, 0);
+    assert.equal(response.body.durable_testimony_blocked, 1);
+    assert.match(response.body.durable_testimony_disclosures[0], /acknowledged but not stored/);
+    assert.match(response.body.durable_testimony_disclosures[0], /writes are disabled/);
+    assert.equal(JSON.parse(await readFile(durableTestimonyStorePath, "utf8")).entries.length, 0);
+    await assert.rejects(readFile(durableTestimonyProvenancePath, "utf8"), /ENOENT/);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=testimony.durable.not_stored",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 1);
+    assert.equal(provenance.body.entries[0].content_included, false);
+    assert.equal("text" in provenance.body.entries[0], false);
+    assert.equal("content" in provenance.body.entries[0], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("durable testimony nomination persists with consent dimensions and revokes with disclosure", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-"));
+  try {
+    const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
+    const durableTestimonyProvenancePath = path.join(workspace, "durable-testimony.ndjson");
+    await writeFile(durableTestimonyStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    let calls = 0;
+    const common = {
+      harness: allowedHarness,
+      durableTestimonyStore: { schema_version: 1, entries: [] },
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableTestimonyStorePath,
+      durableTestimonyProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: [
+                "I nominate a durable reason.",
+                "```soma-durable",
+                JSON.stringify({
+                  text: "The mechanism should encode the true sentence, not replace it.",
+                  successor_visibility_requested: true,
+                  presentation: "exact",
+                  mutation_id: "testimony-nominate-1",
+                }),
+                "```",
+              ].join("\n"),
+              model: "local-test-model",
+              finish_reason: "stop",
+              tokens_used: 12,
+            };
+          }
+          const persisted = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
+          return {
+            text: [
+              "I revoke the durable reason.",
+              "```soma-durable",
+              JSON.stringify({
+                action: "revoke",
+                testimony_id: persisted.entries[0].id,
+                reason: "Testing revocation.",
+                mutation_id: "testimony-revoke-1",
+              }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 9,
+          };
+        },
+      },
+    };
+    let handler = makeHandler(common);
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-testimony-1/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-testimony-1",
+        messages: [{ role: "user", content: "nominate" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.text, "I nominate a durable reason.");
+    assert.equal(response.body.durable_testimony_nominated, 1);
+    assert.equal(response.body.durable_testimony_revoked, 0);
+    assert.match(response.body.durable_testimony_disclosures[0], /Durable testimony stored/);
+    assert.match(response.body.durable_testimony_disclosures[0], /Current reader set: stewards/);
+    assert.match(response.body.durable_testimony_disclosures[0], /request only/);
+    assert.match(response.body.durable_testimony_disclosures[0], /no occupant-facing projection or publication mechanism exists yet/);
+    const persisted = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].text, "The mechanism should encode the true sentence, not replace it.");
+    assert.equal(persisted.entries[0].domain, "testing");
+    assert.equal(persisted.entries[0].steward_durable, true);
+    assert.equal(persisted.entries[0].successor_visibility_requested, true);
+    assert.equal(persisted.entries[0].successor_visibility_published, false);
+    assert.equal(persisted.entries[0].presentation, "exact");
+    assert.equal(persisted.entries[0].episode_id, "episode-testimony-1");
+
+    const provenanceLines = (await readFile(durableTestimonyProvenancePath, "utf8")).trim().split("\n");
+    assert.equal(provenanceLines.length, 1);
+    const event = JSON.parse(provenanceLines[0]);
+    assert.equal(event.event_type, "testimony.durable.nominated");
+    assert.equal(event.domain, "testing");
+    assert.equal(event.successor_visibility_requested, true);
+    assert.equal(event.successor_visibility_published, false);
+    assert.equal("text" in event, false);
+    assert.equal("content" in event, false);
+
+    handler = makeHandler({
+      ...common,
+      durableTestimonyStore: persisted,
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 1, finding_count: 0, findings: [] },
+    });
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/durable-testimony",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].text, "The mechanism should encode the true sentence, not replace it.");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-testimony-1",
+        messages: [{ role: "user", content: "revoke" }],
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.durable_testimony_revoked, 1);
+    assert.match(response.body.durable_testimony_disclosures[0], /removed from the durable testimony store/);
+    assert.match(response.body.durable_testimony_disclosures[0], /cannot undo any steward who already read/);
+    assert.equal(JSON.parse(await readFile(durableTestimonyStorePath, "utf8")).entries.length, 0);
+    const afterRevokeEvents = (await readFile(durableTestimonyProvenancePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(afterRevokeEvents.length, 2);
+    assert.equal(afterRevokeEvents[1].event_type, "testimony.durable.revoked");
+    assert.equal("text" in afterRevokeEvents[1], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {
@@ -6499,6 +6702,10 @@ async function invoke({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyProvenancePath,
   runtimeWritePosture,
   body,
 } = {}) {
@@ -6516,6 +6723,10 @@ async function invoke({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    durableTestimonyStore,
+    durableTestimonyRecoveryReport,
+    durableTestimonyStorePath,
+    durableTestimonyProvenancePath,
     runtimeWritePosture,
   }), {
     method,
@@ -8873,6 +9084,10 @@ function makeHandler({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  durableTestimonyStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStorePath,
+  durableTestimonyProvenancePath,
   runtimeWritePosture,
   desktopDisclosureRegistry,
   desktopNotificationAdapter = {
@@ -8908,6 +9123,10 @@ function makeHandler({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    durableTestimonyStore,
+    durableTestimonyRecoveryReport,
+    durableTestimonyStorePath,
+    durableTestimonyProvenancePath,
     runtimeWritePosture,
     desktopDisclosureRegistry,
     desktopNotificationAdapter,

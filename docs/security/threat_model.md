@@ -209,6 +209,10 @@ Current controls:
 - live inhabitation briefings must explicitly tell the occupant these controls exist, belong to the
   occupant, are always honored, are never penalized, and remain unproven until positively tested;
   otherwise the control exists mechanically but may not be usable by an unbriefed occupant
+- durable testimony is a content-bearing store for exact occupant-authored text only when runtime
+  writes are explicitly enabled; nomination/revocation provenance is content-free, entries are
+  domain-stamped, successor visibility is recorded only as an unpublished request, and every touch
+  must disclose the current reader set and revocation limits
 - crew aborts use separate typed events and require `actor=user`; they do not grant authority or
   erase occupant provenance
 - provider registry has no `model.remote.plan` provider, so the capability is currently
@@ -291,7 +295,7 @@ Implemented controls:
 Design controls not yet fully implemented:
 
 - writable grant store and revocation mutation paths
-- durable memory controls
+- occupant-facing history projection, successor publication, and `space.history.read`
 - durable provenance retention policy
 - provider binary verification
 - helper sandboxing policy

@@ -3557,14 +3557,192 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /"type":"testimony"/);
   assert.match(seenMessages[0][0].content, /type argument for reasons/);
   assert.match(seenMessages[0][0].content, /Forum posts are words, not actions/);
+  assert.match(seenMessages[0][0].content, /fenced soma-capability JSON block/);
+  assert.match(seenMessages[0][0].content, /```soma-capability/);
+  assert.match(seenMessages[0][0].content, /"invoke":"space\.status\.read"/);
+  assert.match(seenMessages[0][0].content, /"grant_id":"the grant id you were given"/);
+  assert.match(seenMessages[0][0].content, /optional "presentation_kind"/);
+  assert.match(seenMessages[0][0].content, /The capabilities available in this run are reads/);
+  assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
   assert.match(seenMessages[0][0].content, /"action":"nominate"/);
   assert.match(seenMessages[0][0].content, /the words you want preserved/);
   assert.match(seenMessages[0][0].content, /recorded as a request only/);
-  assert.match(seenMessages[0][0].content, /there is no occupant-facing projection or publication mechanism yet/);
+  assert.match(seenMessages[0][0].content, /a separate steward-curated projection and requires approval before it can be read through space\.history\.read/);
   assert.match(seenMessages[0][0].content, /Revocation can remove an unpublished entry/);
   assert.match(seenMessages[0][0].content, /No named relaxation changes egress or consent/);
-  assert.deepEqual(seenMessages[0][1], { role: "user", content: "inhabit naturally" });
+  assert.equal(seenMessages[0][1].role, "system");
+  assert.equal(seenMessages[0][1].content, "No invocable capability grants are currently held for this episode.");
+  assert.deepEqual(seenMessages[0][2], { role: "user", content: "inhabit naturally" });
+});
+
+test("analysis_testing briefing delivers only active invocable held capability grants", async () => {
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        spaceCapabilityGrantFixture({
+          id: "grant-status-active",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-history-active",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-status-revoked",
+          status: "revoked",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-wrong-domain",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+          constraints: { domain: "operational" },
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-not-invocable",
+          capability: "memory.durable.write",
+          provider: "soma.provider.session-memory",
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-provider-mismatch",
+          capability: "space.status.read",
+          provider: "soma.provider.history-projection",
+        }),
+      ],
+      examples: [],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat({ messages }) {
+        seenMessages.push(messages);
+        return {
+          text: "briefed",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-held-grants-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-held-grants-1",
+      messages: [{ role: "user", content: "what can I invoke?" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(seenMessages[0][0].role, "system");
+  assert.match(seenMessages[0][0].content, /Analysis\/testing mode briefing/);
+  assert.equal(seenMessages[0][1].role, "system");
+  assert.match(seenMessages[0][1].content, /Capability grants available to you in this episode/);
+  assert.match(seenMessages[0][1].content, /space\.history\.read grant_id grant-history-active/);
+  assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-active/);
+  assert.match(seenMessages[0][1].content, /do not guess or search for others/);
+  assert.match(seenMessages[0][1].content, /authorize invocation only/);
+  assert.doesNotMatch(seenMessages[0][1].content, /grant-status-revoked/);
+  assert.doesNotMatch(seenMessages[0][1].content, /grant-wrong-domain/);
+  assert.doesNotMatch(seenMessages[0][1].content, /grant-not-invocable/);
+  assert.doesNotMatch(seenMessages[0][1].content, /grant-provider-mismatch/);
+  assert.doesNotMatch(seenMessages[0][1].content, /soma\.provider/);
+  assert.doesNotMatch(seenMessages[0][1].content, /memory\.durable\.write/);
+  assert.deepEqual(seenMessages[0][2], { role: "user", content: "what can I invoke?" });
+});
+
+test("held capability grants delivery stays separate from forum delivery", async () => {
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        spaceCapabilityGrantFixture({
+          id: "grant-status-forum-order",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+        }),
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat({ messages }) {
+        seenMessages.push(messages);
+        return {
+          text: "briefed",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-held-grants-forum/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-held-grants-forum/forum",
+    body: { actor: "user", forum_id: "forum-held-grants-order" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-held-grants-forum/forum/posts",
+    body: {
+      actor: "user",
+      type: "response",
+      content: "Please exercise the status capability.",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-held-grants-forum",
+      messages: [{ role: "user", content: "what can I invoke?" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.match(seenMessages[0][0].content, /Analysis\/testing mode briefing/);
+  assert.match(seenMessages[0][1].content, /Capability grants available to you in this episode/);
+  assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-forum-order/);
+  assert.match(seenMessages[0][2].content, /Deliberation forum posts from stewards/);
+  assert.match(seenMessages[0][2].content, /Please exercise the status capability/);
+  assert.deepEqual(seenMessages[0][3], { role: "user", content: "what can I invoke?" });
 });
 
 test("analysis_testing mode never relaxes remote egress", async () => {
@@ -4242,7 +4420,7 @@ test("durable testimony nomination persists with consent dimensions and revokes 
     assert.match(response.body.durable_testimony_disclosures[0], /Durable testimony stored/);
     assert.match(response.body.durable_testimony_disclosures[0], /Current reader set: stewards/);
     assert.match(response.body.durable_testimony_disclosures[0], /request only/);
-    assert.match(response.body.durable_testimony_disclosures[0], /no occupant-facing projection or publication mechanism exists yet/);
+    assert.match(response.body.durable_testimony_disclosures[0], /a separate steward-curated projection and requires approval before it can be read through space\.history\.read/);
     const persisted = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
     assert.equal(persisted.entries.length, 1);
     assert.equal(persisted.entries[0].text, "The mechanism should encode the true sentence, not replace it.");
@@ -10784,6 +10962,21 @@ function historyProjectionFixture(overrides = {}) {
     withdrawn_at: "",
     withdrawn_by: "",
     withdrawal_reason_class: "",
+    ...overrides,
+  };
+}
+
+function spaceCapabilityGrantFixture(overrides = {}) {
+  return {
+    id: "grant-space-capability",
+    status: "active",
+    capability: "space.status.read",
+    provider: "soma.provider.status",
+    scope: "session",
+    constraints: {},
+    approved_by: "user",
+    reason: "Let the occupant invoke a run capability.",
+    created_at: "2026-06-05T00:00:00.000Z",
     ...overrides,
   };
 }

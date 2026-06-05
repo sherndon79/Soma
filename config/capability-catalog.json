@@ -262,6 +262,40 @@
       "description": "Read a bounded aggregate operational status snapshot. This composition of status metadata requires an explicit runtime grant."
     },
     {
+      "key": "space.status.read",
+      "name": "Occupant Space Status Read",
+      "category": "space",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "episode mode and domain",
+        "armed protective controls",
+        "active module ids",
+        "capability status summary",
+        "pending proposal count",
+        "runtime write posture summary",
+        "declared returnable data classes"
+      ],
+      "excluded_by_default": [
+        "raw provenance entries",
+        "chat messages",
+        "predecessor content",
+        "forum content",
+        "durable testimony text",
+        "session memory contents",
+        "file contents",
+        "desktop content",
+        "sensor payloads"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.space.status.read.v1",
+      "description": "Let an occupant invoke a one-shot, minimized status projection through a declared per-capability result-egress envelope. This is not generic tool-call authority."
+    },
+    {
       "key": "desktop.inspect.accessibility_tree",
       "name": "Desktop Accessibility Tree Inspection",
       "category": "desktop",

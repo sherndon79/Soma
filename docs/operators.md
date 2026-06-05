@@ -80,6 +80,24 @@ module, proposal, capability, provenance, and grant summaries without raw entrie
 npm run cli -- status snapshot --grant-id grant-runtime-id
 ```
 
+`space.status.read` is the occupant-facing status capability. It is distinct from the operator
+snapshot and remains disabled until an explicit runtime grant exists. An occupant invokes it from
+chat with a typed directive:
+
+````markdown
+```soma-capability
+{"invoke":"space.status.read","grant_id":"grant-runtime-id"}
+```
+````
+
+The result is a one-shot minimized projection delivered through a declared result-egress envelope.
+It includes mode/domain, armed protective controls, active module ids/count, capability status
+summary, pending proposal count, runtime-write posture summary, and declared returnable data
+classes. It does not include raw grants, raw provenance entries, chat/predecessor content, forum
+content, durable testimony text, memory content, file content, desktop content, or sensor payloads.
+Remote tool-call authority remains disabled unless separately granted through
+`model.local.tool_calls`; `space.status.read` is not a blanket tool-result channel.
+
 ## Chat Through The Local Runtime
 
 ```bash

@@ -302,6 +302,31 @@ Design controls not yet fully implemented:
 - first-run capability review UI
 - PR-level heightened review gate
 
+## Occupant Status Result Egress
+
+`space.status.read` introduces a narrow result-egress channel back to an occupant. The threat is
+that a status read could become a generic tool-result channel or accidentally expose predecessor
+content, raw provenance, memory, forum content, durable testimony text, desktop content, file
+content, or sensor payloads.
+
+Current controls:
+
+- disabled by default and requires an explicit `space.status.read` runtime grant
+- provider-backed by `soma.provider.status` and local-only
+- invoked through a typed `soma-capability` directive, not the generic model tool-call path
+- domain-pinned to the episode posture (`analysis_testing` -> `testing`, otherwise `operational`)
+- minimized result shape with validator-enforced allowed fields
+- result-egress envelope declares returned data classes and excluded data
+- provenance is content-free and records metadata only
+- one-shot/read-only; no watch, subscription, history, predecessor, or durable testimony delivery
+
+Residual risks:
+
+- status counts and active module ids can reveal workflow shape
+- a future expansion of result fields could accidentally widen disclosure unless the validator and
+  tests move with it
+- a human may grant the capability when the occupant should not receive status metadata
+
 ## Non-Defenses
 
 Soma currently does not defend against:

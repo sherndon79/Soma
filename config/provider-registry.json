@@ -123,6 +123,11 @@
           "key": "status.snapshot.read",
           "provider_contract": "soma.status.snapshot.v1",
           "output_schema": "soma.status.snapshot.response.v1"
+        },
+        {
+          "key": "space.status.read",
+          "provider_contract": "soma.space.status.read.v1",
+          "output_schema": "soma.space.status.read.result.v1"
         }
       ]
     },

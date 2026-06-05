@@ -68,6 +68,27 @@ test("status snapshot read is explicit-grant and provider-backed", async () => {
   assert.equal(statusSnapshot.providers[0].provider_contract, "soma.status.snapshot.v1");
 });
 
+test("space status read is explicit-grant occupant capability and provider-backed", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const spaceStatus = view.capabilities.find((capability) => capability.key === "space.status.read");
+  assert.ok(spaceStatus, "expected space.status.read to be present in catalog");
+  assert.equal(spaceStatus.category, "space");
+  assert.equal(spaceStatus.risk_class, "low");
+  assert.equal(spaceStatus.harness_status, "disabled");
+  assert.equal(spaceStatus.status, "requestable");
+  assert.equal(spaceStatus.activation_policy, "explicit_grant");
+  assert.equal(spaceStatus.reversible, true);
+  assert.equal(spaceStatus.provider_contract, "soma.space.status.read.v1");
+  assert.ok(spaceStatus.data_exposed.includes("armed protective controls"));
+  assert.ok(spaceStatus.excluded_by_default.includes("predecessor content"));
+  assert.equal(spaceStatus.providers.length, 1);
+  assert.equal(spaceStatus.providers[0].id, "soma.provider.status");
+  assert.equal(spaceStatus.providers[0].provider_contract, "soma.space.status.read.v1");
+});
+
 test("capability catalog rejects ambiguous base-harness authority", () => {
   assert.throws(
     () => normalizeCapabilityCatalog({

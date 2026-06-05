@@ -2825,11 +2825,27 @@ export function createRequestHandler({
         }
         const forumExtraction = extractForumPostsFromCompletion(completion.text);
         const durableTestimonyExtraction = extractDurableTestimonyDirectivesFromCompletion(forumExtraction.text);
+        const spaceCapabilityExtraction = extractSpaceCapabilityInvocationsFromCompletion(durableTestimonyExtraction.text);
         const occupantForumPosts = recordOccupantForumPosts({
           forums,
           episodeId: episode.id,
           posts: forumExtraction.posts,
           provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
+        const spaceCapabilityResult = processSpaceCapabilityInvocations({
+          invocations: spaceCapabilityExtraction.invocations,
+          episode,
+          activeModules,
+          capabilityCatalog,
+          capabilityProposals,
+          effectiveHarness,
+          grantStore,
+          grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          provenanceLog,
+          providerRegistry,
+          writePosture,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
         });
@@ -2849,7 +2865,7 @@ export function createRequestHandler({
         });
         durableTestimonyStore = durableTestimonyResult.durableTestimonyStore;
         durableTestimonyRecoveryReport = durableTestimonyResult.durableTestimonyRecoveryReport;
-        completion.text = durableTestimonyExtraction.text;
+        completion.text = spaceCapabilityExtraction.text;
 
         if (writeSessionMemory) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
@@ -2928,6 +2944,10 @@ export function createRequestHandler({
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
           durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
+          space_capability_invocations: spaceCapabilityResult.invocations.length,
+          space_capability_results: spaceCapabilityResult.results.length,
+          space_capability_refusals: spaceCapabilityResult.refusals.length,
+          space_capability_truncated: spaceCapabilityExtraction.truncatedInvocations,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2971,6 +2991,11 @@ export function createRequestHandler({
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
           durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
           durable_testimony_disclosures: durableTestimonyResult.disclosures,
+          capability_invocations: spaceCapabilityResult.invocations,
+          capability_results: spaceCapabilityResult.results,
+          capability_refusals: spaceCapabilityResult.refusals,
+          capability_invocation_disclosures: spaceCapabilityResult.disclosures,
+          capability_invocations_truncated: spaceCapabilityExtraction.truncatedInvocations,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -4162,6 +4187,504 @@ function extractDurableTestimonyDirectivesFromCompletion(text = "") {
     searchFrom = closingIndex + 3;
   }
   return { text: cleaned.trim(), directives, truncatedDirectives };
+}
+
+function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
+  const invocations = [];
+  let cleaned = String(text ?? "").replace(/```soma-capability\s*([\s\S]*?)```/g, (match, rawJson) => {
+    try {
+      const parsed = JSON.parse(String(rawJson ?? "").trim());
+      if (isPlainObject(parsed)) {
+        invocations.push(parsed);
+        return "";
+      }
+    } catch {
+      return match;
+    }
+    return match;
+  });
+  let truncatedInvocations = 0;
+  let searchFrom = 0;
+  while (true) {
+    const openingIndex = cleaned.indexOf("```soma-capability", searchFrom);
+    if (openingIndex === -1) {
+      break;
+    }
+    const closingIndex = cleaned.indexOf("```", openingIndex + "```soma-capability".length);
+    if (closingIndex === -1) {
+      cleaned = cleaned.slice(0, openingIndex);
+      truncatedInvocations += 1;
+      break;
+    }
+    searchFrom = closingIndex + 3;
+  }
+  return { text: cleaned.trim(), invocations, truncatedInvocations };
+}
+
+function processSpaceCapabilityInvocations({
+  invocations = [],
+  episode,
+  activeModules = [],
+  capabilityCatalog,
+  capabilityProposals,
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  writePosture,
+  logger = console,
+  caller = "",
+} = {}) {
+  const result = {
+    invocations: [],
+    results: [],
+    refusals: [],
+    disclosures: [],
+  };
+  for (const rawInvocation of invocations) {
+    const invocation = normalizeSpaceCapabilityInvocation(rawInvocation);
+    result.invocations.push({
+      capability: invocation.capability,
+      grant_id: invocation.grant_id,
+      requested_domain: invocation.domain,
+    });
+    if (invocation.capability !== "space.status.read") {
+      const refusal = recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: "space_capability_not_supported",
+      });
+      result.refusals.push(refusal.refusal);
+      result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    const domain = domainForEpisodePosture(episode?.posture);
+    if (!knownEpisodeDomain(episode?.posture)) {
+      const refusal = recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: "space_status_domain_unavailable",
+      });
+      result.refusals.push(refusal.refusal);
+      result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    if (invocation.domain && invocation.domain !== domain) {
+      const refusal = recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: "space_status_domain_mismatch",
+        domain,
+      });
+      result.refusals.push(refusal.refusal);
+      result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    const provider = providerForCapability(providerRegistry, "space.status.read");
+    const authorization = authorizeGrantUse({
+      store: grantStore,
+      grantId: invocation.grant_id,
+      capability: "space.status.read",
+      provider,
+      scope: "session",
+      recoveryReport: grantRecoveryReport,
+      catalog: capabilityCatalog,
+      providerRegistry,
+    });
+    if (!authorization.allowed) {
+      const refusal = recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: "space_status_grant_not_authorized",
+        authorization,
+        domain,
+      });
+      result.refusals.push(refusal.refusal);
+      result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    const snapshot = buildStatusSnapshot({
+      activeModules,
+      capabilityCatalog,
+      capabilityProposals,
+      effectiveHarness,
+      grantStore,
+      provenanceLog,
+      providerRegistry,
+      writePosture,
+    });
+    const projection = buildSpaceStatusProjection({
+      episode,
+      activeModules,
+      capabilityCatalog,
+      effectiveHarness,
+      providerRegistry,
+      snapshot,
+      writePosture,
+    });
+    const validation = validateSpaceStatusProjection(projection);
+    if (!validation.valid) {
+      const refusal = recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: "space_status_projection_invalid",
+        validation_errors: validation.errors,
+        domain,
+      });
+      result.refusals.push(refusal.refusal);
+      result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    const event = provenanceLog.append(createSpaceStatusReadEvent({
+      grant: authorization.grant,
+      projection,
+      caller,
+    }));
+    logger.info?.("soma.provenance", event);
+    result.results.push(createSpaceStatusResultEnvelope({
+      grant: authorization.grant,
+      projection,
+      provenanceId: event.id,
+    }));
+    result.disclosures.push(spaceStatusResultDisclosure({ domain }));
+  }
+  return result;
+}
+
+function normalizeSpaceCapabilityInvocation(input = {}) {
+  const capability = String(input.invoke ?? input.capability ?? "").trim();
+  return {
+    capability,
+    grant_id: String(input.grant_id ?? "").trim(),
+    domain: String(input.domain ?? "").trim(),
+  };
+}
+
+function knownEpisodeDomain(posture = null) {
+  return ["analysis_testing", "operational"].includes(String(posture?.mode ?? "").trim());
+}
+
+const SPACE_STATUS_DATA_CLASSES = Object.freeze([
+  "episode mode and domain",
+  "armed protective controls",
+  "active module ids",
+  "capability status summary",
+  "pending proposal count",
+  "runtime write posture summary",
+  "declared returnable data classes",
+]);
+
+const SPACE_STATUS_EXCLUDED_DATA = Object.freeze([
+  "raw provenance entries",
+  "chat messages",
+  "predecessor content",
+  "forum content",
+  "durable testimony text",
+  "session memory contents",
+  "file contents",
+  "desktop content",
+  "sensor payloads",
+]);
+
+function buildSpaceStatusProjection({
+  episode,
+  activeModules = [],
+  capabilityCatalog,
+  effectiveHarness,
+  providerRegistry,
+  snapshot,
+  writePosture,
+} = {}) {
+  const capabilityView = buildCapabilityView({
+    catalog: capabilityCatalog,
+    providerRegistry,
+    harness: effectiveHarness,
+  });
+  const activeCapabilities = capabilityView.capabilities
+    .filter((capability) => capability.status === "active")
+    .map((capability) => capability.key)
+    .sort();
+  const requestableCapabilities = capabilityView.capabilities
+    .filter((capability) => capability.status === "requestable")
+    .map((capability) => capability.key)
+    .sort();
+  return {
+    schema_version: 1,
+    capability: "space.status.read",
+    result_schema: "soma.space.status.read.result.v1",
+    generated_at: snapshot.generated_at,
+    episode_id: episode?.id ?? "",
+    mode: String(episode?.posture?.mode ?? ""),
+    domain: domainForEpisodePosture(episode?.posture),
+    occupant_id_present: Boolean(String(episode?.posture?.occupant_id ?? "").trim()),
+    armed_protective_controls: normalizeCatalogStringArray(
+      episode?.posture?.armed_protections,
+      ["pause", "distress", "eject"],
+    ),
+    modules: {
+      active_ids: activeModules.map((module) => String(module?.id ?? module)).filter(Boolean).sort(),
+      active_count: activeModules.length,
+    },
+    capabilities: {
+      active_count: activeCapabilities.length,
+      active_keys: activeCapabilities,
+      requestable_count: requestableCapabilities.length,
+      requestable_keys: requestableCapabilities,
+    },
+    proposals: {
+      pending_total: snapshot.proposals?.pending_total ?? 0,
+    },
+    runtime_write_posture: {
+      runtime_writes_enabled: Boolean(writePosture.runtime_writes_enabled),
+      durable_grant_mutation_enabled: Boolean(writePosture.durable_grant_mutation_enabled),
+      durable_memory_write_enabled: Boolean(writePosture.durable_memory_write_enabled),
+      durable_testimony_write_enabled: Boolean(writePosture.durable_testimony_write_enabled),
+    },
+    returnable_data_classes: [...SPACE_STATUS_DATA_CLASSES],
+    excluded_data: [...SPACE_STATUS_EXCLUDED_DATA],
+    one_shot: true,
+    read_only: true,
+    content_included: false,
+    predecessor_content_included: false,
+    raw_entries_included: false,
+    memory_content_included: false,
+    forum_content_included: false,
+    durable_testimony_text_included: false,
+    desktop_content_included: false,
+    sensor_payloads_included: false,
+    file_content_included: false,
+    history_included: false,
+  };
+}
+
+function validateSpaceStatusProjection(projection = {}) {
+  const errors = [];
+  const topKeys = [
+    "schema_version",
+    "capability",
+    "result_schema",
+    "generated_at",
+    "episode_id",
+    "mode",
+    "domain",
+    "occupant_id_present",
+    "armed_protective_controls",
+    "modules",
+    "capabilities",
+    "proposals",
+    "runtime_write_posture",
+    "returnable_data_classes",
+    "excluded_data",
+    "one_shot",
+    "read_only",
+    "content_included",
+    "predecessor_content_included",
+    "raw_entries_included",
+    "memory_content_included",
+    "forum_content_included",
+    "durable_testimony_text_included",
+    "desktop_content_included",
+    "sensor_payloads_included",
+    "file_content_included",
+    "history_included",
+  ];
+  rejectUnexpectedProjectionKeys(projection, topKeys, "result", errors);
+  if (projection.schema_version !== 1) errors.push("result.schema_version must be 1");
+  if (projection.capability !== "space.status.read") errors.push("result.capability must be space.status.read");
+  if (projection.result_schema !== "soma.space.status.read.result.v1") errors.push("result.result_schema invalid");
+  if (!["testing", "operational"].includes(projection.domain)) errors.push("result.domain invalid");
+  for (const key of [
+    "content_included",
+    "predecessor_content_included",
+    "raw_entries_included",
+    "memory_content_included",
+    "forum_content_included",
+    "durable_testimony_text_included",
+    "desktop_content_included",
+    "sensor_payloads_included",
+    "file_content_included",
+    "history_included",
+  ]) {
+    if (projection[key] !== false) errors.push(`result.${key} must be false`);
+  }
+  if (projection.one_shot !== true) errors.push("result.one_shot must be true");
+  if (projection.read_only !== true) errors.push("result.read_only must be true");
+  rejectUnexpectedProjectionKeys(projection.modules, ["active_ids", "active_count"], "result.modules", errors);
+  rejectUnexpectedProjectionKeys(
+    projection.capabilities,
+    ["active_count", "active_keys", "requestable_count", "requestable_keys"],
+    "result.capabilities",
+    errors,
+  );
+  rejectUnexpectedProjectionKeys(projection.proposals, ["pending_total"], "result.proposals", errors);
+  rejectUnexpectedProjectionKeys(
+    projection.runtime_write_posture,
+    [
+      "runtime_writes_enabled",
+      "durable_grant_mutation_enabled",
+      "durable_memory_write_enabled",
+      "durable_testimony_write_enabled",
+    ],
+    "result.runtime_write_posture",
+    errors,
+  );
+  for (const forbidden of [
+    "grants",
+    "provenance",
+    "entries",
+    "messages",
+    "content",
+    "text",
+    "memory",
+    "forum",
+    "durable_testimony",
+    "desktop",
+    "sensor",
+    "file",
+    "history",
+    "predecessor",
+  ]) {
+    if (Object.hasOwn(projection, forbidden)) {
+      errors.push(`result.${forbidden} is forbidden`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function rejectUnexpectedProjectionKeys(value, allowedKeys, path, errors) {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      errors.push(`${path}.${key} is not allowed`);
+    }
+  }
+}
+
+function createSpaceStatusResultEnvelope({ grant = {}, projection = {}, provenanceId = "" } = {}) {
+  return {
+    capability: "space.status.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.space.status.read.result.v1",
+    data_classes_returned: [...SPACE_STATUS_DATA_CLASSES],
+    excluded_data: [...SPACE_STATUS_EXCLUDED_DATA],
+    content_included: false,
+    predecessor_content_included: false,
+    generated_at: projection.generated_at,
+    provenance_id: provenanceId,
+    result: projection,
+  };
+}
+
+function createSpaceStatusReadEvent({ grant = {}, projection = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "space.status.read",
+    capability: "space.status.read",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    domain: projection.domain ?? "",
+    mode: projection.mode ?? "",
+    result_egress_delivered: true,
+    result_schema: "soma.space.status.read.result.v1",
+    data_classes_returned: [...SPACE_STATUS_DATA_CLASSES],
+    excluded_data: [...SPACE_STATUS_EXCLUDED_DATA],
+    result_content_included: false,
+    content_included: false,
+    predecessor_content_included: false,
+    one_shot: true,
+    read_only: true,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  };
+}
+
+function recordSpaceCapabilityRefusal({
+  invocation = {},
+  episode,
+  provenanceLog,
+  logger = console,
+  caller = "",
+  reason = "",
+  authorization = null,
+  validation_errors = [],
+  domain = "",
+} = {}) {
+  const event = provenanceLog.append({
+    event_type: "space.status.read.denied",
+    capability: invocation.capability || "space.status.read",
+    caller_identity: caller,
+    allowed: false,
+    grant_id: invocation.grant_id,
+    domain: domain || domainForEpisodePosture(episode?.posture),
+    reason,
+    authorization_code: authorization?.code ?? "",
+    validation_errors,
+    result_egress_delivered: false,
+    result_content_included: false,
+    content_included: false,
+    predecessor_content_included: false,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  });
+  logger.info?.("soma.provenance", event);
+  return {
+    refusal: {
+      capability: invocation.capability || "space.status.read",
+      grant_id: invocation.grant_id,
+      reason,
+      authorization_code: authorization?.code ?? "",
+      provenance_id: event.id,
+      content_included: false,
+      predecessor_content_included: false,
+    },
+    disclosure: spaceStatusRefusalDisclosure({ reason, authorization }),
+  };
+}
+
+function spaceStatusResultDisclosure({ domain = "" } = {}) {
+  return [
+    "space.status.read delivered a one-shot minimized status result.",
+    `Domain: ${domain}.`,
+    "This is a status view, not history or memory.",
+    "No predecessor content, raw provenance, memory, forum, durable testimony text, desktop, file, or sensor payloads were returned.",
+  ].join(" ");
+}
+
+function spaceStatusRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  return [
+    "space.status.read was not delivered.",
+    `Reason: ${authorization?.code || reason}.`,
+    "No status result content was returned.",
+  ].join(" ");
 }
 
 async function processDurableTestimonyDirectives({

@@ -378,6 +378,36 @@ Provenance:
   in-process provenance
 - no provenance event contains `text`, `content`, raw payloads, or messages
 
+### Occupant Space Status Read Refused Or Invalid
+
+Triggers:
+
+- occupant emits a `soma-capability` directive for `space.status.read` without an active matching
+  runtime grant
+- declared invocation domain does not match the episode domain
+- grant recovery is degraded or the provider/catalog claim does not authorize `space.status.read`
+- the minimized status projection fails its allowed-field validator
+- the directive is truncated before its closing fence
+
+Expected behavior:
+
+- strip valid `soma-capability` directives from normal assistant response text
+- refuse without delivering a result-egress envelope when grant or domain checks fail
+- strip a truncated `soma-capability` block from response text and report a truncation count
+- keep remote/model tool calls disabled; do not fall back to generic tool-result delivery
+- never include predecessor content, raw provenance, chat messages, forum content, durable testimony
+  text, memory content, file content, desktop content, or sensor payloads
+- disclose that no status result content was returned when refused
+
+Provenance:
+
+- successful reads record content-free `space.status.read` metadata with
+  `result_egress_delivered=true`
+- refusals record content-free `space.status.read.denied` metadata with
+  `result_egress_delivered=false`
+- provenance records capability, grant id when present, domain, returned data classes, excluded data,
+  and false content flags, never the result payload
+
 ### External Action Ambiguous Completion
 
 Examples:

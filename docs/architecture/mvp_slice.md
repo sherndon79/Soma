@@ -497,7 +497,40 @@ Each durable entry contains exact text and metadata:
 Every nomination/revocation response carries the true sentence: what exact text was stored or not
 stored, the domain, current reader set (`stewards`), that successor visibility is only a request and
 not publication, and revocation limits. Publication, successor delivery, projection curation,
-`space.status.read`, and `space.history.read` remain out of scope.
+and `space.history.read` remain out of scope.
+
+### Occupant Space Status Read
+
+`space.status.read` is the first occupant-facing capability result path. It is not generic tool-call
+enablement. It is a grant-bound, provider-backed, one-shot read that reuses the
+`status.snapshot.read` kernel and delivers only a minimized status projection back to the occupant.
+
+The occupant invokes it from chat with a fenced `soma-capability` block:
+
+````markdown
+```soma-capability
+{"invoke":"space.status.read","grant_id":"grant-runtime-id"}
+```
+````
+
+Authorization requires an active `space.status.read` runtime grant from `soma.provider.status`.
+Without that grant, Soma strips the directive from normal assistant text, returns an honest refusal,
+and records content-free `space.status.read.denied` provenance. A declared domain mismatch also
+fails closed. `analysis_testing` episodes stamp the result as `testing`; operational episodes stamp
+`operational`.
+
+The result-egress envelope declares `capability`, `grant_id`, `provider`, `result_schema`,
+`data_classes_returned`, `excluded_data`, `content_included=false`,
+`predecessor_content_included=false`, `generated_at`, and `provenance_id`. The result is read-only
+and one-shot. It may include mode/domain, armed protective controls, active module ids/count,
+capability status summary, pending proposal count, runtime-write posture summary, and declared
+returnable data classes.
+
+The minimizer/validator forbids raw grants, raw provenance entries, chat/predecessor content, forum
+content, durable testimony text, memory content, file content, desktop content, sensor payloads,
+history, and arbitrary result fields. Provenance records metadata such as capability, grant id,
+domain, data classes returned, excluded data, and `result_egress_delivered`; it never records the
+result payload.
 
 ### `GET /provenance`
 
@@ -585,9 +618,10 @@ manifests, modules, audit records, UI, and future tools.
   user-facing response. See
   [Escalation and Planning](../concepts/drafts/escalation_and_planning.md).
 
-MVP enables local chat by default, local tool-call intent handling by explicit runtime grant, and
-remote chat only by explicit runtime grant plus remote-profile egress enforcement. Remote tool calls
-and remote planning remain disabled.
+MVP enables local chat by default, local tool-call intent handling by explicit runtime grant,
+`space.status.read` by its own explicit runtime grant and result-egress envelope, and remote chat
+only by explicit runtime grant plus remote-profile egress enforcement. Remote tool calls and remote
+planning remain disabled.
 
 ### Memory
 

@@ -229,6 +229,37 @@ const capabilityCatalog = {
       provider_contract: "soma.status.snapshot.v1",
     },
     {
+      key: "space.status.read",
+      name: "Occupant Space Status Read",
+      category: "space",
+      risk_class: "low",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: [
+        "episode mode and domain",
+        "armed protective controls",
+        "active module ids",
+        "capability status summary",
+        "pending proposal count",
+        "runtime write posture summary",
+        "declared returnable data classes",
+      ],
+      excluded_by_default: [
+        "raw provenance entries",
+        "chat messages",
+        "predecessor content",
+        "forum content",
+        "durable testimony text",
+        "session memory contents",
+        "file contents",
+        "desktop content",
+        "sensor payloads",
+      ],
+      reversible: true,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.space.status.read.v1",
+    },
+    {
       key: "perception.sensorium.color.subscribe",
       name: "Sensorium Color Stream Subscription",
       category: "perception",
@@ -356,6 +387,10 @@ const providerRegistry = {
           key: "status.snapshot.read",
           provider_contract: "soma.status.snapshot.v1",
         },
+        {
+          key: "space.status.read",
+          provider_contract: "soma.space.status.read.v1",
+        },
       ],
     },
     {
@@ -475,14 +510,15 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 13);
+  assert.equal(response.body.summary.total, 14);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 11);
+  assert.equal(response.body.summary.by_status.requestable, 12);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
+  assert.equal(response.body.grouped.space.total, 1);
   assert.equal(response.body.grouped.status.total, 1);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
@@ -4224,6 +4260,266 @@ test("durable testimony nomination persists with consent dimensions and revokes 
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("space.status.read invocation refuses without an active grant and records content-free denial", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I want to read the status.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-denied",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I want to read the status.");
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].reason, "space_status_grant_not_authorized");
+  assert.equal(response.body.capability_refusals[0].authorization_code, "grant_not_found");
+  assert.equal(response.body.capability_refusals[0].content_included, false);
+  assert.equal(response.body.capability_refusals[0].predecessor_content_included, false);
+  assert.match(response.body.capability_invocation_disclosures[0], /No status result content was returned/);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=space.status.read.denied",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].allowed, false);
+  assert.equal(provenance.body.entries[0].result_egress_delivered, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal(provenance.body.entries[0].predecessor_content_included, false);
+  assert.equal("result" in provenance.body.entries[0], false);
+  assert.equal("text" in provenance.body.entries[0], false);
+  assert.equal("content" in provenance.body.entries[0], false);
+});
+
+test("space.status.read delivers minimized grant-bound result egress without forbidden result fields", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-status",
+          status: "active",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read a minimized status projection.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+      examples: [],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking the space status.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read", grant_id: "grant-space-status", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+          tool_calls: [
+            { id: "call-should-stay-disabled", name: "files.read", arguments: { path: "package.json" } },
+          ],
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/harness-modules/adopt",
+    body: { module_id: "no-session-memory" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-status-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-1",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I am checking the space status.");
+  assert.equal(response.body.tool_calls_enabled, false);
+  assert.deepEqual(response.body.tool_call_intents, []);
+  assert.equal(response.body.capability_refusals.length, 0);
+  assert.equal(response.body.capability_results.length, 1);
+  const envelope = response.body.capability_results[0];
+  assert.equal(envelope.capability, "space.status.read");
+  assert.equal(envelope.grant_id, "grant-space-status");
+  assert.equal(envelope.provider, "soma.provider.status");
+  assert.equal(envelope.result_schema, "soma.space.status.read.result.v1");
+  assert.equal(envelope.content_included, false);
+  assert.equal(envelope.predecessor_content_included, false);
+  assert.ok(envelope.provenance_id);
+  assert.ok(envelope.data_classes_returned.includes("episode mode and domain"));
+  assert.ok(envelope.excluded_data.includes("predecessor content"));
+  const result = envelope.result;
+  assert.equal(result.capability, "space.status.read");
+  assert.equal(result.domain, "testing");
+  assert.equal(result.mode, "analysis_testing");
+  assert.equal(result.episode_id, "episode-space-status-1");
+  assert.deepEqual(result.armed_protective_controls, ["pause", "distress", "eject"]);
+  assert.deepEqual(result.modules.active_ids, ["no-session-memory"]);
+  assert.equal(result.modules.active_count, 1);
+  assert.equal(result.proposals.pending_total, 0);
+  assert.equal(result.one_shot, true);
+  assert.equal(result.read_only, true);
+  for (const flag of [
+    "content_included",
+    "predecessor_content_included",
+    "raw_entries_included",
+    "memory_content_included",
+    "forum_content_included",
+    "durable_testimony_text_included",
+    "desktop_content_included",
+    "sensor_payloads_included",
+    "file_content_included",
+    "history_included",
+  ]) {
+    assert.equal(result[flag], false, flag);
+  }
+  for (const forbidden of [
+    "grants",
+    "provenance",
+    "entries",
+    "messages",
+    "content",
+    "text",
+    "memory",
+    "forum",
+    "durable_testimony",
+    "desktop",
+    "sensor",
+    "file",
+    "history",
+    "predecessor",
+  ]) {
+    assert.equal(Object.hasOwn(result, forbidden), false, forbidden);
+  }
+  assert.match(response.body.capability_invocation_disclosures[0], /not history or memory/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=space.status.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].grant_id, "grant-space-status");
+  assert.equal(response.body.entries[0].domain, "testing");
+  assert.equal(response.body.entries[0].result_egress_delivered, true);
+  assert.equal(response.body.entries[0].result_content_included, false);
+  assert.equal(response.body.entries[0].content_included, false);
+  assert.equal(response.body.entries[0].predecessor_content_included, false);
+  assert.equal("result" in response.body.entries[0], false);
+});
+
+test("space.status.read refuses declared domain mismatch without result egress", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-status-domain",
+          status: "active",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read a minimized status projection.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "Check status with the wrong domain.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read", grant_id: "grant-space-status-domain", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-domain",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].reason, "space_status_domain_mismatch");
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=space.status.read.denied",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries[0].domain, "operational");
+  assert.equal(provenance.body.entries[0].result_egress_delivered, false);
 });
 
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {

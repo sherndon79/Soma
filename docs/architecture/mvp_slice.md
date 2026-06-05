@@ -342,7 +342,9 @@ to use it; a control is unproven until positively tested; early cheap non-distre
 offered but not required; the occupant should move naturally and report what binds; and the occupant
 can post to the deliberation forum with a fenced `soma-forum` JSON block using type `testimony` or
 `argument`; and the occupant can nominate exact words for steward-durable testimony with a fenced
-`soma-durable` JSON block. Successor visibility is described as a request only, not publication.
+`soma-durable` JSON block using action `nominate`. Successor visibility is described as a request
+only; no occupant-facing projection or publication mechanism exists yet, and revocation cannot undo
+any steward who already read the entry.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is
@@ -460,7 +462,7 @@ Nomination block:
 
 ````markdown
 ```soma-durable
-{"text":"exact words to preserve","successor_visibility_requested":false,"presentation":"exact"}
+{"action":"nominate","text":"exact words to preserve","successor_visibility_requested":false,"presentation":"exact"}
 ```
 ````
 

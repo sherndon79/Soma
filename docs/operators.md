@@ -163,7 +163,9 @@ control by putting it on its own line anywhere in the response; controls are unp
 positively tested; and early cheap non-distress testing is offered but not required. It also carries
 the fenced `soma-forum` format so the occupant knows how to post `testimony` or `argument` into the
 forum, and the fenced `soma-durable` format so the occupant knows how to nominate exact words for
-steward-durable testimony. Successor visibility is described as a request only, not publication.
+steward-durable testimony with action `nominate`. Successor visibility is described as a request
+only; no occupant-facing projection or publication mechanism exists yet, and revocation cannot undo
+any steward who already read the entry.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the
@@ -1238,7 +1240,7 @@ a fenced `soma-durable` JSON block in chat:
 
 ````markdown
 ```soma-durable
-{"text":"exact occupant-authored words to preserve","successor_visibility_requested":false}
+{"action":"nominate","text":"exact occupant-authored words to preserve","successor_visibility_requested":false}
 ```
 ````
 

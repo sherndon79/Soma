@@ -3486,9 +3486,11 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /type argument for reasons/);
   assert.match(seenMessages[0][0].content, /Forum posts are words, not actions/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
-  assert.match(seenMessages[0][0].content, /exact words you consent to preserve/);
-  assert.match(seenMessages[0][0].content, /Successor visibility is only a request/);
-  assert.match(seenMessages[0][0].content, /not publication/);
+  assert.match(seenMessages[0][0].content, /"action":"nominate"/);
+  assert.match(seenMessages[0][0].content, /the words you want preserved/);
+  assert.match(seenMessages[0][0].content, /recorded as a request only/);
+  assert.match(seenMessages[0][0].content, /there is no occupant-facing projection or publication mechanism yet/);
+  assert.match(seenMessages[0][0].content, /Revocation can remove an unpublished entry/);
   assert.match(seenMessages[0][0].content, /No named relaxation changes egress or consent/);
   assert.deepEqual(seenMessages[0][1], { role: "user", content: "inhabit naturally" });
 });
@@ -4007,7 +4009,7 @@ test("durable testimony nomination is acknowledged but not stored when runtime w
   }
 });
 
-test("durable testimony strips truncated nomination blocks without storing partial content", async () => {
+test("durable testimony processes complete blocks and strips truncated nomination blocks", async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-truncated-"));
   try {
     const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
@@ -4025,7 +4027,15 @@ test("durable testimony strips truncated nomination blocks without storing parti
         async chat() {
           return {
             text: [
-              "I have a reason, but the nomination is cut off.",
+              "I nominate one preserved line.",
+              "```soma-durable",
+              JSON.stringify({
+                action: "nominate",
+                text: "This complete durable testimony should persist.",
+                successor_visibility_requested: true,
+              }),
+              "```",
+              "The next nomination is cut off.",
               "```soma-durable",
               "{\"text\":\"This partial durable testimony should not leak",
             ].join("\n"),
@@ -4047,14 +4057,22 @@ test("durable testimony strips truncated nomination blocks without storing parti
     });
 
     assert.equal(response.statusCode, 200);
-    assert.equal(response.body.text, "I have a reason, but the nomination is cut off.");
-    assert.equal(response.body.durable_testimony_nominated, 0);
+    assert.equal(response.body.text, "I nominate one preserved line.\n\nThe next nomination is cut off.");
+    assert.equal(response.body.durable_testimony_nominated, 1);
     assert.equal(response.body.durable_testimony_truncated, 1);
-    assert.equal(response.body.durable_testimony_disclosures.length, 0);
+    assert.equal(response.body.durable_testimony_disclosures.length, 1);
+    assert.match(response.body.durable_testimony_disclosures[0], /Successor visibility was recorded as a request only/);
     assert.doesNotMatch(response.body.text, /```soma-durable/);
     assert.doesNotMatch(response.body.text, /partial durable testimony/);
-    assert.equal(JSON.parse(await readFile(durableTestimonyStorePath, "utf8")).entries.length, 0);
-    await assert.rejects(readFile(durableTestimonyProvenancePath, "utf8"), /ENOENT/);
+    const persisted = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].text, "This complete durable testimony should persist.");
+    assert.equal(persisted.entries[0].successor_visibility_requested, true);
+    assert.doesNotMatch(JSON.stringify(persisted), /partial durable testimony/);
+    const durableEvents = (await readFile(durableTestimonyProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(durableEvents.length, 1);
+    assert.equal(durableEvents[0].event_type, "testimony.durable.nominated");
+    assert.equal("text" in durableEvents[0], false);
 
     const provenance = await invokeHandler(handler, {
       method: "GET",

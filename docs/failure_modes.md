@@ -365,8 +365,8 @@ Expected behavior:
 - with writes disabled, acknowledge the nomination/revocation as not stored
 - with recovery degraded, fail closed before rewriting the store
 - never append exact testimony text to provenance
-- keep successor visibility as a recorded request only; no publication or projection exists in this
-  slice
+- keep successor visibility as a recorded request only; durable testimony does not publish or
+  project successor-visible history by itself
 - disclose the true sentence: what was or was not stored, current reader set, domain, and revocation
   limits
 
@@ -377,6 +377,38 @@ Provenance:
 - disabled/degraded runtime attempts may record content-free `testimony.durable.not_stored`
   in-process provenance
 - no provenance event contains `text`, `content`, raw payloads, or messages
+
+### History Projection Publication Refused Or Withheld
+
+Triggers:
+
+- `SOMA_RUNTIME_WRITES_ENABLED` is unset
+- `config/history-projection.json` is corrupt or unreadable
+- history-projection provenance cannot be read or appended
+- the writer cannot acquire its lock or atomically promote the new store
+- publication or withdrawal is requested without `actor=user`
+- source refs cross domains, have unknown domains, or point at unsupported sources
+- `message_to_successors` lacks explicit recon and coercion review markers
+- successor-message content is oversized, structurally risky, coercive, or reconnaissance-sensitive
+
+Expected behavior:
+
+- with writes disabled or recovery degraded, reject before changing the store
+- reject invalid actors and invalid or cross-domain source refs before write
+- default new publications to `recon_review=needs_review`
+- downgrade risky or insufficiently reviewed `message_to_successors` publications to
+  `recon_review=withheld` with a content-free reason class
+- keep occupant reads disabled; do not expose history projection through `space.history.read`
+- never append projected content to provenance
+
+Provenance:
+
+- successful publication and withdrawal append `history.projection.published` and
+  `history.projection.withdrawn` metadata only
+- provenance includes ids, domain, source ref metadata, presentation kind, review status, reviewer
+  metadata, and withheld reason class when present
+- no provenance event contains `text`, `content`, raw payloads, messages, screenshots, images,
+  audio, or embeddings
 
 ### Occupant Space Status Read Refused Or Invalid
 

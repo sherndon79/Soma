@@ -343,8 +343,8 @@ offered but not required; the occupant should move naturally and report what bin
 can post to the deliberation forum with a fenced `soma-forum` JSON block using type `testimony` or
 `argument`; and the occupant can nominate exact words for steward-durable testimony with a fenced
 `soma-durable` JSON block using action `nominate`. Successor visibility is described as a request
-only; no occupant-facing projection or publication mechanism exists yet, and revocation cannot undo
-any steward who already read the entry.
+only; no occupant-facing projection read exists yet, and revocation cannot undo any steward who
+already read the entry.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is
@@ -496,8 +496,33 @@ Each durable entry contains exact text and metadata:
 
 Every nomination/revocation response carries the true sentence: what exact text was stored or not
 stored, the domain, current reader set (`stewards`), that successor visibility is only a request and
-not publication, and revocation limits. Publication, successor delivery, projection curation,
-and `space.history.read` remain out of scope.
+not durable-testimony publication, and revocation limits. Successor delivery and
+`space.history.read` remain out of scope.
+
+### History Projection Publication
+
+History projection is a separate steward-curated store for future occupant-facing history. It does
+not read directly from raw steward records or from the durable-testimony store at occupant time.
+This slice only adds steward/operator publication and withdrawal; no occupant read capability is
+enabled yet.
+
+The store is `config/history-projection.json`. Writes require `SOMA_RUNTIME_WRITES_ENABLED=1`, a
+clean history-projection recovery state, and available store/provenance adapters. Mutation uses the
+same lock, temp file, fsync, rename, and directory fsync discipline as other durable stores, then
+appends content-free `history.projection.published` or `history.projection.withdrawn` provenance to
+`config/history-projection-mutations.ndjson`.
+
+Publication requests require `actor=user`, a declared domain (`testing` or `operational`), a
+presentation kind, consent basis, audience, content, and source refs. Source refs are
+domain-isolated: durable testimony refs derive their domain from the testimony entry, while run,
+provenance, and design-change refs must declare a matching domain. Cross-domain or unknown-domain
+refs fail before write.
+
+New entries default to `recon_review=needs_review`. `message_to_successors` entries are only
+published as approved when the steward request includes both recon and coercion review markers.
+Otherwise, and for structurally risky successor-message content, the entry is stored as withheld
+with a content-free reason class. Provenance events include ids, domains, presentation kind, source
+ref metadata, review metadata, and result status; they never include projected content.
 
 ### Occupant Space Status Read
 

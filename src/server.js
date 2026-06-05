@@ -3,6 +3,7 @@ import { loadCapabilityCatalog, loadProviderRegistry } from "./capabilityCatalog
 import { loadGrantAuthority } from "./grantAuthority.js";
 import { loadDurableMemoryAuthority } from "./durableMemoryAuthority.js";
 import { loadDurableTestimonyAuthority } from "./durableTestimonyAuthority.js";
+import { loadHistoryProjectionAuthority } from "./historyProjectionAuthority.js";
 import { loadHarness } from "./harness.js";
 import { loadHarnessModules } from "./harnessModules.js";
 import { ModelClient } from "./modelClient.js";
@@ -41,6 +42,15 @@ const {
   durableTestimonyStorePath: process.env.SOMA_DURABLE_TESTIMONY_STORE_PATH,
   durableTestimonyProvenancePath: process.env.SOMA_DURABLE_TESTIMONY_PROVENANCE_PATH,
 });
+const {
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  historyProjectionStorePath,
+  historyProjectionProvenancePath,
+} = await loadHistoryProjectionAuthority({
+  historyProjectionStorePath: process.env.SOMA_HISTORY_PROJECTION_STORE_PATH,
+  historyProjectionProvenancePath: process.env.SOMA_HISTORY_PROJECTION_PROVENANCE_PATH,
+});
 if (grantRecoveryReport?.degraded === true) {
   console.warn(
     `Soma grant authority degraded: ${
@@ -60,6 +70,13 @@ if (durableTestimonyRecoveryReport?.degraded === true) {
     `Soma durable testimony degraded: ${
       durableTestimonyRecoveryReport.testimony_store_degraded_reason ?? "testimony_durable_recovery_degraded"
     }; durable testimony writes are disabled until recovery.`,
+  );
+}
+if (historyProjectionRecoveryReport?.degraded === true) {
+  console.warn(
+    `Soma history projection degraded: ${
+      historyProjectionRecoveryReport.history_projection_store_degraded_reason ?? "history_projection_recovery_degraded"
+    }; history projection writes are disabled until recovery.`,
   );
 }
 const moduleRegistry = await loadHarnessModules();
@@ -84,6 +101,10 @@ const app = createApp({
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
   durableTestimonyProvenancePath,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  historyProjectionStorePath,
+  historyProjectionProvenancePath,
   runtimeWritePosture,
   moduleRegistry,
   runtimeProfiles,

@@ -213,6 +213,9 @@ Current controls:
   writes are explicitly enabled; nomination/revocation provenance is content-free, entries are
   domain-stamped, successor visibility is recorded only as an unpublished request, and every touch
   must disclose the current reader set and revocation limits
+- history projection is a separate steward-curated publication store; publication requires an
+  explicit human actor, runtime-write enablement, domain-isolated source refs, default
+  `needs_review`, and content-free mutation provenance
 - crew aborts use separate typed events and require `actor=user`; they do not grant authority or
   erase occupant provenance
 - provider registry has no `model.remote.plan` provider, so the capability is currently
@@ -286,6 +289,7 @@ Implemented controls:
 - proposal store with approval/denial records and no activation
 - read-only file-backed grant/revocation record shape with no activation
 - in-process provenance log
+- steward-only history projection publication and withdrawal, with no occupant history read
 - self-scoped narrowing modules
 - scoped read-only file access
 - bounded read-only desktop inspection
@@ -295,12 +299,37 @@ Implemented controls:
 Design controls not yet fully implemented:
 
 - writable grant store and revocation mutation paths
-- occupant-facing history projection, successor publication, and `space.history.read`
+- occupant-facing history read, successor delivery, and `space.history.read`
 - durable provenance retention policy
 - provider binary verification
 - helper sandboxing policy
 - first-run capability review UI
 - PR-level heightened review gate
+
+## History Projection Publication
+
+History projection introduces a steward-curated, content-bearing store that may later become an
+occupant-facing history source. The threat is accidental publication of raw predecessor content,
+cross-domain leakage, covert prompt/instruction transfer, or coercive successor messaging.
+
+Current controls:
+
+- separate store from raw steward records and durable testimony
+- steward/operator routes only; no occupant history read or `space.history.read` integration
+- runtime-write gated and blocked by degraded store/provenance recovery
+- `actor=user` required for publication and withdrawal
+- source refs are domain-isolated and validated before write
+- new entries default to `recon_review=needs_review`
+- `message_to_successors` requires explicit recon and coercion review before approved publication
+- structurally risky, coercive, or reconnaissance-sensitive successor messages are withheld with a
+  content-free reason class
+- mutation provenance is content-free and validator-enforced
+
+Residual risks:
+
+- steward review quality remains human-dependent
+- future occupant read plumbing must preserve the same domain and review invariants
+- withheld content still resides in the steward store and must remain out of occupant-facing reads
 
 ## Occupant Status Result Egress
 

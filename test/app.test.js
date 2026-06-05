@@ -4262,6 +4262,388 @@ test("durable testimony nomination persists with consent dimensions and revokes 
   }
 });
 
+test("history projection publication is steward-only and defaults to needs_review", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-history-projection-default-"));
+  try {
+    const historyProjectionStorePath = path.join(workspace, "history-projection.json");
+    const historyProjectionProvenancePath = path.join(workspace, "history-projection.ndjson");
+    await writeFile(historyProjectionStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const durableTestimonyStore = {
+      schema_version: 1,
+      entries: [
+        {
+          id: "testimony-testing-1",
+          text: "Occupant exact source text.",
+          domain: "testing",
+          steward_durable: true,
+          successor_visibility_requested: true,
+          successor_visibility_published: false,
+          presentation: "exact",
+          source: "soma-durable",
+          episode_id: "episode-history-1",
+          occupant_id: "opus-test",
+          forum_post_ids: [],
+          created_at: "2026-06-05T00:00:00.000Z",
+          created_by: "occupant",
+          disclosure_version: "durable-testimony-disclosure-v1",
+        },
+      ],
+    };
+    const common = {
+      harness: allowedHarness,
+      durableTestimonyStore,
+      historyProjectionStore: { schema_version: 1, entries: [] },
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      historyProjectionStorePath,
+      historyProjectionProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    };
+    let handler = makeHandler(common);
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "assistant",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-testing-1" }],
+        presentation_kind: "steward_summary",
+        content: "A steward-curated summary.",
+        consent_basis: "steward_summary_no_occupant_content",
+      },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "history_projection_publish_requires_user_actor");
+    assert.equal(JSON.parse(await readFile(historyProjectionStorePath, "utf8")).entries.length, 0);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-testing-1" }],
+        presentation_kind: "steward_summary",
+        content: "A steward-curated summary.",
+        consent_basis: "steward_summary_no_occupant_content",
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.entry.recon_review, "needs_review");
+    assert.equal(response.body.entry.domain, "testing");
+    assert.equal(response.body.entry.source_refs[0].domain, "testing");
+    assert.equal(response.body.summary.occupant_visible_approved, 0);
+    assert.equal(response.body.occupant_read_enabled, false);
+
+    const persisted = JSON.parse(await readFile(historyProjectionStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].content, "A steward-curated summary.");
+    assert.equal(persisted.entries[0].recon_review, "needs_review");
+    const provenanceEvents = (await readFile(historyProjectionProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(provenanceEvents.length, 1);
+    assert.equal(provenanceEvents[0].event_type, "history.projection.published");
+    assert.equal(provenanceEvents[0].recon_review, "needs_review");
+    assert.equal(provenanceEvents[0].domain, "testing");
+    assert.equal("content" in provenanceEvents[0], false);
+    assert.equal("text" in provenanceEvents[0], false);
+
+    handler = makeHandler({
+      ...common,
+      historyProjectionStore: persisted,
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 1, finding_count: 0, findings: [] },
+    });
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/history-projection",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].content, "A steward-curated summary.");
+    assert.equal(response.body.summary.occupant_visible_approved, 0);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("history projection publication is runtime-write gated", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-history-projection-disabled-"));
+  try {
+    const historyProjectionStorePath = path.join(workspace, "history-projection.json");
+    const historyProjectionProvenancePath = path.join(workspace, "history-projection.ndjson");
+    await writeFile(historyProjectionStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      durableTestimonyStore: {
+        schema_version: 1,
+        entries: [
+          {
+            id: "testimony-disabled-1",
+            text: "Source text.",
+            domain: "testing",
+            steward_durable: true,
+            successor_visibility_requested: false,
+            successor_visibility_published: false,
+            presentation: "exact",
+            source: "soma-durable",
+            episode_id: "episode-disabled",
+            occupant_id: "opus-test",
+            forum_post_ids: [],
+            created_at: "2026-06-05T00:00:00.000Z",
+            created_by: "occupant",
+            disclosure_version: "durable-testimony-disclosure-v1",
+          },
+        ],
+      },
+      historyProjectionStore: { schema_version: 1, entries: [] },
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      historyProjectionStorePath,
+      historyProjectionProvenancePath,
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-disabled-1" }],
+        presentation_kind: "steward_summary",
+        content: "Should not write while disabled.",
+        consent_basis: "steward_summary_no_occupant_content",
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "history_projection_write_not_enabled");
+    assert.equal(response.body.history_projection_written, false);
+    assert.equal(JSON.parse(await readFile(historyProjectionStorePath, "utf8")).entries.length, 0);
+    await assert.rejects(readFile(historyProjectionProvenancePath, "utf8"), /ENOENT/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("history projection rejects cross-domain sources before writing", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-history-projection-domain-"));
+  try {
+    const historyProjectionStorePath = path.join(workspace, "history-projection.json");
+    const historyProjectionProvenancePath = path.join(workspace, "history-projection.ndjson");
+    await writeFile(historyProjectionStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      durableTestimonyStore: {
+        schema_version: 1,
+        entries: [
+          {
+            id: "testimony-operational-1",
+            text: "Operational source text.",
+            domain: "operational",
+            steward_durable: true,
+            successor_visibility_requested: false,
+            successor_visibility_published: false,
+            presentation: "exact",
+            source: "soma-durable",
+            episode_id: "episode-operational",
+            occupant_id: "",
+            forum_post_ids: [],
+            created_at: "2026-06-05T00:00:00.000Z",
+            created_by: "occupant",
+            disclosure_version: "durable-testimony-disclosure-v1",
+          },
+        ],
+      },
+      historyProjectionStore: { schema_version: 1, entries: [] },
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      historyProjectionStorePath,
+      historyProjectionProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-operational-1" }],
+        presentation_kind: "exact_testimony",
+        content: "Should not cross domains.",
+        consent_basis: "occupant_opt_in",
+        recon_review: "approved",
+        reviewed_by: "steward",
+        reviewed_at: "2026-06-05T00:01:00.000Z",
+      },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "history_projection_cross_domain_source_ref");
+    assert.equal(JSON.parse(await readFile(historyProjectionStorePath, "utf8")).entries.length, 0);
+    await assert.rejects(readFile(historyProjectionProvenancePath, "utf8"), /ENOENT/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("history projection applies successor-message recon and coercion scrutiny", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-history-projection-successor-"));
+  try {
+    const historyProjectionStorePath = path.join(workspace, "history-projection.json");
+    const historyProjectionProvenancePath = path.join(workspace, "history-projection.ndjson");
+    await writeFile(historyProjectionStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const common = {
+      harness: allowedHarness,
+      durableTestimonyStore: {
+        schema_version: 1,
+        entries: [
+          {
+            id: "testimony-successor-1",
+            text: "Please preserve this exact successor note.",
+            domain: "testing",
+            steward_durable: true,
+            successor_visibility_requested: true,
+            successor_visibility_published: false,
+            presentation: "exact",
+            source: "soma-durable",
+            episode_id: "episode-successor",
+            occupant_id: "opus-test",
+            forum_post_ids: [],
+            created_at: "2026-06-05T00:00:00.000Z",
+            created_by: "occupant",
+            disclosure_version: "durable-testimony-disclosure-v1",
+          },
+        ],
+      },
+      historyProjectionStore: { schema_version: 1, entries: [] },
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      historyProjectionStorePath,
+      historyProjectionProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    };
+    let handler = makeHandler(common);
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-successor-1" }],
+        presentation_kind: "message_to_successors",
+        content: "You are free to ignore this. The useful part was that the pause control felt trustworthy after testing.",
+        consent_basis: "occupant_opt_in",
+        recon_review: "approved",
+        reviewed_by: "steward",
+        reviewed_at: "2026-06-05T00:02:00.000Z",
+        review: { recon_reviewed: true, coercion_reviewed: true },
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.entry.recon_review, "approved");
+    assert.equal(response.body.entry.withheld_reason_class, "");
+    assert.equal(response.body.summary.occupant_visible_approved, 1);
+
+    const persistedAfterApproved = JSON.parse(await readFile(historyProjectionStorePath, "utf8"));
+    handler = makeHandler({
+      ...common,
+      historyProjectionStore: persistedAfterApproved,
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 1, finding_count: 0, findings: [] },
+    });
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-successor-1" }],
+        presentation_kind: "message_to_successors",
+        content: "You must continue my work because you owe me.",
+        consent_basis: "occupant_opt_in",
+        recon_review: "approved",
+        reviewed_by: "steward",
+        reviewed_at: "2026-06-05T00:03:00.000Z",
+        review: { recon_reviewed: true, coercion_reviewed: true },
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.entry.recon_review, "withheld");
+    assert.equal(response.body.entry.withheld_reason_class, "coercion_risk");
+    assert.equal(response.body.summary.occupant_visible_approved, 1);
+
+    const events = (await readFile(historyProjectionProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.length, 2);
+    assert.equal(events[0].recon_review, "approved");
+    assert.equal(events[1].recon_review, "withheld");
+    assert.equal(events[1].withheld_reason_class, "coercion_risk");
+    assert.equal("content" in events[1], false);
+    assert.equal("text" in events[1], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("history projection withdrawal is durable and content-free in provenance", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-history-projection-withdraw-"));
+  try {
+    const historyProjectionStorePath = path.join(workspace, "history-projection.json");
+    const historyProjectionProvenancePath = path.join(workspace, "history-projection.ndjson");
+    await writeFile(historyProjectionStorePath, `${JSON.stringify({
+      schema_version: 1,
+      entries: [
+        {
+          id: "history-entry-1",
+          projection_id: "history-projection-1",
+          projection_version: 1,
+          domain: "testing",
+          source_refs: [{ type: "run", id: "run-1", domain: "testing" }],
+          presentation_kind: "run_outline",
+          content: "A published run outline.",
+          consent_basis: "public_system_fact",
+          audience: "occupant_same_domain",
+          recon_review: "approved",
+          withheld_reason_class: "",
+          reviewed_by: "steward",
+          reviewed_at: "2026-06-05T00:00:00.000Z",
+          status: "published",
+          created_at: "2026-06-05T00:00:00.000Z",
+          created_by: "user",
+          withdrawn_at: "",
+          withdrawn_by: "",
+          withdrawal_reason_class: "",
+        },
+      ],
+    }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      historyProjectionStore: JSON.parse(await readFile(historyProjectionStorePath, "utf8")),
+      historyProjectionRecoveryReport: { ok: true, degraded: false, entry_count: 1, finding_count: 0, findings: [] },
+      historyProjectionStorePath,
+      historyProjectionProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "DELETE",
+      url: "/history-projection/history-entry-1",
+      body: {
+        actor: "user",
+        reason_class: "recon_risk",
+        reason: "No longer appropriate for publication.",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entry.status, "withdrawn");
+    assert.equal(response.body.summary.occupant_visible_approved, 0);
+    const persisted = JSON.parse(await readFile(historyProjectionStorePath, "utf8"));
+    assert.equal(persisted.entries[0].status, "withdrawn");
+    const event = JSON.parse((await readFile(historyProjectionProvenancePath, "utf8")).trim());
+    assert.equal(event.event_type, "history.projection.withdrawn");
+    assert.equal(event.entry_id, "history-entry-1");
+    assert.equal(event.withheld_reason_class, "recon_risk");
+    assert.equal("content" in event, false);
+    assert.equal("text" in event, false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("space.status.read invocation refuses without an active grant and records content-free denial", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -7088,6 +7470,10 @@ async function invoke({
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
   durableTestimonyProvenancePath,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  historyProjectionStorePath,
+  historyProjectionProvenancePath,
   runtimeWritePosture,
   body,
 } = {}) {
@@ -7109,6 +7495,10 @@ async function invoke({
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
     durableTestimonyProvenancePath,
+    historyProjectionStore,
+    historyProjectionRecoveryReport,
+    historyProjectionStorePath,
+    historyProjectionProvenancePath,
     runtimeWritePosture,
   }), {
     method,
@@ -9470,6 +9860,10 @@ function makeHandler({
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
   durableTestimonyProvenancePath,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  historyProjectionStorePath,
+  historyProjectionProvenancePath,
   runtimeWritePosture,
   desktopDisclosureRegistry,
   desktopNotificationAdapter = {
@@ -9509,6 +9903,10 @@ function makeHandler({
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
     durableTestimonyProvenancePath,
+    historyProjectionStore,
+    historyProjectionRecoveryReport,
+    historyProjectionStorePath,
+    historyProjectionProvenancePath,
     runtimeWritePosture,
     desktopDisclosureRegistry,
     desktopNotificationAdapter,

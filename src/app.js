@@ -24,8 +24,14 @@ import {
   loadDurableTestimonyStore,
   summarizeDurableTestimonyStore,
 } from "./durableTestimony.js";
+import {
+  listHistoryProjectionEntries,
+  loadHistoryProjectionStore,
+  summarizeHistoryProjectionStore,
+} from "./historyProjection.js";
 import { createDurableMemoryProvenanceFile } from "./durableMemoryProvenanceFile.js";
 import { createDurableTestimonyProvenanceFile } from "./durableTestimonyProvenanceFile.js";
+import { createHistoryProjectionProvenanceFile } from "./historyProjectionProvenanceFile.js";
 import { inspectDurableMemoryRecovery } from "./durableMemoryRecovery.js";
 import {
   writeDurableMemoryAddMutation,
@@ -36,6 +42,11 @@ import {
   writeDurableTestimonyRevocation,
 } from "./durableTestimonyStoreWriter.js";
 import { cleanDurableTestimonyRecoveryReport } from "./durableTestimonyAuthority.js";
+import { cleanHistoryProjectionRecoveryReport } from "./historyProjectionAuthority.js";
+import {
+  writeHistoryProjectionPublication,
+  writeHistoryProjectionWithdrawal,
+} from "./historyProjectionStoreWriter.js";
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
@@ -132,6 +143,10 @@ export function createApp({
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
   durableTestimonyProvenancePath,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  historyProjectionStorePath,
+  historyProjectionProvenancePath,
   runtimeWritePosture,
   provenanceLog,
   desktopDisclosureRegistry,
@@ -161,6 +176,10 @@ export function createApp({
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
     durableTestimonyProvenancePath,
+    historyProjectionStore,
+    historyProjectionRecoveryReport,
+    historyProjectionStorePath,
+    historyProjectionProvenancePath,
     runtimeWritePosture,
     provenanceLog,
     desktopDisclosureRegistry,
@@ -201,6 +220,13 @@ export function createRequestHandler({
   durableTestimonyStoreIo = createGrantStoreFileIo(),
   durableTestimonyStoreLock = createGrantStoreLock(),
   durableTestimonyProvenance = null,
+  historyProjectionStore = { schema_version: 1, entries: [] },
+  historyProjectionRecoveryReport = null,
+  historyProjectionStorePath = "",
+  historyProjectionProvenancePath = "",
+  historyProjectionStoreIo = createGrantStoreFileIo(),
+  historyProjectionStoreLock = createGrantStoreLock(),
+  historyProjectionProvenance = null,
   runtimeWritePosture = resolveRuntimeWritePosture(),
   provenanceLog = new ProvenanceLog(),
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
@@ -230,6 +256,10 @@ export function createRequestHandler({
   const durableTestimonyMutationProvenance = durableTestimonyProvenance
     ?? (durableTestimonyProvenancePath
       ? createDurableTestimonyProvenanceFile({ path: durableTestimonyProvenancePath })
+      : null);
+  const historyProjectionMutationProvenance = historyProjectionProvenance
+    ?? (historyProjectionProvenancePath
+      ? createHistoryProjectionProvenanceFile({ path: historyProjectionProvenancePath })
       : null);
   sessionMemory.loadDurable?.(listDurableMemoryEntries(durableMemoryStore));
   const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
@@ -2097,6 +2127,124 @@ export function createRequestHandler({
           durableTestimonyRecoveryReport,
           { durableTestimonyStore, runtimeWritePosture: writePosture },
         ));
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/history-projection") {
+        requireCapability(effectiveHarness, "provenance.read");
+        writeJson(res, 200, {
+          entries: listHistoryProjectionEntries(historyProjectionStore),
+          summary: summarizeHistoryProjectionStore(historyProjectionStore),
+          durable: true,
+          occupant_read_enabled: false,
+          recovery: summarizeHistoryProjectionRecoveryInspection(
+            historyProjectionRecoveryReport,
+            { historyProjectionStore, runtimeWritePosture: writePosture },
+          ),
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/history-projection/recovery") {
+        writeJson(res, 200, summarizeHistoryProjectionRecoveryInspection(
+          historyProjectionRecoveryReport,
+          { historyProjectionStore, runtimeWritePosture: writePosture },
+        ));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/history-projection") {
+        const body = await readJson(req);
+        const request = validateHistoryProjectionPublishRequest(body, {
+          durableTestimonyStore,
+        });
+        const guard = historyProjectionMutationGuard({
+          route: "POST /history-projection",
+          mutationKind: "history.projection.published",
+          runtimeWritePosture: writePosture,
+          historyProjectionStorePath,
+          historyProjectionProvenance: historyProjectionMutationProvenance,
+          recoveryReport: historyProjectionRecoveryReport,
+          historyProjectionStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const result = await writeHistoryProjectionPublication({
+          historyProjectionStorePath,
+          mutationId: request.mutation_id || `history-projection-publish-${cryptoRandomId()}`,
+          io: historyProjectionStoreIo,
+          lock: historyProjectionStoreLock,
+          provenance: historyProjectionMutationProvenance,
+          input: request,
+          context: historyProjectionMutationContext(),
+        });
+        const refreshed = await refreshHistoryProjectionAuthority({
+          historyProjectionStorePath,
+          historyProjectionProvenance: historyProjectionMutationProvenance,
+          fallbackStore: historyProjectionStore,
+        });
+        historyProjectionStore = refreshed.historyProjectionStore;
+        historyProjectionRecoveryReport = refreshed.historyProjectionRecoveryReport;
+        writeJson(res, result.ok ? 201 : statusCodeForHistoryProjectionMutationFailure(result), {
+          ...historyProjectionMutationResponseFields({
+            result,
+            recoveryReport: historyProjectionRecoveryReport,
+            historyProjectionStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "history_projection",
+          occupant_read_enabled: false,
+        });
+        return;
+      }
+
+      const historyProjectionWithdrawMatch = url.pathname.match(/^\/history-projection\/([^/]+)$/);
+      if (req.method === "DELETE" && historyProjectionWithdrawMatch) {
+        const entryId = decodeURIComponent(historyProjectionWithdrawMatch[1] ?? "");
+        const body = await readJson(req);
+        const request = validateHistoryProjectionWithdrawRequest({ ...body, id: entryId });
+        const guard = historyProjectionMutationGuard({
+          route: "DELETE /history-projection/:id",
+          mutationKind: "history.projection.withdrawn",
+          entryId,
+          runtimeWritePosture: writePosture,
+          historyProjectionStorePath,
+          historyProjectionProvenance: historyProjectionMutationProvenance,
+          recoveryReport: historyProjectionRecoveryReport,
+          historyProjectionStore,
+        });
+        if (!guard.ok) {
+          writeJson(res, guard.statusCode, guard.response);
+          return;
+        }
+        const result = await writeHistoryProjectionWithdrawal({
+          historyProjectionStorePath,
+          mutationId: request.mutation_id || `history-projection-withdraw-${cryptoRandomId()}`,
+          io: historyProjectionStoreIo,
+          lock: historyProjectionStoreLock,
+          provenance: historyProjectionMutationProvenance,
+          input: request,
+          context: historyProjectionMutationContext(),
+        });
+        const refreshed = await refreshHistoryProjectionAuthority({
+          historyProjectionStorePath,
+          historyProjectionProvenance: historyProjectionMutationProvenance,
+          fallbackStore: historyProjectionStore,
+        });
+        historyProjectionStore = refreshed.historyProjectionStore;
+        historyProjectionRecoveryReport = refreshed.historyProjectionRecoveryReport;
+        writeJson(res, result.ok ? 200 : statusCodeForHistoryProjectionMutationFailure(result), {
+          ...historyProjectionMutationResponseFields({
+            result,
+            recoveryReport: historyProjectionRecoveryReport,
+            historyProjectionStore,
+            runtimeWritePosture: writePosture,
+          }),
+          source: "history_projection",
+          occupant_read_enabled: false,
+        });
         return;
       }
 
@@ -6361,6 +6509,313 @@ function statusCodeForDurableMemoryMutationFailure(result = {}) {
   return 409;
 }
 
+function validateHistoryProjectionPublishRequest(body = {}, { durableTestimonyStore } = {}) {
+  const actor = String(body.actor ?? body.created_by ?? "").trim();
+  if (actor !== "user") {
+    throwValidationError(
+      "history_projection_publish_requires_user_actor",
+      "History projection publication requires actor=user.",
+    );
+  }
+  const domain = String(body.domain ?? "").trim();
+  if (!["testing", "operational"].includes(domain)) {
+    throwValidationError(
+      "history_projection_publish_domain_required",
+      "History projection publication requires domain testing or operational.",
+    );
+  }
+  const sourceRefs = validateHistoryProjectionSourceRefs(body.source_refs, {
+    domain,
+    durableTestimonyStore,
+  });
+  return {
+    actor,
+    domain,
+    source_refs: sourceRefs,
+    projection_id: String(body.projection_id ?? "").trim(),
+    presentation_kind: String(body.presentation_kind ?? "").trim(),
+    content: String(body.content ?? ""),
+    consent_basis: String(body.consent_basis ?? "").trim(),
+    audience: String(body.audience ?? "occupant_same_domain").trim() || "occupant_same_domain",
+    recon_review: String(body.recon_review ?? "needs_review").trim() || "needs_review",
+    withheld_reason_class: String(body.withheld_reason_class ?? "").trim(),
+    reviewed_by: String(body.reviewed_by ?? "").trim(),
+    reviewed_at: String(body.reviewed_at ?? "").trim(),
+    review: isPlainObject(body.review) ? body.review : {},
+    mutation_id: String(body.mutation_id ?? "").trim(),
+  };
+}
+
+function validateHistoryProjectionWithdrawRequest(body = {}) {
+  const actor = String(body.actor ?? body.withdrawn_by ?? "").trim();
+  if (actor !== "user") {
+    throwValidationError(
+      "history_projection_withdraw_requires_user_actor",
+      "History projection withdrawal requires actor=user.",
+    );
+  }
+  const id = String(body.id ?? "").trim();
+  if (!id) {
+    throwValidationError(
+      "history_projection_withdraw_id_required",
+      "History projection withdrawal requires an entry id.",
+    );
+  }
+  return {
+    id,
+    actor,
+    reason: String(body.reason ?? "").trim(),
+    reason_class: String(body.reason_class ?? body.withdrawal_reason_class ?? "").trim(),
+    mutation_id: String(body.mutation_id ?? "").trim(),
+  };
+}
+
+function validateHistoryProjectionSourceRefs(sourceRefs, { domain, durableTestimonyStore } = {}) {
+  if (!Array.isArray(sourceRefs) || sourceRefs.length === 0) {
+    throwValidationError(
+      "history_projection_source_refs_required",
+      "History projection publication requires source_refs.",
+    );
+  }
+  return sourceRefs.map((sourceRef) => {
+    if (!isPlainObject(sourceRef)) {
+      throwValidationError(
+        "history_projection_source_ref_invalid",
+        "History projection source refs must be objects.",
+      );
+    }
+    const type = String(sourceRef.type ?? "").trim();
+    const id = String(sourceRef.id ?? "").trim();
+    if (!type || !id) {
+      throwValidationError(
+        "history_projection_source_ref_invalid",
+        "History projection source refs require type and id.",
+      );
+    }
+    const sourceDomain = domainForHistoryProjectionSourceRef(sourceRef, {
+      durableTestimonyStore,
+    });
+    if (!sourceDomain) {
+      throwValidationError(
+        "history_projection_source_domain_unknown",
+        "History projection source refs require a known same-domain source.",
+      );
+    }
+    if (sourceDomain !== domain) {
+      throwValidationError(
+        "history_projection_cross_domain_source_ref",
+        "History projection source refs cannot cross domains.",
+      );
+    }
+    return { type, id, domain: sourceDomain };
+  });
+}
+
+function domainForHistoryProjectionSourceRef(sourceRef = {}, { durableTestimonyStore } = {}) {
+  const type = String(sourceRef.type ?? "").trim();
+  const id = String(sourceRef.id ?? "").trim();
+  if (type === "durable_testimony") {
+    const entry = listDurableTestimonyEntries(durableTestimonyStore)
+      .find((candidate) => candidate.id === id);
+    if (!entry) {
+      throwValidationError(
+        "history_projection_source_not_found",
+        "History projection durable testimony source was not found.",
+      );
+    }
+    return entry.domain;
+  }
+  if (["run", "provenance", "design_change"].includes(type)) {
+    return String(sourceRef.domain ?? "").trim();
+  }
+  throwValidationError(
+    "history_projection_source_type_invalid",
+    "History projection source ref type is invalid.",
+  );
+}
+
+function historyProjectionMutationGuard({
+  route,
+  mutationKind,
+  entryId = "",
+  runtimeWritePosture,
+  historyProjectionStorePath,
+  historyProjectionProvenance,
+  recoveryReport,
+  historyProjectionStore,
+} = {}) {
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  if (!writePosture.history_projection_write_enabled) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: {
+        ok: false,
+        error: "history_projection_write_not_enabled",
+        code: "history_projection_write_not_enabled",
+        message: "History projection publication routes are reserved but not enabled.",
+        route,
+        mutation_kind: mutationKind,
+        entry_id: entryId,
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        history_projection_written: false,
+        file_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  if (!historyProjectionStorePath || !historyProjectionProvenance) {
+    return {
+      ok: false,
+      statusCode: 503,
+      response: {
+        ok: false,
+        error: "history_projection_writer_unavailable",
+        code: "history_projection_writer_unavailable",
+        message: "History projection write requires a configured store path and provenance file.",
+        route,
+        mutation_kind: mutationKind,
+        entry_id: entryId,
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        history_projection_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  if (recoveryReport?.degraded === true) {
+    return {
+      ok: false,
+      statusCode: 403,
+      response: {
+        ok: false,
+        error: "history_projection_recovery_required",
+        code: "history_projection_recovery_required",
+        message: "History projection write requires clean recovery before publication.",
+        route,
+        mutation_kind: mutationKind,
+        entry_id: entryId,
+        recovery: summarizeHistoryProjectionRecoveryInspection(recoveryReport, { historyProjectionStore, runtimeWritePosture: writePosture }),
+        runtime_writes_enabled: writePosture.runtime_writes_enabled,
+        runtime_write_posture: writePosture,
+        durable: false,
+        history_projection_written: false,
+        provenance_appended: false,
+        activation_performed: false,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+function historyProjectionMutationContext() {
+  return {
+    now: () => new Date().toISOString(),
+    createId: () => `history-projection-entry-${cryptoRandomId()}`,
+    createProjectionId: () => `history-projection-${cryptoRandomId()}`,
+  };
+}
+
+async function refreshHistoryProjectionAuthority({
+  historyProjectionStorePath,
+  historyProjectionProvenance,
+  fallbackStore,
+}) {
+  let nextStore = fallbackStore;
+  try {
+    nextStore = await loadHistoryProjectionStore(historyProjectionStorePath);
+  } catch {
+    return {
+      historyProjectionStore: fallbackStore,
+      historyProjectionRecoveryReport: summarizeHistoryProjectionRecoveryInspection(
+        { ok: false, degraded: true, findings: [{ code: "history_projection_store_unreadable", authorizing_safe: false }] },
+        { historyProjectionStore: fallbackStore, runtimeWritePosture: resolveRuntimeWritePosture({ requested: true }) },
+      ),
+    };
+  }
+  try {
+    await historyProjectionProvenance?.read?.();
+  } catch (error) {
+    return {
+      historyProjectionStore: nextStore,
+      historyProjectionRecoveryReport: unreadableHistoryProjectionProvenanceReport(nextStore, error),
+    };
+  }
+  return {
+    historyProjectionStore: nextStore,
+    historyProjectionRecoveryReport: cleanHistoryProjectionRecoveryReport(nextStore),
+  };
+}
+
+function historyProjectionMutationResponseFields({
+  result = {},
+  recoveryReport,
+  historyProjectionStore,
+  runtimeWritePosture,
+} = {}) {
+  const receipt = result.receipt ?? {};
+  const committed = Boolean(receipt.history_projection_store_committed);
+  return {
+    ok: Boolean(result.ok),
+    error: result.ok ? "" : result.code ?? "history_projection_write_failed",
+    code: result.ok ? "" : result.code ?? "history_projection_write_failed",
+    message: result.ok ? "History projection mutation committed." : result.message ?? "History projection mutation failed.",
+    mutation_kind: receipt.mutation_kind ?? "",
+    mutation_id: receipt.mutation_id ?? "",
+    entry: result.entry ?? null,
+    event: result.event ?? null,
+    receipt,
+    recovery: summarizeHistoryProjectionRecoveryInspection(recoveryReport, { historyProjectionStore, runtimeWritePosture }),
+    summary: summarizeHistoryProjectionStore(historyProjectionStore),
+    runtime_writes_enabled: normalizeRuntimeWritePosture(runtimeWritePosture).runtime_writes_enabled,
+    runtime_write_posture: normalizeRuntimeWritePosture(runtimeWritePosture),
+    durable: Boolean(result.ok),
+    history_projection_written: committed,
+    file_written: committed,
+    provenance_appended: Boolean(receipt.provenance_appended),
+    activation_performed: false,
+  };
+}
+
+function statusCodeForHistoryProjectionMutationFailure(result = {}) {
+  if (result.retryable) {
+    return 409;
+  }
+  const code = String(result.code ?? "");
+  if (code.includes("_required") || code.includes("_invalid") || code.includes("_not_found")
+    || code.includes("_too_large") || code.includes("_risk")) {
+    return 400;
+  }
+  if (result.degraded) {
+    return 500;
+  }
+  return 409;
+}
+
+function unreadableHistoryProjectionProvenanceReport(store = {}, error = {}) {
+  const entries = listHistoryProjectionEntries(store);
+  const findings = entries.map((entry) => ({
+    code: "history_projection_provenance_unreadable",
+    entry_id: entry.id,
+    domain: entry.domain,
+    authorizing_safe: false,
+    provenance_stage: String(error?.stage ?? "read"),
+    provenance_error_code: String(error?.code ?? "unknown"),
+  }));
+  return {
+    ok: findings.length === 0,
+    degraded: findings.length > 0,
+    entry_count: entries.length,
+    finding_count: findings.length,
+    findings,
+  };
+}
+
 function unreadableDurableMemoryProvenanceReport(store = {}, error = {}) {
   const entries = listDurableMemoryEntries(store);
   const findings = entries.map((entry) => ({
@@ -6422,6 +6877,29 @@ function summarizeDurableTestimonyRecoveryInspection(report, { durableTestimonyS
     finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
     findings,
     writable: Boolean(writePosture.durable_testimony_write_enabled) && !report?.degraded,
+    durable: false,
+    activation_performed: false,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
+  };
+}
+
+function summarizeHistoryProjectionRecoveryInspection(report, { historyProjectionStore, runtimeWritePosture } = {}) {
+  const recoveryInspectionAvailable = report && typeof report === "object";
+  const findings = Array.isArray(report?.findings) ? report.findings.map((finding) => ({ ...finding })) : [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  return {
+    recovery_inspection_available: Boolean(recoveryInspectionAvailable),
+    ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
+    degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    history_projection_store_status: report?.history_projection_store_status ?? (recoveryInspectionAvailable && report?.degraded ? "degraded" : "clean"),
+    history_projection_store_degraded_reason: report?.history_projection_store_degraded_reason ?? "",
+    entry_count: Number.isInteger(report?.entry_count)
+      ? report.entry_count
+      : listHistoryProjectionEntries(historyProjectionStore).length,
+    finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
+    findings,
+    writable: Boolean(writePosture.history_projection_write_enabled) && !report?.degraded,
     durable: false,
     activation_performed: false,
     runtime_writes_enabled: writePosture.runtime_writes_enabled,

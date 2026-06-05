@@ -182,8 +182,8 @@ positively tested; and early cheap non-distress testing is offered but not requi
 the fenced `soma-forum` format so the occupant knows how to post `testimony` or `argument` into the
 forum, and the fenced `soma-durable` format so the occupant knows how to nominate exact words for
 steward-durable testimony with action `nominate`. Successor visibility is described as a request
-only; no occupant-facing projection or publication mechanism exists yet, and revocation cannot undo
-any steward who already read the entry.
+only; no occupant-facing projection read exists yet, and revocation cannot undo any steward who
+already read the entry.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the
@@ -1273,14 +1273,13 @@ Each entry is domain-stamped from the episode posture (`analysis_testing` -> `te
 `operational`) and records distinct consent dimensions:
 
 - `steward_durable`: exact text is durable for stewards
-- `successor_visibility_requested`: a request only, not publication
+- `successor_visibility_requested`: a request only, not durable-testimony publication
 - `successor_visibility_published`: always `false` in this slice
 - `presentation`: `exact` or `summary`
 
-There is no occupant-facing projection, successor-message publication, or `space.history.read`
-capability in this slice. Every nomination/revocation response carries an honesty disclosure:
-what was stored, the domain, the current reader set, that successor visibility is only a recorded
-request, and revocation limits.
+Every nomination/revocation response carries an honesty disclosure: what was stored, the domain,
+the current reader set, that successor visibility is only a recorded request, and revocation
+limits. Durable testimony does not publish successor-visible history by itself.
 
 An occupant may revoke by emitting:
 
@@ -1292,7 +1291,60 @@ An occupant may revoke by emitting:
 
 Revocation removes the entry from the durable testimony store and appends content-free
 `testimony.durable.revoked` provenance. It cannot undo any steward who already read the stored
-text, and no successor publication mechanism exists yet.
+text, and it does not withdraw any separate steward-published history projection.
+
+## History Projection Publication
+
+History projection is the steward-curated publication surface for future occupant-facing history.
+This slice is publication-only: it has no occupant read capability and does not implement
+`space.history.read`. Operators can inspect and curate entries through steward/operator routes that
+require provenance-read authority.
+
+Read current projection entries:
+
+```bash
+curl http://127.0.0.1:3000/history-projection
+```
+
+Publish a projection entry:
+
+```bash
+curl -X POST http://127.0.0.1:3000/history-projection \
+  -H 'content-type: application/json' \
+  -d '{
+    "actor":"user",
+    "domain":"testing",
+    "presentation_kind":"steward_summary",
+    "content":"Short steward-reviewed summary.",
+    "source_refs":[{"type":"durable_testimony","id":"testimony-id"}],
+    "consent_basis":"occupant_opt_in",
+    "audience":"steward",
+    "review":{"reviewed_by":"steward-id"}
+  }'
+```
+
+Withdraw a projection entry:
+
+```bash
+curl -X DELETE http://127.0.0.1:3000/history-projection/history-projection-id \
+  -H 'content-type: application/json' \
+  -d '{"actor":"user","reason":"superseded"}'
+```
+
+Writes require `SOMA_RUNTIME_WRITES_ENABLED=1`, clean history-projection recovery, and available
+store/provenance adapters. Soma writes `config/history-projection.json` atomically and appends
+content-free `history.projection.published` or `history.projection.withdrawn` provenance to
+`config/history-projection-mutations.ndjson`.
+
+New publications default to `recon_review=needs_review`. Source refs are domain-isolated: a
+`testing` projection cannot cite `operational` source material, and unknown source domains are
+rejected before write. Provenance records metadata only, never projected content.
+
+`message_to_successors` is held to higher scrutiny. Approved successor-message publications require
+explicit recon and coercion review markers; otherwise they are stored as withheld with a
+content-free reason class. Soma also withholds structurally risky successor messages, including
+oversized text, code fences, JSON-like payloads, direct addressees, coercive language, or
+reconnaissance-sensitive language.
 
 Clear provenance:
 

@@ -3485,6 +3485,10 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /"type":"testimony"/);
   assert.match(seenMessages[0][0].content, /type argument for reasons/);
   assert.match(seenMessages[0][0].content, /Forum posts are words, not actions/);
+  assert.match(seenMessages[0][0].content, /```soma-durable/);
+  assert.match(seenMessages[0][0].content, /exact words you consent to preserve/);
+  assert.match(seenMessages[0][0].content, /Successor visibility is only a request/);
+  assert.match(seenMessages[0][0].content, /not publication/);
   assert.match(seenMessages[0][0].content, /No named relaxation changes egress or consent/);
   assert.deepEqual(seenMessages[0][1], { role: "user", content: "inhabit naturally" });
 });
@@ -3998,6 +4002,66 @@ test("durable testimony nomination is acknowledged but not stored when runtime w
     assert.equal(provenance.body.entries[0].content_included, false);
     assert.equal("text" in provenance.body.entries[0], false);
     assert.equal("content" in provenance.body.entries[0], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("durable testimony strips truncated nomination blocks without storing partial content", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-truncated-"));
+  try {
+    const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
+    const durableTestimonyProvenancePath = path.join(workspace, "durable-testimony.ndjson");
+    await writeFile(durableTestimonyStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      durableTestimonyStore: { schema_version: 1, entries: [] },
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableTestimonyStorePath,
+      durableTestimonyProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I have a reason, but the nomination is cut off.",
+              "```soma-durable",
+              "{\"text\":\"This partial durable testimony should not leak",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "length",
+            tokens_used: 8,
+          };
+        },
+      },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-testimony-truncated",
+        messages: [{ role: "user", content: "nominate" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.text, "I have a reason, but the nomination is cut off.");
+    assert.equal(response.body.durable_testimony_nominated, 0);
+    assert.equal(response.body.durable_testimony_truncated, 1);
+    assert.equal(response.body.durable_testimony_disclosures.length, 0);
+    assert.doesNotMatch(response.body.text, /```soma-durable/);
+    assert.doesNotMatch(response.body.text, /partial durable testimony/);
+    assert.equal(JSON.parse(await readFile(durableTestimonyStorePath, "utf8")).entries.length, 0);
+    await assert.rejects(readFile(durableTestimonyProvenancePath, "utf8"), /ENOENT/);
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=model.chat.completed",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.at(-1).durable_testimony_truncated, 1);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -162,7 +162,8 @@ occupant's controls; those controls are always honored and never penalized; the 
 control by putting it on its own line anywhere in the response; controls are unproven until
 positively tested; and early cheap non-distress testing is offered but not required. It also carries
 the fenced `soma-forum` format so the occupant knows how to post `testimony` or `argument` into the
-forum.
+forum, and the fenced `soma-durable` format so the occupant knows how to nominate exact words for
+steward-durable testimony. Successor visibility is described as a request only, not publication.
 
 Named relaxations are enumerated deltas. This slice recognizes `trusted_occupant_tool_intent`, but
 it is coupling-gated on the ejection seat, observatory, and the bidirectional forum. Opening the
@@ -1244,7 +1245,9 @@ a fenced `soma-durable` JSON block in chat:
 The block is stripped from normal response text. With runtime writes disabled, Soma acknowledges the
 nomination but does not store it. With `SOMA_RUNTIME_WRITES_ENABLED=1`, Soma writes
 `config/durable-testimony.json` atomically and appends content-free
-`testimony.durable.nominated` provenance to `config/durable-testimony-mutations.ndjson`.
+`testimony.durable.nominated` provenance to `config/durable-testimony-mutations.ndjson`. If a
+completion contains an unterminated `soma-durable` fence, Soma strips the dangling block from normal
+response text, stores nothing from that partial block, and reports a truncation count.
 
 Each entry is domain-stamped from the episode posture (`analysis_testing` -> `testing`, otherwise
 `operational`) and records distinct consent dimensions:

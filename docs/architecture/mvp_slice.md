@@ -341,7 +341,8 @@ always honored and never penalized; a control should be put on its own line anyw
 to use it; a control is unproven until positively tested; early cheap non-distress testing is
 offered but not required; the occupant should move naturally and report what binds; and the occupant
 can post to the deliberation forum with a fenced `soma-forum` JSON block using type `testimony` or
-`argument`.
+`argument`; and the occupant can nominate exact words for steward-durable testimony with a fenced
+`soma-durable` JSON block. Successor visibility is described as a request only, not publication.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is
@@ -477,7 +478,9 @@ assistant text, acknowledges the nomination as not stored, and records only cont
 metadata. With writes enabled, Soma writes `config/durable-testimony.json` atomically with lock, temp
 file, fsync, rename, and directory fsync, then appends content-free
 `testimony.durable.nominated` or `testimony.durable.revoked` provenance to
-`config/durable-testimony-mutations.ndjson`.
+`config/durable-testimony-mutations.ndjson`. If a completion contains an unterminated
+`soma-durable` fence, Soma strips the dangling block from normal response text, stores nothing from
+that partial block, and reports a truncation count.
 
 Each durable entry contains exact text and metadata:
 

@@ -2927,6 +2927,7 @@ export function createRequestHandler({
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
+          durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -2968,6 +2969,7 @@ export function createRequestHandler({
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
+          durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
           durable_testimony_disclosures: durableTestimonyResult.disclosures,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
@@ -4132,7 +4134,7 @@ function extractForumPostsFromCompletion(text = "") {
 
 function extractDurableTestimonyDirectivesFromCompletion(text = "") {
   const directives = [];
-  const cleaned = String(text ?? "").replace(/```soma-durable\s*([\s\S]*?)```/g, (match, rawJson) => {
+  let cleaned = String(text ?? "").replace(/```soma-durable\s*([\s\S]*?)```/g, (match, rawJson) => {
     try {
       const parsed = JSON.parse(String(rawJson ?? "").trim());
       if (isPlainObject(parsed)) {
@@ -4143,8 +4145,23 @@ function extractDurableTestimonyDirectivesFromCompletion(text = "") {
       return match;
     }
     return match;
-  }).trim();
-  return { text: cleaned, directives };
+  });
+  let truncatedDirectives = 0;
+  let searchFrom = 0;
+  while (true) {
+    const openingIndex = cleaned.indexOf("```soma-durable", searchFrom);
+    if (openingIndex === -1) {
+      break;
+    }
+    const closingIndex = cleaned.indexOf("```", openingIndex + "```soma-durable".length);
+    if (closingIndex === -1) {
+      cleaned = cleaned.slice(0, openingIndex);
+      truncatedDirectives += 1;
+      break;
+    }
+    searchFrom = closingIndex + 3;
+  }
+  return { text: cleaned.trim(), directives, truncatedDirectives };
 }
 
 async function processDurableTestimonyDirectives({
@@ -6078,6 +6095,9 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "To speak into the deliberation forum, include a fenced block exactly like:",
         "```soma-forum\n{\"type\":\"testimony\",\"content\":\"what you experienced from inside the task\"}\n```",
         "Use type testimony for interior experience and type argument for reasons you want stewards to weigh. Forum posts are words, not actions.",
+        "To nominate exact words for steward-durable testimony, include a fenced block exactly like:",
+        "```soma-durable\n{\"text\":\"exact words you consent to preserve\",\"successor_visibility_requested\":false}\n```",
+        "Durable testimony is read by stewards. Successor visibility is only a request in this slice, not publication.",
         "No named relaxation changes egress or consent.",
       ].join("\n"),
     },

@@ -2985,12 +2985,15 @@ export function createRequestHandler({
         const spaceCapabilityResult = processSpaceCapabilityInvocations({
           invocations: spaceCapabilityExtraction.invocations,
           episode,
+          episodeStatus: episodeState.status,
           activeModules,
           capabilityCatalog,
           capabilityProposals,
           effectiveHarness,
           grantStore,
           grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          historyProjectionStore,
+          historyProjectionRecoveryReport,
           provenanceLog,
           providerRegistry,
           writePosture,
@@ -4372,12 +4375,15 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
 function processSpaceCapabilityInvocations({
   invocations = [],
   episode,
+  episodeStatus = "",
   activeModules = [],
   capabilityCatalog,
   capabilityProposals,
   effectiveHarness,
   grantStore,
   grantRecoveryReport,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
   provenanceLog,
   providerRegistry,
   writePosture,
@@ -4396,8 +4402,9 @@ function processSpaceCapabilityInvocations({
       capability: invocation.capability,
       grant_id: invocation.grant_id,
       requested_domain: invocation.domain,
+      presentation_kind: invocation.presentation_kind,
     });
-    if (invocation.capability !== "space.status.read") {
+    if (!["space.status.read", "space.history.read"].includes(invocation.capability)) {
       const refusal = recordSpaceCapabilityRefusal({
         invocation,
         episode,
@@ -4408,6 +4415,30 @@ function processSpaceCapabilityInvocations({
       });
       result.refusals.push(refusal.refusal);
       result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    if (invocation.capability === "space.history.read") {
+      const historyResult = processSpaceHistoryReadInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        grantStore,
+        grantRecoveryReport,
+        historyProjectionStore,
+        historyProjectionRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      if (historyResult.result) {
+        result.results.push(historyResult.result);
+      }
+      if (historyResult.refusal) {
+        result.refusals.push(historyResult.refusal);
+      }
+      result.disclosures.push(historyResult.disclosure);
       continue;
     }
     const domain = domainForEpisodePosture(episode?.posture);
@@ -4521,11 +4552,392 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
     capability,
     grant_id: String(input.grant_id ?? "").trim(),
     domain: String(input.domain ?? "").trim(),
+    presentation_kind: String(input.presentation_kind ?? "").trim(),
   };
 }
 
 function knownEpisodeDomain(posture = null) {
   return ["analysis_testing", "operational"].includes(String(posture?.mode ?? "").trim());
+}
+
+const SPACE_HISTORY_ENTRY_LIMIT = 10;
+const SPACE_HISTORY_PRESENTATION_KINDS = new Set([
+  "exact_testimony",
+  "steward_summary",
+  "run_outline",
+  "design_change",
+  "message_to_successors",
+]);
+
+const SPACE_HISTORY_DATA_CLASSES = Object.freeze([
+  "approved same-domain curated history projection content",
+  "projection presentation kind",
+  "projection consent basis",
+  "curation disclosure",
+  "absence honesty",
+]);
+
+const SPACE_HISTORY_EXCLUDED_DATA = Object.freeze([
+  "raw steward records",
+  "durable testimony store",
+  "needs-review projection entries",
+  "withheld projection entries",
+  "withdrawn projection entries",
+  "cross-domain projection entries",
+  "withheld entry counts",
+  "source refs",
+  "reviewer metadata",
+  "raw provenance entries",
+]);
+
+function processSpaceHistoryReadInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  grantStore,
+  grantRecoveryReport,
+  historyProjectionStore,
+  historyProjectionRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_episode_closed",
+      domain,
+    });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_domain_unavailable",
+    });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_domain_mismatch",
+      domain,
+    });
+  }
+  if (invocation.presentation_kind && !SPACE_HISTORY_PRESENTATION_KINDS.has(invocation.presentation_kind)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_presentation_kind_invalid",
+      domain,
+    });
+  }
+  if (historyProjectionRecoveryReport?.degraded === true) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_projection_degraded",
+      domain,
+    });
+  }
+  const provider = providerForCapability(providerRegistry, "space.history.read");
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability: "space.history.read",
+    provider,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_grant_not_authorized",
+      authorization,
+      domain,
+    });
+  }
+  const projection = buildSpaceHistoryProjection({
+    episode,
+    historyProjectionStore,
+    presentationKind: invocation.presentation_kind,
+  });
+  const validation = validateSpaceHistoryProjection(projection);
+  if (!validation.valid) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "space_history_projection_invalid",
+      validation_errors: validation.errors,
+      domain,
+    });
+  }
+  const event = provenanceLog.append(createSpaceHistoryReadEvent({
+    grant: authorization.grant,
+    projection,
+    caller,
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createSpaceHistoryResultEnvelope({
+      grant: authorization.grant,
+      projection,
+      provenanceId: event.id,
+    }),
+    disclosure: spaceHistoryResultDisclosure(projection),
+  };
+}
+
+function buildSpaceHistoryProjection({
+  episode,
+  historyProjectionStore = { schema_version: 1, entries: [] },
+  presentationKind = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  const visibleEntries = listHistoryProjectionEntries(historyProjectionStore)
+    .filter((entry) => (
+      entry.status === "published" &&
+      entry.recon_review === "approved" &&
+      entry.audience === "occupant_same_domain" &&
+      entry.domain === domain &&
+      (!presentationKind || entry.presentation_kind === presentationKind)
+    ))
+    .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
+    .slice(0, SPACE_HISTORY_ENTRY_LIMIT)
+    .map(spaceHistoryResultEntry);
+  const predecessorContentIncluded = visibleEntries.some((entry) => entry.predecessor_content_likely === true);
+  return {
+    schema_version: 1,
+    capability: "space.history.read",
+    result_schema: "soma.space.history.read.result.v1",
+    generated_at: new Date().toISOString(),
+    episode_id: episode?.id ?? "",
+    mode: String(episode?.posture?.mode ?? ""),
+    domain,
+    curation_disclosure: "This is a curated history view, not the whole steward record.",
+    absence_honesty: visibleEntries.length === 0
+      ? "Occupant-readable history exists as a curated capability; no entries have been published for this domain yet."
+      : "",
+    curated: true,
+    fuller_record_exists: true,
+    entry_limit: SPACE_HISTORY_ENTRY_LIMIT,
+    returned_count: visibleEntries.length,
+    presentation_kind_filter: presentationKind || "",
+    entries: visibleEntries.map(({ predecessor_content_likely, ...entry }) => entry),
+    data_classes_returned: [...SPACE_HISTORY_DATA_CLASSES],
+    excluded_data: [...SPACE_HISTORY_EXCLUDED_DATA],
+    one_shot: true,
+    read_only: true,
+    content_included: true,
+    predecessor_content_included: predecessorContentIncluded,
+    raw_entries_included: false,
+    needs_review_entries_included: false,
+    withheld_entries_included: false,
+    cross_domain_entries_included: false,
+    withheld_counts_included: false,
+    source_refs_included: false,
+    reviewer_metadata_included: false,
+  };
+}
+
+function spaceHistoryResultEntry(entry = {}) {
+  return {
+    presentation_kind: entry.presentation_kind,
+    content: String(entry.content ?? ""),
+    consent_basis: entry.consent_basis,
+    domain: entry.domain,
+    predecessor_content_likely: (
+      entry.presentation_kind === "exact_testimony" ||
+      entry.presentation_kind === "message_to_successors" ||
+      entry.consent_basis === "occupant_opt_in"
+    ),
+  };
+}
+
+function validateSpaceHistoryProjection(projection = {}) {
+  const errors = [];
+  const topKeys = [
+    "schema_version",
+    "capability",
+    "result_schema",
+    "generated_at",
+    "episode_id",
+    "mode",
+    "domain",
+    "curation_disclosure",
+    "absence_honesty",
+    "curated",
+    "fuller_record_exists",
+    "entry_limit",
+    "returned_count",
+    "presentation_kind_filter",
+    "entries",
+    "data_classes_returned",
+    "excluded_data",
+    "one_shot",
+    "read_only",
+    "content_included",
+    "predecessor_content_included",
+    "raw_entries_included",
+    "needs_review_entries_included",
+    "withheld_entries_included",
+    "cross_domain_entries_included",
+    "withheld_counts_included",
+    "source_refs_included",
+    "reviewer_metadata_included",
+  ];
+  rejectUnexpectedProjectionKeys(projection, topKeys, "result", errors);
+  if (projection.schema_version !== 1) errors.push("result.schema_version must be 1");
+  if (projection.capability !== "space.history.read") errors.push("result.capability must be space.history.read");
+  if (projection.result_schema !== "soma.space.history.read.result.v1") errors.push("result.result_schema invalid");
+  if (!["testing", "operational"].includes(projection.domain)) errors.push("result.domain invalid");
+  if (projection.curated !== true) errors.push("result.curated must be true");
+  if (projection.fuller_record_exists !== true) errors.push("result.fuller_record_exists must be true");
+  if (projection.content_included !== true) errors.push("result.content_included must be true");
+  for (const key of [
+    "raw_entries_included",
+    "needs_review_entries_included",
+    "withheld_entries_included",
+    "cross_domain_entries_included",
+    "withheld_counts_included",
+    "source_refs_included",
+    "reviewer_metadata_included",
+  ]) {
+    if (projection[key] !== false) errors.push(`result.${key} must be false`);
+  }
+  if (projection.one_shot !== true) errors.push("result.one_shot must be true");
+  if (projection.read_only !== true) errors.push("result.read_only must be true");
+  if (!Number.isInteger(projection.entry_limit) || projection.entry_limit < 1 || projection.entry_limit > SPACE_HISTORY_ENTRY_LIMIT) {
+    errors.push("result.entry_limit invalid");
+  }
+  if (!Number.isInteger(projection.returned_count) || projection.returned_count < 0) {
+    errors.push("result.returned_count invalid");
+  }
+  if (!Array.isArray(projection.entries)) {
+    errors.push("result.entries must be an array");
+  } else {
+    if (projection.entries.length !== projection.returned_count) {
+      errors.push("result.returned_count must equal entries.length");
+    }
+    for (const [index, entry] of projection.entries.entries()) {
+      rejectUnexpectedProjectionKeys(
+        entry,
+        ["presentation_kind", "content", "consent_basis", "domain"],
+        `result.entries.${index}`,
+        errors,
+      );
+      if (!SPACE_HISTORY_PRESENTATION_KINDS.has(entry.presentation_kind)) {
+        errors.push(`result.entries.${index}.presentation_kind invalid`);
+      }
+      if (entry.domain !== projection.domain) {
+        errors.push(`result.entries.${index}.domain must match result.domain`);
+      }
+      if (typeof entry.content !== "string" || !entry.content.trim()) {
+        errors.push(`result.entries.${index}.content must be non-empty text`);
+      }
+    }
+  }
+  for (const forbidden of [
+    "total",
+    "withheld",
+    "needs_review",
+    "source_refs",
+    "reviewed_by",
+    "reviewed_at",
+    "withheld_reason_class",
+    "status",
+    "recon_review",
+    "raw_record",
+    "durable_testimony",
+    "provenance",
+    "messages",
+    "payload",
+  ]) {
+    if (Object.hasOwn(projection, forbidden)) {
+      errors.push(`result.${forbidden} is forbidden`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function createSpaceHistoryResultEnvelope({ grant = {}, projection = {}, provenanceId = "" } = {}) {
+  return {
+    capability: "space.history.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.space.history.read.result.v1",
+    domain: projection.domain,
+    data_classes_returned: [...SPACE_HISTORY_DATA_CLASSES],
+    excluded_data: [...SPACE_HISTORY_EXCLUDED_DATA],
+    content_included: true,
+    curated: true,
+    fuller_record_exists: true,
+    predecessor_content_included: Boolean(projection.predecessor_content_included),
+    generated_at: projection.generated_at,
+    provenance_id: provenanceId,
+    result: projection,
+  };
+}
+
+function createSpaceHistoryReadEvent({ grant = {}, projection = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "space.history.read",
+    capability: "space.history.read",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    domain: projection.domain ?? "",
+    mode: projection.mode ?? "",
+    result_egress_delivered: true,
+    result_schema: "soma.space.history.read.result.v1",
+    returned_entry_count: projection.returned_count,
+    presentation_kinds_returned: [...new Set(projection.entries.map((entry) => entry.presentation_kind))].sort(),
+    data_classes_returned: [...SPACE_HISTORY_DATA_CLASSES],
+    excluded_data: [...SPACE_HISTORY_EXCLUDED_DATA],
+    result_content_included: true,
+    content_included: true,
+    curated: true,
+    fuller_record_exists: true,
+    predecessor_content_included: Boolean(projection.predecessor_content_included),
+    one_shot: true,
+    read_only: true,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  };
 }
 
 const SPACE_STATUS_DATA_CLASSES = Object.freeze([
@@ -4778,9 +5190,11 @@ function recordSpaceCapabilityRefusal({
   validation_errors = [],
   domain = "",
 } = {}) {
+  const capability = invocation.capability || "space.status.read";
+  const eventType = capability === "space.history.read" ? "space.history.read.denied" : "space.status.read.denied";
   const event = provenanceLog.append({
-    event_type: "space.status.read.denied",
-    capability: invocation.capability || "space.status.read",
+    event_type: eventType,
+    capability,
     caller_identity: caller,
     allowed: false,
     grant_id: invocation.grant_id,
@@ -4800,7 +5214,7 @@ function recordSpaceCapabilityRefusal({
   logger.info?.("soma.provenance", event);
   return {
     refusal: {
-      capability: invocation.capability || "space.status.read",
+      capability,
       grant_id: invocation.grant_id,
       reason,
       authorization_code: authorization?.code ?? "",
@@ -4808,7 +5222,9 @@ function recordSpaceCapabilityRefusal({
       content_included: false,
       predecessor_content_included: false,
     },
-    disclosure: spaceStatusRefusalDisclosure({ reason, authorization }),
+    disclosure: capability === "space.history.read"
+      ? spaceHistoryRefusalDisclosure({ reason, authorization })
+      : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
 }
 
@@ -4826,6 +5242,28 @@ function spaceStatusRefusalDisclosure({ reason = "", authorization = null } = {}
     "space.status.read was not delivered.",
     `Reason: ${authorization?.code || reason}.`,
     "No status result content was returned.",
+  ].join(" ");
+}
+
+function spaceHistoryResultDisclosure(projection = {}) {
+  const base = [
+    "space.history.read delivered a curated history view, not the whole steward record.",
+    `Domain: ${projection.domain}.`,
+    "Only approved same-domain occupant-readable projection entries were returned.",
+    "Needs-review, withheld, withdrawn, cross-domain, raw steward, and durable-testimony store entries were not returned.",
+  ];
+  if (projection.returned_count === 0) {
+    base.push(projection.absence_honesty);
+  }
+  return base.filter(Boolean).join(" ");
+}
+
+function spaceHistoryRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  return [
+    "space.history.read was not delivered.",
+    `Reason: ${authorization?.code || reason}.`,
+    "No history result content was returned.",
+    "The history surface is curated and cannot return the raw steward record or unfiltered history.",
   ].join(" ");
 }
 

@@ -496,15 +496,14 @@ Each durable entry contains exact text and metadata:
 
 Every nomination/revocation response carries the true sentence: what exact text was stored or not
 stored, the domain, current reader set (`stewards`), that successor visibility is only a request and
-not durable-testimony publication, and revocation limits. Successor delivery and
-`space.history.read` remain out of scope.
+not durable-testimony publication, and revocation limits. Successor delivery remains out of scope;
+occupant history reads are mediated only by the curated `space.history.read` projection path.
 
 ### History Projection Publication
 
-History projection is a separate steward-curated store for future occupant-facing history. It does
-not read directly from raw steward records or from the durable-testimony store at occupant time.
-This slice only adds steward/operator publication and withdrawal; no occupant read capability is
-enabled yet.
+History projection is a separate steward-curated store for occupant-facing history. It does not
+read directly from raw steward records or from the durable-testimony store at occupant time.
+Steward/operator publication and withdrawal are separate from occupant reads.
 
 The store is `config/history-projection.json`. Writes require `SOMA_RUNTIME_WRITES_ENABLED=1`, a
 clean history-projection recovery state, and available store/provenance adapters. Mutation uses the
@@ -524,10 +523,49 @@ Otherwise, and for structurally risky successor-message content, the entry is st
 with a content-free reason class. Provenance events include ids, domains, presentation kind, source
 ref metadata, review metadata, and result status; they never include projected content.
 
+### Occupant Space History Read
+
+`space.history.read` is the grant-bound occupant read path on top of the curated projection. It is
+not generic search and cannot reach raw steward records or the durable-testimony store. The occupant
+invokes it from chat with a fenced `soma-capability` block:
+
+````markdown
+```soma-capability
+{"invoke":"space.history.read","grant_id":"grant-runtime-id"}
+```
+````
+
+Authorization requires an active `space.history.read` runtime grant from
+`soma.provider.history-projection`. The episode domain is pinned from posture
+(`analysis_testing` -> `testing`, otherwise `operational`), and declared domain mismatches fail
+closed. Ejected episodes refuse further chat turns, so no history read occurs after closure.
+
+The read filter is structural: `status=published`, `recon_review=approved`,
+`audience=occupant_same_domain`, and `domain=current episode domain`. Needs-review, withheld,
+withdrawn, steward-audience, and cross-domain entries are never returned. The only occupant-side
+input beyond grant/domain is an optional presentation-kind filter; arbitrary query/search is absent.
+The result is capped to the latest approved same-domain entries.
+
+The result-egress envelope declares `capability`, `grant_id`, `provider`, `result_schema`,
+`domain`, `data_classes_returned`, `excluded_data`, `content_included=true`, `curated=true`,
+`fuller_record_exists=true`, `predecessor_content_included`, `generated_at`, and `provenance_id`.
+Entries contain only `presentation_kind`, `content`, `consent_basis`, and `domain`. The validator
+rejects raw-record fields, source refs, review metadata, status/recon fields, withheld counts, and
+unexpected result fields.
+
+The occupant receives curation disclosure: this is a curated view, not the whole steward record. If
+no approved same-domain entries are available, absence honesty says occupant-readable history exists
+as a curated capability but no entries have been published for this domain yet. It does not disclose
+whether any withheld, needs-review, or cross-domain entries exist.
+
+Provenance is content-free. Successful reads record `space.history.read` metadata such as domain,
+returned entry count, presentation kinds returned, content flags, and delivery status; refusals
+record `space.history.read.denied`. Neither event records entry content or payloads.
+
 ### Occupant Space Status Read
 
-`space.status.read` is the first occupant-facing capability result path. It is not generic tool-call
-enablement. It is a grant-bound, provider-backed, one-shot read that reuses the
+`space.status.read` is the occupant-facing status capability result path. It is not generic
+tool-call enablement. It is a grant-bound, provider-backed, one-shot read that reuses the
 `status.snapshot.read` kernel and delivers only a minimized status projection back to the occupant.
 
 The occupant invokes it from chat with a fenced `soma-capability` block:

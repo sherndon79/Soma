@@ -398,7 +398,8 @@ Expected behavior:
 - default new publications to `recon_review=needs_review`
 - downgrade risky or insufficiently reviewed `message_to_successors` publications to
   `recon_review=withheld` with a content-free reason class
-- keep occupant reads disabled; do not expose history projection through `space.history.read`
+- keep occupant reads limited to the separate grant-bound `space.history.read` approved same-domain
+  projection filter
 - never append projected content to provenance
 
 Provenance:
@@ -409,6 +410,46 @@ Provenance:
   metadata, and withheld reason class when present
 - no provenance event contains `text`, `content`, raw payloads, messages, screenshots, images,
   audio, or embeddings
+
+### Occupant Space History Read Refused Or Empty
+
+Triggers:
+
+- occupant emits a `soma-capability` directive for `space.history.read` without an active matching
+  runtime grant
+- declared invocation domain does not match the episode domain
+- the episode is ejected/closed
+- history projection recovery is degraded
+- grant recovery is degraded or the provider/catalog claim does not authorize `space.history.read`
+- the curated projection result fails its allowed-field validator
+- no approved same-domain occupant-readable entries exist
+- the directive is truncated before its closing fence
+
+Expected behavior:
+
+- strip valid `soma-capability` directives from normal assistant response text
+- refuse without delivering a result-egress envelope when grant, domain, recovery, provider, or
+  closed-episode checks fail
+- strip a truncated `soma-capability` block from response text and report a truncation count
+- deliver only capped entries with `status=published`, `recon_review=approved`,
+  `audience=occupant_same_domain`, and the current episode domain
+- never read raw steward records or the durable-testimony store directly
+- never return needs-review, withheld, withdrawn, steward-audience, or cross-domain entries
+- never reveal withheld counts, total projection counts, withheld reasons, source refs, or reviewer
+  metadata
+- disclose that the result is curated and not the whole steward record
+- when empty, say occupant-readable history exists as a curated capability but no entries have been
+  published for this domain yet
+
+Provenance:
+
+- successful reads record content-free `space.history.read` metadata with
+  `result_egress_delivered=true`, returned entry count, presentation kinds returned, and honest
+  content flags
+- refusals record content-free `space.history.read.denied` metadata with
+  `result_egress_delivered=false`
+- provenance never records entry text, content, result payloads, raw projection entries, source
+  refs, reviewer metadata, or withheld counts
 
 ### Occupant Space Status Read Refused Or Invalid
 

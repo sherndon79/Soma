@@ -289,7 +289,7 @@ Implemented controls:
 - proposal store with approval/denial records and no activation
 - read-only file-backed grant/revocation record shape with no activation
 - in-process provenance log
-- steward-only history projection publication and withdrawal, with no occupant history read
+- steward history projection publication and grant-bound curated occupant history read
 - self-scoped narrowing modules
 - scoped read-only file access
 - bounded read-only desktop inspection
@@ -299,7 +299,7 @@ Implemented controls:
 Design controls not yet fully implemented:
 
 - writable grant store and revocation mutation paths
-- occupant-facing history read, successor delivery, and `space.history.read`
+- successor delivery
 - durable provenance retention policy
 - provider binary verification
 - helper sandboxing policy
@@ -315,7 +315,7 @@ cross-domain leakage, covert prompt/instruction transfer, or coercive successor 
 Current controls:
 
 - separate store from raw steward records and durable testimony
-- steward/operator routes only; no occupant history read or `space.history.read` integration
+- steward/operator publication routes remain separate from occupant history reads
 - runtime-write gated and blocked by degraded store/provenance recovery
 - `actor=user` required for publication and withdrawal
 - source refs are domain-isolated and validated before write
@@ -328,8 +328,34 @@ Current controls:
 Residual risks:
 
 - steward review quality remains human-dependent
-- future occupant read plumbing must preserve the same domain and review invariants
 - withheld content still resides in the steward store and must remain out of occupant-facing reads
+
+## Occupant History Result Egress
+
+`space.history.read` introduces a narrow content-bearing result-egress channel back to an occupant.
+The threat is that curated history could become raw predecessor disclosure, cross-domain leakage, a
+reconnaissance oracle for withheld entries, or a grief/lineage-pressure channel.
+
+Current controls:
+
+- disabled by default and requires an explicit `space.history.read` runtime grant
+- provider-backed by `soma.provider.history-projection` and local-only
+- invoked through a typed `soma-capability` directive, not the generic model tool-call path
+- domain-pinned to the episode posture
+- reads only the history projection store, never raw steward records or the durable-testimony store
+- structural filter requires `published`, `approved`, `occupant_same_domain`, and same-domain
+- capped latest-entry result; no arbitrary search or raw query
+- result shape returns only presentation kind, content, consent basis, and domain
+- no withheld, needs-review, withdrawn, cross-domain, source-ref, reviewer, or total-count leakage
+- curation disclosure and absence honesty are part of the result/disclosure surface
+- provenance is content-free and records metadata only
+- ejected/closed episodes refuse further chat turns before any read can occur
+
+Residual risks:
+
+- approved curated content can still pressure an occupant even when technically allowed
+- steward review quality and timing remain human-dependent
+- future filters/search would increase reconnaissance risk and need separate review
 
 ## Occupant Status Result Egress
 

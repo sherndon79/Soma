@@ -296,6 +296,39 @@
       "description": "Let an occupant invoke a one-shot, minimized status projection through a declared per-capability result-egress envelope. This is not generic tool-call authority."
     },
     {
+      "key": "space.history.read",
+      "name": "Occupant Space History Read",
+      "category": "space",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "approved same-domain curated history projection entries",
+        "projection presentation kind",
+        "projection consent basis",
+        "curation disclosure",
+        "absence honesty when no approved same-domain entries exist"
+      ],
+      "excluded_by_default": [
+        "raw steward records",
+        "durable testimony store",
+        "needs-review projection entries",
+        "withheld projection entries",
+        "withdrawn projection entries",
+        "cross-domain projection entries",
+        "withheld entry counts",
+        "source refs",
+        "reviewer metadata",
+        "provenance payloads"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.space.history.read.v1",
+      "description": "Let an occupant invoke a one-shot, curated history projection read. It can return only approved same-domain occupant-audience projection entries and never raw or withheld history."
+    },
+    {
       "key": "desktop.inspect.accessibility_tree",
       "name": "Desktop Accessibility Tree Inspection",
       "category": "desktop",

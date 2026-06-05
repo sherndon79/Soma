@@ -89,6 +89,27 @@ test("space status read is explicit-grant occupant capability and provider-backe
   assert.equal(spaceStatus.providers[0].provider_contract, "soma.space.status.read.v1");
 });
 
+test("space history read is explicit-grant occupant capability and provider-backed", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const spaceHistory = view.capabilities.find((capability) => capability.key === "space.history.read");
+  assert.ok(spaceHistory, "expected space.history.read to be present in catalog");
+  assert.equal(spaceHistory.category, "space");
+  assert.equal(spaceHistory.risk_class, "sensitive");
+  assert.equal(spaceHistory.harness_status, "disabled");
+  assert.equal(spaceHistory.status, "requestable");
+  assert.equal(spaceHistory.activation_policy, "explicit_grant");
+  assert.equal(spaceHistory.reversible, true);
+  assert.equal(spaceHistory.provider_contract, "soma.space.history.read.v1");
+  assert.ok(spaceHistory.data_exposed.includes("approved same-domain curated history projection entries"));
+  assert.ok(spaceHistory.excluded_by_default.includes("withheld entry counts"));
+  assert.equal(spaceHistory.providers.length, 1);
+  assert.equal(spaceHistory.providers[0].id, "soma.provider.history-projection");
+  assert.equal(spaceHistory.providers[0].provider_contract, "soma.space.history.read.v1");
+});
+
 test("capability catalog rejects ambiguous base-harness authority", () => {
   assert.throws(
     () => normalizeCapabilityCatalog({

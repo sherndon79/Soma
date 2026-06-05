@@ -98,6 +98,24 @@ forum content, durable testimony text, memory content, file content, desktop con
 payloads. Remote tool-call authority remains disabled unless separately granted through
 `model.local.tool_calls`; `space.status.read` is not a blanket tool-result channel.
 
+`space.history.read` is the occupant-facing curated history capability. It remains disabled until
+an explicit runtime grant exists and reads only approved, published, same-domain
+`occupant_same_domain` entries from the history projection store:
+
+````markdown
+```soma-capability
+{"invoke":"space.history.read","grant_id":"grant-runtime-id"}
+```
+````
+
+The result is content-bearing, but bounded and curated. It declares `content_included=true`,
+`curated=true`, and `fuller_record_exists=true`, returns at most the latest approved same-domain
+entries, and tells the occupant this is a curated view rather than the whole steward record. Empty
+results use absence honesty: occupant-readable history exists as a curated capability, but no
+entries have been published for this domain yet. It never returns needs-review, withheld, withdrawn,
+cross-domain, raw steward, or direct durable-testimony-store entries, and it never reveals withheld
+counts or reasons.
+
 ## Chat Through The Local Runtime
 
 ```bash
@@ -1295,10 +1313,10 @@ text, and it does not withdraw any separate steward-published history projection
 
 ## History Projection Publication
 
-History projection is the steward-curated publication surface for future occupant-facing history.
-This slice is publication-only: it has no occupant read capability and does not implement
-`space.history.read`. Operators can inspect and curate entries through steward/operator routes that
-require provenance-read authority.
+History projection is the steward-curated publication surface for occupant-facing history.
+Operators can inspect and curate entries through steward/operator routes that require
+provenance-read authority. Occupants can read only the approved same-domain subset through a
+separate `space.history.read` runtime grant.
 
 Read current projection entries:
 

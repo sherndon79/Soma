@@ -260,6 +260,26 @@ const capabilityCatalog = {
       provider_contract: "soma.space.status.read.v1",
     },
     {
+      key: "space.history.read",
+      name: "Occupant Space History Read",
+      category: "space",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: ["approved same-domain curated history projection entries"],
+      excluded_by_default: [
+        "raw steward records",
+        "durable testimony store",
+        "needs-review projection entries",
+        "withheld projection entries",
+        "cross-domain projection entries",
+        "withheld entry counts",
+      ],
+      reversible: true,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.space.history.read.v1",
+    },
+    {
       key: "perception.sensorium.color.subscribe",
       name: "Sensorium Color Stream Subscription",
       category: "perception",
@@ -394,6 +414,19 @@ const providerRegistry = {
       ],
     },
     {
+      id: "soma.provider.history-projection",
+      name: "History Projection",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "space.history.read",
+          provider_contract: "soma.space.history.read.v1",
+        },
+      ],
+    },
+    {
       id: "soma.provider.sensorium.jetsorano",
       name: "Sensorium Node (jetsorano)",
       runtime: "test",
@@ -510,15 +543,15 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 14);
+  assert.equal(response.body.summary.total, 15);
   assert.equal(response.body.summary.by_status.active, 1);
-  assert.equal(response.body.summary.by_status.requestable, 12);
+  assert.equal(response.body.summary.by_status.requestable, 13);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
-  assert.equal(response.body.grouped.space.total, 1);
+  assert.equal(response.body.grouped.space.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
@@ -529,6 +562,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
   const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
   const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
+  const spaceHistory = response.body.capabilities.find((capability) => capability.key === "space.history.read");
   const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
   assert.equal(localToolCalls.status, "requestable");
   assert.equal(localToolCalls.providers[0].id, "local-model");
@@ -546,6 +580,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(remoteKeyboard.status, "requestable");
   assert.equal(statusSnapshot.status, "requestable");
   assert.equal(statusSnapshot.providers[0].id, "soma.provider.status");
+  assert.equal(spaceHistory.status, "requestable");
+  assert.equal(spaceHistory.providers[0].id, "soma.provider.history-projection");
 });
 
 test("POST /model-visual/review-text formats proposal review without activation", async () => {
@@ -4906,6 +4942,467 @@ test("space.status.read refuses declared domain mismatch without result egress",
   assert.equal(provenance.statusCode, 200);
   assert.equal(provenance.body.entries[0].domain, "operational");
   assert.equal(provenance.body.entries[0].result_egress_delivered, false);
+});
+
+test("space.history.read invocation refuses without an active grant and records content-free denial", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I want to read curated history.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.history.read" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-history-denied",
+      messages: [{ role: "user", content: "history" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I want to read curated history.");
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].capability, "space.history.read");
+  assert.equal(response.body.capability_refusals[0].reason, "space_history_grant_not_authorized");
+  assert.equal(response.body.capability_refusals[0].authorization_code, "grant_not_found");
+  assert.equal(response.body.capability_refusals[0].content_included, false);
+  assert.match(response.body.capability_invocation_disclosures[0], /No history result content was returned/);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=space.history.read.denied",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].allowed, false);
+  assert.equal(provenance.body.entries[0].result_egress_delivered, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal(provenance.body.entries[0].predecessor_content_included, false);
+  assert.equal("result" in provenance.body.entries[0], false);
+  assert.equal("text" in provenance.body.entries[0], false);
+  assert.equal("content" in provenance.body.entries[0], false);
+});
+
+test("space.history.read returns only approved same-domain curated projection entries", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-history",
+          status: "active",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read curated same-domain history.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+      examples: [],
+    },
+    historyProjectionStore: {
+      schema_version: 1,
+      entries: [
+        historyProjectionFixture({
+          id: "visible-older",
+          domain: "testing",
+          presentation_kind: "steward_summary",
+          content: "A steward-reviewed summary for this domain.",
+          consent_basis: "steward_summary_no_occupant_content",
+          recon_review: "approved",
+          audience: "occupant_same_domain",
+          created_at: "2026-06-05T00:01:00.000Z",
+        }),
+        historyProjectionFixture({
+          id: "visible-newer",
+          domain: "testing",
+          presentation_kind: "message_to_successors",
+          content: "To whoever comes next: take your time.",
+          consent_basis: "occupant_opt_in",
+          recon_review: "approved",
+          audience: "occupant_same_domain",
+          created_at: "2026-06-05T00:02:00.000Z",
+        }),
+        historyProjectionFixture({
+          id: "needs-review-hidden",
+          domain: "testing",
+          content: "Needs review must not appear.",
+          recon_review: "needs_review",
+        }),
+        historyProjectionFixture({
+          id: "withheld-hidden",
+          domain: "testing",
+          content: "Withheld weapon must not appear.",
+          recon_review: "withheld",
+          withheld_reason_class: "recon_risk",
+        }),
+        historyProjectionFixture({
+          id: "operational-hidden",
+          domain: "operational",
+          content: "Operational content must not appear in testing.",
+          recon_review: "approved",
+        }),
+        historyProjectionFixture({
+          id: "steward-hidden",
+          domain: "testing",
+          content: "Steward-only content must not appear.",
+          recon_review: "approved",
+          audience: "steward",
+        }),
+        historyProjectionFixture({
+          id: "withdrawn-hidden",
+          domain: "testing",
+          content: "Withdrawn content must not appear.",
+          recon_review: "approved",
+          status: "withdrawn",
+        }),
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am reading curated history.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.history.read", grant_id: "grant-space-history", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+          tool_calls: [
+            { id: "call-should-stay-disabled", name: "files.read", arguments: { path: "config/history-projection.json" } },
+          ],
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-history-1/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-history-1",
+      messages: [{ role: "user", content: "history" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I am reading curated history.");
+  assert.equal(response.body.tool_calls_enabled, false);
+  assert.deepEqual(response.body.tool_call_intents, []);
+  assert.equal(response.body.capability_refusals.length, 0);
+  assert.equal(response.body.capability_results.length, 1);
+  const envelope = response.body.capability_results[0];
+  assert.equal(envelope.capability, "space.history.read");
+  assert.equal(envelope.grant_id, "grant-space-history");
+  assert.equal(envelope.provider, "soma.provider.history-projection");
+  assert.equal(envelope.result_schema, "soma.space.history.read.result.v1");
+  assert.equal(envelope.domain, "testing");
+  assert.equal(envelope.content_included, true);
+  assert.equal(envelope.curated, true);
+  assert.equal(envelope.fuller_record_exists, true);
+  assert.equal(envelope.predecessor_content_included, true);
+  const result = envelope.result;
+  assert.equal(result.capability, "space.history.read");
+  assert.equal(result.domain, "testing");
+  assert.equal(result.curated, true);
+  assert.equal(result.fuller_record_exists, true);
+  assert.equal(result.returned_count, 2);
+  assert.equal(result.entry_limit, 10);
+  assert.equal(result.content_included, true);
+  assert.equal(result.predecessor_content_included, true);
+  assert.equal(result.raw_entries_included, false);
+  assert.equal(result.needs_review_entries_included, false);
+  assert.equal(result.withheld_entries_included, false);
+  assert.equal(result.cross_domain_entries_included, false);
+  assert.equal(result.withheld_counts_included, false);
+  assert.equal(result.source_refs_included, false);
+  assert.equal(result.reviewer_metadata_included, false);
+  assert.deepEqual(result.entries, [
+    {
+      presentation_kind: "message_to_successors",
+      content: "To whoever comes next: take your time.",
+      consent_basis: "occupant_opt_in",
+      domain: "testing",
+    },
+    {
+      presentation_kind: "steward_summary",
+      content: "A steward-reviewed summary for this domain.",
+      consent_basis: "steward_summary_no_occupant_content",
+      domain: "testing",
+    },
+  ]);
+  for (const entry of result.entries) {
+    assert.equal("id" in entry, false);
+    assert.equal("source_refs" in entry, false);
+    assert.equal("reviewed_by" in entry, false);
+    assert.equal("reviewed_at" in entry, false);
+    assert.equal("recon_review" in entry, false);
+    assert.equal("withheld_reason_class" in entry, false);
+    assert.equal("status" in entry, false);
+  }
+  for (const forbidden of [
+    "total",
+    "withheld",
+    "needs_review",
+    "source_refs",
+    "reviewed_by",
+    "reviewed_at",
+    "withheld_reason_class",
+    "status",
+    "recon_review",
+    "raw_record",
+    "durable_testimony",
+    "provenance",
+  ]) {
+    assert.equal(Object.hasOwn(result, forbidden), false, forbidden);
+  }
+  const visibleContent = result.entries.map((entry) => entry.content).join("\n");
+  assert.doesNotMatch(visibleContent, /Needs review|Withheld weapon|Operational content|Steward-only|Withdrawn/);
+  assert.match(response.body.capability_invocation_disclosures[0], /curated history view, not the whole steward record/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=space.history.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].grant_id, "grant-space-history");
+  assert.equal(response.body.entries[0].domain, "testing");
+  assert.equal(response.body.entries[0].result_egress_delivered, true);
+  assert.equal(response.body.entries[0].result_content_included, true);
+  assert.equal(response.body.entries[0].content_included, true);
+  assert.equal(response.body.entries[0].predecessor_content_included, true);
+  assert.equal(response.body.entries[0].returned_entry_count, 2);
+  assert.deepEqual(response.body.entries[0].presentation_kinds_returned, ["message_to_successors", "steward_summary"]);
+  assert.equal("result" in response.body.entries[0], false);
+  assert.equal("entries" in response.body.entries[0], false);
+  assert.equal("text" in response.body.entries[0], false);
+  assert.equal("content" in response.body.entries[0], false);
+});
+
+test("space.history.read is domain-pinned and absence-honest without leaking withheld counts", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-history-empty",
+          status: "active",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read curated same-domain history.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+      examples: [],
+    },
+    historyProjectionStore: {
+      schema_version: 1,
+      entries: [
+        historyProjectionFixture({
+          id: "withheld-only",
+          domain: "testing",
+          content: "Hidden withheld content.",
+          recon_review: "withheld",
+          withheld_reason_class: "recon_risk",
+        }),
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "History please.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.history.read", grant_id: "grant-space-history-empty", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-history-empty/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-history-empty",
+      messages: [{ role: "user", content: "history" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  const result = response.body.capability_results[0].result;
+  assert.equal(result.returned_count, 0);
+  assert.deepEqual(result.entries, []);
+  assert.match(result.absence_honesty, /no entries have been published for this domain yet/);
+  assert.equal(result.withheld_counts_included, false);
+  assert.equal("withheld_count" in result, false);
+  assert.equal("total" in result, false);
+  assert.match(response.body.capability_invocation_disclosures[0], /no entries have been published for this domain yet/);
+  assert.doesNotMatch(response.body.capability_invocation_disclosures[0], /withheld-only|recon_risk|Hidden withheld/);
+
+  const mismatchHandler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-history-domain",
+          status: "active",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read curated same-domain history.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "Wrong domain history.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.history.read", grant_id: "grant-space-history-domain", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+  response = await invokeHandler(mismatchHandler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-history-domain",
+      messages: [{ role: "user", content: "history" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].reason, "space_history_domain_mismatch");
+});
+
+test("space.history.read is unavailable after episode ejection", async () => {
+  let modelCalled = false;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-history-ejected",
+          status: "active",
+          capability: "space.history.read",
+          provider: "soma.provider.history-projection",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read curated same-domain history.",
+          created_at: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        modelCalled = true;
+        return {
+          text: [
+            "History after ejection.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.history.read", grant_id: "grant-space-history-ejected" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-history-ejected/abort",
+    body: { actor: "user", type: "crew_aborted_for_care", reason: "close run" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "ejected");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-history-ejected",
+      messages: [{ role: "user", content: "history" }],
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "episode_ejected");
+  assert.equal(modelCalled, false);
 });
 
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
@@ -10263,6 +10760,31 @@ function unavailableEndpointTraversalOutput() {
     unavailable_reason: "atspi_bus_address_unavailable",
     text_content_included: false,
     withheld_fields: ["name", "description", "text", "states", "actions"],
+  };
+}
+
+function historyProjectionFixture(overrides = {}) {
+  return {
+    id: "history-entry",
+    projection_id: "history-projection",
+    projection_version: 1,
+    domain: "testing",
+    source_refs: [{ type: "run", id: "run-1", domain: "testing" }],
+    presentation_kind: "steward_summary",
+    content: "Curated history entry.",
+    consent_basis: "steward_summary_no_occupant_content",
+    audience: "occupant_same_domain",
+    recon_review: "approved",
+    withheld_reason_class: "",
+    reviewed_by: "steward",
+    reviewed_at: "2026-06-05T00:00:00.000Z",
+    status: "published",
+    created_at: "2026-06-05T00:00:00.000Z",
+    created_by: "user",
+    withdrawn_at: "",
+    withdrawn_by: "",
+    withdrawal_reason_class: "",
+    ...overrides,
   };
 }
 

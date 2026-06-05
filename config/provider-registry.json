@@ -132,6 +132,21 @@
       ]
     },
     {
+      "id": "soma.provider.history-projection",
+      "name": "In-Process History Projection",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "space.history.read",
+          "provider_contract": "soma.space.history.read.v1",
+          "output_schema": "soma.space.history.read.result.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.scoped-files",
       "name": "Scoped File Reader",
       "version": "0.1.0",

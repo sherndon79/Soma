@@ -523,14 +523,14 @@ The result-egress envelope declares `capability`, `grant_id`, `provider`, `resul
 `data_classes_returned`, `excluded_data`, `content_included=false`,
 `predecessor_content_included=false`, `generated_at`, and `provenance_id`. The result is read-only
 and one-shot. It may include mode/domain, armed protective controls, active module ids/count,
-capability status summary, pending proposal count, runtime-write posture summary, and declared
+capability status counts, pending proposal count, runtime-write posture summary, and declared
 returnable data classes.
 
 The minimizer/validator forbids raw grants, raw provenance entries, chat/predecessor content, forum
 content, durable testimony text, memory content, file content, desktop content, sensor payloads,
-history, and arbitrary result fields. Provenance records metadata such as capability, grant id,
-domain, data classes returned, excluded data, and `result_egress_delivered`; it never records the
-result payload.
+history, capability key lists, and arbitrary result fields. Provenance records metadata such as
+capability, grant id, domain, data classes returned, excluded data, and `result_egress_delivered`;
+it never records the result payload.
 
 ### `GET /provenance`
 

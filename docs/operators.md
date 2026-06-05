@@ -91,11 +91,11 @@ chat with a typed directive:
 ````
 
 The result is a one-shot minimized projection delivered through a declared result-egress envelope.
-It includes mode/domain, armed protective controls, active module ids/count, capability status
-summary, pending proposal count, runtime-write posture summary, and declared returnable data
-classes. It does not include raw grants, raw provenance entries, chat/predecessor content, forum
-content, durable testimony text, memory content, file content, desktop content, or sensor payloads.
-Remote tool-call authority remains disabled unless separately granted through
+It includes mode/domain, armed protective controls, active module ids/count, capability status counts,
+pending proposal count, runtime-write posture summary, and declared returnable data classes. It does
+not include capability key lists, raw grants, raw provenance entries, chat/predecessor content,
+forum content, durable testimony text, memory content, file content, desktop content, or sensor
+payloads. Remote tool-call authority remains disabled unless separately granted through
 `model.local.tool_calls`; `space.status.read` is not a blanket tool-result channel.
 
 ## Chat Through The Local Runtime

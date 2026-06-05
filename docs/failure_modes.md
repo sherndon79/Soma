@@ -395,6 +395,7 @@ Expected behavior:
 - refuse without delivering a result-egress envelope when grant or domain checks fail
 - strip a truncated `soma-capability` block from response text and report a truncation count
 - keep remote/model tool calls disabled; do not fall back to generic tool-result delivery
+- report capability status counts only; do not return capability key lists
 - never include predecessor content, raw provenance, chat messages, forum content, durable testimony
   text, memory content, file content, desktop content, or sensor payloads
 - disclose that no status result content was returned when refused

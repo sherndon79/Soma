@@ -316,6 +316,8 @@ Current controls:
 - invoked through a typed `soma-capability` directive, not the generic model tool-call path
 - domain-pinned to the episode posture (`analysis_testing` -> `testing`, otherwise `operational`)
 - minimized result shape with validator-enforced allowed fields
+- capability exposure is counts-only by default; key lists are not returned by this proof-of-pipe
+  capability
 - result-egress envelope declares returned data classes and excluded data
 - provenance is content-free and records metadata only
 - one-shot/read-only; no watch, subscription, history, predecessor, or durable testimony delivery

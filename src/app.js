@@ -4417,13 +4417,9 @@ function buildSpaceStatusProjection({
     harness: effectiveHarness,
   });
   const activeCapabilities = capabilityView.capabilities
-    .filter((capability) => capability.status === "active")
-    .map((capability) => capability.key)
-    .sort();
+    .filter((capability) => capability.status === "active");
   const requestableCapabilities = capabilityView.capabilities
-    .filter((capability) => capability.status === "requestable")
-    .map((capability) => capability.key)
-    .sort();
+    .filter((capability) => capability.status === "requestable");
   return {
     schema_version: 1,
     capability: "space.status.read",
@@ -4443,9 +4439,7 @@ function buildSpaceStatusProjection({
     },
     capabilities: {
       active_count: activeCapabilities.length,
-      active_keys: activeCapabilities,
       requestable_count: requestableCapabilities.length,
-      requestable_keys: requestableCapabilities,
     },
     proposals: {
       pending_total: snapshot.proposals?.pending_total ?? 0,
@@ -4528,7 +4522,7 @@ function validateSpaceStatusProjection(projection = {}) {
   rejectUnexpectedProjectionKeys(projection.modules, ["active_ids", "active_count"], "result.modules", errors);
   rejectUnexpectedProjectionKeys(
     projection.capabilities,
-    ["active_count", "active_keys", "requestable_count", "requestable_keys"],
+    ["active_count", "requestable_count"],
     "result.capabilities",
     errors,
   );

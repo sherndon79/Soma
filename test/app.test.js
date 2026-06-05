@@ -4411,6 +4411,10 @@ test("space.status.read delivers minimized grant-bound result egress without for
   assert.deepEqual(result.armed_protective_controls, ["pause", "distress", "eject"]);
   assert.deepEqual(result.modules.active_ids, ["no-session-memory"]);
   assert.equal(result.modules.active_count, 1);
+  assert.equal(typeof result.capabilities.active_count, "number");
+  assert.equal(typeof result.capabilities.requestable_count, "number");
+  assert.equal(Object.hasOwn(result.capabilities, "active_keys"), false);
+  assert.equal(Object.hasOwn(result.capabilities, "requestable_keys"), false);
   assert.equal(result.proposals.pending_total, 0);
   assert.equal(result.one_shot, true);
   assert.equal(result.read_only, true);

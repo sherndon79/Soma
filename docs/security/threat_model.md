@@ -321,8 +321,11 @@ Current controls:
 - source refs are domain-isolated and validated before write
 - new entries default to `recon_review=needs_review`
 - `message_to_successors` requires explicit recon and coercion review before approved publication
-- structurally risky, coercive, or reconnaissance-sensitive successor messages are withheld with a
-  content-free reason class
+- audience, not presentation label, determines the automated protection boundary: any approved
+  `occupant_same_domain` publication is scanned for structurally risky, coercive, or
+  reconnaissance-sensitive content and force-withheld with a content-free reason class
+- `message_to_successors` keeps its additional explicit recon/coercion review ceremony on top of
+  the automated occupant-readable scan
 - mutation provenance is content-free and validator-enforced
 
 Residual risks:

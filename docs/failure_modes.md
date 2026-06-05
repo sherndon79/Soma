@@ -389,15 +389,18 @@ Triggers:
 - publication or withdrawal is requested without `actor=user`
 - source refs cross domains, have unknown domains, or point at unsupported sources
 - `message_to_successors` lacks explicit recon and coercion review markers
-- successor-message content is oversized, structurally risky, coercive, or reconnaissance-sensitive
+- any `occupant_same_domain` publication content is oversized, structurally risky, coercive, or
+  reconnaissance-sensitive, regardless of presentation kind
 
 Expected behavior:
 
 - with writes disabled or recovery degraded, reject before changing the store
 - reject invalid actors and invalid or cross-domain source refs before write
 - default new publications to `recon_review=needs_review`
-- downgrade risky or insufficiently reviewed `message_to_successors` publications to
-  `recon_review=withheld` with a content-free reason class
+- apply the automated coercion/recon/structural scan by audience, not label: risky approved
+  `occupant_same_domain` entries become `recon_review=withheld` with a content-free reason class
+- keep the extra explicit recon/coercion review requirement for `message_to_successors`
+  publications before approved successor-message publication
 - keep occupant reads limited to the separate grant-bound `space.history.read` approved same-domain
   projection filter
 - never append projected content to provenance

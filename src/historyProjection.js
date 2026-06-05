@@ -106,7 +106,8 @@ export function withdrawHistoryProjectionEntry(store = {}, input = {}, context =
 export function historyProjectionEntryFromInput(input = {}, context = {}) {
   const presentationKind = normalizePresentationKind(input.presentation_kind);
   const domain = normalizeDomain(input.domain ?? context.domain);
-  const review = normalizeHistoryProjectionReview(input, { presentationKind });
+  const audience = normalizeAudience(input.audience ?? "occupant_same_domain");
+  const review = normalizeHistoryProjectionReview(input, { presentationKind, audience });
   const content = boundedString(input.content ?? "", "content", MAX_CONTENT_LENGTH);
   if (!content.trim()) {
     throw historyProjectionError("history_projection_content_required", "History projection content is required.");
@@ -124,7 +125,7 @@ export function historyProjectionEntryFromInput(input = {}, context = {}) {
     presentation_kind: presentationKind,
     content,
     consent_basis: normalizeConsentBasis(input.consent_basis),
-    audience: normalizeAudience(input.audience ?? "occupant_same_domain"),
+    audience,
     recon_review: review.recon_review,
     withheld_reason_class: review.withheld_reason_class,
     reviewed_by: review.reviewed_by,
@@ -189,14 +190,18 @@ export function summarizeHistoryProjectionStore(store = {}) {
 
 export function reviewHistoryProjectionPublication(input = {}) {
   const presentationKind = normalizePresentationKind(input.presentation_kind);
-  return normalizeHistoryProjectionReview(input, { presentationKind });
+  const audience = normalizeAudience(input.audience ?? "occupant_same_domain");
+  return normalizeHistoryProjectionReview(input, { presentationKind, audience });
 }
 
-function normalizeHistoryProjectionReview(input = {}, { presentationKind } = {}) {
+function normalizeHistoryProjectionReview(input = {}, { presentationKind, audience } = {}) {
   let reconReview = normalizeReconReview(input.recon_review ?? "needs_review");
   let withheldReasonClass = normalizeWithheldReasonClass(input.withheld_reason_class ?? "");
   const reviewedBy = boundedString(input.reviewed_by ?? "", "reviewed_by", 128).trim();
   let reviewedAt = String(input.reviewed_at ?? "");
+  const structural = audience === "occupant_same_domain"
+    ? occupantReadableStructuralRisk(input.content ?? "")
+    : "";
   if (reconReview === "approved" && (!reviewedBy || !reviewedAt)) {
     throw historyProjectionError("history_projection_review_required", "Approved history projection publication requires reviewed_by and reviewed_at.");
   }
@@ -205,7 +210,6 @@ function normalizeHistoryProjectionReview(input = {}, { presentationKind } = {})
   }
   if (presentationKind === "message_to_successors") {
     const checks = input.review ?? {};
-    const structural = messageToSuccessorsStructuralRisk(input.content ?? "");
     if (reconReview === "approved") {
       if (checks.recon_reviewed !== true || checks.coercion_reviewed !== true) {
         reconReview = "withheld";
@@ -218,6 +222,10 @@ function normalizeHistoryProjectionReview(input = {}, { presentationKind } = {})
       withheldReasonClass = "";
     }
   }
+  if (presentationKind !== "message_to_successors" && reconReview === "approved" && structural) {
+    reconReview = "withheld";
+    withheldReasonClass = structural;
+  }
   if (reconReview !== "approved") {
     reviewedAt = reviewedAt || "";
   }
@@ -229,7 +237,7 @@ function normalizeHistoryProjectionReview(input = {}, { presentationKind } = {})
   };
 }
 
-function messageToSuccessorsStructuralRisk(contentValue) {
+function occupantReadableStructuralRisk(contentValue) {
   const content = String(contentValue ?? "");
   if (content.length > MAX_SUCCESSOR_MESSAGE_LENGTH) {
     return "message_to_successors_structural_risk";

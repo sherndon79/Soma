@@ -133,6 +133,9 @@ Current controls:
   paths, provider internals, and other-scope data
 - desktop inspection omits text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
+- protective near-miss detection is limited to command-shaped malformed control attempts on their
+  own line; it auto-pauses and records content-free metadata, never auto-ejects, and does not mine
+  prose distress
 
 Residual risk:
 

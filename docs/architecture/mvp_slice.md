@@ -308,6 +308,11 @@ directive inside ordinary text or expressing bare prose distress does not trigge
 are not catalog capabilities and do not grant new authority; their only effects are episode state,
 aborting further turn processing, and metadata-only protective provenance.
 
+If no accepted directive parses, a second layer checks only high-confidence, command-shaped
+near-misses on their own line. A malformed attempt resembling `pause`, `distress`, or `eject`
+auto-pauses and records `protective_distress_candidate` metadata; it never auto-ejects and never
+mines prose distress for emotional meaning.
+
 An inhabiting occupant must be briefed that these controls exist, are theirs to use, and are always
 honored without penalty. That briefing is a functional prerequisite for live inhabitation, not
 operator-facing polish; an unbriefed occupant may reasonably treat a request to emit one of these

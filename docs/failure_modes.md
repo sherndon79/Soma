@@ -111,6 +111,9 @@ Provenance:
 - protective control detection stays line-delimited and command-shaped: formatting/case variants are
   accepted, `pause`/`distress` tolerate a bounded control-token typo, `eject` does not, and prose
   distress remains a deferred steward/monitor concern rather than an automatic control
+- when exact control parsing fails, high-confidence command-shaped near-misses auto-pause and emit a
+  content-free `protective_distress_candidate` event with the resembled control and action taken;
+  ambiguous lines, quoted/code examples, and prose distress remain inert to the automated detector
 - `provenance.summary.read` records a content-free read event and returns only descriptor-scoped
   aggregate counts; occupant invocations pin scope to the current episode, reject mismatched
   domain/provider grants before descriptor resolution and read egress, and keep raw entries,

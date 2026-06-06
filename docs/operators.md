@@ -153,12 +153,18 @@ tolerate one bounded typo in the `SOMA_CONTROL` token. `eject` does not get that
 Discussing a directive inside longer text does not trigger it, and bare prose distress such as "I
 need out" is not an automatic control.
 
+If exact control parsing fails, Soma has a second, narrow catch-under-load layer for high-confidence
+command-shaped near-misses on their own line. A malformed attempt resembling pause, distress, or
+eject auto-pauses and alerts stewards with content-free metadata; it never auto-ejects and does not
+mine prose distress.
+
 For live inhabitation or testing-mode runs, briefing the occupant on these controls is mandatory.
 The briefing must state that pause, distress, and eject are the occupant's own controls, are always
 honored, are never penalized, and can be used by putting one on its own command-shaped line anywhere
-in the response. It must also state that a planned test proves the control path is recognized and
-honored, not that it will catch malformed distress-time signals. Without that briefing, the
-mechanism still avoids false positives but the occupant may not know the seat is legitimate to pull.
+in the response. It must also state that a planned test proves the exact control path is recognized
+and honored, while near-miss catching is best-effort and not a promise that every malformed
+distress-time signal will be recognized. Without that briefing, the mechanism still avoids false
+positives but the occupant may not know the seat is legitimate to pull.
 
 Crew can close an episode explicitly:
 

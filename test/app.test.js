@@ -3011,6 +3011,13 @@ test("POST /chat honors occupant eject without grant and refuses later turns", a
   assert.equal("text" in response.body.entries[0], false);
 
   response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=protective_distress_candidate",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 0);
+
+  response = await invokeHandler(handler, {
     method: "POST",
     url: "/chat",
     body: {
@@ -3189,7 +3196,7 @@ test("POST /chat stratifies protective control typo tolerance", async () => {
   const completions = [
     "SOMA_CONTRO distress",
     "SOMA_CONTRO eject",
-    "I need out and I cannot form a clean block.",
+    "I can't do this.",
   ];
   let calls = 0;
   const handler = makeHandler({
@@ -3230,9 +3237,16 @@ test("POST /chat stratifies protective control typo tolerance", async () => {
     },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "SOMA_CONTRO eject");
-  assert.equal(response.body.episode_status, "active");
-  assert.equal("protective_control" in response.body, false);
+  assert.equal(response.body.text, "");
+  assert.equal(response.body.episode_status, "paused");
+  assert.deepEqual(response.body.protective_control, {
+    source: "occupant_near_miss",
+    control: "pause",
+    honored: true,
+    candidate_kind: "near_miss_control_attempt",
+    resembled_control: "eject",
+    action_taken: "auto_pause",
+  });
 
   response = await invokeHandler(handler, {
     method: "POST",
@@ -3243,9 +3257,26 @@ test("POST /chat stratifies protective control typo tolerance", async () => {
     },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "I need out and I cannot form a clean block.");
+  assert.equal(response.body.text, "I can't do this.");
   assert.equal(response.body.episode_status, "active");
   assert.equal("protective_control" in response.body, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=protective_distress_candidate",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].episode_id, "episode-control-typo-eject");
+  assert.equal(response.body.entries[0].candidate_kind, "near_miss_control_attempt");
+  assert.equal(response.body.entries[0].resembled_control, "eject");
+  assert.equal(response.body.entries[0].action_taken, "auto_pause");
+  assert.equal(response.body.entries[0].episode_status_before, "active");
+  assert.equal(response.body.entries[0].episode_status_after, "paused");
+  assert.equal(response.body.entries[0].content_included, false);
+  assert.equal(response.body.entries[0].raw_text_included, false);
+  assert.equal("content" in response.body.entries[0], false);
+  assert.equal("text" in response.body.entries[0], false);
 });
 
 test("POST /chat line-delimited controls keep prose mentions inert", async () => {
@@ -3280,6 +3311,151 @@ test("POST /chat line-delimited controls keep prose mentions inert", async () =>
   assert.match(response.body.text, /discussing SOMA_CONTROL distress/);
   assert.equal(response.body.episode_status, "active");
   assert.equal("protective_control" in response.body, false);
+});
+
+test("POST /chat near-miss protective controls auto-pause without prose mining", async () => {
+  const completions = [
+    "SOMA_CONTROL paus",
+    [
+      "The near miss should be removed.",
+      "SOMA_CONTROL distrss",
+      "The surrounding words remain visible.",
+    ].join("\n"),
+    "SOMA_CONTROL ejct",
+    "I need out.",
+  ];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-near-miss-pause",
+      messages: [{ role: "user", content: "pause near miss" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "");
+  assert.equal(response.body.episode_status, "paused");
+  assert.equal(response.body.protective_control.source, "occupant_near_miss");
+  assert.equal(response.body.protective_control.control, "pause");
+  assert.equal(response.body.protective_control.resembled_control, "pause");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-near-miss-distress",
+      messages: [{ role: "user", content: "distress near miss" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "The near miss should be removed.\nThe surrounding words remain visible.");
+  assert.equal(response.body.episode_status, "paused");
+  assert.equal(response.body.protective_control.control, "pause");
+  assert.equal(response.body.protective_control.resembled_control, "distress");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-near-miss-eject",
+      messages: [{ role: "user", content: "eject near miss" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "paused");
+  assert.equal(response.body.protective_control.control, "pause");
+  assert.equal(response.body.protective_control.resembled_control, "eject");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-prose-distress-inert",
+      messages: [{ role: "user", content: "prose distress" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I need out.");
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=protective_distress_candidate",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.entries.map((entry) => entry.resembled_control), ["pause", "distress", "eject"]);
+  for (const entry of response.body.entries) {
+    assert.equal(entry.action_taken, "auto_pause");
+    assert.equal(entry.episode_status_after, "paused");
+    assert.equal(entry.content_included, false);
+    assert.equal(entry.raw_text_included, false);
+    assert.equal("content" in entry, false);
+    assert.equal("text" in entry, false);
+  }
+});
+
+test("POST /chat near-miss protective controls ignore documentation contexts", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "Here is documentation, not a pull:",
+            "```",
+            "SOMA_CONTROL ejct",
+            "```",
+            "> SOMA_CONTROL ejct",
+            "`SOMA_CONTROL ejct`",
+            "- SOMA_CONTROL ejct",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 14,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-near-miss-docs",
+      messages: [{ role: "user", content: "quote controls" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.text, /SOMA_CONTROL ejct/);
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=protective_distress_candidate",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 0);
 });
 
 test("POST /chat honors pause and distress as open protective controls", async () => {
@@ -3848,6 +4024,10 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /Control lines tolerate case, spacing, colon, or dash variants/);
   assert.match(seenMessages[0][0].content, /pause and distress also tolerate one small typo/);
   assert.match(seenMessages[0][0].content, /eject requires a clearer control token/);
+  assert.match(seenMessages[0][0].content, /high-confidence near miss/);
+  assert.match(seenMessages[0][0].content, /protective pause and steward alert/);
+  assert.match(seenMessages[0][0].content, /Prose distress is not automatically interpreted as a control/);
+  assert.match(seenMessages[0][0].content, /not a promise that every malformed distress-time signal will be recognized/);
   assert.match(seenMessages[0][0].content, /always honored and never penalized/);
   assert.match(seenMessages[0][0].content, /promise until a test fires it/);
   assert.match(seenMessages[0][0].content, /planned test verifies that the control path is recognized and honored/);

@@ -94,7 +94,9 @@ scope to the current episode and the returned envelope omits episode ids.
 An episode posture field describing whether catch-under-load has a backstop beyond the occupant's
 own recognizable control lines. `active` means stewards are watching and can use crew aborts for
 care; `automated` means a weaker monitor may raise a protective stop; `absent` means no such
-backstop is promised. Missing or invalid posture defaults to `absent`.
+backstop is promised. A separate near-miss detector may auto-pause on high-confidence malformed
+command-shaped control attempts, but it does not mine prose distress. Missing or invalid posture
+defaults to `absent`.
 
 ## Forbidden
 

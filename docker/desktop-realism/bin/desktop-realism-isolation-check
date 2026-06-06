@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  printf 'FAIL: %s\n' "$1" >&2
+  exit 1
+}
+
+session_bus_file="/tmp/soma-session-bus-address"
+
+[ "${DISPLAY:-}" = ":99" ] || fail "DISPLAY must point at the private Xvfb display (:99)"
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -s "$session_bus_file" ]; then
+  DBUS_SESSION_BUS_ADDRESS="$(cat "$session_bus_file")"
+fi
+
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || fail "private session DBus address is missing"
+
+case "${DBUS_SESSION_BUS_ADDRESS}" in
+  *"/run/user/"*|*"host"*|*"system_bus_socket"*)
+    fail "DBUS_SESSION_BUS_ADDRESS looks host-derived: ${DBUS_SESSION_BUS_ADDRESS}"
+    ;;
+esac
+
+if awk '{print $5}' /proc/self/mountinfo | grep -qx '/tmp/.X11-unix'; then
+  fail "/tmp/.X11-unix is a mount point; expected private Xvfb-created socket directory"
+fi
+
+[ -S /tmp/.X11-unix/X99 ] || fail "private Xvfb socket /tmp/.X11-unix/X99 is missing"
+
+if ss -ltn 2>/dev/null | grep -q ':5900 '; then
+  ss -ltn | grep ':5900 ' | grep -q '127.0.0.1:5900' \
+    || fail "VNC port is not loopback-bound inside container"
+fi
+
+printf 'OK: private DISPLAY, private DBus, no host /tmp/.X11-unix mount\n'

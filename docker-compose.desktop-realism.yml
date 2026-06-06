@@ -1,0 +1,36 @@
+# Isolated synthetic desktop observation rig for desktop realism testing.
+#
+# Usage:
+#   scripts/desktop-realism-start.sh
+#   scripts/desktop-realism-stop.sh
+#
+# This compose file is intentionally separate from docker-compose.gpu.yml and does not mount the
+# host X socket, host DBus socket, source tree, or any Soma runtime stores.
+
+name: soma-desktop-realism
+
+services:
+  desktop-realism:
+    build:
+      context: .
+      dockerfile: docker/desktop-realism/Containerfile
+    image: soma-desktop-realism:local
+    container_name: soma-desktop-realism
+    init: true
+    shm_size: "256m"
+    restart: "no"
+    environment:
+      DISPLAY: ":99"
+      NOVNC_PORT: "6080"
+      VNC_PORT: "5900"
+      CANARY_MANIFEST: "/opt/soma/desktop-realism/canary-manifest.json"
+    ports:
+      - "127.0.0.1:${DESKTOP_REALISM_NOVNC_PORT:-6080}:6080"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/desktop-realism-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      start_period: 20s
+      retries: 12

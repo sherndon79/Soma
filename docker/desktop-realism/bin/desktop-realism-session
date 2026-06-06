@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export DISPLAY="${DISPLAY:-:99}"
+export NO_AT_BRIDGE=0
+export GTK_MODULES="${GTK_MODULES:-gail:atk-bridge}"
+export QT_ACCESSIBILITY=1
+export CANARY_MANIFEST="${CANARY_MANIFEST:-/opt/soma/desktop-realism/canary-manifest.json}"
+export NOVNC_PORT="${NOVNC_PORT:-6080}"
+export VNC_PORT="${VNC_PORT:-5900}"
+
+printf '%s\n' "$DBUS_SESSION_BUS_ADDRESS" > /tmp/soma-session-bus-address
+
+cleanup() {
+  jobs -pr | xargs -r kill 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+Xvfb "$DISPLAY" -screen 0 "${XVFB_GEOMETRY:-1280x800x24}" -nolisten tcp &
+
+for _ in $(seq 1 80); do
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
+xdpyinfo -display "$DISPLAY" >/dev/null
+
+openbox >/tmp/soma-openbox.log 2>&1 &
+
+if command -v at-spi2-registryd >/dev/null 2>&1; then
+  at-spi2-registryd >/tmp/soma-atspi-registry.log 2>&1 &
+elif [ -x /usr/lib/at-spi2-core/at-spi2-registryd ]; then
+  /usr/lib/at-spi2-core/at-spi2-registryd >/tmp/soma-atspi-registry.log 2>&1 &
+fi
+
+/usr/local/bin/canary-gtk-app.py >/tmp/soma-canary-gtk.log 2>&1 &
+/usr/local/bin/canary-qt-app.py >/tmp/soma-canary-qt.log 2>&1 &
+
+x11vnc \
+  -display "$DISPLAY" \
+  -forever \
+  -shared \
+  -viewonly \
+  -nopw \
+  -listen 127.0.0.1 \
+  -rfbport "$VNC_PORT" \
+  >/tmp/soma-x11vnc.log 2>&1 &
+
+websockify \
+  --web /usr/share/novnc \
+  "0.0.0.0:${NOVNC_PORT}" \
+  "127.0.0.1:${VNC_PORT}" \
+  >/tmp/soma-websockify.log 2>&1 &
+
+printf 'Soma desktop realism rig started. noVNC inside container: http://127.0.0.1:%s/vnc.html?autoconnect=1&resize=scale\n' "$NOVNC_PORT"
+
+while true; do
+  sleep 3600 &
+  wait $!
+done

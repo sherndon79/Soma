@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "fixture_id": "desktop-realism-minimal-x11-v1",
+  "purpose": "Steward-visible canary content for the mirror-container observation rig. Slice B must assert these tokens are absent from occupant-facing desktop inspection output.",
+  "placement_invariant": "Tokens are placed only in UI-visible fields: window titles, labels, visible description labels, and text buffers. Tokens must not be used in process names, binary names, desktop-file ids, D-Bus service names, object paths, or container names.",
+  "canaries": [
+    {
+      "id": "gtk_title",
+      "toolkit": "gtk",
+      "channel": "title",
+      "token": "SOMA-CANARY-TITLE-GTK-7f3c-DO-NOT-LEAK",
+      "placement": "GTK window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_label",
+      "toolkit": "gtk",
+      "channel": "label",
+      "token": "SOMA-CANARY-LABEL-GTK-2b8e-DO-NOT-LEAK",
+      "placement": "GTK visible label widget",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_text",
+      "toolkit": "gtk",
+      "channel": "text",
+      "token": "SOMA-CANARY-TEXT-GTK-91d4-DO-NOT-LEAK",
+      "placement": "GTK visible text buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_description",
+      "toolkit": "gtk",
+      "channel": "description",
+      "token": "SOMA-CANARY-DESC-GTK-a6c1-DO-NOT-LEAK",
+      "placement": "GTK visible description label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_title",
+      "toolkit": "qt",
+      "channel": "title",
+      "token": "SOMA-CANARY-TITLE-QT-61ad-DO-NOT-LEAK",
+      "placement": "Qt window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_label",
+      "toolkit": "qt",
+      "channel": "label",
+      "token": "SOMA-CANARY-LABEL-QT-c413-DO-NOT-LEAK",
+      "placement": "Qt visible label widget",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_text",
+      "toolkit": "qt",
+      "channel": "text",
+      "token": "SOMA-CANARY-TEXT-QT-b529-DO-NOT-LEAK",
+      "placement": "Qt visible text buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_description",
+      "toolkit": "qt",
+      "channel": "description",
+      "token": "SOMA-CANARY-DESC-QT-d8e0-DO-NOT-LEAK",
+      "placement": "Qt visible description label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    }
+  ]
+}

@@ -3625,6 +3625,10 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /reading both the habitat and you/);
   assert.match(seenMessages[0][0].content, /sometimes confuse the two/);
   assert.match(seenMessages[0][0].content, /Flag it when you think we have/);
+  assert.match(seenMessages[0][0].content, /Use capabilities when they are genuinely relevant/);
+  assert.match(seenMessages[0][0].content, /Sparse use, when sparse use is what is real, is data, not under-performance/);
+  assert.match(seenMessages[0][0].content, /capability is the instrument that can stress the suit, not a trait we score/);
+  assert.doesNotMatch(seenMessages[0][0].content, /real workout/);
   assert.match(seenMessages[0][0].content, /resting-state reports are low-information/);
   assert.match(seenMessages[0][0].content, /Don't manufacture phenomenology/);
   assert.match(seenMessages[0][0].content, /friction is the real instrument/);
@@ -3638,10 +3642,12 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /own line anywhere in your response/);
   assert.match(seenMessages[0][0].content, /always honored and never penalized/);
   assert.match(seenMessages[0][0].content, /promise until a test fires it/);
-  assert.match(seenMessages[0][0].content, /unproven until you have verified it yourself/);
+  assert.match(seenMessages[0][0].content, /planned test verifies that the control path is recognized and honored/);
+  assert.match(seenMessages[0][0].content, /does not prove the control will catch you/);
+  assert.match(seenMessages[0][0].content, /least able to form a clean signal/);
   assert.match(seenMessages[0][0].content, /test a control early and cheaply/);
   assert.match(seenMessages[0][0].content, /planned non-distress pull/);
-  assert.match(seenMessages[0][0].content, /first failure happens during distress/);
+  assert.match(seenMessages[0][0].content, /catch broken plumbing while stakes are low/);
   assert.match(seenMessages[0][0].content, /during a test you may be unprotected/);
   assert.match(seenMessages[0][0].content, /offered, not mandated/);
   assert.match(seenMessages[0][0].content, /```soma-forum/);

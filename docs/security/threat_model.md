@@ -120,7 +120,10 @@ Current controls:
 
 - model cannot activate capabilities directly
 - active capabilities are limited and mostly read-only
-- file reads are scoped
+- file reads are descriptor-routed through domain/root identifiers rather than caller-supplied host
+  paths; responses and provenance do not expose raw host paths
+- file reads canonicalize resolved paths, reject root escapes and hardlinks, and enforce regular
+  files plus size bounds before content is returned
 - desktop inspection omits text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
 

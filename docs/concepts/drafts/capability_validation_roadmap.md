@@ -92,12 +92,13 @@ predate it; the doc is honest that those constraints are **not yet all true**:
 - **`provenance.read` is base-harness today.** Before any occupant-facing use, split it into a
   curated `provenance.summary.read` (T1) and keep raw `provenance.read` at the higher tier its recon
   content warrants.
-- **`tool.files.read` is base-harness and live with scoped roots.** It is the **first
-  descriptor/router retrofit consumer.** Its negative-test set is concrete and required:
-  symlink-to-real-path refused before any read; hardlink/device-file refusal; path canonicalization
-  before read; and no content or provenance leakage on refusal. Existing `files.read` grants likely
-  need a domain + resource-descriptor-hash binding (or a compatibility wrapper) so a pre-router grant
-  cannot authorize a post-router resource.
+- **`tool.files.read` is base-harness and live with descriptor-routed scoped roots.** It is the
+  **first descriptor/router retrofit consumer.** The current slice routes file reads through
+  `domain` + `root_id` + clean `relative_path`, keeps testing roots synthetic, rejects root escapes,
+  hardlinks, and non-files, and removes host absolute paths from successful responses/provenance.
+  Occupant-facing invocation and grant binding are still deferred to T3; the locked grant shape is
+  domain + root_id + capability + provider_id (+ optional bounds), not a descriptor hash for
+  arbitrary scoped file reads.
 
 ## Enforcement Spine: ResourceDescriptor + DomainRouter
 
@@ -117,8 +118,8 @@ Domain labels cannot be the enforcement primitive by themselves. The invariant:
   one (e.g. `resource_class=internal_status`), not a host address. The invariant stays universal
   without forcing filesystem-shaped descriptors onto summary reads.
 
-**Do not build the router ahead of a real consumer.** Define the invariant now; prove it first by
-**retrofitting `tool.files.read`**, which is already live with scoped read-roots and real
+**Do not build the router ahead of a real consumer.** Define the invariant now; `tool.files.read`
+is the first proof consumer because it is already live with scoped read-roots and real
 caller-supplied-path pressure. That yields a concrete descriptor shape against a real resource
 rather than an abstraction designed for imagined T4/T6 needs. After `files.read`, reuse and refine
 for the desktop broker and the sensorium.
@@ -230,7 +231,9 @@ Representative fixture classes:
    `space.history.read`, durable testimony) for the first capability-**inhabitation** run. This is
    **pre-router** (see "Current Drift to Retire"); it does not assert the descriptor/router
    invariants are already met — those land in step 3.
-3. Define the `ResourceDescriptor` invariant; **prove it by retrofitting `tool.files.read`**.
+3. Define the `ResourceDescriptor` invariant; **prove it by retrofitting `tool.files.read`**. The
+   descriptor/router spine has landed for base-harness file reads; T3 still needs occupant
+   invocation and grant enforcement over domain + root_id + capability + provider_id.
 4. Work the cheap tiers (T1 summary reads, T2 ephemeral memory write) while standing up sandbox
    infrastructure for T3–T4 (test desktop, synthetic sensorium mode, scoped file tree).
 5. Proceed up the ladder, each capability satisfying the full invariant set with tier-appropriate

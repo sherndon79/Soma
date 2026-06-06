@@ -54,6 +54,12 @@ not silently widen the harness or replace user approval for high-stakes decision
 A status or handling path for an uncataloged or underspecified capability idea. A design-review
 item may be stored for future architecture work, but it is not activatable.
 
+## DomainRouter
+
+The resolver that turns a domain-scoped logical resource reference into a ResourceDescriptor. It
+owns host addresses such as roots, endpoints, and devices; callers and models provide only logical
+ids such as `root_id` plus bounded relative references.
+
 ## Disabled
 
 A capability status meaning the capability is not currently allowed. Disabled capabilities may or
@@ -68,6 +74,12 @@ self-scoped narrowing modules, and future grants or policy overlays.
 
 A capability status meaning the capability is explicitly outside the current request, current
 module posture, or current policy context. Exclusion is stronger than merely not using a capability.
+
+## ResourceDescriptor
+
+A bounded, router-issued description of the resource a provider may touch. For file reads this
+includes fields such as `domain`, `provider_id`, `resource_class`, `root_id`, `relative_path`,
+`synthetic`, and size bounds. Providers receive descriptors, not caller-supplied host paths.
 
 ## Forbidden
 

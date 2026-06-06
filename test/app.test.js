@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -5109,7 +5110,7 @@ test("space.status.read delivers minimized grant-bound result egress without for
           finish_reason: "stop",
           tokens_used: 7,
           tool_calls: [
-            { id: "call-should-stay-disabled", name: "files.read", arguments: { path: "package.json" } },
+            { id: "call-should-stay-disabled", name: "files.read", arguments: { root_id: "root-1", relative_path: "package.json" } },
           ],
         };
       },
@@ -5431,7 +5432,7 @@ test("space.history.read returns only approved same-domain curated projection en
           finish_reason: "stop",
           tokens_used: 7,
           tool_calls: [
-            { id: "call-should-stay-disabled", name: "files.read", arguments: { path: "config/history-projection.json" } },
+            { id: "call-should-stay-disabled", name: "files.read", arguments: { root_id: "root-1", relative_path: "config/history-projection.json" } },
           ],
         };
       },
@@ -5756,7 +5757,7 @@ test("POST /chat requires an active grant before processing local model tool-cal
         finish_reason: "stop",
         tokens_used: 1,
         tool_calls: [
-          { id: "call-1", name: "files.read", arguments: { path: "package.json" } },
+          { id: "call-1", name: "files.read", arguments: { root_id: "root-1", relative_path: "package.json" } },
         ],
       };
     },
@@ -5791,7 +5792,11 @@ test("POST /chat executes structured file-read intents through existing file gat
           finish_reason: "tool_calls",
           tokens_used: 8,
           tool_calls: [
-            { id: "call-file-1", name: "files.read", arguments: { path: filePath } },
+            {
+              id: "call-file-1",
+              name: "files.read",
+              arguments: { root_id: "workspace", relative_path: "note.txt" },
+            },
           ],
         };
       },
@@ -5800,7 +5805,7 @@ test("POST /chat executes structured file-read intents through existing file gat
       harness: {
         ...allowedHarness,
         filesystem: {
-          read_roots: [root],
+          roots: [{ id: "workspace", path: root }],
           max_read_bytes: 1024,
         },
       },
@@ -5839,10 +5844,13 @@ test("POST /chat executes structured file-read intents through existing file gat
     assert.equal(response.body.tool_call_intents.length, 1);
     assert.equal(response.body.tool_call_intents[0].disposition, "executed");
     assert.equal(response.body.tool_call_intents[0].capability, "tool.files.read");
-    assert.equal(response.body.tool_call_intents[0].result.path, filePath);
+    assert.equal(response.body.tool_call_intents[0].result.domain, "operational");
+    assert.equal(response.body.tool_call_intents[0].result.root_id, "workspace");
+    assert.equal(response.body.tool_call_intents[0].result.relative_path, "note.txt");
     assert.equal(response.body.tool_call_intents[0].result.bytes, 20);
     assert.equal(response.body.tool_call_intents[0].result.content_included, false);
     assert.equal("content" in response.body.tool_call_intents[0].result, false);
+    assert.equal("path" in response.body.tool_call_intents[0].result, false);
 
     response = await invokeHandler(handler, {
       method: "GET",
@@ -5852,7 +5860,7 @@ test("POST /chat executes structured file-read intents through existing file gat
     assert.equal(response.body.entries.length, 1);
     assert.equal(response.body.entries[0].disposition, "executed");
     assert.equal(response.body.entries[0].requested_capability, "tool.files.read");
-    assert.deepEqual(response.body.entries[0].argument_keys, ["path"]);
+    assert.deepEqual(response.body.entries[0].argument_keys, ["root_id", "relative_path"]);
     assert.equal(response.body.entries[0].argument_content_included, false);
     assert.equal(response.body.entries[0].result_content_included, false);
 
@@ -5862,7 +5870,12 @@ test("POST /chat executes structured file-read intents through existing file gat
     });
     assert.equal(response.statusCode, 200);
     assert.equal(response.body.entries.length, 1);
-    assert.equal(response.body.entries[0].file_path, filePath);
+    assert.equal(response.body.entries[0].resource_domain, "operational");
+    assert.equal(response.body.entries[0].root_id, "workspace");
+    assert.equal(response.body.entries[0].relative_path, "note.txt");
+    assert.match(response.body.entries[0].resolved_digest, /^[0-9a-f]{64}$/);
+    assert.equal("file_path" in response.body.entries[0], false);
+    assert.equal("file_root" in response.body.entries[0], false);
     assert.equal("content" in response.body.entries[0], false);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -6386,7 +6399,7 @@ test("file read returns content only inside granted scope and records provenance
     harness: {
       ...allowedHarness,
       filesystem: {
-        read_roots: [root],
+        roots: [{ id: "workspace", path: root }],
         max_read_bytes: 1024,
       },
     },
@@ -6395,13 +6408,17 @@ test("file read returns content only inside granted scope and records provenance
   let response = await invokeHandler(handler, {
     method: "POST",
     url: "/files/read",
-    body: { path: filePath },
+    body: { root_id: "workspace", relative_path: "note.txt" },
   });
 
   assert.equal(response.statusCode, 200);
+  assert.equal(response.body.domain, "operational");
+  assert.equal(response.body.root_id, "workspace");
+  assert.equal(response.body.relative_path, "note.txt");
   assert.equal(response.body.content, "Scoped read ok.");
   assert.equal(response.body.bytes, 15);
   assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+  assert.equal("path" in response.body, false);
   const provenanceId = response.body.provenance_id;
 
   response = await invokeHandler(handler, {
@@ -6413,8 +6430,16 @@ test("file read returns content only inside granted scope and records provenance
   assert.equal(response.body.entries.length, 1);
   assert.equal(response.body.entries[0].id, provenanceId);
   assert.equal(response.body.entries[0].capability, "tool.files.read");
-  assert.equal(response.body.entries[0].file_path, filePath);
+  assert.equal(response.body.entries[0].resource_class, "file");
+  assert.equal(response.body.entries[0].resource_domain, "operational");
+  assert.equal(response.body.entries[0].provider_id, "soma.provider.files.operational");
+  assert.equal(response.body.entries[0].root_id, "workspace");
+  assert.equal(response.body.entries[0].relative_path, "note.txt");
+  assert.equal(response.body.entries[0].synthetic, false);
+  assert.match(response.body.entries[0].resolved_digest, /^[0-9a-f]{64}$/);
   assert.equal(response.body.entries[0].file_bytes, 15);
+  assert.equal("file_path" in response.body.entries[0], false);
+  assert.equal("file_root" in response.body.entries[0], false);
   assert.equal("content" in response.body.entries[0], false);
 });
 
@@ -6427,7 +6452,7 @@ test("file read fails closed outside granted scope", async () => {
     harness: {
       ...allowedHarness,
       filesystem: {
-        read_roots: [root],
+        roots: [{ id: "workspace", path: root }],
         max_read_bytes: 1024,
       },
     },
@@ -6436,11 +6461,150 @@ test("file read fails closed outside granted scope", async () => {
   const response = await invokeHandler(handler, {
     method: "POST",
     url: "/files/read",
-    body: { path: outsidePath },
+    body: { root_id: "workspace", relative_path: path.relative(root, outsidePath) },
   });
 
-  assert.equal(response.statusCode, 403);
-  assert.equal(response.body.error, "file_scope_denied");
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_relative_path");
+  assert.doesNotMatch(JSON.stringify(response.body), new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(JSON.stringify(response.body), new RegExp(outside.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("file read descriptor router enforces domain root and inode boundaries", async () => {
+  const operationalRoot = await mkdtemp(path.join(os.tmpdir(), "soma-file-router-operational-"));
+  const outsideRoot = await mkdtemp(path.join(os.tmpdir(), "soma-file-router-outside-"));
+  const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-file-router-testing-"));
+  try {
+    await writeFile(path.join(operationalRoot, "inside.txt"), "Inside.", "utf8");
+    await mkdir(path.join(operationalRoot, "dir"));
+    await writeFile(path.join(operationalRoot, "dir", "nested.txt"), "Nested.", "utf8");
+    await writeFile(path.join(outsideRoot, "outside.txt"), "Outside.", "utf8");
+    await writeFile(path.join(testingRoot, "fixture.txt"), "Synthetic.", "utf8");
+    await symlink(path.join(outsideRoot, "outside.txt"), path.join(operationalRoot, "outside-link.txt"));
+    await symlink(path.join(operationalRoot, "dir", "nested.txt"), path.join(operationalRoot, "inside-link.txt"));
+    await link(path.join(outsideRoot, "outside.txt"), path.join(operationalRoot, "hardlink.txt"));
+    let fifoAvailable = true;
+    try {
+      execFileSync("mkfifo", [path.join(operationalRoot, "pipe")]);
+    } catch {
+      fifoAvailable = false;
+    }
+
+    const handler = makeHandler({
+      harness: {
+        ...allowedHarness,
+        filesystem: {
+          roots: [{ id: "workspace", path: operationalRoot }],
+          testing_roots: [{ id: "testing-fixture", path: testingRoot, synthetic: true }],
+          max_read_bytes: 1024,
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { root_id: "workspace", relative_path: "inside-link.txt" },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.content, "Nested.");
+    assert.equal(response.body.root_id, "workspace");
+    assert.equal(response.body.relative_path, "inside-link.txt");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { root_id: "workspace", relative_path: "outside-link.txt" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "file_scope_denied");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { root_id: "workspace", relative_path: "hardlink.txt" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "file_hardlink_denied");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { root_id: "workspace", relative_path: "dir/" },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.error, "not_a_file");
+
+    if (fifoAvailable) {
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/files/read",
+        body: { root_id: "workspace", relative_path: "pipe" },
+      });
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.body.error, "not_a_file");
+    }
+
+    const invalidRelativePaths = ["", ".", "/etc/passwd", "file:///etc/passwd", "C:\\Windows\\win.ini", "..", "../x", "dir\\nested.txt", "bad\0path"];
+    for (const relativePath of invalidRelativePaths) {
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/files/read",
+        body: { root_id: "workspace", relative_path: relativePath },
+      });
+      assert.equal(response.statusCode, 400, `expected invalid relative path for ${JSON.stringify(relativePath)}`);
+      assert.equal(response.body.error, "invalid_relative_path");
+      assert.doesNotMatch(JSON.stringify(response.body), new RegExp(operationalRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { root_id: "missing-root", relative_path: "inside.txt" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "file_root_unavailable");
+    assert.doesNotMatch(JSON.stringify(response.body), new RegExp(operationalRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { domain: "testing", root_id: "workspace", relative_path: "inside.txt" },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "file_root_unavailable");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/files/read",
+      body: { domain: "testing", root_id: "testing-fixture", relative_path: "fixture.txt" },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.domain, "testing");
+    assert.equal(response.body.root_id, "testing-fixture");
+    assert.equal(response.body.content, "Synthetic.");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=tool.files.read",
+    });
+    assert.equal(response.statusCode, 200);
+    const testingEntry = response.body.entries.find((entry) => entry.resource_domain === "testing");
+    assert.ok(testingEntry);
+    assert.equal(testingEntry.root_id, "testing-fixture");
+    assert.equal(testingEntry.synthetic, true);
+    assert.notEqual(testingEntry.root_id, "workspace");
+    for (const entry of response.body.entries) {
+      assert.equal("file_path" in entry, false);
+      assert.equal("file_root" in entry, false);
+      assert.equal("root_real_path" in entry, false);
+      assert.equal("resolved_real_path" in entry, false);
+    }
+  } finally {
+    await rm(operationalRoot, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
+    await rm(testingRoot, { recursive: true, force: true });
+  }
 });
 
 test("self-applied module disables file read", async () => {
@@ -6467,7 +6631,7 @@ test("self-applied module disables file read", async () => {
   const response = await invokeHandler(handler, {
     method: "POST",
     url: "/files/read",
-    body: { path: filePath },
+    body: { root_id: "root-1", relative_path: path.basename(filePath) },
   });
 
   assert.equal(response.statusCode, 403);

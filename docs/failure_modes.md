@@ -234,13 +234,22 @@ Future requirement:
 
 Current behavior:
 
-- file reads outside granted roots fail with `file_scope_denied`
+- file reads resolve through `domain`, `root_id`, and clean `relative_path` descriptors; callers do
+  not supply host absolute paths
+- file reads outside routed roots fail with `file_scope_denied`
+- unknown or cross-domain roots fail with `file_root_unavailable` without returning configured host
+  root paths
+- hardlinked files fail closed with `file_hardlink_denied`
+- directories, devices, and FIFOs fail with `not_a_file`
 - file content is bounded by `max_read_bytes`
+- successful responses and provenance include descriptor fields and a resolved-path digest, not raw
+  host paths
 
 Recovery:
 
 - do not broaden file scope automatically
-- tell the participant the file is outside granted read roots or too large
+- tell the participant the file is outside granted read roots, unavailable for the selected domain,
+  hardlink-denied, not a regular file, or too large
 - allow a future proposal/grant path only if scoped and explicit
 
 Retry:

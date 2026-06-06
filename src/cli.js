@@ -571,12 +571,13 @@ export async function runCli(
   }
 
   if (command === "files" && subcommand === "read") {
-    const filePath = rest[0];
-    if (!filePath) {
-      throw usageError("files read requires a path.");
+    const relativePath = rest[0];
+    if (!relativePath) {
+      throw usageError("files read requires a relative path.");
     }
     const response = await request(baseUrl, "POST", "/files/read", {
-      path: filePath,
+      root_id: flags.rootId ?? flags.root_id ?? "root-1",
+      relative_path: relativePath,
     });
     writeOutput(stdout, response, jsonOutput, response.content);
     return 0;

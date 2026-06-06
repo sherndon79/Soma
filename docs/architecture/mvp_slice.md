@@ -632,11 +632,12 @@ whether an advisory was needed, but does not store the submitted text.
 
 ### `POST /files/read`
 
-Reads a UTF-8 text file when `tool.files.read` is allowed and the resolved real path is inside a
-granted `filesystem.read_roots` entry.
+Reads a UTF-8 text file when `tool.files.read` is allowed and the router resolves the requested
+`domain`, `root_id`, and clean `relative_path` to a file inside that domain's configured root.
 
-The response includes file content and metadata. Provenance records `tool.files.read` with path,
-root, and byte count, but does not duplicate file content.
+The response includes file content plus descriptor metadata (`domain`, `root_id`, `relative_path`,
+and byte count), not raw host absolute paths. Provenance records `tool.files.read` with descriptor
+fields and a resolved-path digest, but does not duplicate file content or raw host paths.
 
 ### `POST /desktop/inspect/accessibility-tree`
 
@@ -777,7 +778,7 @@ Default posture:
 - ephemeral session memory read/write allowed
 - in-process provenance read/clear allowed
 - text-only cognitive-load stewardship allowed
-- file read allowed within granted `filesystem.read_roots`
+- descriptor-routed file read allowed within configured filesystem roots
 - read-only desktop inspection scaffold allowed
 - remote model calls disabled
 - durable memory disabled

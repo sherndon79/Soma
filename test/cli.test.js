@@ -2854,7 +2854,7 @@ test("runCli files read sends expected request body", async () => {
   assert.equal(writes.join(""), "readme text\n");
   assert.equal(captured.method, "POST");
   assert.equal(captured.requestPath, "/files/read");
-  assert.deepEqual(captured.body, { path: "README.md" });
+  assert.deepEqual(captured.body, { root_id: "root-1", relative_path: "README.md" });
 });
 
 test("runCli desktop inspect calls accessibility-tree endpoint", async () => {

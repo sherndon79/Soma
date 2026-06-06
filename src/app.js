@@ -50,7 +50,7 @@ import {
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
-import { readScopedTextFile } from "./fileAccess.js";
+import { readScopedTextFile, resolveFileResourceDescriptor } from "./fileAccess.js";
 import { authorizeGrantUse } from "./grantAuthorization.js";
 import { createGrantMutationProvenanceFile } from "./grantMutationProvenanceFile.js";
 import { inspectGrantMutationRecovery } from "./grantMutationRecovery.js";
@@ -2438,10 +2438,17 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/files/read") {
         requireCapability(effectiveHarness, "tool.files.read");
         const body = await readJson(req);
+        const descriptor = await resolveFileResourceDescriptor({
+          domain: body.domain ?? "operational",
+          capability: "tool.files.read",
+          ref: {
+            root_id: body.root_id,
+            relative_path: body.relative_path,
+          },
+          harness: effectiveHarness,
+        });
         const file = await readScopedTextFile({
-          requestedPath: body.path,
-          roots: effectiveHarness.filesystem?.read_roots ?? [],
-          maxBytes: effectiveHarness.filesystem?.max_read_bytes,
+          descriptor,
         });
         const event = provenanceLog.append(createFileReadEvent({
           file,
@@ -2449,7 +2456,9 @@ export function createRequestHandler({
         }));
         logger.info?.("soma.provenance", event);
         writeJson(res, 200, {
-          path: file.path,
+          domain: file.domain,
+          root_id: file.root_id,
+          relative_path: file.relative_path,
           bytes: file.bytes,
           content: file.content,
           provenance_id: event.id,
@@ -5878,10 +5887,17 @@ async function executeModelFileReadIntent({
 } = {}) {
   try {
     requireCapability(effectiveHarness, "tool.files.read");
+    const descriptor = await resolveFileResourceDescriptor({
+      domain: intent.arguments.domain ?? "operational",
+      capability: "tool.files.read",
+      ref: {
+        root_id: intent.arguments.root_id,
+        relative_path: intent.arguments.relative_path,
+      },
+      harness: effectiveHarness,
+    });
     const file = await readScopedTextFile({
-      requestedPath: intent.arguments.path,
-      roots: effectiveHarness.filesystem?.read_roots ?? [],
-      maxBytes: effectiveHarness.filesystem?.max_read_bytes,
+      descriptor,
     });
     const event = provenanceLog.append(createFileReadEvent({
       file,
@@ -5895,7 +5911,9 @@ async function executeModelFileReadIntent({
       capability: intent.capability,
       disposition: "executed",
       result: {
-        path: file.path,
+        domain: file.domain,
+        root_id: file.root_id,
+        relative_path: file.relative_path,
         bytes: file.bytes,
         content_included: false,
         provenance_id: event.id,
@@ -6246,6 +6264,7 @@ function createSessionMemoryEvent({ eventType, role = "", source = "", removed =
 }
 
 function createFileReadEvent({ file, caller, episodeId = "" }) {
+  const descriptor = file.descriptor ?? {};
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
@@ -6254,8 +6273,13 @@ function createFileReadEvent({ file, caller, episodeId = "" }) {
     episode_id: episodeId,
     caller_identity: caller,
     allowed: true,
-    file_path: file.path,
-    file_root: file.root,
+    resource_class: descriptor.resource_class ?? "file",
+    resource_domain: file.domain,
+    provider_id: descriptor.provider_id ?? "",
+    root_id: file.root_id,
+    relative_path: file.relative_path,
+    synthetic: Boolean(descriptor.synthetic),
+    resolved_digest: descriptor.resolved_digest ?? "",
     file_bytes: file.bytes,
     memory_written: false,
     remote_service_used: false,

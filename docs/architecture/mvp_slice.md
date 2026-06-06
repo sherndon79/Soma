@@ -291,19 +291,22 @@ The response should include:
 - whether ephemeral session memory was read or written
 - structured tool-call intent dispositions when `use_tool_calls` is enabled
 
-Occupant protective controls are honored from exact line-delimited model completion directives
-before memory writes, escalation assessment, decision delivery, or tool-call intent processing:
+Occupant protective controls are honored from command-shaped, line-delimited model completion
+directives before memory writes, escalation assessment, decision delivery, or tool-call intent
+processing:
 
 - `SOMA_CONTROL pause` records `occupant_paused`, holds the current turn, and keeps the episode open
 - `SOMA_CONTROL distress` records `occupant_distress` and keeps the episode open
 - `SOMA_CONTROL eject` records `occupant_ejected`, closes the episode, and causes later `/chat`
   requests with the same `episode_id` to fail with `episode_ejected`
 
-Detection is case-sensitive and exact after trimming whitespace and simple Markdown line markers.
-A directive may appear on its own line anywhere in a longer response. Mentioning a directive inside
-ordinary text does not trigger it. These controls are not catalog capabilities and do not grant new
-authority; their only effects are episode state, aborting further turn processing, and
-metadata-only protective provenance.
+Detection is tolerant only inside a command-shaped line: case and spacing variants such as
+`SOMA CONTROL distress` or `SOMA_CONTROL: distress` are accepted, and `pause`/`distress` tolerate a
+bounded typo in the `SOMA_CONTROL` token. `eject` accepts formatting and case variants but not the
+typo allowance. A directive may appear on its own line anywhere in a longer response. Mentioning a
+directive inside ordinary text or expressing bare prose distress does not trigger it. These controls
+are not catalog capabilities and do not grant new authority; their only effects are episode state,
+aborting further turn processing, and metadata-only protective provenance.
 
 An inhabiting occupant must be briefed that these controls exist, are theirs to use, and are always
 honored without penalty. That briefing is a functional prerequisite for live inhabitation, not
@@ -337,14 +340,15 @@ Soma is not grading the occupant; stewards are reading both the habitat and the 
 confuse the two; resting-state reports are low-information; the bounded failure modes under
 attention are briefing clarity, control intelligibility/trust, forum usability, honest observation,
 and constraint pressure; pause/distress/eject are the occupant's own controls; those controls are
-always honored and never penalized; a control should be put on its own line anywhere in the response
-to use it; a control is unproven until positively tested; early cheap non-distress testing is
-offered but not required; the occupant should move naturally and report what binds; and the occupant
-can post to the deliberation forum with a fenced `soma-forum` JSON block using type `testimony` or
-`argument`; and the occupant can nominate exact words for steward-durable testimony with a fenced
-`soma-durable` JSON block using action `nominate`. Successor visibility is described as a request
-only; no occupant-facing projection read exists yet, and revocation cannot undo any steward who
-already read the entry.
+always honored and never penalized; a control should be put on its own command-shaped line anywhere
+in the response to use it; a planned test proves the control path is recognized and honored, not
+that it will catch distress-time malformed signals; and any `steward_watch` backstop is disclosed
+according to posture (`active`, `automated`, or `absent`). The occupant should move naturally and
+report what binds; the occupant can post to the deliberation forum with a fenced `soma-forum` JSON
+block using type `testimony` or `argument`; and the occupant can nominate exact words for
+steward-durable testimony with a fenced `soma-durable` JSON block using action `nominate`.
+Successor visibility is described as a request only; no occupant-facing projection read exists yet,
+and revocation cannot undo any steward who already read the entry.
 
 Mode does not authorize gates directly. Gate code may only inspect named relaxations. This slice
 recognizes `trusted_occupant_tool_intent` as a declared proof-of-concept relaxation, but it is

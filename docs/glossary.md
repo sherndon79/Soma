@@ -83,6 +83,13 @@ includes fields such as `domain`, `provider_id`, `resource_class`, `root_id`, `r
 Occupant-facing file-read grants bind to the descriptor domain and `root_id` before the provider can
 read content.
 
+## Steward Watch
+
+An episode posture field describing whether catch-under-load has a backstop beyond the occupant's
+own recognizable control lines. `active` means stewards are watching and can use crew aborts for
+care; `automated` means a weaker monitor may raise a protective stop; `absent` means no such
+backstop is promised. Missing or invalid posture defaults to `absent`.
+
 ## Forbidden
 
 A capability status meaning Soma knows about the capability but intentionally does not allow it to

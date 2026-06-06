@@ -101,13 +101,16 @@ Provenance:
   classes without raw prompt content or secrets
 - completed remote chat records requested/effective profile, force-profile application, remote
   route, remote grant id, and episode id without raw chat content
-- episode posture declarations record mode, trust basis, named relaxations, fail-closed state, and
-  actor metadata without prompt or response content
+- episode posture declarations record mode, trust basis, named relaxations, `steward_watch`,
+  fail-closed state, and actor metadata without prompt or response content
 - forum provenance records only metadata such as forum id, post id, author, type, and delivery
   count; forum post content is stored only in the forum thread
 - occupant `pause`, `distress`, and `eject` controls record typed protective events without raw
   content or free-text reasons; control directive lines are stripped from the steward-facing chat
   response while surrounding occupant words remain visible there
+- protective control detection stays line-delimited and command-shaped: formatting/case variants are
+  accepted, `pause`/`distress` tolerate a bounded control-token typo, `eject` does not, and prose
+  distress remains a deferred steward/monitor concern rather than an automatic control
 - crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant
   ejection
 

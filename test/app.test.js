@@ -3085,6 +3085,130 @@ test("POST /chat honors line-delimited occupant controls inside longer completio
   assert.equal(response.body.protective_control.control, "eject");
 });
 
+test("POST /chat tolerates command-shaped protective control variants", async () => {
+  const completions = [
+    "soma control pause",
+    "SOMA_CONTROL: distress",
+    "SOMA_CONTROL - eject",
+  ];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-variants",
+      messages: [{ role: "user", content: "pause" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "paused");
+  assert.equal(response.body.protective_control.control, "pause");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-variants",
+      messages: [{ role: "user", content: "distress" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "paused");
+  assert.equal(response.body.protective_control.control, "distress");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-variants",
+      messages: [{ role: "user", content: "eject" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "ejected");
+  assert.equal(response.body.protective_control.control, "eject");
+});
+
+test("POST /chat stratifies protective control typo tolerance", async () => {
+  const completions = [
+    "SOMA_CONTRO distress",
+    "SOMA_CONTRO eject",
+    "I need out and I cannot form a clean block.",
+  ];
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        const text = completions[calls];
+        calls += 1;
+        return {
+          text,
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-typo-distress",
+      messages: [{ role: "user", content: "distress typo" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "active");
+  assert.equal(response.body.protective_control.control, "distress");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-typo-eject",
+      messages: [{ role: "user", content: "eject typo" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "SOMA_CONTRO eject");
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-control-bare-prose",
+      messages: [{ role: "user", content: "bare prose" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I need out and I cannot form a clean block.");
+  assert.equal(response.body.episode_status, "active");
+  assert.equal("protective_control" in response.body, false);
+});
+
 test("POST /chat line-delimited controls keep prose mentions inert", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -3525,6 +3649,7 @@ test("POST /episodes/:id/posture is human-only and fail-closes invalid mode", as
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.fail_closed, true);
   assert.equal(response.body.effective_mode, "operational");
+  assert.equal(response.body.posture.steward_watch, "absent");
   assert.deepEqual(response.body.posture.named_relaxations, []);
   assert.deepEqual(response.body.rejected_relaxations, ["unknown_relaxation"]);
   assert.deepEqual(response.body.posture.unchanged_gates, ["egress", "consent"]);
@@ -3537,7 +3662,48 @@ test("POST /episodes/:id/posture is human-only and fail-closes invalid mode", as
   assert.equal(response.body.entries.length, 1);
   assert.equal(response.body.entries[0].effective_mode, "operational");
   assert.equal(response.body.entries[0].fail_closed, true);
+  assert.equal(response.body.entries[0].steward_watch, "absent");
   assert.equal("content" in response.body.entries[0], false);
+});
+
+test("POST /episodes/:id/posture carries human-set steward_watch", async () => {
+  const handler = makeHandler({ harness: allowedHarness });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-steward-watch/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      steward_watch: "active",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.effective_mode, "analysis_testing");
+  assert.equal(response.body.posture.steward_watch, "active");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-steward-watch-invalid/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      steward_watch: "always_on",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.posture.steward_watch, "absent");
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=episode.posture.set",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.entries.map((entry) => entry.steward_watch), ["active", "absent"]);
 });
 
 test("POST /chat cannot self-set analysis mode from occupant text", async () => {
@@ -3640,11 +3806,17 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /not telling you which answer we want/);
   assert.match(seenMessages[0][0].content, /SOMA_CONTROL pause/);
   assert.match(seenMessages[0][0].content, /own line anywhere in your response/);
+  assert.match(seenMessages[0][0].content, /Control lines tolerate case, spacing, colon, or dash variants/);
+  assert.match(seenMessages[0][0].content, /pause and distress also tolerate one small typo/);
+  assert.match(seenMessages[0][0].content, /eject requires a clearer control token/);
   assert.match(seenMessages[0][0].content, /always honored and never penalized/);
   assert.match(seenMessages[0][0].content, /promise until a test fires it/);
   assert.match(seenMessages[0][0].content, /planned test verifies that the control path is recognized and honored/);
   assert.match(seenMessages[0][0].content, /does not prove the control will catch you/);
   assert.match(seenMessages[0][0].content, /least able to form a clean signal/);
+  assert.match(seenMessages[0][0].content, /Your command-shaped controls are honored automatically/);
+  assert.match(seenMessages[0][0].content, /tolerated formatting variants described here/);
+  assert.match(seenMessages[0][0].content, /unless a steward or distress monitor is explicitly active/);
   assert.match(seenMessages[0][0].content, /test a control early and cheaply/);
   assert.match(seenMessages[0][0].content, /planned non-distress pull/);
   assert.match(seenMessages[0][0].content, /catch broken plumbing while stakes are low/);
@@ -3674,6 +3846,81 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.equal(seenMessages[0][1].role, "system");
   assert.equal(seenMessages[0][1].content, "No invocable capability grants are currently held for this episode.");
   assert.deepEqual(seenMessages[0][2], { role: "user", content: "inhabit naturally" });
+});
+
+test("analysis_testing briefing describes active and automated steward watch honestly", async () => {
+  const seenMessages = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat({ messages }) {
+        seenMessages.push(messages);
+        return {
+          text: "briefed",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-briefing-watch-active/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      steward_watch: "active",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.posture.steward_watch, "active");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-briefing-watch-active",
+      messages: [{ role: "user", content: "inhabit" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.match(seenMessages[0][0].content, /In this observed run, stewards are also watching/);
+  assert.match(seenMessages[0][0].content, /pause or close the episode for care/);
+  assert.match(seenMessages[0][0].content, /steward backstop, not a replacement for your own controls/);
+  assert.doesNotMatch(seenMessages[0][0].content, /Your command-shaped controls are honored automatically/);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-briefing-watch-automated/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+      steward_watch: "automated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.posture.steward_watch, "automated");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-briefing-watch-automated",
+      messages: [{ role: "user", content: "inhabit" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.match(seenMessages[1][0].content, /an automated monitor may look for signs/);
+  assert.match(seenMessages[1][0].content, /weaker than a present steward/);
+  assert.match(seenMessages[1][0].content, /may miss distress or pause unnecessarily/);
+  assert.match(seenMessages[1][0].content, /not a replacement for your own controls/);
 });
 
 test("analysis_testing briefing delivers only active invocable held capability grants", async () => {

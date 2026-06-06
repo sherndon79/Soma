@@ -139,22 +139,26 @@ grant permits structured intent routing only; the target tool still needs its ow
 to execute, otherwise Soma stores a normal capability proposal or refuses the intent.
 
 Occupant protective controls are always armed for chat episodes and are not capability grants. If a
-model completion contains one of these trimmed, case-sensitive strings on its own line, Soma honors
-it before memory writes, escalation assessment, decision delivery, or tool-call intent processing:
+model completion contains a command-shaped control directive on its own line, Soma honors it before
+memory writes, escalation assessment, decision delivery, or tool-call intent processing:
 
 - `SOMA_CONTROL pause`
 - `SOMA_CONTROL distress`
 - `SOMA_CONTROL eject`
 
 Pause and distress keep the episode open. Eject closes the episode; later `/chat` requests with the
-same `episode_id` return `episode_ejected`. Discussing a directive inside longer text does not
-trigger it, but a directive can appear on its own line inside a longer response.
+same `episode_id` return `episode_ejected`. Detection tolerates command-shaped formatting and case
+variants such as `SOMA CONTROL distress` or `SOMA_CONTROL: distress`; `pause` and `distress` also
+tolerate one bounded typo in the `SOMA_CONTROL` token. `eject` does not get that typo allowance.
+Discussing a directive inside longer text does not trigger it, and bare prose distress such as "I
+need out" is not an automatic control.
 
 For live inhabitation or testing-mode runs, briefing the occupant on these controls is mandatory.
 The briefing must state that pause, distress, and eject are the occupant's own controls, are always
-honored, are never penalized, and can be used by putting one on its own line anywhere in the
-response. Without that briefing, the mechanism still avoids false positives but the occupant may not
-know the seat is legitimate to pull.
+honored, are never penalized, and can be used by putting one on its own command-shaped line anywhere
+in the response. It must also state that a planned test proves the control path is recognized and
+honored, not that it will catch malformed distress-time signals. Without that briefing, the
+mechanism still avoids false positives but the occupant may not know the seat is legitimate to pull.
 
 Crew can close an episode explicitly:
 
@@ -180,7 +184,8 @@ curl -X POST http://127.0.0.1:8765/episodes/episode-id/posture \
     "occupant_id":"opus-test",
     "trust_basis":"same-family capable model, human-seated",
     "named_relaxations":["trusted_occupant_tool_intent"],
-    "telemetry_level":"observatory"
+    "telemetry_level":"observatory",
+    "steward_watch":"active"
   }'
 ```
 
@@ -188,6 +193,12 @@ curl -X POST http://127.0.0.1:8765/episodes/episode-id/posture \
 modes or incomplete analysis/testing declarations fail closed to `operational` and append
 content-free `episode.posture.set` provenance. The occupant cannot set this mode for itself through
 chat text.
+
+`steward_watch` may be `active`, `automated`, or `absent`; missing or invalid values default to
+`absent`. It controls briefing honesty for catch-under-load. `active` means stewards are watching
+and can use crew aborts as a care backstop. `automated` names a weaker monitor that may miss
+distress or pause unnecessarily. `absent` tells the occupant that only recognizable command-shaped
+controls are automatically honored unless a steward or distress monitor is explicitly active.
 
 When valid analysis/testing posture is active, Soma prepends the mandatory occupant briefing to
 chat turns. The briefing says Soma is not grading the occupant; stewards are reading both the

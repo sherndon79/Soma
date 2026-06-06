@@ -208,12 +208,18 @@ Current controls:
   relaxations, memory, or ejection state
 - occupant testimony and argument are persuasion surfaces, not procedural authority; reasons must
   resolve into explicit human decisions through existing gated endpoints
-- occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections: exact
-  line-delimited directives can only update in-process episode state, abort further turn
-  processing, and append typed protective provenance
+- occupant `pause`, `distress`, and `eject` controls are ungated pure-exit protections:
+  command-shaped line-delimited directives can only update in-process episode state, abort further
+  turn processing, and append typed protective provenance
+- protective-control parsing is tolerant only inside command-shaped lines; prose mentions and bare
+  distress prose remain inert, `pause`/`distress` get bounded token-typo tolerance, and `eject` does
+  not get the typo allowance
 - live inhabitation briefings must explicitly tell the occupant these controls exist, belong to the
   occupant, are always honored, are never penalized, and remain unproven until positively tested;
   otherwise the control exists mechanically but may not be usable by an unbriefed occupant
+- `steward_watch` is an episode posture disclosure (`active`, `automated`, or `absent`) for
+  catch-under-load; missing or invalid posture defaults to `absent` so unobserved runs do not
+  inherit an observed-run steward backstop promise
 - durable testimony is a content-bearing store for exact occupant-authored text only when runtime
   writes are explicitly enabled; nomination/revocation provenance is content-free, entries are
   domain-stamped, successor visibility is recorded only as an unpublished request, and every touch

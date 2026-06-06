@@ -93,12 +93,12 @@ predate it; the doc is honest that those constraints are **not yet all true**:
   curated `provenance.summary.read` (T1) and keep raw `provenance.read` at the higher tier its recon
   content warrants.
 - **`tool.files.read` is base-harness and live with descriptor-routed scoped roots.** It is the
-  **first descriptor/router retrofit consumer.** The current slice routes file reads through
+  **first descriptor/router retrofit consumer.** The route now reads through
   `domain` + `root_id` + clean `relative_path`, keeps testing roots synthetic, rejects root escapes,
   hardlinks, and non-files, and removes host absolute paths from successful responses/provenance.
-  Occupant-facing invocation and grant binding are still deferred to T3; the locked grant shape is
-  domain + root_id + capability + provider_id (+ optional bounds), not a descriptor hash for
-  arbitrary scoped file reads.
+  T3 occupant-facing invocation and grant binding have landed for files: `soma-capability`
+  `tool.files.read` requires an active grant whose domain and `root_id` match the episode and
+  request before descriptor resolution or content egress. Desktop remains the next router consumer.
 
 ## Enforcement Spine: ResourceDescriptor + DomainRouter
 
@@ -232,8 +232,8 @@ Representative fixture classes:
    **pre-router** (see "Current Drift to Retire"); it does not assert the descriptor/router
    invariants are already met — those land in step 3.
 3. Define the `ResourceDescriptor` invariant; **prove it by retrofitting `tool.files.read`**. The
-   descriptor/router spine has landed for base-harness file reads; T3 still needs occupant
-   invocation and grant enforcement over domain + root_id + capability + provider_id.
+   descriptor/router spine and T3 occupant invocation/grant enforcement have landed for file reads;
+   desktop remains the next router consumer.
 4. Work the cheap tiers (T1 summary reads, T2 ephemeral memory write) while standing up sandbox
    infrastructure for T3–T4 (test desktop, synthetic sensorium mode, scoped file tree).
 5. Proceed up the ladder, each capability satisfying the full invariant set with tier-appropriate

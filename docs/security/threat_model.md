@@ -124,6 +124,8 @@ Current controls:
   paths; responses and provenance do not expose raw host paths
 - file reads canonicalize resolved paths, reject root escapes and hardlinks, and enforce regular
   files plus size bounds before content is returned
+- occupant file reads require an active `tool.files.read` grant bound to the episode domain and
+  requested `root_id`; testing-domain grants can resolve only synthetic testing roots
 - desktop inspection omits text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
 

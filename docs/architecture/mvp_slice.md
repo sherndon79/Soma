@@ -639,6 +639,11 @@ The response includes file content plus descriptor metadata (`domain`, `root_id`
 and byte count), not raw host absolute paths. Provenance records `tool.files.read` with descriptor
 fields and a resolved-path digest, but does not duplicate file content or raw host paths.
 
+The same file-read provider is available to occupants through fenced `soma-capability` invocation
+when an active `tool.files.read` grant binds the episode domain and requested `root_id`. The
+occupant-facing result is a one-shot read-only content envelope; testing-domain invocations resolve
+only synthetic testing roots.
+
 ### `POST /desktop/inspect/accessibility-tree`
 
 Returns read-only desktop broker metadata when `desktop.inspect.accessibility_tree` is allowed.
@@ -720,7 +725,7 @@ are surfaced by loading selected durable entries into session memory at startup;
 
 ### Tools
 
-- `tool.files.read` — read files within granted scope
+- `tool.files.read` — read files within a descriptor-routed, grant-bound root
 - `tool.files.write` — write files within granted scope
 - `tool.shell.run` — run shell commands
 - `tool.browser.use` — operate a browser context

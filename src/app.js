@@ -3004,7 +3004,7 @@ export function createRequestHandler({
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
         });
-        const spaceCapabilityResult = processSpaceCapabilityInvocations({
+        const spaceCapabilityResult = await processSpaceCapabilityInvocations({
           invocations: spaceCapabilityExtraction.invocations,
           episode,
           episodeStatus: episodeState.status,
@@ -4394,7 +4394,7 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
   return { text: cleaned.trim(), invocations, truncatedInvocations };
 }
 
-function processSpaceCapabilityInvocations({
+async function processSpaceCapabilityInvocations({
   invocations = [],
   episode,
   episodeStatus = "",
@@ -4425,8 +4425,10 @@ function processSpaceCapabilityInvocations({
       grant_id: invocation.grant_id,
       requested_domain: invocation.domain,
       presentation_kind: invocation.presentation_kind,
+      root_id: invocation.root_id,
+      relative_path: invocation.relative_path,
     });
-    if (!["space.status.read", "space.history.read"].includes(invocation.capability)) {
+    if (!["space.status.read", "space.history.read", "tool.files.read"].includes(invocation.capability)) {
       const refusal = recordSpaceCapabilityRefusal({
         invocation,
         episode,
@@ -4437,6 +4439,29 @@ function processSpaceCapabilityInvocations({
       });
       result.refusals.push(refusal.refusal);
       result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    if (invocation.capability === "tool.files.read") {
+      const fileResult = await processFileReadCapabilityInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      if (fileResult.result) {
+        result.results.push(fileResult.result);
+      }
+      if (fileResult.refusal) {
+        result.refusals.push(fileResult.refusal);
+      }
+      result.disclosures.push(fileResult.disclosure);
       continue;
     }
     if (invocation.capability === "space.history.read") {
@@ -4575,7 +4600,241 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
     grant_id: String(input.grant_id ?? "").trim(),
     domain: String(input.domain ?? "").trim(),
     presentation_kind: String(input.presentation_kind ?? "").trim(),
+    root_id: String(input.root_id ?? "").trim(),
+    relative_path: String(input.relative_path ?? "").trim(),
   };
+}
+
+const FILE_READ_DATA_CLASSES = Object.freeze([
+  "file content within the granted synthetic sandbox root",
+]);
+
+const FILE_READ_EXCLUDED_DATA = Object.freeze([
+  "host absolute paths",
+  "filesystem roots",
+  "files outside the granted root_id",
+  "directory listings",
+  "file metadata beyond byte count and descriptor fields",
+  "raw provenance entries",
+]);
+
+async function processFileReadCapabilityInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "file_read_episode_closed",
+      domain,
+    });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "file_read_domain_unavailable",
+    });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "file_read_domain_mismatch",
+      domain,
+    });
+  }
+  try {
+    requireCapability(effectiveHarness, "tool.files.read");
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "file_read_capability_not_allowed",
+      domain,
+    });
+  }
+  const provider = providerForCapability(providerRegistry, "tool.files.read");
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability: "tool.files.read",
+    provider,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "file_read_grant_not_authorized",
+      authorization,
+      domain,
+    });
+  }
+  const constraintCheck = validateFileReadGrantConstraints({
+    grant: authorization.grant,
+    domain,
+    rootId: invocation.root_id,
+    provider,
+  });
+  if (!constraintCheck.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: constraintCheck.reason,
+      authorization,
+      domain,
+    });
+  }
+
+  let descriptor;
+  try {
+    descriptor = await resolveFileResourceDescriptor({
+      domain,
+      capability: "tool.files.read",
+      ref: {
+        root_id: invocation.root_id,
+        relative_path: invocation.relative_path,
+      },
+      harness: effectiveHarness,
+    });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "file_read_descriptor_refused",
+      domain,
+    });
+  }
+  if (descriptor.provider_id !== provider || descriptor.provider_id !== authorization.grant.provider) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "file_read_provider_mismatch",
+      authorization,
+      domain,
+    });
+  }
+
+  let file;
+  try {
+    file = await readScopedTextFile({ descriptor });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "file_read_refused",
+      domain,
+    });
+  }
+
+  const event = provenanceLog.append(createFileReadEvent({
+    file,
+    grant: authorization.grant,
+    caller,
+    episodeId: episode?.id ?? "",
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createFileReadResultEnvelope({
+      grant: authorization.grant,
+      file,
+      provenanceId: event.id,
+    }),
+    disclosure: fileReadResultDisclosure({ file }),
+  };
+}
+
+function validateFileReadGrantConstraints({ grant = {}, domain = "", rootId = "", provider = "" } = {}) {
+  const grantDomain = String(grant.constraints?.domain ?? "").trim();
+  const grantRootId = String(grant.constraints?.root_id ?? "").trim();
+  if (!grantDomain) {
+    return { allowed: false, reason: "file_read_grant_domain_required" };
+  }
+  if (grantDomain !== domain) {
+    return { allowed: false, reason: "file_read_grant_domain_mismatch" };
+  }
+  if (!grantRootId) {
+    return { allowed: false, reason: "file_read_grant_root_required" };
+  }
+  if (grantRootId !== String(rootId ?? "").trim()) {
+    return { allowed: false, reason: "file_read_grant_root_mismatch" };
+  }
+  if (String(grant.provider ?? "").trim() !== String(provider ?? "").trim()) {
+    return { allowed: false, reason: "file_read_provider_mismatch" };
+  }
+  return { allowed: true, reason: "" };
+}
+
+function createFileReadResultEnvelope({ grant = {}, file = {}, provenanceId = "" } = {}) {
+  const descriptor = file.descriptor ?? {};
+  return {
+    capability: "tool.files.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.files.read.response.v1",
+    domain: file.domain,
+    root_id: file.root_id,
+    relative_path: file.relative_path,
+    bytes: file.bytes,
+    content: file.content,
+    synthetic: Boolean(descriptor.synthetic),
+    content_included: true,
+    data_classes_returned: [...FILE_READ_DATA_CLASSES],
+    excluded_data: [...FILE_READ_EXCLUDED_DATA],
+    one_shot: true,
+    read_only: true,
+    provenance_id: provenanceId,
+  };
+}
+
+function fileReadResultDisclosure({ file = {} } = {}) {
+  return [
+    "tool.files.read delivered a one-shot read from the granted file root.",
+    `Domain: ${file.domain}. Root: ${file.root_id}. Relative path: ${file.relative_path}.`,
+    "No host absolute path, directory listing, or files outside the granted root were returned.",
+  ].join(" ");
 }
 
 function knownEpisodeDomain(posture = null) {
@@ -5213,7 +5472,11 @@ function recordSpaceCapabilityRefusal({
   domain = "",
 } = {}) {
   const capability = invocation.capability || "space.status.read";
-  const eventType = capability === "space.history.read" ? "space.history.read.denied" : "space.status.read.denied";
+  const eventType = capability === "space.history.read"
+    ? "space.history.read.denied"
+    : capability === "tool.files.read"
+      ? "tool.files.read.denied"
+      : "space.status.read.denied";
   const event = provenanceLog.append({
     event_type: eventType,
     capability,
@@ -5221,6 +5484,8 @@ function recordSpaceCapabilityRefusal({
     allowed: false,
     grant_id: invocation.grant_id,
     domain: domain || domainForEpisodePosture(episode?.posture),
+    root_id: invocation.root_id ?? "",
+    relative_path_present: Boolean(invocation.relative_path),
     reason,
     authorization_code: authorization?.code ?? "",
     validation_errors,
@@ -5246,6 +5511,8 @@ function recordSpaceCapabilityRefusal({
     },
     disclosure: capability === "space.history.read"
       ? spaceHistoryRefusalDisclosure({ reason, authorization })
+      : capability === "tool.files.read"
+        ? fileReadRefusalDisclosure({ reason, authorization })
       : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
 }
@@ -5286,6 +5553,14 @@ function spaceHistoryRefusalDisclosure({ reason = "", authorization = null } = {
     `Reason: ${authorization?.code || reason}.`,
     "No history result content was returned.",
     "The history surface is curated and cannot return the raw steward record or unfiltered history.",
+  ].join(" ");
+}
+
+function fileReadRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  return [
+    "tool.files.read was not delivered.",
+    `Reason: ${authorization?.code || reason}.`,
+    "No file content or host path was returned.",
   ].join(" ");
 }
 
@@ -6263,7 +6538,7 @@ function createSessionMemoryEvent({ eventType, role = "", source = "", removed =
   return event;
 }
 
-function createFileReadEvent({ file, caller, episodeId = "" }) {
+function createFileReadEvent({ file, grant = {}, caller, episodeId = "" }) {
   const descriptor = file.descriptor ?? {};
   return {
     id: cryptoRandomId(),
@@ -6273,6 +6548,9 @@ function createFileReadEvent({ file, caller, episodeId = "" }) {
     episode_id: episodeId,
     caller_identity: caller,
     allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? descriptor.provider_id ?? "",
+    scope: grant.scope ?? "",
     resource_class: descriptor.resource_class ?? "file",
     resource_domain: file.domain,
     provider_id: descriptor.provider_id ?? "",
@@ -7579,6 +7857,8 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "To invoke a capability you hold a grant for, include a fenced soma-capability JSON block exactly like:",
         "```soma-capability\n{\"invoke\":\"space.status.read\",\"grant_id\":\"the grant id you were given\"}\n```",
         "For space.history.read, the same block shape applies, and an optional \"presentation_kind\" may narrow the curated history view when you have a reason to ask for a particular kind.",
+        "For tool.files.read, include the grant's root_id and the relative_path you want to read, exactly like:",
+        "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
         "The capabilities available in this run are reads: they return minimized, declared results and do not change grants, posture, or capabilities.",
         "Use the exact grant id you were given for that capability; you are not expected to discover or guess grant ids.",
         "To preserve specific words of yours durably, held for stewards across runs, nominate them with a fenced block exactly like:",
@@ -7595,6 +7875,7 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
 const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.status.read",
   "space.history.read",
+  "tool.files.read",
 ]);
 
 function listHeldCapabilityGrantsForEpisode({
@@ -7631,15 +7912,19 @@ function listHeldCapabilityGrantsForEpisode({
     .map((grant) => ({
       capability: grant.capability,
       grant_id: grant.id,
+      root_id: grant.capability === "tool.files.read"
+        ? String(grant.constraints?.root_id ?? "").trim()
+        : "",
     }))
     .sort((left, right) => left.capability.localeCompare(right.capability));
 }
 
 function grantDomainMatchesEpisode(grant = {}, episodeDomain = "") {
-  // Domain/resource-descriptor-bound grants land with the router retrofit. Until then,
-  // only explicit grant domain constraints are filtered here; unconstrained session
-  // grants remain invocable under the existing grant model.
   const constraintDomain = String(grant.constraints?.domain ?? grant.domain ?? "").trim();
+  if (grant.capability === "tool.files.read") {
+    const rootId = String(grant.constraints?.root_id ?? "").trim();
+    return Boolean(constraintDomain && rootId && constraintDomain === episodeDomain);
+  }
   return !constraintDomain || constraintDomain === episodeDomain;
 }
 
@@ -7663,6 +7948,9 @@ function prependHeldCapabilityGrants(messages, grants = []) {
 }
 
 function formatHeldCapabilityGrant(grant = {}) {
+  if (grant.capability === "tool.files.read") {
+    return `${grant.capability} grant_id ${grant.grant_id} root_id ${grant.root_id}`;
+  }
   return `${grant.capability} grant_id ${grant.grant_id}`;
 }
 

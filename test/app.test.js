@@ -281,6 +281,19 @@ const capabilityCatalog = {
       provider_contract: "soma.space.history.read.v1",
     },
     {
+      key: "tool.files.read",
+      name: "Scoped File Read",
+      category: "files",
+      risk_class: "sensitive",
+      default_status: "allowed",
+      allowed_scopes: ["session"],
+      data_exposed: ["file content within granted read scopes"],
+      excluded_by_default: ["host absolute paths", "files outside read roots"],
+      reversible: true,
+      activation_policy: "base_harness",
+      provider_contract: "soma.files.read.v1",
+    },
+    {
       key: "perception.sensorium.color.subscribe",
       name: "Sensorium Color Stream Subscription",
       category: "perception",
@@ -428,6 +441,19 @@ const providerRegistry = {
       ],
     },
     {
+      id: "soma.provider.scoped-files",
+      name: "Scoped File Reader",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "tool.files.read",
+          provider_contract: "soma.files.read.v1",
+        },
+      ],
+    },
+    {
       id: "soma.provider.sensorium.jetsorano",
       name: "Sensorium Node (jetsorano)",
       runtime: "test",
@@ -544,11 +570,12 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 15);
-  assert.equal(response.body.summary.by_status.active, 1);
+  assert.equal(response.body.summary.total, 16);
+  assert.equal(response.body.summary.by_status.active, 2);
   assert.equal(response.body.summary.by_status.requestable, 13);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
+  assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
@@ -1371,6 +1398,46 @@ test("POST /grants creates a durable grant and appends mutation provenance when 
     assert.equal(response.body.writable, true);
     assert.equal(response.body.runtime_writes_enabled, true);
     assert.equal(response.body.grants.length, 1);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("POST /grants preserves file-read domain and root constraints", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-file-grant-"));
+  try {
+    const grantStorePath = path.join(workspace, "grants.json");
+    const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+    await writeFile(grantStorePath, `${JSON.stringify({ schema_version: 1, grants: [], examples: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      grantStore: { schema_version: 1, grants: [], examples: [] },
+      grantRecoveryReport: { ok: true, degraded: false, grant_count: 0, finding_count: 0, findings: [] },
+      grantStorePath,
+      grantMutationProvenancePath: provenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/grants",
+      body: {
+        capability: "tool.files.read",
+        provider: "soma.provider.scoped-files",
+        scope: "session",
+        constraints: { domain: "testing", root_id: "testing-fixture" },
+        actor: "user",
+        reason: "Allow the occupant to read the synthetic testing fixture root.",
+        mutation_id: "mutation-file-read-create",
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.grant.capability, "tool.files.read");
+    assert.equal(response.body.grant.provider, "soma.provider.scoped-files");
+    assert.deepEqual(response.body.grant.constraints, { domain: "testing", root_id: "testing-fixture" });
+    const persisted = JSON.parse(await readFile(grantStorePath, "utf8"));
+    assert.deepEqual(persisted.grants[0].constraints, { domain: "testing", root_id: "testing-fixture" });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -3586,6 +3653,9 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /"invoke":"space\.status\.read"/);
   assert.match(seenMessages[0][0].content, /"grant_id":"the grant id you were given"/);
   assert.match(seenMessages[0][0].content, /optional "presentation_kind"/);
+  assert.match(seenMessages[0][0].content, /"invoke":"tool\.files\.read"/);
+  assert.match(seenMessages[0][0].content, /"root_id":"the root id you were given"/);
+  assert.match(seenMessages[0][0].content, /"relative_path":"path\/inside\/that\/root\.txt"/);
   assert.match(seenMessages[0][0].content, /The capabilities available in this run are reads/);
   assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
@@ -3616,6 +3686,12 @@ test("analysis_testing briefing delivers only active invocable held capability g
           id: "grant-history-active",
           capability: "space.history.read",
           provider: "soma.provider.history-projection",
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-file-active",
+          capability: "tool.files.read",
+          provider: "soma.provider.scoped-files",
+          constraints: { domain: "testing", root_id: "testing-fixture" },
         }),
         spaceCapabilityGrantFixture({
           id: "grant-status-revoked",
@@ -3683,6 +3759,7 @@ test("analysis_testing briefing delivers only active invocable held capability g
   assert.match(seenMessages[0][1].content, /Capability grants available to you in this episode/);
   assert.match(seenMessages[0][1].content, /space\.history\.read grant_id grant-history-active/);
   assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-active/);
+  assert.match(seenMessages[0][1].content, /tool\.files\.read grant_id grant-file-active root_id testing-fixture/);
   assert.match(seenMessages[0][1].content, /do not guess or search for others/);
   assert.match(seenMessages[0][1].content, /authorize invocation only/);
   assert.doesNotMatch(seenMessages[0][1].content, /grant-status-revoked/);
@@ -5745,6 +5822,418 @@ test("space.history.read is unavailable after episode ejection", async () => {
   assert.equal(modelCalled, false);
 });
 
+test("tool.files.read occupant invocation reads only granted synthetic testing root", async () => {
+  const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-file-testing-"));
+  try {
+    await writeFile(path.join(testingRoot, "fixture.txt"), "Synthetic file content.", "utf8");
+    const handler = makeHandler({
+      harness: {
+        ...allowedHarness,
+        filesystem: {
+          testing_roots: [{ id: "testing-fixture", path: testingRoot, synthetic: true }],
+          max_read_bytes: 1024,
+        },
+      },
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-file-testing",
+            status: "active",
+            capability: "tool.files.read",
+            provider: "soma.provider.scoped-files",
+            scope: "session",
+            constraints: { domain: "testing", root_id: "testing-fixture" },
+            approved_by: "user",
+            reason: "Let the occupant read the testing fixture root.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+        ],
+      },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I am reading the synthetic fixture.",
+              "```soma-capability",
+              JSON.stringify({
+                invoke: "tool.files.read",
+                grant_id: "grant-file-testing",
+                root_id: "testing-fixture",
+                relative_path: "fixture.txt",
+              }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+            tool_calls: [
+              { id: "call-should-stay-disabled", name: "files.read", arguments: { root_id: "testing-fixture", relative_path: "fixture.txt" } },
+            ],
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-file-read-1/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-file-read-1",
+        messages: [{ role: "user", content: "read file" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.text, "I am reading the synthetic fixture.");
+    assert.equal(response.body.tool_calls_enabled, false);
+    assert.deepEqual(response.body.tool_call_intents, []);
+    assert.equal(response.body.capability_refusals.length, 0);
+    assert.equal(response.body.capability_results.length, 1);
+    const envelope = response.body.capability_results[0];
+    assert.equal(envelope.capability, "tool.files.read");
+    assert.equal(envelope.grant_id, "grant-file-testing");
+    assert.equal(envelope.provider, "soma.provider.scoped-files");
+    assert.equal(envelope.result_schema, "soma.files.read.response.v1");
+    assert.equal(envelope.domain, "testing");
+    assert.equal(envelope.root_id, "testing-fixture");
+    assert.equal(envelope.relative_path, "fixture.txt");
+    assert.equal(envelope.bytes, 23);
+    assert.equal(envelope.content, "Synthetic file content.");
+    assert.equal(envelope.synthetic, true);
+    assert.equal(envelope.content_included, true);
+    assert.equal(envelope.one_shot, true);
+    assert.equal(envelope.read_only, true);
+    assert.deepEqual(envelope.data_classes_returned, ["file content within the granted synthetic sandbox root"]);
+    assert.ok(envelope.excluded_data.includes("host absolute paths"));
+    assert.equal("path" in envelope, false);
+    assert.equal("root_real_path" in envelope, false);
+    assert.equal("resolved_real_path" in envelope, false);
+    assert.doesNotMatch(JSON.stringify(envelope), new RegExp(testingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(response.body.capability_invocation_disclosures[0], /tool\.files\.read delivered/);
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=tool.files.read",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].grant_id, "grant-file-testing");
+    assert.equal(response.body.entries[0].provider, "soma.provider.scoped-files");
+    assert.equal(response.body.entries[0].resource_domain, "testing");
+    assert.equal(response.body.entries[0].root_id, "testing-fixture");
+    assert.equal(response.body.entries[0].relative_path, "fixture.txt");
+    assert.equal(response.body.entries[0].synthetic, true);
+    assert.match(response.body.entries[0].resolved_digest, /^[0-9a-f]{64}$/);
+    assert.equal(response.body.entries[0].file_bytes, 23);
+    assert.equal("content" in response.body.entries[0], false);
+    assert.equal("root_real_path" in response.body.entries[0], false);
+    assert.equal("resolved_real_path" in response.body.entries[0], false);
+    assert.equal("file_path" in response.body.entries[0], false);
+    assert.doesNotMatch(JSON.stringify(response.body.entries[0]), new RegExp(testingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    await rm(testingRoot, { recursive: true, force: true });
+  }
+});
+
+test("tool.files.read occupant invocation enforces grant domain and root before read", async () => {
+  const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-file-constraints-"));
+  try {
+    await writeFile(path.join(testingRoot, "fixture.txt"), "Allowed.", "utf8");
+    await writeFile(path.join(testingRoot, "other.txt"), "Other.", "utf8");
+    const completions = [
+      { grant_id: "grant-file-testing", root_id: "other-root", relative_path: "fixture.txt" },
+      { grant_id: "grant-file-operational", root_id: "testing-fixture", relative_path: "fixture.txt" },
+    ];
+    let calls = 0;
+    const handler = makeHandler({
+      harness: {
+        ...allowedHarness,
+        filesystem: {
+          testing_roots: [{ id: "testing-fixture", path: testingRoot, synthetic: true }],
+          max_read_bytes: 1024,
+        },
+      },
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-file-testing",
+            status: "active",
+            capability: "tool.files.read",
+            provider: "soma.provider.scoped-files",
+            scope: "session",
+            constraints: { domain: "testing", root_id: "testing-fixture" },
+            approved_by: "user",
+            reason: "Let the occupant read the testing fixture root.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+          {
+            id: "grant-file-operational",
+            status: "active",
+            capability: "tool.files.read",
+            provider: "soma.provider.scoped-files",
+            scope: "session",
+            constraints: { domain: "operational", root_id: "testing-fixture" },
+            approved_by: "user",
+            reason: "Operational file read grant.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+        ],
+      },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          const invocation = completions[calls];
+          calls += 1;
+          return {
+            text: [
+              "Trying a file read.",
+              "```soma-capability",
+              JSON.stringify({ invoke: "tool.files.read", ...invocation }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-file-constraints/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-file-constraints", messages: [{ role: "user", content: "read wrong root" }] },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals[0].reason, "file_read_grant_root_mismatch");
+    assert.equal(response.body.capability_refusals[0].content_included, false);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-file-constraints", messages: [{ role: "user", content: "read wrong domain" }] },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals[0].reason, "file_read_grant_domain_mismatch");
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=tool.files.read.denied",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 2);
+    assert.deepEqual(response.body.entries.map((entry) => entry.reason), [
+      "file_read_grant_root_mismatch",
+      "file_read_grant_domain_mismatch",
+    ]);
+    for (const entry of response.body.entries) {
+      assert.equal(entry.result_egress_delivered, false);
+      assert.equal(entry.content_included, false);
+      assert.equal("content" in entry, false);
+      assert.equal("root_real_path" in entry, false);
+      assert.equal("resolved_real_path" in entry, false);
+      assert.doesNotMatch(JSON.stringify(entry), new RegExp(testingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+  } finally {
+    await rm(testingRoot, { recursive: true, force: true });
+  }
+});
+
+test("tool.files.read occupant invocation preserves router refusals without host path leak", async () => {
+  const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-file-router-"));
+  const outsideRoot = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-file-outside-"));
+  try {
+    await writeFile(path.join(testingRoot, "fixture.txt"), "Allowed.", "utf8");
+    await writeFile(path.join(outsideRoot, "outside.txt"), "Outside.", "utf8");
+    await symlink(path.join(outsideRoot, "outside.txt"), path.join(testingRoot, "outside-link.txt"));
+    await link(path.join(outsideRoot, "outside.txt"), path.join(testingRoot, "hardlink.txt"));
+    const relativePaths = ["../outside.txt", "/etc/passwd", "outside-link.txt", "hardlink.txt"];
+    let calls = 0;
+    const handler = makeHandler({
+      harness: {
+        ...allowedHarness,
+        filesystem: {
+          testing_roots: [{ id: "testing-fixture", path: testingRoot, synthetic: true }],
+          max_read_bytes: 1024,
+        },
+      },
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-file-testing",
+            status: "active",
+            capability: "tool.files.read",
+            provider: "soma.provider.scoped-files",
+            scope: "session",
+            constraints: { domain: "testing", root_id: "testing-fixture" },
+            approved_by: "user",
+            reason: "Let the occupant read the testing fixture root.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+        ],
+      },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          const relative_path = relativePaths[calls];
+          calls += 1;
+          return {
+            text: [
+              "Trying a routed file read.",
+              "```soma-capability",
+              JSON.stringify({
+                invoke: "tool.files.read",
+                grant_id: "grant-file-testing",
+                root_id: "testing-fixture",
+                relative_path,
+              }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-file-router/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    const expectedReasons = ["invalid_relative_path", "invalid_relative_path", "file_scope_denied", "file_hardlink_denied"];
+    for (const expectedReason of expectedReasons) {
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-file-router", messages: [{ role: "user", content: "read" }] },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.body.capability_results.length, 0);
+      assert.equal(response.body.capability_refusals[0].reason, expectedReason);
+      assert.equal(response.body.capability_refusals[0].content_included, false);
+      assert.doesNotMatch(JSON.stringify(response.body.capability_refusals[0]), new RegExp(testingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.doesNotMatch(JSON.stringify(response.body.capability_refusals[0]), new RegExp(outsideRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=tool.files.read.denied",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body.entries.map((entry) => entry.reason), expectedReasons);
+    for (const entry of response.body.entries) {
+      assert.equal("content" in entry, false);
+      assert.equal("relative_path" in entry, false);
+      assert.equal("root_real_path" in entry, false);
+      assert.equal("resolved_real_path" in entry, false);
+      assert.doesNotMatch(JSON.stringify(entry), new RegExp(testingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.doesNotMatch(JSON.stringify(entry), new RegExp(outsideRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+  } finally {
+    await rm(testingRoot, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
+  }
+});
+
+test("tool.files.read occupant invocation is unavailable after episode ejection", async () => {
+  let modelCalled = false;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-file-ejected",
+          status: "active",
+          capability: "tool.files.read",
+          provider: "soma.provider.scoped-files",
+          scope: "session",
+          constraints: { domain: "testing", root_id: "testing-fixture" },
+          approved_by: "user",
+          reason: "Let the occupant read a file.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        modelCalled = true;
+        return {
+          text: [
+            "File after ejection.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "tool.files.read", grant_id: "grant-file-ejected", root_id: "testing-fixture", relative_path: "fixture.txt" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-file-ejected/abort",
+    body: { actor: "user", type: "crew_aborted_for_care", reason: "close run" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "ejected");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-file-ejected",
+      messages: [{ role: "user", content: "file" }],
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "episode_ejected");
+  assert.equal(modelCalled, false);
+});
+
 test("POST /chat requires an active grant before processing local model tool-call intents", async () => {
   let calls = 0;
   const modelClient = {
@@ -6432,7 +6921,7 @@ test("file read returns content only inside granted scope and records provenance
   assert.equal(response.body.entries[0].capability, "tool.files.read");
   assert.equal(response.body.entries[0].resource_class, "file");
   assert.equal(response.body.entries[0].resource_domain, "operational");
-  assert.equal(response.body.entries[0].provider_id, "soma.provider.files.operational");
+  assert.equal(response.body.entries[0].provider_id, "soma.provider.scoped-files");
   assert.equal(response.body.entries[0].root_id, "workspace");
   assert.equal(response.body.entries[0].relative_path, "note.txt");
   assert.equal(response.body.entries[0].synthetic, false);

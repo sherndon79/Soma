@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_MAX_BYTES = 256_000;
 const DEFAULT_TESTING_ROOT = fileURLToPath(new URL("../docs/fixtures/file-router/testing", import.meta.url));
+const DEFAULT_FILE_PROVIDER_ID = "soma.provider.scoped-files";
 
 export async function readScopedTextFile({
   descriptor,
@@ -104,7 +105,7 @@ function fileRootsForDomain({ domain, harness = {}, baseDir = process.cwd() } = 
     return [{
       root_id: "testing-fixture",
       path: DEFAULT_TESTING_ROOT,
-      provider_id: "soma.provider.files.testing",
+      provider_id: DEFAULT_FILE_PROVIDER_ID,
       synthetic: true,
     }];
   }
@@ -125,7 +126,7 @@ function normalizeConfiguredRoots(value, { domain, baseDir, synthetic }) {
         return {
           root_id: `root-${index + 1}`,
           path: path.resolve(baseDir, entry),
-          provider_id: `soma.provider.files.${domain}`,
+          provider_id: DEFAULT_FILE_PROVIDER_ID,
           synthetic,
         };
       }
@@ -140,7 +141,7 @@ function normalizeConfiguredRoots(value, { domain, baseDir, synthetic }) {
       return {
         root_id: rootId,
         path: path.resolve(baseDir, rootPath),
-        provider_id: String(entry.provider_id ?? `soma.provider.files.${domain}`).trim(),
+        provider_id: String(entry.provider_id ?? DEFAULT_FILE_PROVIDER_ID).trim(),
         synthetic: Boolean(entry.synthetic ?? synthetic),
       };
     })
@@ -154,7 +155,7 @@ function legacyOperationalRoots(readRoots, { baseDir }) {
   return readRoots.map((root, index) => ({
     root_id: `root-${index + 1}`,
     path: path.resolve(baseDir, String(root ?? "")),
-    provider_id: "soma.provider.files.operational",
+    provider_id: DEFAULT_FILE_PROVIDER_ID,
     synthetic: false,
   }));
 }

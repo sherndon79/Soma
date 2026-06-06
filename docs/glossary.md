@@ -80,6 +80,8 @@ module posture, or current policy context. Exclusion is stronger than merely not
 A bounded, router-issued description of the resource a provider may touch. For file reads this
 includes fields such as `domain`, `provider_id`, `resource_class`, `root_id`, `relative_path`,
 `synthetic`, and size bounds. Providers receive descriptors, not caller-supplied host paths.
+Occupant-facing file-read grants bind to the descriptor domain and `root_id` before the provider can
+read content.
 
 ## Forbidden
 

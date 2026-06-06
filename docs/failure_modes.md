@@ -236,9 +236,12 @@ Current behavior:
 
 - file reads resolve through `domain`, `root_id`, and clean `relative_path` descriptors; callers do
   not supply host absolute paths
+- occupant `tool.files.read` invocations require an active grant whose `constraints.domain` matches
+  the episode domain and whose `constraints.root_id` matches the requested root
 - file reads outside routed roots fail with `file_scope_denied`
 - unknown or cross-domain roots fail with `file_root_unavailable` without returning configured host
   root paths
+- mismatched occupant file grants fail before descriptor resolution or read
 - hardlinked files fail closed with `file_hardlink_denied`
 - directories, devices, and FIFOs fail with `not_a_file`
 - file content is bounded by `max_read_bytes`

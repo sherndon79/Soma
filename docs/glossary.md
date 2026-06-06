@@ -88,6 +88,11 @@ For internal summaries, a ResourceDescriptor may describe bounded scope rather t
 example, `provenance.summary.read` uses `resource_class=internal_provenance`, episode/domain scope,
 synthetic testing posture, and event-count bounds. In occupant invocation, the harness pins that
 scope to the current episode and the returned envelope omits episode ids.
+For synthetic desktop testing, a ResourceDescriptor may describe an allowlisted fixture rather than
+the host desktop: `resource_class=desktop`, `provider_mode=synthetic_fixture`,
+`desktop_surface=accessibility_tree`, `synthetic=true`, `fixture_id`, `fixture_digest`, limits, and
+grant id. It must not include host display/session-bus handles, pids, service refs, or raw fixture
+paths.
 
 ## Steward Watch
 

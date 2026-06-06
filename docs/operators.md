@@ -341,6 +341,15 @@ The current AT-SPI probe is read-only. It returns bounded participant, applicati
 shallow child role/count metadata. It does not read child names, descriptions, text content, states,
 actions, screenshots, pointer position, keyboard input, or camera/microphone data.
 
+Testing-domain occupants do not invoke this live route. When an occupant holds an active
+`desktop.inspect.accessibility_tree` grant, they invoke it with a fenced `soma-capability` block
+containing only `invoke` and `grant_id`; Soma resolves an allowlisted synthetic fixture descriptor
+for `soma.provider.synthetic-desktop`. That descriptor contains fixture id/digest, limits, and
+synthetic disclosure fields, not DISPLAY, session bus, pid, service, helper, or raw fixture path
+handles. If no synthetic fixture is configured, the invocation fails closed instead of falling back
+to the live broker. Treat synthetic fixture output as policy/egress validation, not as proof of live
+desktop realism.
+
 The CLI validates desktop inspection `--mode`, `--max-apps`, and `--max-children` values before
 sending the request, so malformed inspect flags are not silently omitted. The service still owns
 the authoritative request and provider-output validation boundary.

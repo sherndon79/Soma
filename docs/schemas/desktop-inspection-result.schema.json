@@ -27,7 +27,8 @@
       "type": "string",
       "enum": [
         "rust_helper",
-        "javascript_fallback"
+        "javascript_fallback",
+        "synthetic_fixture"
       ]
     },
     "platform": {

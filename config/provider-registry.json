@@ -207,6 +207,22 @@
       ]
     },
     {
+      "id": "soma.provider.synthetic-desktop",
+      "name": "Synthetic Desktop Fixture Provider",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "desktop.inspect.accessibility_tree",
+          "provider_contract": "soma.desktop.inspect.accessibility_tree.v1",
+          "output_schema": "docs/schemas/desktop-inspection-result.schema.json",
+          "provider_mode": "synthetic_fixture"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.sensorium.jetsorano",
       "name": "Sensorium Node (jetsorano)",
       "version": "0.1.0",

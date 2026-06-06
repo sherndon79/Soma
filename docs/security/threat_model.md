@@ -131,7 +131,11 @@ Current controls:
   current episode domain, ignores caller-supplied episode scope, and excludes raw provenance
   entries, event/capability breakdowns, denial reasons, grant ids, episode ids, caller identities,
   paths, provider internals, and other-scope data
-- desktop inspection omits text content by default
+- occupant `desktop.inspect.accessibility_tree` in testing resolves through a synthetic fixture
+  ResourceDescriptor and never touches the host display, desktop session, D-Bus/session bus, helper
+  process, raw fixture path, screenshots, text, names, descriptions, states, actions, pointer state,
+  keyboard state, or actuation
+- live desktop inspection remains an operator route and omits text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
 - protective near-miss detection is limited to command-shaped malformed control attempts on their
   own line; it auto-pauses and records content-free metadata, never auto-ejects, and does not mine

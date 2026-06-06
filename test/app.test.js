@@ -8,8 +8,12 @@ import test from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
 import { CapabilityProposalStore } from "../src/capabilityProposals.js";
-import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
+import {
+  inspectDesktopAccessibilityTreeWithDescriptor,
+  inspectDesktopBrokerEnvironment,
+} from "../src/desktopBroker.js";
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
+import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 import { loadGrantAuthority } from "../src/grantAuthority.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 
@@ -19,6 +23,10 @@ const traversalEndpointActivationCasesPath = new URL(
 );
 const grantMutationPreviewReviewCasesPath = new URL(
   "../docs/fixtures/grant-mutation-preview-review-cases.json",
+  import.meta.url,
+);
+const syntheticDesktopFixturePath = new URL(
+  "../docs/fixtures/desktop/synthetic-accessibility-tree-basic.json",
   import.meta.url,
 );
 
@@ -41,6 +49,14 @@ const allowedHarness = {
   filesystem: {
     read_roots: ["."],
     max_read_bytes: 256000,
+  },
+};
+
+const syntheticDesktopHarness = {
+  ...allowedHarness,
+  desktop: {
+    synthetic_fixtures: ["testing-desktop-basic-a11y-v1"],
+    default_synthetic_fixture_id: "testing-desktop-basic-a11y-v1",
   },
 };
 
@@ -208,6 +224,26 @@ const capabilityCatalog = {
       risk_class: "sensitive",
       default_status: "disabled",
       activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.inspect.accessibility_tree",
+      name: "Desktop Accessibility Tree Inspection",
+      category: "desktop",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: ["bounded synthetic accessibility tree structure"],
+      excluded_by_default: [
+        "host desktop session",
+        "display or session bus handles",
+        "application text",
+        "names and descriptions",
+        "states and actions",
+        "screenshots",
+      ],
+      reversible: true,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.desktop.inspect.accessibility_tree.v1",
     },
     {
       key: "memory.durable.write",
@@ -412,6 +448,20 @@ const providerRegistry = {
       capabilities: ["desktop.inspect.focus", "desktop.inspect.windows"],
     },
     {
+      id: "soma.provider.synthetic-desktop",
+      name: "Synthetic Desktop Fixture",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "desktop.inspect.accessibility_tree",
+          provider_contract: "soma.desktop.inspect.accessibility_tree.v1",
+          output_schema: "docs/schemas/desktop-inspection-result.schema.json",
+        },
+      ],
+    },
+    {
       id: "soma.provider.anthropic",
       name: "Anthropic Messages API",
       runtime: "test",
@@ -605,11 +655,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 17);
-  assert.equal(response.body.summary.by_status.active, 2);
+  assert.equal(response.body.summary.total, 18);
+  assert.equal(response.body.summary.by_status.active, 3);
   assert.equal(response.body.summary.by_status.requestable, 14);
   assert.equal(response.body.summary.by_status.unsupported, 1);
-  assert.equal(response.body.grouped.desktop.total, 6);
+  assert.equal(response.body.grouped.desktop.total, 7);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
@@ -4056,6 +4106,9 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /For provenance\.summary\.read, use only the grant_id/);
   assert.match(seenMessages[0][0].content, /"invoke":"provenance\.summary\.read"/);
   assert.match(seenMessages[0][0].content, /harness pins the scope to this episode/);
+  assert.match(seenMessages[0][0].content, /For desktop\.inspect\.accessibility_tree, use only the grant_id/);
+  assert.match(seenMessages[0][0].content, /synthetic, structure-only accessibility tree, not the host desktop/);
+  assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.accessibility_tree"/);
   assert.match(seenMessages[0][0].content, /The capabilities available in this run are reads/);
   assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
@@ -4175,6 +4228,12 @@ test("analysis_testing briefing delivers only active invocable held capability g
           constraints: { domain: "testing" },
         }),
         spaceCapabilityGrantFixture({
+          id: "grant-desktop-active",
+          capability: "desktop.inspect.accessibility_tree",
+          provider: "soma.provider.synthetic-desktop",
+          constraints: { domain: "testing", fixture_id: "testing-desktop-basic-a11y-v1" },
+        }),
+        spaceCapabilityGrantFixture({
           id: "grant-status-revoked",
           status: "revoked",
           capability: "space.status.read",
@@ -4240,6 +4299,7 @@ test("analysis_testing briefing delivers only active invocable held capability g
   assert.match(seenMessages[0][1].content, /Capability grants available to you in this episode/);
   assert.match(seenMessages[0][1].content, /space\.history\.read grant_id grant-history-active/);
   assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-active/);
+  assert.match(seenMessages[0][1].content, /desktop\.inspect\.accessibility_tree grant_id grant-desktop-active/);
   assert.match(seenMessages[0][1].content, /provenance\.summary\.read grant_id grant-provenance-summary-active/);
   assert.match(seenMessages[0][1].content, /tool\.files\.read grant_id grant-file-active root_id testing-fixture/);
   assert.match(seenMessages[0][1].content, /do not guess or search for others/);
@@ -6618,6 +6678,313 @@ test("provenance.summary.read occupant invocation is unavailable after episode e
   assert.equal(modelCalled, false);
 });
 
+test("desktop.inspect.accessibility_tree occupant invocation returns a synthetic structure-only tree", async () => {
+  const handler = makeHandler({
+    harness: syntheticDesktopHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-synthetic-desktop",
+          status: "active",
+          capability: "desktop.inspect.accessibility_tree",
+          provider: "soma.provider.synthetic-desktop",
+          scope: "session",
+          constraints: {
+            domain: "testing",
+            fixture_id: "testing-desktop-basic-a11y-v1",
+            max_apps: 2,
+            max_children: 1,
+          },
+          approved_by: "user",
+          reason: "Let the occupant inspect a synthetic desktop fixture.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking the synthetic desktop structure.",
+            "```soma-capability",
+            JSON.stringify({
+              invoke: "desktop.inspect.accessibility_tree",
+              grant_id: "grant-synthetic-desktop",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 9,
+          tool_calls: [
+            { id: "call-should-stay-disabled", name: "desktop.inspect", arguments: {} },
+          ],
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-synthetic-desktop/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-synthetic-desktop",
+      messages: [{ role: "user", content: "desktop structure" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I am checking the synthetic desktop structure.");
+  assert.equal(response.body.tool_calls_enabled, false);
+  assert.deepEqual(response.body.tool_call_intents, []);
+  assert.equal(response.body.capability_refusals.length, 0);
+  assert.equal(response.body.capability_results.length, 1);
+
+  const envelope = response.body.capability_results[0];
+  assert.equal(envelope.capability, "desktop.inspect.accessibility_tree");
+  assert.equal(envelope.grant_id, "grant-synthetic-desktop");
+  assert.equal(envelope.provider, "soma.provider.synthetic-desktop");
+  assert.equal(envelope.result_schema, "docs/schemas/desktop-inspection-result.schema.json");
+  assert.equal(envelope.domain, "testing");
+  assert.equal(envelope.resource_class, "desktop");
+  assert.equal(envelope.provider_mode, "synthetic_fixture");
+  assert.equal(envelope.desktop_surface, "accessibility_tree");
+  assert.equal(envelope.synthetic, true);
+  assert.equal(envelope.fixture_id, "testing-desktop-basic-a11y-v1");
+  assert.match(envelope.fixture_digest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(envelope.limits, { max_apps: 2, max_children: 1 });
+  assert.equal(envelope.content_included, false);
+  assert.equal(envelope.text_content_included, false);
+  assert.equal(envelope.one_shot, true);
+  assert.equal(envelope.read_only, true);
+  assert.ok(envelope.excluded_data.includes("names and descriptions"));
+  assert.ok(envelope.excluded_data.includes("host display identifiers"));
+
+  const inspection = envelope.result;
+  assert.equal(inspection.broker_source, "synthetic_fixture");
+  assert.equal(inspection.tree_available, true);
+  assert.equal(inspection.tree.bounded, true);
+  assert.equal(inspection.tree.text_content_included, false);
+  assert.equal(inspection.application_count, 2);
+  assert.equal(inspection.tree.applications.length, 2);
+  for (const application of inspection.tree.applications) {
+    assert.equal(application.root_object.name, "");
+    assert.ok(application.root_object.children_sample.length <= 1);
+    assert.ok(application.root_object.child_metadata_sample.length <= 1);
+  }
+  assertNoDesktopContentFields(inspection);
+  assert.doesNotMatch(JSON.stringify(envelope), /DISPLAY|DBUS_SESSION_BUS_ADDRESS|WAYLAND_DISPLAY|XDG_SESSION_ID/);
+  assert.match(response.body.capability_invocation_disclosures[0], /synthetic, structure-only accessibility tree/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].provider, "soma.provider.synthetic-desktop");
+  assert.equal(response.body.entries[0].provider_mode, "synthetic_fixture");
+  assert.equal(response.body.entries[0].resource_class, "desktop");
+  assert.equal(response.body.entries[0].desktop_surface, "accessibility_tree");
+  assert.equal(response.body.entries[0].synthetic, true);
+  assert.equal(response.body.entries[0].fixture_id, "testing-desktop-basic-a11y-v1");
+  assert.equal(response.body.entries[0].content_included, false);
+  assert.equal(response.body.entries[0].text_content_included, false);
+  assert.equal(response.body.entries[0].names_included, false);
+  assert.equal(response.body.entries[0].descriptions_included, false);
+  assert.equal(response.body.entries[0].states_included, false);
+  assert.equal(response.body.entries[0].actions_included, false);
+  assert.equal(response.body.entries[0].host_display_included, false);
+  assert.equal(response.body.entries[0].host_session_bus_included, false);
+  for (const forbidden of ["desktop_session", "session_type", "display", "dbus_session_bus", "pid", "path", "service"]) {
+    assert.equal(Object.hasOwn(response.body.entries[0], forbidden), false, forbidden);
+  }
+});
+
+test("desktop.inspect.accessibility_tree fails closed without synthetic fixture configuration", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-synthetic-desktop-missing-fixture",
+          status: "active",
+          capability: "desktop.inspect.accessibility_tree",
+          provider: "soma.provider.synthetic-desktop",
+          scope: "session",
+          constraints: { domain: "testing" },
+          approved_by: "user",
+          reason: "Missing synthetic fixture configuration.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking the desktop.",
+            "```soma-capability",
+            JSON.stringify({
+              invoke: "desktop.inspect.accessibility_tree",
+              grant_id: "grant-synthetic-desktop-missing-fixture",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-synthetic-desktop-missing/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-synthetic-desktop-missing",
+      messages: [{ role: "user", content: "desktop" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].reason, "synthetic_desktop_fixture_not_configured");
+  assert.match(response.body.capability_invocation_disclosures[0], /No synthetic tree, host desktop/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 0);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=desktop.inspect.accessibility_tree.denied",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].reason, "synthetic_desktop_fixture_not_configured");
+  assert.equal(response.body.entries[0].result_egress_delivered, false);
+  assert.equal(response.body.entries[0].content_included, false);
+});
+
+test("desktop.inspect.accessibility_tree occupant invocation refuses operational domain before live fallback", async () => {
+  const handler = makeHandler({
+    harness: syntheticDesktopHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-synthetic-desktop-operational",
+          status: "active",
+          capability: "desktop.inspect.accessibility_tree",
+          provider: "soma.provider.synthetic-desktop",
+          scope: "session",
+          constraints: { domain: "operational", fixture_id: "testing-desktop-basic-a11y-v1" },
+          approved_by: "user",
+          reason: "Operational domain should not route occupant synthetic inspection.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking the desktop.",
+            "```soma-capability",
+            JSON.stringify({
+              invoke: "desktop.inspect.accessibility_tree",
+              grant_id: "grant-synthetic-desktop-operational",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+        };
+      },
+    },
+  });
+
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = "/no/live/broker/should/be/used";
+  try {
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-synthetic-desktop-operational",
+        messages: [{ role: "user", content: "desktop" }],
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals.length, 1);
+    assert.equal(response.body.capability_refusals[0].reason, "desktop_accessibility_testing_domain_required");
+  } finally {
+    if (previousBroker === undefined) {
+      delete process.env.SOMA_DESKTOP_BROKER;
+    } else {
+      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+    }
+  }
+});
+
+function assertNoDesktopContentFields(value, location = "result") {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoDesktopContentFields(item, `${location}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    assert.notEqual(key, "description", `${location}.${key}`);
+    assert.notEqual(key, "text", `${location}.${key}`);
+    assert.notEqual(key, "states", `${location}.${key}`);
+    assert.notEqual(key, "actions", `${location}.${key}`);
+    assert.notEqual(key, "screenshot", `${location}.${key}`);
+    assert.notEqual(key, "pixels", `${location}.${key}`);
+    if (key === "name") {
+      assert.equal(nested, "", `${location}.${key}`);
+    }
+    assertNoDesktopContentFields(nested, `${location}.${key}`);
+  }
+}
+
 test("tool.files.read occupant invocation reads only granted synthetic testing root", async () => {
   const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-file-testing-"));
   try {
@@ -7892,7 +8259,7 @@ test("file read descriptor router enforces domain root and inode boundaries", as
   }
 });
 
-test("resource router dispatches file and internal provenance descriptors", async () => {
+test("resource router dispatches file, internal provenance, and synthetic desktop descriptors", async () => {
   const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-router-generic-"));
   try {
     await writeFile(path.join(testingRoot, "fixture.txt"), "Routed.", "utf8");
@@ -7926,9 +8293,75 @@ test("resource router dispatches file and internal provenance descriptors", asyn
     assert.equal(provenanceDescriptor.synthetic, true);
     assert.equal("root_real_path" in provenanceDescriptor, false);
     assert.equal("resolved_real_path" in provenanceDescriptor, false);
+
+    const desktopDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "desktop.inspect.accessibility_tree",
+      ref: { max_apps: 2, max_children: 1 },
+      grant: { id: "grant-router-desktop" },
+      harness: syntheticDesktopHarness,
+      providerRegistry,
+    });
+    assert.equal(desktopDescriptor.domain, "testing");
+    assert.equal(desktopDescriptor.capability, "desktop.inspect.accessibility_tree");
+    assert.equal(desktopDescriptor.provider_id, "soma.provider.synthetic-desktop");
+    assert.equal(desktopDescriptor.provider_mode, "synthetic_fixture");
+    assert.equal(desktopDescriptor.resource_class, "desktop");
+    assert.equal(desktopDescriptor.synthetic, true);
+    assert.equal(desktopDescriptor.desktop_surface, "accessibility_tree");
+    assert.equal(desktopDescriptor.fixture_id, "testing-desktop-basic-a11y-v1");
+    assert.match(desktopDescriptor.fixture_digest, /^[0-9a-f]{64}$/);
+    assert.deepEqual(desktopDescriptor.limits, { max_apps: 2, max_children: 1 });
+    assert.equal(desktopDescriptor.grant_id, "grant-router-desktop");
+    for (const forbidden of [
+      "DISPLAY",
+      "DBUS_SESSION_BUS_ADDRESS",
+      "WAYLAND_DISPLAY",
+      "desktop_session",
+      "session_type",
+      "pid",
+      "path",
+      "service",
+    ]) {
+      assert.equal(Object.hasOwn(desktopDescriptor, forbidden), false, forbidden);
+    }
   } finally {
     await rm(testingRoot, { recursive: true, force: true });
   }
+});
+
+test("synthetic desktop fixture validates and rejects content over-disclosure", async () => {
+  const fixture = JSON.parse(await readFile(syntheticDesktopFixturePath, "utf8"));
+  assertDesktopInspectionResult(fixture);
+  assert.equal(fixture.broker_source, "synthetic_fixture");
+  assert.equal(fixture.tree.bounded, true);
+  assert.equal(fixture.tree.text_content_included, false);
+  assertNoDesktopContentFields(fixture);
+
+  const descriptor = await resolveResourceDescriptor({
+    domain: "testing",
+    capability: "desktop.inspect.accessibility_tree",
+    ref: { max_apps: 1, max_children: 1 },
+    grant: { id: "grant-fixture-desktop" },
+    harness: syntheticDesktopHarness,
+    providerRegistry,
+  });
+  const inspection = await inspectDesktopAccessibilityTreeWithDescriptor({ descriptor });
+  assertDesktopInspectionResult(inspection);
+  assert.equal(inspection.broker_source, "synthetic_fixture");
+  assert.equal(inspection.application_count, 1);
+  assert.equal(inspection.tree.applications.length, 1);
+  assert.equal(inspection.tree.applications[0].root_object.children_sample.length <= 1, true);
+  assert.equal(inspection.tree.applications[0].root_object.child_metadata_sample.length <= 1, true);
+
+  const leakingFixture = structuredClone(fixture);
+  leakingFixture.tree.applications[0].root_object.child_metadata_sample[0].name = "private title";
+  assert.throws(
+    () => assertDesktopInspectionResult(leakingFixture),
+    {
+      code: "desktop_inspection_schema_invalid",
+    },
+  );
 });
 
 test("provenance.summary.read returns recon-minimized episode-scoped counts", async () => {

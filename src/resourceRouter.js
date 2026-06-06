@@ -1,6 +1,12 @@
 import { resolveFileResourceDescriptor } from "./fileAccess.js";
+import {
+  syntheticDesktopFixtureDescriptor,
+  syntheticDesktopFixtureDigest,
+} from "./desktopSyntheticFixtures.js";
 
 const DEFAULT_PROVENANCE_SUMMARY_PROVIDER_ID = "soma.provider.provenance-summary";
+const DEFAULT_DESKTOP_BROKER_PROVIDER_ID = "soma.provider.desktop-broker";
+const SYNTHETIC_DESKTOP_PROVIDER_ID = "soma.provider.synthetic-desktop";
 const DEFAULT_MAX_EVENTS_CONSIDERED = 1000;
 
 export async function resolveResourceDescriptor({
@@ -17,6 +23,9 @@ export async function resolveResourceDescriptor({
   }
   if (capability === "provenance.summary.read") {
     return resolveProvenanceSummaryResourceDescriptor({ domain, capability, ref, grant, harness, providerRegistry });
+  }
+  if (capability === "desktop.inspect.accessibility_tree") {
+    return resolveDesktopAccessibilityTreeResourceDescriptor({ domain, capability, ref, grant, harness, providerRegistry });
   }
   throw resourceRouterError("resource_capability_unrouted", "No resource router is registered for this capability.", 400);
 }
@@ -56,6 +65,81 @@ export function resolveProvenanceSummaryResourceDescriptor({
   };
 }
 
+export async function resolveDesktopAccessibilityTreeResourceDescriptor({
+  domain = "operational",
+  capability = "desktop.inspect.accessibility_tree",
+  ref = {},
+  grant = null,
+  harness = {},
+  providerRegistry = {},
+} = {}) {
+  if (capability !== "desktop.inspect.accessibility_tree") {
+    throw resourceRouterError(
+      "desktop_accessibility_capability_invalid",
+      "Desktop accessibility router only resolves desktop.inspect.accessibility_tree.",
+      400,
+    );
+  }
+  const normalizedDomain = normalizeResourceDomain(domain);
+  const limits = {
+    max_apps: normalizeDesktopLimit(ref.max_apps ?? ref.maxApps, 1, 64),
+    max_children: normalizeDesktopLimit(ref.max_children ?? ref.maxChildren, 0, 8),
+  };
+  if (normalizedDomain === "testing") {
+    const fixtureId = resolveTestingDesktopFixtureId({ harness, ref });
+    const fixture = syntheticDesktopFixtureDescriptor(fixtureId);
+    if (!fixture) {
+      throw resourceRouterError("synthetic_desktop_fixture_unknown", "Synthetic desktop fixture is not allowlisted.", 403);
+    }
+    return {
+      domain: "testing",
+      capability,
+      provider_id: SYNTHETIC_DESKTOP_PROVIDER_ID,
+      provider_mode: "synthetic_fixture",
+      resource_class: "desktop",
+      synthetic: true,
+      desktop_surface: "accessibility_tree",
+      fixture_id: fixture.id,
+      fixture_digest: await syntheticDesktopFixtureDigest(fixture.id),
+      limits,
+      grant_id: grant?.id ?? "",
+    };
+  }
+  return {
+    domain: "operational",
+    capability,
+    provider_id: providerForCapability(providerRegistry, capability) || DEFAULT_DESKTOP_BROKER_PROVIDER_ID,
+    provider_mode: "live_helper",
+    resource_class: "desktop",
+    synthetic: false,
+    desktop_surface: "accessibility_tree",
+    limits,
+    grant_id: grant?.id ?? "",
+  };
+}
+
+function resolveTestingDesktopFixtureId({ harness = {}, ref = {} } = {}) {
+  const allowed = normalizeSyntheticDesktopFixtureIds(harness.desktop?.synthetic_fixtures);
+  if (allowed.length === 0) {
+    throw resourceRouterError("synthetic_desktop_fixture_not_configured", "Testing desktop inspection requires a configured synthetic fixture.", 403);
+  }
+  const requested = boundedDescriptorString(
+    ref.fixture_id ?? ref.fixtureId ?? harness.desktop?.default_synthetic_fixture_id ?? allowed[0] ?? "",
+    "fixture_id",
+  );
+  if (!allowed.includes(requested)) {
+    throw resourceRouterError("synthetic_desktop_fixture_not_allowed", "Synthetic desktop fixture is not allowlisted for this harness.", 403);
+  }
+  return requested;
+}
+
+function normalizeSyntheticDesktopFixtureIds(entries) {
+  const values = Array.isArray(entries) ? entries : [];
+  return values
+    .map((entry) => String(typeof entry === "string" ? entry : entry?.id ?? "").trim())
+    .filter(Boolean);
+}
+
 function normalizeResourceDomain(domain) {
   const value = String(domain ?? "").trim() || "operational";
   if (!["testing", "operational"].includes(value)) {
@@ -70,6 +154,14 @@ function normalizeMaxEvents(value) {
     return number;
   }
   return DEFAULT_MAX_EVENTS_CONSIDERED;
+}
+
+function normalizeDesktopLimit(value, minimum, maximum) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number >= minimum && number <= maximum) {
+    return number;
+  }
+  return null;
 }
 
 function boundedDescriptorString(value, field) {

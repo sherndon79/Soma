@@ -303,6 +303,24 @@ Retry:
 
 - safe for read-only probes after helper repair
 
+### Synthetic Desktop Fixture Missing Or Invalid
+
+Current behavior:
+
+- occupant `desktop.inspect.accessibility_tree` testing invocations fail closed with no live
+  fallback when no allowlisted synthetic fixture is configured
+- fixture load and final egress both validate against the desktop inspection result contract
+
+Recovery:
+
+- configure an allowlisted fixture id in the harness
+- fix the fixture until it validates as structure-only output
+- do not substitute the live desktop broker for a testing-domain occupant invocation
+
+Retry:
+
+- safe after the fixture id, digest, and output contract are verified
+
 ### AT-SPI Unavailable
 
 Current behavior:

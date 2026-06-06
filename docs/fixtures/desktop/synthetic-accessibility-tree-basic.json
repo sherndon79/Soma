@@ -1,0 +1,143 @@
+{
+  "mode": "read_only_atspi_probe",
+  "broker_source": "synthetic_fixture",
+  "platform": "synthetic-linux",
+  "release": "fixture",
+  "desktop_session": "synthetic",
+  "session_type": "synthetic",
+  "dbus_session_bus_available": false,
+  "atspi_likely_available": true,
+  "atspi_bus_address_available": false,
+  "application_count": 3,
+  "root_object_available_count": 3,
+  "window_count": 0,
+  "tree_available": true,
+  "tree": {
+    "applications": [
+      {
+        "service": "synthetic.browser",
+        "pid": null,
+        "process": "synthetic-browser",
+        "registry": false,
+        "root_object": {
+          "path": "/org/a11y/atspi/accessible/root",
+          "name": "",
+          "role": "application",
+          "child_count": 3,
+          "children_sample": [
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/window"
+            },
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/toolbar"
+            },
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/document"
+            }
+          ],
+          "child_metadata_sample": [
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/window",
+              "role": "frame",
+              "child_count": 2
+            },
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/toolbar",
+              "role": "tool bar",
+              "child_count": 4
+            },
+            {
+              "service": "synthetic.browser",
+              "path": "/org/a11y/atspi/accessible/browser/document",
+              "role": "document web",
+              "child_count": 5
+            }
+          ]
+        },
+        "root_object_error": null
+      },
+      {
+        "service": "synthetic.notes",
+        "pid": null,
+        "process": "synthetic-notes",
+        "registry": false,
+        "root_object": {
+          "path": "/org/a11y/atspi/accessible/root",
+          "name": "",
+          "role": "application",
+          "child_count": 2,
+          "children_sample": [
+            {
+              "service": "synthetic.notes",
+              "path": "/org/a11y/atspi/accessible/notes/window"
+            },
+            {
+              "service": "synthetic.notes",
+              "path": "/org/a11y/atspi/accessible/notes/editor"
+            }
+          ],
+          "child_metadata_sample": [
+            {
+              "service": "synthetic.notes",
+              "path": "/org/a11y/atspi/accessible/notes/window",
+              "role": "frame",
+              "child_count": 1
+            },
+            {
+              "service": "synthetic.notes",
+              "path": "/org/a11y/atspi/accessible/notes/editor",
+              "role": "panel",
+              "child_count": 3
+            }
+          ]
+        },
+        "root_object_error": null
+      },
+      {
+        "service": "synthetic.settings",
+        "pid": null,
+        "process": "synthetic-settings",
+        "registry": false,
+        "root_object": {
+          "path": "/org/a11y/atspi/accessible/root",
+          "name": "",
+          "role": "application",
+          "child_count": 2,
+          "children_sample": [
+            {
+              "service": "synthetic.settings",
+              "path": "/org/a11y/atspi/accessible/settings/window"
+            },
+            {
+              "service": "synthetic.settings",
+              "path": "/org/a11y/atspi/accessible/settings/list"
+            }
+          ],
+          "child_metadata_sample": [
+            {
+              "service": "synthetic.settings",
+              "path": "/org/a11y/atspi/accessible/settings/window",
+              "role": "frame",
+              "child_count": 1
+            },
+            {
+              "service": "synthetic.settings",
+              "path": "/org/a11y/atspi/accessible/settings/list",
+              "role": "list",
+              "child_count": 6
+            }
+          ]
+        },
+        "root_object_error": null
+      }
+    ],
+    "windows": [],
+    "bounded": true,
+    "text_content_included": false
+  }
+}

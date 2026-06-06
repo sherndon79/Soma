@@ -11,6 +11,7 @@ import {
   assertDesktopWindowsInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
 } from "./desktopInspectionSchema.js";
+import { loadSyntheticDesktopFixture } from "./desktopSyntheticFixtures.js";
 import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 
 const execFileAsync = promisify(execFile);
@@ -105,6 +106,46 @@ export async function inspectDesktopBrokerEnvironment({
     assertDesktopInspectionResult(await inspectDesktopBrokerEnvironmentFallback({ env, mode: normalizedMode })),
     limits,
   );
+}
+
+export async function inspectDesktopAccessibilityTreeWithDescriptor({
+  descriptor = {},
+  env = process.env,
+  helperPath = env.SOMA_DESKTOP_BROKER ?? DEFAULT_HELPER_PATH,
+} = {}) {
+  if (descriptor.capability !== "desktop.inspect.accessibility_tree") {
+    const error = new Error("Desktop accessibility descriptor capability is invalid.");
+    error.code = "desktop_descriptor_capability_invalid";
+    error.statusCode = 400;
+    throw error;
+  }
+  const limits = normalizeInspectionLimits({
+    maxApps: descriptor.limits?.max_apps,
+    maxChildren: descriptor.limits?.max_children,
+  });
+  if (descriptor.provider_mode === "synthetic_fixture") {
+    if (descriptor.synthetic !== true || descriptor.domain !== "testing") {
+      const error = new Error("Synthetic desktop fixtures are only available in the testing domain.");
+      error.code = "synthetic_desktop_domain_required";
+      error.statusCode = 403;
+      throw error;
+    }
+    const loaded = assertDesktopInspectionResult(await loadSyntheticDesktopFixture(descriptor.fixture_id));
+    return assertDesktopInspectionResult(limitDesktopInspectionResult(loaded, limits));
+  }
+  if (descriptor.provider_mode === "live_helper") {
+    return inspectDesktopBrokerEnvironment({
+      mode: "atspi",
+      maxApps: descriptor.limits?.max_apps,
+      maxChildren: descriptor.limits?.max_children,
+      env,
+      helperPath,
+    });
+  }
+  const error = new Error("Desktop descriptor provider mode is not supported.");
+  error.code = "desktop_provider_mode_unsupported";
+  error.statusCode = 400;
+  throw error;
 }
 
 export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env, mode = "environment" } = {}) {

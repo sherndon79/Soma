@@ -685,6 +685,24 @@ Callers may pass `max_apps` and `max_children` to narrow the returned applicatio
 child samples after broker output validation. Provenance records requested mode and requested
 limits separately from returned object counts.
 
+The occupant-facing testing invocation is separate from this operator route. A fenced
+`soma-capability` block may invoke `desktop.inspect.accessibility_tree` with only `invoke` and
+`grant_id`; when the episode domain is testing, the DomainRouter resolves a
+`desktop` ResourceDescriptor with `provider_mode=synthetic_fixture`, `synthetic=true`,
+`desktop_surface=accessibility_tree`, an allowlisted `fixture_id`, a `fixture_digest`, limits, and
+the grant id. That descriptor is passed to `soma.provider.synthetic-desktop`, not to the live helper
+environment. Testing descriptors do not contain display names, session bus addresses, pids, service
+refs, raw fixture paths, or host session handles, and there is no fallback to live desktop inspection
+when a synthetic fixture is missing.
+
+The current synthetic fixture under `docs/fixtures/desktop/` is structure-only: root roles,
+child counts, child refs, and child metadata samples. It has `tree.bounded=true` and
+`text_content_included=false`; it does not carry names/descriptions, text content, states, actions,
+screenshots, pointer state, keyboard state, or actuation. Synthetic realism is limited: the fixture
+can exercise policy and egress contracts, but it is not evidence that a live desktop environment,
+window manager, toolkit, or AT-SPI implementation will behave the same. A future containerized
+testing provider should mirror the live DE/WM/toolkit shape while keeping synthetic content.
+
 ### `POST /desktop/inspect/focus`
 
 Returns read-only focused-object metadata when an active runtime grant authorizes

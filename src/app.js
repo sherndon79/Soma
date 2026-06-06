@@ -5,6 +5,7 @@ import { buildCapabilityView } from "./capabilityCatalog.js";
 import { assessCognitiveLoad } from "./cognitiveLoad.js";
 import { CapabilityProposalStore, summarizeNotifications } from "./capabilityProposals.js";
 import {
+  inspectDesktopAccessibilityTreeWithDescriptor,
   inspectDesktopBrokerEnvironment,
   inspectDesktopWindows,
   inspectFocusedDesktopObject,
@@ -4637,7 +4638,13 @@ async function processSpaceCapabilityInvocations({
       relative_path: invocation.relative_path,
       supplied_episode_id_present: Boolean(invocation.episode_id),
     });
-    if (!["space.status.read", "space.history.read", "tool.files.read", "provenance.summary.read"].includes(invocation.capability)) {
+    if (![
+      "space.status.read",
+      "space.history.read",
+      "tool.files.read",
+      "provenance.summary.read",
+      "desktop.inspect.accessibility_tree",
+    ].includes(invocation.capability)) {
       const refusal = recordSpaceCapabilityRefusal({
         invocation,
         episode,
@@ -4671,6 +4678,29 @@ async function processSpaceCapabilityInvocations({
         result.refusals.push(fileResult.refusal);
       }
       result.disclosures.push(fileResult.disclosure);
+      continue;
+    }
+    if (invocation.capability === "desktop.inspect.accessibility_tree") {
+      const desktopResult = await processDesktopAccessibilityTreeInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      if (desktopResult.result) {
+        result.results.push(desktopResult.result);
+      }
+      if (desktopResult.refusal) {
+        result.refusals.push(desktopResult.refusal);
+      }
+      result.disclosures.push(desktopResult.disclosure);
       continue;
     }
     if (invocation.capability === "provenance.summary.read") {
@@ -4836,6 +4866,332 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
     relative_path: String(input.relative_path ?? "").trim(),
     episode_id: String(input.episode_id ?? input.episodeId ?? "").trim(),
   };
+}
+
+const DESKTOP_ACCESSIBILITY_CAPABILITY = "desktop.inspect.accessibility_tree";
+const SYNTHETIC_DESKTOP_PROVIDER_ID = "soma.provider.synthetic-desktop";
+
+const DESKTOP_ACCESSIBILITY_DATA_CLASSES = Object.freeze([
+  "synthetic desktop accessibility structure",
+  "application root roles and child counts",
+  "shallow child role/count metadata",
+]);
+
+const DESKTOP_ACCESSIBILITY_EXCLUDED_DATA = Object.freeze([
+  "host display identifiers",
+  "host session bus addresses",
+  "real desktop session handles",
+  "raw desktop text",
+  "names and descriptions",
+  "states and actions",
+  "screenshots or pixels",
+  "pointer or keyboard state",
+  "actuation",
+]);
+
+async function processDesktopAccessibilityTreeInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_episode_closed",
+      domain,
+    });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_domain_unavailable",
+    });
+  }
+  if (domain !== "testing") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_testing_domain_required",
+      domain,
+    });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_domain_mismatch",
+      domain,
+    });
+  }
+  try {
+    requireCapability(effectiveHarness, DESKTOP_ACCESSIBILITY_CAPABILITY);
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_accessibility_capability_not_allowed",
+      domain,
+    });
+  }
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
+    provider: SYNTHETIC_DESKTOP_PROVIDER_ID,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_grant_not_authorized",
+      authorization,
+      domain,
+    });
+  }
+  const constraintCheck = validateDesktopAccessibilityGrantConstraints({
+    grant: authorization.grant,
+    domain,
+    provider: SYNTHETIC_DESKTOP_PROVIDER_ID,
+  });
+  if (!constraintCheck.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: constraintCheck.reason,
+      authorization,
+      domain,
+    });
+  }
+
+  let descriptor;
+  try {
+    descriptor = await resolveResourceDescriptor({
+      domain,
+      capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
+      ref: {
+        fixture_id: authorization.grant.constraints?.fixture_id,
+        max_apps: authorization.grant.constraints?.max_apps,
+        max_children: authorization.grant.constraints?.max_children,
+      },
+      grant: authorization.grant,
+      harness: effectiveHarness,
+      providerRegistry,
+    });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_accessibility_descriptor_refused",
+      authorization,
+      domain,
+    });
+  }
+  if (descriptor.provider_id !== SYNTHETIC_DESKTOP_PROVIDER_ID || descriptor.provider_id !== authorization.grant.provider) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_provider_mismatch",
+      authorization,
+      domain,
+    });
+  }
+  if (
+    descriptor.provider_mode !== "synthetic_fixture" ||
+    descriptor.synthetic !== true ||
+    descriptor.domain !== "testing" ||
+    descriptor.resource_class !== "desktop" ||
+    descriptor.desktop_surface !== "accessibility_tree"
+  ) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_accessibility_descriptor_mismatch",
+      authorization,
+      domain,
+    });
+  }
+
+  let inspection;
+  try {
+    inspection = await inspectDesktopAccessibilityTreeWithDescriptor({ descriptor });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_accessibility_provider_refused",
+      authorization,
+      domain,
+    });
+  }
+  const event = provenanceLog.append(createDesktopAccessibilityReadEvent({
+    descriptor,
+    inspection,
+    grant: authorization.grant,
+    caller,
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createDesktopAccessibilityResultEnvelope({
+      grant: authorization.grant,
+      descriptor,
+      inspection,
+      provenanceId: event.id,
+    }),
+    disclosure: desktopAccessibilityResultDisclosure({ descriptor, inspection }),
+  };
+}
+
+function validateDesktopAccessibilityGrantConstraints({ grant = {}, domain = "", provider = "" } = {}) {
+  const grantDomain = String(grant.constraints?.domain ?? "").trim();
+  if (!grantDomain) {
+    return { allowed: false, reason: "desktop_accessibility_grant_domain_required" };
+  }
+  if (grantDomain !== domain) {
+    return { allowed: false, reason: "desktop_accessibility_grant_domain_mismatch" };
+  }
+  if (String(grant.provider ?? "").trim() !== String(provider ?? "").trim()) {
+    return { allowed: false, reason: "desktop_accessibility_provider_mismatch" };
+  }
+  if (grant.constraints?.fixture_id !== undefined && typeof grant.constraints.fixture_id !== "string") {
+    return { allowed: false, reason: "desktop_accessibility_fixture_invalid" };
+  }
+  return { allowed: true, reason: "" };
+}
+
+function createDesktopAccessibilityResultEnvelope({
+  grant = {},
+  descriptor = {},
+  inspection = {},
+  provenanceId = "",
+} = {}) {
+  return {
+    capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "docs/schemas/desktop-inspection-result.schema.json",
+    domain: descriptor.domain,
+    resource_class: descriptor.resource_class,
+    provider_mode: descriptor.provider_mode,
+    desktop_surface: descriptor.desktop_surface,
+    synthetic: Boolean(descriptor.synthetic),
+    fixture_id: descriptor.fixture_id ?? "",
+    fixture_digest: descriptor.fixture_digest ?? "",
+    limits: descriptor.limits ?? {},
+    application_count: inspection.application_count ?? null,
+    root_object_available_count: inspection.root_object_available_count ?? null,
+    window_count: inspection.window_count ?? null,
+    tree_available: inspection.tree_available === true,
+    text_content_included: false,
+    content_included: false,
+    data_classes_returned: [...DESKTOP_ACCESSIBILITY_DATA_CLASSES],
+    excluded_data: [...DESKTOP_ACCESSIBILITY_EXCLUDED_DATA],
+    one_shot: true,
+    read_only: true,
+    provenance_id: provenanceId,
+    result: inspection,
+  };
+}
+
+function createDesktopAccessibilityReadEvent({ descriptor = {}, inspection = {}, grant = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: DESKTOP_ACCESSIBILITY_CAPABILITY,
+    capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? descriptor.provider_id ?? "",
+    scope: grant.scope ?? "",
+    domain: descriptor.domain ?? "",
+    provider_id: descriptor.provider_id ?? "",
+    provider_mode: descriptor.provider_mode ?? "",
+    resource_class: descriptor.resource_class ?? "desktop",
+    desktop_surface: descriptor.desktop_surface ?? "accessibility_tree",
+    synthetic: Boolean(descriptor.synthetic),
+    fixture_id: descriptor.fixture_id ?? "",
+    fixture_digest: descriptor.fixture_digest ?? "",
+    application_count: inspection.application_count ?? null,
+    root_object_available_count: inspection.root_object_available_count ?? null,
+    window_count: inspection.window_count ?? null,
+    tree_available: inspection.tree_available === true,
+    result_egress_delivered: true,
+    result_schema: "docs/schemas/desktop-inspection-result.schema.json",
+    data_classes_returned: [...DESKTOP_ACCESSIBILITY_DATA_CLASSES],
+    excluded_data: [...DESKTOP_ACCESSIBILITY_EXCLUDED_DATA],
+    content_included: false,
+    text_content_included: false,
+    names_included: false,
+    descriptions_included: false,
+    states_included: false,
+    actions_included: false,
+    screenshots_included: false,
+    host_display_included: false,
+    host_session_bus_included: false,
+    one_shot: true,
+    read_only: true,
+    memory_written: false,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  };
+}
+
+function desktopAccessibilityResultDisclosure({ descriptor = {}, inspection = {} } = {}) {
+  return [
+    "desktop.inspect.accessibility_tree delivered a synthetic, structure-only accessibility tree.",
+    `Fixture: ${descriptor.fixture_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,
+    "No host display, host session bus, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+  ].join(" ");
 }
 
 const FILE_READ_DATA_CLASSES = Object.freeze([
@@ -6255,7 +6611,9 @@ function recordSpaceCapabilityRefusal({
       ? "tool.files.read.denied"
       : capability === "provenance.summary.read"
         ? "provenance.summary.read.denied"
-        : "space.status.read.denied";
+        : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
+          ? "desktop.inspect.accessibility_tree.denied"
+          : "space.status.read.denied";
   const event = provenanceLog.append({
     event_type: eventType,
     capability,
@@ -6295,8 +6653,18 @@ function recordSpaceCapabilityRefusal({
         ? fileReadRefusalDisclosure({ reason, authorization })
         : capability === "provenance.summary.read"
           ? provenanceSummaryRefusalDisclosure({ reason, authorization })
-          : spaceStatusRefusalDisclosure({ reason, authorization }),
+          : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
+            ? desktopAccessibilityRefusalDisclosure({ reason, authorization })
+            : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
+}
+
+function desktopAccessibilityRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  return [
+    "desktop.inspect.accessibility_tree was not delivered.",
+    `Reason: ${authorization?.code || reason}.`,
+    "No synthetic tree, host desktop, display/session bus, text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+  ].join(" ");
 }
 
 function provenanceSummaryRefusalDisclosure({ reason = "", authorization = null } = {}) {
@@ -8837,6 +9205,8 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
         "For provenance.summary.read, use only the grant_id; it returns aggregate counts for this episode and the harness pins the scope to this episode:",
         "```soma-capability\n{\"invoke\":\"provenance.summary.read\",\"grant_id\":\"the grant id you were given\"}\n```",
+        "For desktop.inspect.accessibility_tree, use only the grant_id; in testing it returns a synthetic, structure-only accessibility tree, not the host desktop:",
+        "```soma-capability\n{\"invoke\":\"desktop.inspect.accessibility_tree\",\"grant_id\":\"the grant id you were given\"}\n```",
         "The capabilities available in this run are reads: they return minimized, declared results and do not change grants, posture, or capabilities.",
         "Use the exact grant id you were given for that capability; you are not expected to discover or guess grant ids.",
         "To preserve specific words of yours durably, held for stewards across runs, nominate them with a fenced block exactly like:",
@@ -8866,6 +9236,7 @@ const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.history.read",
   "tool.files.read",
   "provenance.summary.read",
+  "desktop.inspect.accessibility_tree",
 ]);
 
 function listHeldCapabilityGrantsForEpisode({
@@ -8916,6 +9287,9 @@ function grantDomainMatchesEpisode(grant = {}, episodeDomain = "") {
     return Boolean(constraintDomain && rootId && constraintDomain === episodeDomain);
   }
   if (grant.capability === "provenance.summary.read") {
+    return Boolean(constraintDomain && constraintDomain === episodeDomain);
+  }
+  if (grant.capability === DESKTOP_ACCESSIBILITY_CAPABILITY) {
     return Boolean(constraintDomain && constraintDomain === episodeDomain);
   }
   return !constraintDomain || constraintDomain === episodeDomain;

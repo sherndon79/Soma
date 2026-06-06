@@ -158,7 +158,7 @@ function validateTopLevel(value, errors, options) {
   }
   rejectUnexpectedKeys(value, TOP_LEVEL_KEYS, "result", errors);
   requireStringEnum(value.mode, ["read_only_environment_probe", "read_only_atspi_probe"], "result.mode", errors);
-  requireStringEnum(value.broker_source, ["rust_helper", "javascript_fallback"], "result.broker_source", errors);
+  requireStringEnum(value.broker_source, ["rust_helper", "javascript_fallback", "synthetic_fixture"], "result.broker_source", errors);
   requireString(value.platform, "result.platform", errors);
   requireString(value.release, "result.release", errors);
   requireString(value.desktop_session, "result.desktop_session", errors);

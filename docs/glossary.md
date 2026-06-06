@@ -86,7 +86,8 @@ Occupant-facing file-read grants bind to the descriptor domain and `root_id` bef
 read content.
 For internal summaries, a ResourceDescriptor may describe bounded scope rather than a host path; for
 example, `provenance.summary.read` uses `resource_class=internal_provenance`, episode/domain scope,
-synthetic testing posture, and event-count bounds.
+synthetic testing posture, and event-count bounds. In occupant invocation, the harness pins that
+scope to the current episode and the returned envelope omits episode ids.
 
 ## Steward Watch
 

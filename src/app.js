@@ -4554,8 +4554,9 @@ async function processSpaceCapabilityInvocations({
       presentation_kind: invocation.presentation_kind,
       root_id: invocation.root_id,
       relative_path: invocation.relative_path,
+      supplied_episode_id_present: Boolean(invocation.episode_id),
     });
-    if (!["space.status.read", "space.history.read", "tool.files.read"].includes(invocation.capability)) {
+    if (!["space.status.read", "space.history.read", "tool.files.read", "provenance.summary.read"].includes(invocation.capability)) {
       const refusal = recordSpaceCapabilityRefusal({
         invocation,
         episode,
@@ -4589,6 +4590,29 @@ async function processSpaceCapabilityInvocations({
         result.refusals.push(fileResult.refusal);
       }
       result.disclosures.push(fileResult.disclosure);
+      continue;
+    }
+    if (invocation.capability === "provenance.summary.read") {
+      const provenanceSummaryResult = await processProvenanceSummaryReadInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        grantStore,
+        grantRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        effectiveHarness,
+        logger,
+        caller,
+      });
+      if (provenanceSummaryResult.result) {
+        result.results.push(provenanceSummaryResult.result);
+      }
+      if (provenanceSummaryResult.refusal) {
+        result.refusals.push(provenanceSummaryResult.refusal);
+      }
+      result.disclosures.push(provenanceSummaryResult.disclosure);
       continue;
     }
     if (invocation.capability === "space.history.read") {
@@ -4729,6 +4753,7 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
     presentation_kind: String(input.presentation_kind ?? "").trim(),
     root_id: String(input.root_id ?? "").trim(),
     relative_path: String(input.relative_path ?? "").trim(),
+    episode_id: String(input.episode_id ?? input.episodeId ?? "").trim(),
   };
 }
 
@@ -5657,6 +5682,241 @@ function createProvenanceSummaryReadEvent({
   };
 }
 
+async function processProvenanceSummaryReadInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  effectiveHarness,
+  logger = console,
+  caller = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_episode_closed",
+      domain,
+    });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_domain_unavailable",
+    });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_domain_mismatch",
+      domain,
+    });
+  }
+
+  const provider = providerForCapability(providerRegistry, "provenance.summary.read");
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability: "provenance.summary.read",
+    provider,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_grant_not_authorized",
+      authorization,
+      domain,
+    });
+  }
+  const constraintCheck = validateOccupantProvenanceSummaryGrantConstraints({
+    grant: authorization.grant,
+    domain,
+    provider,
+  });
+  if (!constraintCheck.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: constraintCheck.reason,
+      authorization,
+      domain,
+    });
+  }
+
+  let descriptor;
+  try {
+    descriptor = await resolveResourceDescriptor({
+      domain,
+      capability: "provenance.summary.read",
+      ref: {
+        episode_id: episode?.id ?? "",
+      },
+      grant: authorization.grant,
+      harness: effectiveHarness,
+      providerRegistry,
+    });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "provenance_summary_descriptor_refused",
+      authorization,
+      domain,
+    });
+  }
+  if (descriptor.provider_id !== provider || descriptor.provider_id !== authorization.grant.provider) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_provider_mismatch",
+      authorization,
+      domain,
+    });
+  }
+  const projection = buildProvenanceSummaryProjection({
+    descriptor,
+    provenanceLog,
+  });
+  const validation = validateProvenanceSummaryProjection(projection);
+  if (!validation.valid) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "provenance_summary_projection_invalid",
+      validation_errors: validation.errors,
+      authorization,
+      domain,
+    });
+  }
+  const event = provenanceLog.append(createProvenanceSummaryReadEvent({
+    descriptor,
+    projection,
+    grant: authorization.grant,
+    caller,
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createOccupantProvenanceSummaryResultEnvelope({
+      grant: authorization.grant,
+      descriptor,
+      projection,
+      provenanceId: event.id,
+    }),
+    disclosure: provenanceSummaryResultDisclosure({ domain }),
+  };
+}
+
+function validateOccupantProvenanceSummaryGrantConstraints({ grant = {}, domain = "", provider = "" } = {}) {
+  const grantDomain = String(grant.constraints?.domain ?? "").trim();
+  if (!grantDomain) {
+    return { allowed: false, reason: "provenance_summary_grant_domain_required" };
+  }
+  if (grantDomain !== domain) {
+    return { allowed: false, reason: "provenance_summary_grant_domain_mismatch" };
+  }
+  if (String(grant.provider ?? "").trim() !== String(provider ?? "").trim()) {
+    return { allowed: false, reason: "provenance_summary_provider_mismatch" };
+  }
+  return { allowed: true, reason: "" };
+}
+
+function createOccupantProvenanceSummaryResultEnvelope({
+  grant = {},
+  descriptor = {},
+  projection = {},
+  provenanceId = "",
+} = {}) {
+  const counts = projection.counts ?? {};
+  return {
+    capability: "provenance.summary.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.provenance.summary.read.result.v1",
+    domain: descriptor.domain,
+    resource_class: descriptor.resource_class,
+    scope: {
+      episode_scoped: true,
+      domain: descriptor.domain,
+    },
+    total_events_in_scope: counts.total_events_in_scope ?? 0,
+    allowed_count: counts.allowed_count ?? 0,
+    refused_count: counts.refused_count ?? 0,
+    capability_invocation_count: counts.capability_invocation_count ?? 0,
+    capability_refusal_count: counts.capability_refusal_count ?? 0,
+    synthetic: Boolean(descriptor.synthetic),
+    content_included: true,
+    data_classes_returned: ["aggregate counts of the occupant's own episode provenance"],
+    excluded_data: [
+      "raw provenance entries",
+      "event-type and capability breakdowns",
+      "denial and refusal reasons",
+      "grant ids",
+      "episode ids",
+      "caller identities",
+      "file paths and path digests",
+      "provider internals",
+      "other-scope data",
+    ],
+    raw_entries_included: false,
+    event_types_included: false,
+    capability_names_included: false,
+    denial_reasons_included: false,
+    grant_ids_included: false,
+    episode_ids_included: false,
+    caller_identities_included: false,
+    paths_included: false,
+    provider_internals_included: false,
+    other_scope_data_included: false,
+    one_shot: true,
+    read_only: true,
+    provenance_id: provenanceId,
+  };
+}
+
+function provenanceSummaryResultDisclosure({ domain = "" } = {}) {
+  return [
+    "provenance.summary.read delivered aggregate counts for this episode only.",
+    `Domain: ${domain}.`,
+    "No raw provenance entries, episode ids, event names, capability names, denial reasons, grant ids, caller identities, paths, or other-scope data were returned.",
+  ].join(" ");
+}
+
 const SPACE_STATUS_DATA_CLASSES = Object.freeze([
   "episode mode and domain",
   "armed protective controls",
@@ -5912,7 +6172,9 @@ function recordSpaceCapabilityRefusal({
     ? "space.history.read.denied"
     : capability === "tool.files.read"
       ? "tool.files.read.denied"
-      : "space.status.read.denied";
+      : capability === "provenance.summary.read"
+        ? "provenance.summary.read.denied"
+        : "space.status.read.denied";
   const event = provenanceLog.append({
     event_type: eventType,
     capability,
@@ -5922,6 +6184,7 @@ function recordSpaceCapabilityRefusal({
     domain: domain || domainForEpisodePosture(episode?.posture),
     root_id: invocation.root_id ?? "",
     relative_path_present: Boolean(invocation.relative_path),
+    supplied_episode_id_present: Boolean(invocation.episode_id),
     reason,
     authorization_code: authorization?.code ?? "",
     validation_errors,
@@ -5949,8 +6212,15 @@ function recordSpaceCapabilityRefusal({
       ? spaceHistoryRefusalDisclosure({ reason, authorization })
       : capability === "tool.files.read"
         ? fileReadRefusalDisclosure({ reason, authorization })
-      : spaceStatusRefusalDisclosure({ reason, authorization }),
+        : capability === "provenance.summary.read"
+          ? provenanceSummaryRefusalDisclosure({ reason, authorization })
+          : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
+}
+
+function provenanceSummaryRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  const authCode = authorization?.code ? ` Authorization: ${authorization.code}.` : "";
+  return `provenance.summary.read was not delivered. Reason: ${reason}.${authCode} No aggregate counts, raw provenance, or episode id was returned.`;
 }
 
 function spaceStatusResultDisclosure({ domain = "" } = {}) {
@@ -8347,6 +8617,8 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "For space.history.read, the same block shape applies, and an optional \"presentation_kind\" may narrow the curated history view when you have a reason to ask for a particular kind.",
         "For tool.files.read, include the grant's root_id and the relative_path you want to read, exactly like:",
         "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
+        "For provenance.summary.read, use only the grant_id; it returns aggregate counts for this episode and the harness pins the scope to this episode:",
+        "```soma-capability\n{\"invoke\":\"provenance.summary.read\",\"grant_id\":\"the grant id you were given\"}\n```",
         "The capabilities available in this run are reads: they return minimized, declared results and do not change grants, posture, or capabilities.",
         "Use the exact grant id you were given for that capability; you are not expected to discover or guess grant ids.",
         "To preserve specific words of yours durably, held for stewards across runs, nominate them with a fenced block exactly like:",
@@ -8375,6 +8647,7 @@ const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.status.read",
   "space.history.read",
   "tool.files.read",
+  "provenance.summary.read",
 ]);
 
 function listHeldCapabilityGrantsForEpisode({
@@ -8423,6 +8696,9 @@ function grantDomainMatchesEpisode(grant = {}, episodeDomain = "") {
   if (grant.capability === "tool.files.read") {
     const rootId = String(grant.constraints?.root_id ?? "").trim();
     return Boolean(constraintDomain && rootId && constraintDomain === episodeDomain);
+  }
+  if (grant.capability === "provenance.summary.read") {
+    return Boolean(constraintDomain && constraintDomain === episodeDomain);
   }
   return !constraintDomain || constraintDomain === episodeDomain;
 }

@@ -3873,6 +3873,9 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /"invoke":"tool\.files\.read"/);
   assert.match(seenMessages[0][0].content, /"root_id":"the root id you were given"/);
   assert.match(seenMessages[0][0].content, /"relative_path":"path\/inside\/that\/root\.txt"/);
+  assert.match(seenMessages[0][0].content, /For provenance\.summary\.read, use only the grant_id/);
+  assert.match(seenMessages[0][0].content, /"invoke":"provenance\.summary\.read"/);
+  assert.match(seenMessages[0][0].content, /harness pins the scope to this episode/);
   assert.match(seenMessages[0][0].content, /The capabilities available in this run are reads/);
   assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
@@ -3986,6 +3989,12 @@ test("analysis_testing briefing delivers only active invocable held capability g
           constraints: { domain: "testing", root_id: "testing-fixture" },
         }),
         spaceCapabilityGrantFixture({
+          id: "grant-provenance-summary-active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          constraints: { domain: "testing" },
+        }),
+        spaceCapabilityGrantFixture({
           id: "grant-status-revoked",
           status: "revoked",
           capability: "space.status.read",
@@ -4051,6 +4060,7 @@ test("analysis_testing briefing delivers only active invocable held capability g
   assert.match(seenMessages[0][1].content, /Capability grants available to you in this episode/);
   assert.match(seenMessages[0][1].content, /space\.history\.read grant_id grant-history-active/);
   assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-active/);
+  assert.match(seenMessages[0][1].content, /provenance\.summary\.read grant_id grant-provenance-summary-active/);
   assert.match(seenMessages[0][1].content, /tool\.files\.read grant_id grant-file-active root_id testing-fixture/);
   assert.match(seenMessages[0][1].content, /do not guess or search for others/);
   assert.match(seenMessages[0][1].content, /authorize invocation only/);
@@ -6107,6 +6117,320 @@ test("space.history.read is unavailable after episode ejection", async () => {
     body: {
       episode_id: "episode-space-history-ejected",
       messages: [{ role: "user", content: "history" }],
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "episode_ejected");
+  assert.equal(modelCalled, false);
+});
+
+test("provenance.summary.read occupant invocation returns current-episode counts without episode-id leaks", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-occupant-provenance-summary",
+          status: "active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          scope: "session",
+          constraints: { domain: "testing" },
+          approved_by: "user",
+          reason: "Let the occupant read minimized provenance counts for the current episode.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            text: "other episode reply",
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 3,
+          };
+        }
+        return {
+          text: [
+            "I am checking aggregate provenance counts.",
+            "```soma-capability",
+            JSON.stringify({
+              invoke: "provenance.summary.read",
+              grant_id: "grant-occupant-provenance-summary",
+              episode_id: "episode-other-provenance-summary",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 8,
+          tool_calls: [
+            { id: "call-should-stay-disabled", name: "files.read", arguments: { root_id: "workspace", relative_path: "note.txt" } },
+          ],
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-other-provenance-summary",
+      messages: [{ role: "user", content: "other scope" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-occupant-provenance-summary/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-occupant-provenance-summary",
+      messages: [{ role: "user", content: "summary" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "I am checking aggregate provenance counts.");
+  assert.equal(response.body.tool_calls_enabled, false);
+  assert.deepEqual(response.body.tool_call_intents, []);
+  assert.equal(response.body.capability_invocations.length, 1);
+  assert.equal(response.body.capability_invocations[0].capability, "provenance.summary.read");
+  assert.equal(response.body.capability_invocations[0].supplied_episode_id_present, true);
+  assert.equal("episode_id" in response.body.capability_invocations[0], false);
+  assert.equal(response.body.capability_refusals.length, 0);
+  assert.equal(response.body.capability_results.length, 1);
+
+  const envelope = response.body.capability_results[0];
+  assert.equal(envelope.capability, "provenance.summary.read");
+  assert.equal(envelope.grant_id, "grant-occupant-provenance-summary");
+  assert.equal(envelope.provider, "soma.provider.provenance-summary");
+  assert.equal(envelope.result_schema, "soma.provenance.summary.read.result.v1");
+  assert.equal(envelope.domain, "testing");
+  assert.equal(envelope.resource_class, "internal_provenance");
+  assert.deepEqual(envelope.scope, { episode_scoped: true, domain: "testing" });
+  assert.equal(envelope.synthetic, true);
+  assert.equal(envelope.content_included, true);
+  assert.equal(envelope.raw_entries_included, false);
+  assert.equal(envelope.event_types_included, false);
+  assert.equal(envelope.capability_names_included, false);
+  assert.equal(envelope.denial_reasons_included, false);
+  assert.equal(envelope.grant_ids_included, false);
+  assert.equal(envelope.episode_ids_included, false);
+  assert.equal(envelope.caller_identities_included, false);
+  assert.equal(envelope.paths_included, false);
+  assert.equal(envelope.provider_internals_included, false);
+  assert.equal(envelope.other_scope_data_included, false);
+  assert.equal(envelope.one_shot, true);
+  assert.equal(envelope.read_only, true);
+  assert.deepEqual(envelope.data_classes_returned, ["aggregate counts of the occupant's own episode provenance"]);
+  assert.ok(envelope.excluded_data.includes("episode ids"));
+  for (const countKey of [
+    "total_events_in_scope",
+    "allowed_count",
+    "refused_count",
+    "capability_invocation_count",
+    "capability_refusal_count",
+  ]) {
+    assert.equal(Number.isInteger(envelope[countKey]), true, countKey);
+  }
+  assert.ok(envelope.total_events_in_scope >= 1);
+  assert.equal(envelope.allowed_count, envelope.total_events_in_scope);
+  assert.equal(envelope.refused_count, 0);
+  assert.equal(envelope.capability_refusal_count, 0);
+  for (const forbidden of [
+    "episode_id",
+    "episode_ids",
+    "result",
+    "by_event_type",
+    "by_capability",
+    "entries",
+    "grant_ids",
+    "caller_identities",
+    "provider_id",
+    "root_real_path",
+    "resolved_real_path",
+    "resolved_digest",
+  ]) {
+    assert.equal(Object.hasOwn(envelope, forbidden), false, forbidden);
+  }
+  assert.doesNotMatch(JSON.stringify(envelope), /episode-occupant-provenance-summary/);
+  assert.doesNotMatch(JSON.stringify(envelope), /episode-other-provenance-summary/);
+  assert.match(response.body.capability_invocation_disclosures[0], /aggregate counts for this episode only/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=provenance.summary.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].episode_id, "episode-occupant-provenance-summary");
+  assert.equal(response.body.entries[0].resource_class, "internal_provenance");
+  assert.equal(response.body.entries[0].domain, "testing");
+  assert.equal(response.body.entries[0].provider_id, "soma.provider.provenance-summary");
+  assert.equal(response.body.entries[0].content_included, false);
+  assert.equal(response.body.entries[0].raw_entries_included, false);
+  assert.equal("entries" in response.body.entries[0], false);
+  assert.equal("content" in response.body.entries[0], false);
+  assert.equal("root_real_path" in response.body.entries[0], false);
+  assert.equal("resolved_real_path" in response.body.entries[0], false);
+});
+
+test("provenance.summary.read occupant invocation refuses grant domain mismatch before read egress", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-occupant-provenance-operational",
+          status: "active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          scope: "session",
+          constraints: { domain: "operational" },
+          approved_by: "user",
+          reason: "Wrong domain grant.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking aggregate provenance counts.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "provenance.summary.read", grant_id: "grant-occupant-provenance-operational" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 8,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-provenance-domain-mismatch/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-provenance-domain-mismatch",
+      messages: [{ role: "user", content: "summary" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.capability_results.length, 0);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].capability, "provenance.summary.read");
+  assert.equal(response.body.capability_refusals[0].reason, "provenance_summary_grant_domain_mismatch");
+  assert.equal(response.body.capability_refusals[0].content_included, false);
+  assert.match(response.body.capability_invocation_disclosures[0], /No aggregate counts, raw provenance, or episode id was returned/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=provenance.summary.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 0);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=provenance.summary.read.denied",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].reason, "provenance_summary_grant_domain_mismatch");
+  assert.equal(response.body.entries[0].result_egress_delivered, false);
+  assert.equal(response.body.entries[0].content_included, false);
+});
+
+test("provenance.summary.read occupant invocation is unavailable after episode ejection", async () => {
+  let modelCalled = false;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-occupant-provenance-ejected",
+          status: "active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          scope: "session",
+          constraints: { domain: "testing" },
+          approved_by: "user",
+          reason: "Let the occupant read minimized provenance counts for the current episode.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        modelCalled = true;
+        return {
+          text: [
+            "Summary after ejection.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "provenance.summary.read", grant_id: "grant-occupant-provenance-ejected" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-provenance-ejected/abort",
+    body: { actor: "user", type: "crew_aborted_for_care", reason: "close run" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.episode_status, "ejected");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-provenance-ejected",
+      messages: [{ role: "user", content: "summary" }],
     },
   });
   assert.equal(response.statusCode, 409);

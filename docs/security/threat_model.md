@@ -127,9 +127,10 @@ Current controls:
 - occupant file reads require an active `tool.files.read` grant bound to the episode domain and
   requested `root_id`; testing-domain grants can resolve only synthetic testing roots
 - `provenance.summary.read` resolves through an `internal_provenance` ResourceDescriptor and returns
-  episode-scoped aggregate counts only; it excludes raw provenance entries, event/capability
-  breakdowns, denial reasons, grant ids, episode ids, caller identities, paths, provider internals,
-  and other-scope data
+  episode-scoped aggregate counts only; occupant invocation requires an active grant bound to the
+  current episode domain, ignores caller-supplied episode scope, and excludes raw provenance
+  entries, event/capability breakdowns, denial reasons, grant ids, episode ids, caller identities,
+  paths, provider internals, and other-scope data
 - desktop inspection omits text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
 

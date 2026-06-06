@@ -628,6 +628,11 @@ names, denial reasons, grant ids, episode ids, caller identities, file paths, pa
 internals, or other-domain/other-episode data. Raw `provenance.read` and its existing operator
 summary route remain separate.
 
+The same capability can be invoked by an occupant through a fenced `soma-capability` block with
+only `invoke` and `grant_id`. The harness pins the descriptor scope to the current episode, ignores
+any supplied episode id, requires the grant domain/provider to match before descriptor resolution,
+and returns the five aggregate counts at the envelope top level without episode ids.
+
 ### `DELETE /provenance`
 
 Clears the in-process provenance log when `provenance.clear` is allowed.

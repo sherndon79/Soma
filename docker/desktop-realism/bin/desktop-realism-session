@@ -5,6 +5,7 @@ export DISPLAY="${DISPLAY:-:99}"
 export NO_AT_BRIDGE=0
 export GTK_MODULES="${GTK_MODULES:-gail:atk-bridge}"
 export QT_ACCESSIBILITY=1
+export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
 export CANARY_MANIFEST="${CANARY_MANIFEST:-/opt/soma/desktop-realism/canary-manifest.json}"
 export NOVNC_PORT="${NOVNC_PORT:-6080}"
 export VNC_PORT="${VNC_PORT:-5900}"

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+session_bus_file="/tmp/soma-session-bus-address"
+
+export DISPLAY="${DISPLAY:-:99}"
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -s "$session_bus_file" ]; then
+  export DBUS_SESSION_BUS_ADDRESS="$(cat "$session_bus_file")"
+fi
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  echo "FAIL: private session DBus address is missing" >&2
+  exit 1
+fi
+
+exec /usr/local/bin/soma-desktop-broker inspect-atspi \
+  --max-applications "${DESKTOP_REALISM_BROKER_MAX_APPS:-16}" \
+  --max-root-child-refs "${DESKTOP_REALISM_BROKER_MAX_CHILD_REFS:-8}" \
+  --max-root-child-metadata "${DESKTOP_REALISM_BROKER_MAX_CHILD_METADATA:-4}"

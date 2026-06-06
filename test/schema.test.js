@@ -42,6 +42,8 @@ test("desktop inspection schema documents the current safe child metadata bounda
   assert.equal(schema.$defs.atspi_tree.properties.text_content_included.const, false);
   assert.equal(schema.$defs.root_object.properties.children_sample.maxItems, 8);
   assert.equal(schema.$defs.root_object.properties.child_metadata_sample.maxItems, 4);
+  assert.equal("name" in schema.$defs.root_object.properties, false);
+  assert.equal(schema.$defs.root_object.required.includes("name"), false);
   assert.deepEqual(childMetadata.required, ["service", "path", "role", "child_count"]);
   assert.equal(childMetadata.additionalProperties, false);
   assert.equal("name" in childMetadata.properties, false);
@@ -223,6 +225,16 @@ test("desktop inspection runtime validator rejects child metadata over-disclosur
   }
 });
 
+test("desktop inspection runtime validator rejects root object names", () => {
+  const result = validateDesktopInspectionResult(atspiResultWithRootObjectField(
+    "name",
+    "CANARY-9f3a-DO-NOT-LEAK",
+  ));
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes("result.tree.applications[0].root_object.name is not allowed"));
+});
+
 test("desktop inspection runtime validator rejects windows until window inspection is implemented", () => {
   const result = validateDesktopInspectionResult({
     mode: "read_only_atspi_probe",
@@ -246,7 +258,6 @@ test("desktop inspection runtime validator rejects windows until window inspecti
           registry: false,
           root_object: {
             path: "/org/a11y/atspi/accessible/root",
-            name: "test-app",
             role: "application",
             child_count: 1,
             children_sample: [],
@@ -577,7 +588,6 @@ function baseAtspiResult(rootObjectOverrides = {}) {
           registry: false,
           root_object: {
             path: "/org/a11y/atspi/accessible/root",
-            name: "test-app",
             role: "application",
             child_count: 1,
             children_sample: [],

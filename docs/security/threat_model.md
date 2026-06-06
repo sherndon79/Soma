@@ -135,7 +135,10 @@ Current controls:
   ResourceDescriptor and never touches the host display, desktop session, D-Bus/session bus, helper
   process, raw fixture path, screenshots, text, names, descriptions, states, actions, pointer state,
   keyboard state, or actuation
-- live desktop inspection remains an operator route and omits text content by default
+- structure-only desktop inspection excludes names, including root accessibility object names; any
+  future app/window-name inspection must be a separate operator-scoped contract rather than a field
+  on the structure-only result
+- live desktop inspection remains an operator route and omits names and text content by default
 - capability proposals require structured reason, risk, exposure, and fallback
 - protective near-miss detection is limited to command-shaped malformed control attempts on their
   own line; it auto-pauses and records content-free metadata, never auto-ejects, and does not mine

@@ -235,7 +235,6 @@
       "type": "object",
       "required": [
         "path",
-        "name",
         "role",
         "child_count",
         "children_sample",
@@ -245,9 +244,6 @@
         "path": {
           "type": "string",
           "const": "/org/a11y/atspi/accessible/root"
-        },
-        "name": {
-          "type": "string"
         },
         "role": {
           "type": "string"

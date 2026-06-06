@@ -680,10 +680,15 @@ By default the endpoint reports platform, session, D-Bus, display, and candidate
 availability. With `{ "mode": "atspi" }`, it asks the Rust helper for a bounded AT-SPI probe that
 lists bus participant metadata, application root-object metadata, and shallow child role/count
 metadata when available. The current scaffold does not recursively traverse AT-SPI child objects,
-read child names/descriptions, extract text content, take screenshots, or perform actuation.
+read root or child names/descriptions, extract text content, take screenshots, or perform actuation.
 Callers may pass `max_apps` and `max_children` to narrow the returned application list and root
 child samples after broker output validation. Provenance records requested mode and requested
 limits separately from returned object counts.
+
+The structure-only contract has no name slot. The Rust helper does not call AT-SPI
+`Accessible.Name` for accessibility-tree root objects, and the schema rejects `root_object.name` if
+an injected helper or stale fixture emits it. If operators later need application/window names, that
+must be a separate operator-scoped contract rather than a field on this result.
 
 The occupant-facing testing invocation is separate from this operator route. A fenced
 `soma-capability` block may invoke `desktop.inspect.accessibility_tree` with only `invoke` and
@@ -697,7 +702,7 @@ when a synthetic fixture is missing.
 
 The current synthetic fixture under `docs/fixtures/desktop/` is structure-only: root roles,
 child counts, child refs, and child metadata samples. It has `tree.bounded=true` and
-`text_content_included=false`; it does not carry names/descriptions, text content, states, actions,
+`text_content_included=false`; it does not carry names, descriptions, text content, states, actions,
 screenshots, pointer state, keyboard state, or actuation. Synthetic realism is limited: the fixture
 can exercise policy and egress contracts, but it is not evidence that a live desktop environment,
 window manager, toolkit, or AT-SPI implementation will behave the same. A future containerized

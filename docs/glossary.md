@@ -92,7 +92,9 @@ For synthetic desktop testing, a ResourceDescriptor may describe an allowlisted 
 the host desktop: `resource_class=desktop`, `provider_mode=synthetic_fixture`,
 `desktop_surface=accessibility_tree`, `synthetic=true`, `fixture_id`, `fixture_digest`, limits, and
 grant id. It must not include host display/session-bus handles, pids, service refs, or raw fixture
-paths.
+paths. The structure-only desktop result also has no name slot: root names, child names, window
+titles, descriptions, text, states, and actions are outside this contract. A named desktop view
+would need a separate operator-scoped contract.
 
 ## Steward Watch
 

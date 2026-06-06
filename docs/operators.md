@@ -338,8 +338,10 @@ npm run cli -- desktop inspect --mode atspi --json
 ```
 
 The current AT-SPI probe is read-only. It returns bounded participant, application root-object, and
-shallow child role/count metadata. It does not read child names, descriptions, text content, states,
-actions, screenshots, pointer position, keyboard input, or camera/microphone data.
+shallow child role/count metadata. It does not read root or child names, window titles,
+descriptions, text content, states, actions, screenshots, pointer position, keyboard input, or
+camera/microphone data. Named app/window inspection would require a separate operator-scoped
+contract.
 
 Testing-domain occupants do not invoke this live route. When an occupant holds an active
 `desktop.inspect.accessibility_tree` grant, they invoke it with a fenced `soma-capability` block

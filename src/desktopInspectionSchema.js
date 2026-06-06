@@ -43,7 +43,6 @@ const APPLICATION_KEYS = new Set([
 ]);
 const ROOT_OBJECT_KEYS = new Set([
   "path",
-  "name",
   "role",
   "child_count",
   "children_sample",
@@ -242,7 +241,6 @@ function validateRootObject(value, path, errors, options) {
   if (value.path !== "/org/a11y/atspi/accessible/root") {
     errors.push(`${path}.path must be /org/a11y/atspi/accessible/root`);
   }
-  requireString(value.name, `${path}.name`, errors);
   requireString(value.role, `${path}.role`, errors);
   requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
   validateObjectRefArray(value.children_sample, 8, `${path}.children_sample`, errors);

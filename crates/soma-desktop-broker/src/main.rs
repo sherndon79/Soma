@@ -735,7 +735,6 @@ impl AtspiApplication {
 }
 
 struct AtspiRootObject {
-    name: String,
     role: String,
     child_count: i32,
     children_sample: Vec<AtspiObjectRef>,
@@ -760,14 +759,12 @@ impl AtspiRootObject {
             concat!(
                 "{{",
                 "\"path\":\"/org/a11y/atspi/accessible/root\",",
-                "\"name\":\"{}\",",
                 "\"role\":\"{}\",",
                 "\"child_count\":{},",
                 "\"children_sample\":[{}],",
                 "\"child_metadata_sample\":[{}]",
                 "}}"
             ),
-            json_escape(&self.name),
             json_escape(&self.role),
             self.child_count,
             children_json,
@@ -1280,19 +1277,22 @@ fn inspect_root_object(
     service: &str,
     limits: AtspiLimits,
 ) -> Result<AtspiRootObject, String> {
+    inspect_root_object_with(address, service, limits, busctl_output)
+}
+
+fn inspect_root_object_with<F>(
+    address: &str,
+    service: &str,
+    limits: AtspiLimits,
+    mut query: F,
+) -> Result<AtspiRootObject, String>
+where
+    F: FnMut(&[&str]) -> Result<String, String>,
+{
     const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
     const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
 
-    let name_output = busctl_output(&[
-        "--address",
-        address,
-        "get-property",
-        service,
-        ROOT_PATH,
-        ACCESSIBLE_INTERFACE,
-        "Name",
-    ])?;
-    let role_output = busctl_output(&[
+    let role_output = query(&[
         "--address",
         address,
         "call",
@@ -1301,7 +1301,7 @@ fn inspect_root_object(
         ACCESSIBLE_INTERFACE,
         "GetRoleName",
     ])?;
-    let child_count_output = busctl_output(&[
+    let child_count_output = query(&[
         "--address",
         address,
         "get-property",
@@ -1310,7 +1310,7 @@ fn inspect_root_object(
         ACCESSIBLE_INTERFACE,
         "ChildCount",
     ])?;
-    let children_output = busctl_output(&[
+    let children_output = query(&[
         "--address",
         address,
         "call",
@@ -1325,11 +1325,10 @@ fn inspect_root_object(
     let child_metadata_sample = children_sample
         .iter()
         .take(limits.max_root_child_metadata)
-        .filter_map(|child| inspect_child_metadata(address, child).ok())
+        .filter_map(|child| inspect_child_metadata_with(address, child, &mut query).ok())
         .collect();
 
     Ok(AtspiRootObject {
-        name: parse_busctl_string(&name_output).unwrap_or_default(),
         role: parse_busctl_string(&role_output).unwrap_or_default(),
         child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
         children_sample,
@@ -1525,13 +1524,17 @@ fn focused_object_json(
     )
 }
 
-fn inspect_child_metadata(
+fn inspect_child_metadata_with<F>(
     address: &str,
     child: &AtspiObjectRef,
-) -> Result<AtspiChildMetadata, String> {
+    mut query: F,
+) -> Result<AtspiChildMetadata, String>
+where
+    F: FnMut(&[&str]) -> Result<String, String>,
+{
     const ACCESSIBLE_INTERFACE: &str = "org.a11y.atspi.Accessible";
 
-    let role_output = busctl_output(&[
+    let role_output = query(&[
         "--address",
         address,
         "call",
@@ -1540,7 +1543,7 @@ fn inspect_child_metadata(
         ACCESSIBLE_INTERFACE,
         "GetRoleName",
     ])?;
-    let child_count_output = busctl_output(&[
+    let child_count_output = query(&[
         "--address",
         address,
         "get-property",
@@ -1690,6 +1693,41 @@ mod tests {
 
         assert_eq!(object_ref.service, ":1.42");
         assert_eq!(object_ref.path, "/org/a11y/atspi/accessible/7");
+    }
+
+    #[test]
+    fn root_object_structure_only_never_queries_or_emits_name_canary() {
+        let canary = "CANARY-9f3a-DO-NOT-LEAK";
+        let mut queried_methods = Vec::new();
+        let root_object = inspect_root_object_with(
+            "unix:path=/tmp/fake-atspi",
+            ":1.42",
+            AtspiLimits {
+                max_applications: 1,
+                max_root_child_refs: 1,
+                max_root_child_metadata: 1,
+            },
+            |args| {
+                let method = args.last().copied().unwrap_or("");
+                queried_methods.push(method.to_string());
+                match method {
+                    "Name" => Ok(format!(r#"s "{canary}""#)),
+                    "GetRoleName" => Ok(r#"s "application""#.to_string()),
+                    "ChildCount" => Ok("i 1".to_string()),
+                    "GetChildren" => Ok(r#"a(so) 1 ":1.42" "/child""#.to_string()),
+                    _ => Err(format!("unexpected method {method}")),
+                }
+            },
+        )
+        .expect("root object");
+
+        let json = root_object.to_json();
+
+        assert!(!queried_methods.iter().any(|method| method == "Name"));
+        assert!(json.contains(r#""role":"application""#));
+        assert!(json.contains(r#""child_count":1"#));
+        assert!(!json.contains(canary));
+        assert!(!json.contains(r#""name":"#));
     }
 
     #[test]

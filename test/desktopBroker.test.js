@@ -314,7 +314,6 @@ function baseAtspiInspection() {
           registry: false,
           root_object: {
             path: "/org/a11y/atspi/accessible/root",
-            name: "test-app",
             role: "application",
             child_count: 1,
             children_sample: [],

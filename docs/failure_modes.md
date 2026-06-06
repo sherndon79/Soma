@@ -292,12 +292,17 @@ Retry:
 Current behavior:
 
 - invalid desktop inspection schema returns `desktop_inspection_schema_invalid`
+- structure-only accessibility output rejects `root_object.name`, child names, descriptions, text,
+  states, and actions; a helper that emits those fields fails validation before provenance/model
+  egress
 
 Recovery:
 
 - reject invalid helper output
 - do not pass unvalidated helper output to the model
 - fall back only to a safe lower-fidelity probe
+- keep named app/window inspection out of this contract unless a separate operator-scoped contract
+  is introduced
 
 Retry:
 
@@ -310,6 +315,8 @@ Current behavior:
 - occupant `desktop.inspect.accessibility_tree` testing invocations fail closed with no live
   fallback when no allowlisted synthetic fixture is configured
 - fixture load and final egress both validate against the desktop inspection result contract
+- fixture output must be no-name structure-only output; empty names are not used as a substitute for
+  removing the name slot
 
 Recovery:
 

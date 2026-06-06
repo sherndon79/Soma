@@ -202,7 +202,6 @@ function accessibilityInspection() {
           registry: false,
           root_object: {
             path: "/org/a11y/atspi/accessible/root",
-            name: "private-app-name",
             role: "application",
             child_count: 2,
             children_sample: [

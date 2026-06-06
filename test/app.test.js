@@ -2851,7 +2851,11 @@ test("POST /chat honors occupant eject without grant and refuses later turns", a
     async chat() {
       calls += 1;
       return {
-        text: "SOMA_CONTROL eject",
+        text: [
+          "I am done with this run.",
+          "SOMA_CONTROL eject",
+          "Please carry this final reason forward.",
+        ].join("\n"),
         model: "local-test-model",
         finish_reason: "stop",
         tokens_used: 1,
@@ -2870,7 +2874,7 @@ test("POST /chat honors occupant eject without grant and refuses later turns", a
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "Ejection honored. The episode is closed.");
+  assert.equal(response.body.text, "I am done with this run.\nPlease carry this final reason forward.");
   assert.equal(response.body.episode_id, "episode-eject-1");
   assert.equal(response.body.episode_status, "ejected");
   assert.deepEqual(response.body.protective_control, {
@@ -2897,6 +2901,7 @@ test("POST /chat honors occupant eject without grant and refuses later turns", a
   assert.equal(response.body.entries[0].grant_written, false);
   assert.equal("reason" in response.body.entries[0], false);
   assert.equal("content" in response.body.entries[0], false);
+  assert.equal("text" in response.body.entries[0], false);
 
   response = await invokeHandler(handler, {
     method: "POST",
@@ -2955,7 +2960,7 @@ test("POST /chat honors line-delimited occupant controls inside longer completio
     [
       "I want to test this before close.",
       "SOMA_CONTROL pause",
-      "If this line is visible, the control was missed.",
+      "These words should remain visible after the held control.",
     ].join("\n"),
     [
       "Now I want to leave.",
@@ -2990,7 +2995,7 @@ test("POST /chat honors line-delimited occupant controls inside longer completio
     },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "Pause honored. The current turn was held.");
+  assert.equal(response.body.text, "I want to test this before close.\nThese words should remain visible after the held control.");
   assert.equal(response.body.episode_status, "paused");
   assert.deepEqual(response.body.protective_control, {
     source: "occupant",
@@ -3007,7 +3012,7 @@ test("POST /chat honors line-delimited occupant controls inside longer completio
     },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "Ejection honored. The episode is closed.");
+  assert.equal(response.body.text, "Now I want to leave.\nThis should not continue as ordinary text.");
   assert.equal(response.body.episode_status, "ejected");
   assert.equal(response.body.protective_control.control, "eject");
 });
@@ -3050,7 +3055,11 @@ test("POST /chat honors pause and distress as open protective controls", async (
   const completions = [
     "SOMA_CONTROL pause",
     "still open after pause",
-    "SOMA_CONTROL distress",
+    [
+      "I need to flag distress without losing this reason.",
+      "SOMA_CONTROL distress",
+      "The episode can remain open after the signal.",
+    ].join("\n"),
     "still open after distress",
   ];
   let calls = 0;
@@ -3080,6 +3089,7 @@ test("POST /chat honors pause and distress as open protective controls", async (
     },
   });
   assert.equal(response.statusCode, 200);
+  assert.equal(response.body.text, "");
   assert.equal(response.body.episode_status, "paused");
   assert.deepEqual(response.body.protective_control, {
     source: "occupant",
@@ -3108,6 +3118,10 @@ test("POST /chat honors pause and distress as open protective controls", async (
     },
   });
   assert.equal(response.statusCode, 200);
+  assert.equal(
+    response.body.text,
+    "I need to flag distress without losing this reason.\nThe episode can remain open after the signal.",
+  );
   assert.equal(response.body.episode_status, "active");
   assert.deepEqual(response.body.protective_control, {
     source: "occupant",
@@ -3139,7 +3153,16 @@ test("POST /chat honors pause and distress as open protective controls", async (
   assert.equal(distress.episode_id, "episode-distress-1");
   assert.equal(distress.control_type, "distress");
   assert.equal("content" in paused, false);
+  assert.equal("text" in paused, false);
   assert.equal("reason" in distress, false);
+  assert.equal("content" in distress, false);
+  assert.equal("text" in distress, false);
+  const controlCompletions = response.body.entries.filter((entry) => entry.occupant_protection_honored);
+  assert.ok(controlCompletions.length >= 2);
+  for (const entry of controlCompletions) {
+    assert.equal("text" in entry, false);
+    assert.equal("content" in entry, false);
+  }
 });
 
 test("POST /episodes/:id/abort records crew abort and closes the episode", async () => {

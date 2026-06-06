@@ -106,7 +106,8 @@ Provenance:
 - forum provenance records only metadata such as forum id, post id, author, type, and delivery
   count; forum post content is stored only in the forum thread
 - occupant `pause`, `distress`, and `eject` controls record typed protective events without raw
-  content or free-text reasons; detection is exact whole-response matching only
+  content or free-text reasons; control directive lines are stripped from the steward-facing chat
+  response while surrounding occupant words remain visible there
 - crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant
   ejection
 

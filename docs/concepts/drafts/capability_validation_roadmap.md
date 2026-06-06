@@ -89,9 +89,11 @@ predate it; the doc is honest that those constraints are **not yet all true**:
   the descriptor invariant (with `resource_class=internal_status`-style descriptors) when the router
   lands. Run #2 exercises them as **pre-router capability-inhabitation** — it does not assert the
   descriptor/router invariants are already satisfied.
-- **`provenance.read` is base-harness today.** Before any occupant-facing use, split it into a
-  curated `provenance.summary.read` (T1) and keep raw `provenance.read` at the higher tier its recon
-  content warrants.
+- **`provenance.read` is base-harness today.** A steward-side curated `provenance.summary.read`
+  split has landed as the second DomainRouter consumer: it resolves an `internal_provenance`
+  descriptor and returns episode-scoped aggregate counts only. Raw `provenance.read` stays separate
+  at the higher tier its recon content warrants; occupant-facing invocation/grant delivery for the
+  curated summary remains deferred.
 - **`tool.files.read` is base-harness and live with descriptor-routed scoped roots.** It is the
   **first descriptor/router retrofit consumer.** The route now reads through
   `domain` + `root_id` + clean `relative_path`, keeps testing roots synthetic, rejects root escapes,
@@ -231,9 +233,10 @@ Representative fixture classes:
    `space.history.read`, durable testimony) for the first capability-**inhabitation** run. This is
    **pre-router** (see "Current Drift to Retire"); it does not assert the descriptor/router
    invariants are already met — those land in step 3.
-3. Define the `ResourceDescriptor` invariant; **prove it by retrofitting `tool.files.read`**. The
-   descriptor/router spine and T3 occupant invocation/grant enforcement have landed for file reads;
-   desktop remains the next router consumer.
+3. Define the `ResourceDescriptor` invariant; **prove it by retrofitting `tool.files.read`** and
+   then a non-file internal consumer. The descriptor/router spine and T3 occupant invocation/grant
+   enforcement have landed for file reads; steward-side `provenance.summary.read` now proves the
+   `internal_provenance` descriptor path. Desktop remains the next router consumer.
 4. Work the cheap tiers (T1 summary reads, T2 ephemeral memory write) while standing up sandbox
    infrastructure for T3–T4 (test desktop, synthetic sensorium mode, scoped file tree).
 5. Proceed up the ladder, each capability satisfying the full invariant set with tier-appropriate

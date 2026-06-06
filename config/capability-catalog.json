@@ -206,6 +206,34 @@
       "description": "Read the in-process provenance log."
     },
     {
+      "key": "provenance.summary.read",
+      "name": "Curated Provenance Summary Read",
+      "category": "provenance",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "episode-scoped aggregate provenance counts",
+        "descriptor scope metadata"
+      ],
+      "excluded_by_default": [
+        "raw provenance entries",
+        "event type names",
+        "capability names",
+        "denial and refusal reason codes",
+        "grant ids",
+        "episode ids",
+        "caller identities",
+        "file paths and path digests",
+        "provider internals",
+        "other-domain and other-episode data"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.provenance.summary.read.v1",
+      "description": "Read a descriptor-scoped, recon-minimized aggregate provenance summary. Raw provenance.read remains separate."
+    },
+    {
       "key": "provenance.clear",
       "name": "Provenance Clear",
       "category": "provenance",

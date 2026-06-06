@@ -614,6 +614,20 @@ Optional filters:
 
 Returns aggregate counts for provenance entries when `provenance.read` is allowed.
 
+### `POST /provenance/summary/read`
+
+Returns a recon-minimized, episode-scoped provenance summary when an active
+`provenance.summary.read` grant authorizes the request. This route is the second
+DomainRouter consumer after `tool.files.read`: it resolves an `internal_provenance`
+ResourceDescriptor with `domain`, `provider_id`, `resource_class`, `synthetic`, `scope`, and
+`max_events_considered` before reading any log entries.
+
+The returned summary is counts-only. It includes scoped totals such as allowed/refused counts and
+capability invocation/refusal counts, but does not expose raw entries, event type names, capability
+names, denial reasons, grant ids, episode ids, caller identities, file paths, path digests, provider
+internals, or other-domain/other-episode data. Raw `provenance.read` and its existing operator
+summary route remain separate.
+
 ### `DELETE /provenance`
 
 Clears the in-process provenance log when `provenance.clear` is allowed.

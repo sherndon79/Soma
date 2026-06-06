@@ -59,6 +59,8 @@ item may be stored for future architecture work, but it is not activatable.
 The resolver that turns a domain-scoped logical resource reference into a ResourceDescriptor. It
 owns host addresses such as roots, endpoints, and devices; callers and models provide only logical
 ids such as `root_id` plus bounded relative references.
+It also resolves bounded internal resources that have no host address, such as
+`provenance.summary.read` descriptors with `resource_class=internal_provenance`.
 
 ## Disabled
 
@@ -82,6 +84,9 @@ includes fields such as `domain`, `provider_id`, `resource_class`, `root_id`, `r
 `synthetic`, and size bounds. Providers receive descriptors, not caller-supplied host paths.
 Occupant-facing file-read grants bind to the descriptor domain and `root_id` before the provider can
 read content.
+For internal summaries, a ResourceDescriptor may describe bounded scope rather than a host path; for
+example, `provenance.summary.read` uses `resource_class=internal_provenance`, episode/domain scope,
+synthetic testing posture, and event-count bounds.
 
 ## Steward Watch
 

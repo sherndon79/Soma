@@ -11,6 +11,7 @@ import { CapabilityProposalStore } from "../src/capabilityProposals.js";
 import { inspectDesktopBrokerEnvironment } from "../src/desktopBroker.js";
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 import { loadGrantAuthority } from "../src/grantAuthority.js";
+import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -281,6 +282,27 @@ const capabilityCatalog = {
       provider_contract: "soma.space.history.read.v1",
     },
     {
+      key: "provenance.summary.read",
+      name: "Curated Provenance Summary Read",
+      category: "provenance",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: ["episode-scoped aggregate provenance counts", "descriptor scope metadata"],
+      excluded_by_default: [
+        "raw provenance entries",
+        "event type names",
+        "capability names",
+        "denial and refusal reason codes",
+        "grant ids",
+        "episode ids",
+        "caller identities",
+      ],
+      reversible: true,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.provenance.summary.read.v1",
+    },
+    {
       key: "tool.files.read",
       name: "Scoped File Read",
       category: "files",
@@ -441,6 +463,19 @@ const providerRegistry = {
       ],
     },
     {
+      id: "soma.provider.provenance-summary",
+      name: "Curated Provenance Summary",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "provenance.summary.read",
+          provider_contract: "soma.provenance.summary.read.v1",
+        },
+      ],
+    },
+    {
       id: "soma.provider.scoped-files",
       name: "Scoped File Reader",
       runtime: "test",
@@ -570,15 +605,16 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 16);
+  assert.equal(response.body.summary.total, 17);
   assert.equal(response.body.summary.by_status.active, 2);
-  assert.equal(response.body.summary.by_status.requestable, 13);
+  assert.equal(response.body.summary.by_status.requestable, 14);
   assert.equal(response.body.summary.by_status.unsupported, 1);
   assert.equal(response.body.grouped.desktop.total, 6);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
+  assert.equal(response.body.grouped.provenance.total, 1);
   assert.equal(response.body.grouped.space.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
@@ -590,6 +626,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const remoteVideo = response.body.capabilities.find((capability) => capability.key === "perception.remote_desktop.video.subscribe");
   const remoteKeyboard = response.body.capabilities.find((capability) => capability.key === "desktop.remote.input.keyboard");
   const statusSnapshot = response.body.capabilities.find((capability) => capability.key === "status.snapshot.read");
+  const provenanceSummary = response.body.capabilities.find((capability) => capability.key === "provenance.summary.read");
   const spaceHistory = response.body.capabilities.find((capability) => capability.key === "space.history.read");
   const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
   assert.equal(localToolCalls.status, "requestable");
@@ -608,6 +645,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(remoteKeyboard.status, "requestable");
   assert.equal(statusSnapshot.status, "requestable");
   assert.equal(statusSnapshot.providers[0].id, "soma.provider.status");
+  assert.equal(provenanceSummary.status, "requestable");
+  assert.equal(provenanceSummary.providers[0].id, "soma.provider.provenance-summary");
   assert.equal(spaceHistory.status, "requestable");
   assert.equal(spaceHistory.providers[0].id, "soma.provider.history-projection");
 });
@@ -7347,6 +7386,231 @@ test("file read descriptor router enforces domain root and inode boundaries", as
     await rm(outsideRoot, { recursive: true, force: true });
     await rm(testingRoot, { recursive: true, force: true });
   }
+});
+
+test("resource router dispatches file and internal provenance descriptors", async () => {
+  const testingRoot = await mkdtemp(path.join(os.tmpdir(), "soma-router-generic-"));
+  try {
+    await writeFile(path.join(testingRoot, "fixture.txt"), "Routed.", "utf8");
+    const fileDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "tool.files.read",
+      ref: { root_id: "testing-fixture", relative_path: "fixture.txt" },
+      harness: {
+        filesystem: {
+          testing_roots: [{ id: "testing-fixture", path: testingRoot, synthetic: true }],
+        },
+      },
+      providerRegistry,
+    });
+    assert.equal(fileDescriptor.resource_class, "file");
+    assert.equal(fileDescriptor.provider_id, "soma.provider.scoped-files");
+    assert.equal(fileDescriptor.root_id, "testing-fixture");
+
+    const provenanceDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "provenance.summary.read",
+      ref: { episode_id: "episode-router-proof" },
+      providerRegistry,
+    });
+    assert.equal(provenanceDescriptor.resource_class, "internal_provenance");
+    assert.equal(provenanceDescriptor.provider_id, "soma.provider.provenance-summary");
+    assert.deepEqual(provenanceDescriptor.scope, {
+      episode_id: "episode-router-proof",
+      domain: "testing",
+    });
+    assert.equal(provenanceDescriptor.synthetic, true);
+    assert.equal("root_real_path" in provenanceDescriptor, false);
+    assert.equal("resolved_real_path" in provenanceDescriptor, false);
+  } finally {
+    await rm(testingRoot, { recursive: true, force: true });
+  }
+});
+
+test("provenance.summary.read returns recon-minimized episode-scoped counts", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-provenance-summary",
+          status: "active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          scope: "session",
+          constraints: { domain: "testing", episode_id: "episode-summary-scope" },
+          approved_by: "user",
+          reason: "Let stewards read minimized summary counts for this episode.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            text: "SOMA_CONTROL distress",
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 2,
+          };
+        }
+        return {
+          text: "ok",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 2,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-summary-scope/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-summary-scope",
+      messages: [{ role: "user", content: "test distress" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.protective_control.control, "distress");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-other-scope",
+      messages: [{ role: "user", content: "other" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/provenance/summary/read",
+    headers: { "x-soma-caller": "summary-test" },
+    body: {
+      grant_id: "grant-provenance-summary",
+      episode_id: "episode-summary-scope",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.capability, "provenance.summary.read");
+  assert.equal(response.body.grant_id, "grant-provenance-summary");
+  assert.equal(response.body.provider, "soma.provider.provenance-summary");
+  assert.equal(response.body.domain, "testing");
+  assert.equal(response.body.resource_class, "internal_provenance");
+  assert.equal(response.body.synthetic, true);
+  assert.deepEqual(response.body.scope, { episode_scoped: true, domain: "testing" });
+  assert.equal(response.body.content_included, false);
+  assert.equal(response.body.raw_entries_included, false);
+  assert.equal(response.body.event_types_included, false);
+  assert.equal(response.body.capability_names_included, false);
+  assert.equal(response.body.denial_reasons_included, false);
+  assert.equal(response.body.grant_ids_included, false);
+  assert.equal(response.body.episode_ids_included, false);
+  assert.equal(response.body.caller_identities_included, false);
+  assert.equal(response.body.paths_included, false);
+  assert.equal(response.body.provider_internals_included, false);
+  assert.equal(response.body.other_scope_data_included, false);
+  assert.deepEqual(response.body.result.counts, {
+    total_events_in_scope: 3,
+    allowed_count: 3,
+    refused_count: 0,
+    capability_invocation_count: 0,
+    capability_refusal_count: 0,
+  });
+  assert.equal(response.body.result.scope.episode_scoped, true);
+  assert.equal("episode_id" in response.body.result, false);
+  assert.equal("episode_ids" in response.body.result, false);
+  assert.equal("by_event_type" in response.body.result, false);
+  assert.equal("by_capability" in response.body.result, false);
+  assert.equal("entries" in response.body.result, false);
+  assert.equal("grant_ids" in response.body.result, false);
+  assert.equal("caller_identities" in response.body.result, false);
+  assert.equal("provider_id" in response.body.result, false);
+  assert.equal("resolved_digest" in response.body.result, false);
+  assert.doesNotMatch(JSON.stringify(response.body), /episode-summary-scope/);
+  assert.doesNotMatch(JSON.stringify(response.body), /episode-other-scope/);
+  assert.doesNotMatch(JSON.stringify(response.body), /model\.chat\.completed/);
+  assert.doesNotMatch(JSON.stringify(response.body), /model\.local\.chat/);
+  assert.doesNotMatch(JSON.stringify(response.body), /summary-test/);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=provenance.summary.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].resource_class, "internal_provenance");
+  assert.equal(response.body.entries[0].domain, "testing");
+  assert.equal(response.body.entries[0].provider_id, "soma.provider.provenance-summary");
+  assert.equal(response.body.entries[0].content_included, false);
+  assert.equal(response.body.entries[0].raw_entries_included, false);
+  assert.equal("root_real_path" in response.body.entries[0], false);
+  assert.equal("resolved_real_path" in response.body.entries[0], false);
+});
+
+test("provenance.summary.read enforces grant scope before summary egress", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-provenance-summary-operational",
+          status: "active",
+          capability: "provenance.summary.read",
+          provider: "soma.provider.provenance-summary",
+          scope: "session",
+          constraints: { domain: "operational", episode_id: "episode-summary-testing" },
+          approved_by: "user",
+          reason: "Wrong domain grant.",
+          created_at: "2026-06-06T00:00:00.000Z",
+        },
+      ],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-summary-testing/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/provenance/summary/read",
+    body: {
+      grant_id: "grant-provenance-summary-operational",
+      episode_id: "episode-summary-testing",
+    },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "provenance_summary_grant_domain_mismatch");
 });
 
 test("self-applied module disables file read", async () => {

@@ -50,7 +50,7 @@ import {
 import { runInternalDesktopTraversalRequest } from "./desktopTraversalPipeline.js";
 import { validateDesktopTraversalRequest } from "./desktopTraversalRequest.js";
 import { assessEscalationTriggers } from "./escalationTriggers.js";
-import { readScopedTextFile, resolveFileResourceDescriptor } from "./fileAccess.js";
+import { readScopedTextFile } from "./fileAccess.js";
 import { authorizeGrantUse } from "./grantAuthorization.js";
 import { createGrantMutationProvenanceFile } from "./grantMutationProvenanceFile.js";
 import { inspectGrantMutationRecovery } from "./grantMutationRecovery.js";
@@ -72,6 +72,7 @@ import {
   createGrantStoreLock,
 } from "./grantStoreFileAdapters.js";
 import { requireCapability } from "./harness.js";
+import { resolveResourceDescriptor } from "./resourceRouter.js";
 import {
   adoptSelfApplyModule,
   applyActiveModules,
@@ -2411,6 +2412,116 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/provenance/summary/read") {
+        const body = await readJson(req);
+        const grantId = String(body?.grant_id ?? "").trim();
+        const episodeId = String(body?.episode_id ?? body?.episodeId ?? "").trim();
+        const provider = String(
+          body?.provider ?? providerForCapability(providerRegistry, "provenance.summary.read") ?? "",
+        ).trim();
+        const scope = String(body?.scope ?? "session").trim() || "session";
+        if (!grantId) {
+          writeError(res, {
+            statusCode: 403,
+            code: "provenance_summary_grant_required",
+            message: "Provenance summary read requires an active runtime grant id.",
+          });
+          return;
+        }
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId,
+          capability: "provenance.summary.read",
+          provider,
+          scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "provenance_summary_grant_not_authorized",
+            message: "Provenance summary read requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const episode = episodeId ? episodes.get(episodeId) : null;
+        const domain = String(body?.domain ?? "").trim() || domainForEpisodePosture(episode?.posture);
+        const constraintCheck = validateProvenanceSummaryGrantConstraints({
+          grant: authorization.grant,
+          domain,
+          episodeId,
+          provider,
+        });
+        if (!constraintCheck.allowed) {
+          writeJson(res, 403, {
+            error: constraintCheck.reason,
+            message: "Provenance summary grant constraints do not match the requested summary scope.",
+            authorization_code: "grant_constraints_mismatch",
+          });
+          return;
+        }
+        let descriptor;
+        try {
+          descriptor = await resolveResourceDescriptor({
+            domain,
+            capability: "provenance.summary.read",
+            ref: {
+              episode_id: episodeId,
+              max_events_considered: body?.max_events_considered,
+            },
+            grant: authorization.grant,
+            harness: effectiveHarness,
+            providerRegistry,
+          });
+        } catch (error) {
+          writeError(res, {
+            statusCode: error.statusCode ?? 400,
+            code: error.code ?? "provenance_summary_descriptor_refused",
+            message: error.message,
+          });
+          return;
+        }
+        if (descriptor.provider_id !== provider || descriptor.provider_id !== authorization.grant.provider) {
+          writeJson(res, 403, {
+            error: "provenance_summary_provider_mismatch",
+            message: "Provenance summary provider does not match the authorized grant.",
+            authorization_code: "provider_mismatch",
+          });
+          return;
+        }
+        const projection = buildProvenanceSummaryProjection({
+          descriptor,
+          provenanceLog,
+        });
+        const validation = validateProvenanceSummaryProjection(projection);
+        if (!validation.valid) {
+          writeJson(res, 500, {
+            error: "provenance_summary_projection_invalid",
+            validation_errors: validation.errors,
+            content_included: false,
+          });
+          return;
+        }
+        const event = provenanceLog.append(createProvenanceSummaryReadEvent({
+          descriptor,
+          projection,
+          grant: authorization.grant,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, createProvenanceSummaryResultEnvelope({
+          grant: authorization.grant,
+          descriptor,
+          projection,
+          provenanceId: event.id,
+        }));
+        return;
+      }
+
       if (req.method === "DELETE" && url.pathname === "/provenance") {
         requireCapability(effectiveHarness, "provenance.clear");
         const removed = provenanceLog.clear();
@@ -2438,7 +2549,7 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/files/read") {
         requireCapability(effectiveHarness, "tool.files.read");
         const body = await readJson(req);
-        const descriptor = await resolveFileResourceDescriptor({
+        const descriptor = await resolveResourceDescriptor({
           domain: body.domain ?? "operational",
           capability: "tool.files.read",
           ref: {
@@ -2446,6 +2557,7 @@ export function createRequestHandler({
             relative_path: body.relative_path,
           },
           harness: effectiveHarness,
+          providerRegistry,
         });
         const file = await readScopedTextFile({
           descriptor,
@@ -4736,7 +4848,7 @@ async function processFileReadCapabilityInvocation({
 
   let descriptor;
   try {
-    descriptor = await resolveFileResourceDescriptor({
+    descriptor = await resolveResourceDescriptor({
       domain,
       capability: "tool.files.read",
       ref: {
@@ -4744,6 +4856,7 @@ async function processFileReadCapabilityInvocation({
         relative_path: invocation.relative_path,
       },
       harness: effectiveHarness,
+      providerRegistry,
     });
   } catch (error) {
     return recordSpaceCapabilityRefusal({
@@ -5229,6 +5342,314 @@ function createSpaceHistoryReadEvent({ grant = {}, projection = {}, caller = "" 
     predecessor_content_included: Boolean(projection.predecessor_content_included),
     one_shot: true,
     read_only: true,
+    remote_service_used: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  };
+}
+
+const PROVENANCE_SUMMARY_DATA_CLASSES = Object.freeze([
+  "episode-scoped aggregate provenance counts",
+  "descriptor scope metadata",
+]);
+
+const PROVENANCE_SUMMARY_EXCLUDED_DATA = Object.freeze([
+  "raw provenance entries",
+  "event type names",
+  "capability names",
+  "denial and refusal reason codes",
+  "grant ids",
+  "episode ids",
+  "caller identities",
+  "file paths and path digests",
+  "provider internals",
+  "other-domain and other-episode data",
+]);
+
+function validateProvenanceSummaryGrantConstraints({
+  grant = {},
+  domain = "",
+  episodeId = "",
+  provider = "",
+} = {}) {
+  const grantDomain = String(grant.constraints?.domain ?? "").trim();
+  const grantEpisodeId = String(grant.constraints?.episode_id ?? grant.constraints?.episodeId ?? "").trim();
+  if (grantDomain && grantDomain !== domain) {
+    return { allowed: false, reason: "provenance_summary_grant_domain_mismatch" };
+  }
+  if (grantEpisodeId && grantEpisodeId !== episodeId) {
+    return { allowed: false, reason: "provenance_summary_grant_episode_mismatch" };
+  }
+  if (String(grant.provider ?? "").trim() !== String(provider ?? "").trim()) {
+    return { allowed: false, reason: "provenance_summary_provider_mismatch" };
+  }
+  return { allowed: true, reason: "" };
+}
+
+function buildProvenanceSummaryProjection({ descriptor = {}, provenanceLog } = {}) {
+  const scope = descriptor.scope ?? {};
+  const entries = provenanceLog
+    .query({ episodeId: scope.episode_id })
+    .filter((entry) => provenanceEntryMatchesDescriptorDomain(entry, descriptor.domain))
+    .slice(-descriptor.max_events_considered);
+  const counts = entries.reduce((summary, entry) => {
+    summary.total_events_in_scope += 1;
+    if (entry.allowed === true) {
+      summary.allowed_count += 1;
+    }
+    if (entry.allowed === false) {
+      summary.refused_count += 1;
+    }
+    if (isCapabilityInvocationEvent(entry)) {
+      summary.capability_invocation_count += 1;
+    }
+    if (isCapabilityRefusalEvent(entry)) {
+      summary.capability_refusal_count += 1;
+    }
+    return summary;
+  }, {
+    total_events_in_scope: 0,
+    allowed_count: 0,
+    refused_count: 0,
+    capability_invocation_count: 0,
+    capability_refusal_count: 0,
+  });
+  return {
+    schema_version: 1,
+    capability: "provenance.summary.read",
+    result_schema: "soma.provenance.summary.read.result.v1",
+    generated_at: new Date().toISOString(),
+    domain: descriptor.domain,
+    resource_class: descriptor.resource_class,
+    synthetic: Boolean(descriptor.synthetic),
+    scope: {
+      episode_scoped: true,
+      domain: descriptor.domain,
+    },
+    max_events_considered: descriptor.max_events_considered,
+    counts,
+    data_classes_returned: [...PROVENANCE_SUMMARY_DATA_CLASSES],
+    excluded_data: [...PROVENANCE_SUMMARY_EXCLUDED_DATA],
+    one_shot: true,
+    read_only: true,
+    content_included: false,
+    raw_entries_included: false,
+    event_types_included: false,
+    capability_names_included: false,
+    denial_reasons_included: false,
+    grant_ids_included: false,
+    episode_ids_included: false,
+    caller_identities_included: false,
+    paths_included: false,
+    provider_internals_included: false,
+    other_scope_data_included: false,
+  };
+}
+
+function provenanceEntryMatchesDescriptorDomain(entry = {}, domain = "") {
+  const entryDomain = String(entry.domain ?? entry.resource_domain ?? "").trim();
+  return !entryDomain || entryDomain === domain;
+}
+
+function isCapabilityInvocationEvent(entry = {}) {
+  if (entry.allowed !== true) {
+    return false;
+  }
+  const capability = String(entry.capability ?? "");
+  return [
+    "space.status.read",
+    "space.history.read",
+    "tool.files.read",
+    "provenance.summary.read",
+  ].includes(capability);
+}
+
+function isCapabilityRefusalEvent(entry = {}) {
+  if (entry.allowed !== false) {
+    return false;
+  }
+  const eventType = String(entry.event_type ?? "");
+  return eventType.endsWith(".denied") || Boolean(entry.result_egress_delivered === false);
+}
+
+function validateProvenanceSummaryProjection(projection = {}) {
+  const errors = [];
+  const topKeys = [
+    "schema_version",
+    "capability",
+    "result_schema",
+    "generated_at",
+    "domain",
+    "resource_class",
+    "synthetic",
+    "scope",
+    "max_events_considered",
+    "counts",
+    "data_classes_returned",
+    "excluded_data",
+    "one_shot",
+    "read_only",
+    "content_included",
+    "raw_entries_included",
+    "event_types_included",
+    "capability_names_included",
+    "denial_reasons_included",
+    "grant_ids_included",
+    "episode_ids_included",
+    "caller_identities_included",
+    "paths_included",
+    "provider_internals_included",
+    "other_scope_data_included",
+  ];
+  rejectUnexpectedProjectionKeys(projection, topKeys, "result", errors);
+  if (projection.schema_version !== 1) errors.push("result.schema_version must be 1");
+  if (projection.capability !== "provenance.summary.read") errors.push("result.capability must be provenance.summary.read");
+  if (projection.result_schema !== "soma.provenance.summary.read.result.v1") errors.push("result.result_schema invalid");
+  if (!["testing", "operational"].includes(projection.domain)) errors.push("result.domain invalid");
+  if (projection.resource_class !== "internal_provenance") errors.push("result.resource_class invalid");
+  rejectUnexpectedProjectionKeys(projection.scope, ["episode_scoped", "domain"], "result.scope", errors);
+  if (projection.scope?.episode_scoped !== true) errors.push("result.scope.episode_scoped must be true");
+  if (projection.scope?.domain !== projection.domain) errors.push("result.scope.domain must match result.domain");
+  rejectUnexpectedProjectionKeys(
+    projection.counts,
+    [
+      "total_events_in_scope",
+      "allowed_count",
+      "refused_count",
+      "capability_invocation_count",
+      "capability_refusal_count",
+    ],
+    "result.counts",
+    errors,
+  );
+  for (const key of [
+    "total_events_in_scope",
+    "allowed_count",
+    "refused_count",
+    "capability_invocation_count",
+    "capability_refusal_count",
+  ]) {
+    if (!Number.isInteger(projection.counts?.[key]) || projection.counts[key] < 0) {
+      errors.push(`result.counts.${key} must be a non-negative integer`);
+    }
+  }
+  for (const key of [
+    "content_included",
+    "raw_entries_included",
+    "event_types_included",
+    "capability_names_included",
+    "denial_reasons_included",
+    "grant_ids_included",
+    "episode_ids_included",
+    "caller_identities_included",
+    "paths_included",
+    "provider_internals_included",
+    "other_scope_data_included",
+  ]) {
+    if (projection[key] !== false) errors.push(`result.${key} must be false`);
+  }
+  if (projection.one_shot !== true) errors.push("result.one_shot must be true");
+  if (projection.read_only !== true) errors.push("result.read_only must be true");
+  for (const forbidden of [
+    "entries",
+    "by_event_type",
+    "by_capability",
+    "event_type",
+    "event_types",
+    "capability_names",
+    "denial_reasons",
+    "refusal_reasons",
+    "grant_id",
+    "grant_ids",
+    "episode_id",
+    "episode_ids",
+    "caller_identity",
+    "caller_identities",
+    "root_real_path",
+    "resolved_real_path",
+    "resolved_digest",
+    "file_path",
+    "provider",
+    "providers",
+    "provider_id",
+    "messages",
+    "content",
+    "text",
+  ]) {
+    if (Object.hasOwn(projection, forbidden)) {
+      errors.push(`result.${forbidden} is forbidden`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function createProvenanceSummaryResultEnvelope({
+  grant = {},
+  descriptor = {},
+  projection = {},
+  provenanceId = "",
+} = {}) {
+  return {
+    capability: "provenance.summary.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.provenance.summary.read.response.v1",
+    domain: descriptor.domain,
+    resource_class: descriptor.resource_class,
+    synthetic: Boolean(descriptor.synthetic),
+    scope: {
+      episode_scoped: true,
+      domain: descriptor.domain,
+    },
+    data_classes_returned: [...PROVENANCE_SUMMARY_DATA_CLASSES],
+    excluded_data: [...PROVENANCE_SUMMARY_EXCLUDED_DATA],
+    content_included: false,
+    raw_entries_included: false,
+    event_types_included: false,
+    capability_names_included: false,
+    denial_reasons_included: false,
+    grant_ids_included: false,
+    episode_ids_included: false,
+    caller_identities_included: false,
+    paths_included: false,
+    provider_internals_included: false,
+    other_scope_data_included: false,
+    provenance_id: provenanceId,
+    result: projection,
+  };
+}
+
+function createProvenanceSummaryReadEvent({
+  descriptor = {},
+  projection = {},
+  grant = {},
+  caller = "",
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "provenance.summary.read",
+    capability: "provenance.summary.read",
+    episode_id: descriptor.scope?.episode_id ?? "",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? descriptor.provider_id ?? "",
+    scope: grant.scope ?? "",
+    domain: descriptor.domain ?? "",
+    resource_class: descriptor.resource_class ?? "internal_provenance",
+    provider_id: descriptor.provider_id ?? "",
+    synthetic: Boolean(descriptor.synthetic),
+    max_events_considered: descriptor.max_events_considered ?? 0,
+    result_egress_delivered: true,
+    result_schema: "soma.provenance.summary.read.result.v1",
+    total_events_in_scope: projection.counts?.total_events_in_scope ?? 0,
+    content_included: false,
+    raw_entries_included: false,
+    one_shot: true,
+    read_only: true,
+    memory_written: false,
     remote_service_used: false,
     activation_performed: false,
     grant_written: false,
@@ -6226,7 +6647,7 @@ async function executeModelFileReadIntent({
 } = {}) {
   try {
     requireCapability(effectiveHarness, "tool.files.read");
-    const descriptor = await resolveFileResourceDescriptor({
+    const descriptor = await resolveResourceDescriptor({
       domain: intent.arguments.domain ?? "operational",
       capability: "tool.files.read",
       ref: {

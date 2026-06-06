@@ -111,6 +111,9 @@ Provenance:
 - protective control detection stays line-delimited and command-shaped: formatting/case variants are
   accepted, `pause`/`distress` tolerate a bounded control-token typo, `eject` does not, and prose
   distress remains a deferred steward/monitor concern rather than an automatic control
+- `provenance.summary.read` records a content-free read event and returns only descriptor-scoped
+  aggregate counts; raw entries, event-type maps, capability maps, denial codes, grant ids, episode
+  ids, callers, paths, and provider internals remain excluded from that curated surface
 - crew aborts record `crew_aborted_for_care` or `crew_aborted_for_safety` separately from occupant
   ejection
 

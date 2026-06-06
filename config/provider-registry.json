@@ -97,6 +97,21 @@
       ]
     },
     {
+      "id": "soma.provider.provenance-summary",
+      "name": "Curated Provenance Summary",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "provenance.summary.read",
+          "provider_contract": "soma.provenance.summary.read.v1",
+          "output_schema": "soma.provenance.summary.read.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.stewardship",
       "name": "Text Stewardship Assessments",
       "version": "0.1.0",

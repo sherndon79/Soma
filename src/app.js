@@ -73,7 +73,10 @@ import {
   createGrantStoreLock,
 } from "./grantStoreFileAdapters.js";
 import { requireCapability } from "./harness.js";
-import { resolveResourceDescriptor } from "./resourceRouter.js";
+import {
+  resolveResourceDescriptor,
+  testingDesktopProviderIdForHarness,
+} from "./resourceRouter.js";
 import {
   adoptSelfApplyModule,
   applyActiveModules,
@@ -4869,7 +4872,10 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
 }
 
 const DESKTOP_ACCESSIBILITY_CAPABILITY = "desktop.inspect.accessibility_tree";
-const SYNTHETIC_DESKTOP_PROVIDER_ID = "soma.provider.synthetic-desktop";
+const DESKTOP_ACCESSIBILITY_TESTING_PROVIDER_MODES = new Set([
+  "synthetic_fixture",
+  "synthetic_container_live",
+]);
 
 const DESKTOP_ACCESSIBILITY_DATA_CLASSES = Object.freeze([
   "synthetic desktop accessibility structure",
@@ -4959,11 +4965,25 @@ async function processDesktopAccessibilityTreeInvocation({
       domain,
     });
   }
+  let testingDesktopProviderId;
+  try {
+    testingDesktopProviderId = testingDesktopProviderIdForHarness({ harness: effectiveHarness });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_accessibility_provider_mode_invalid",
+      domain,
+    });
+  }
   const authorization = authorizeGrantUse({
     store: grantStore,
     grantId: invocation.grant_id,
     capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
-    provider: SYNTHETIC_DESKTOP_PROVIDER_ID,
+    provider: testingDesktopProviderId,
     scope: "session",
     recoveryReport: grantRecoveryReport,
     catalog: capabilityCatalog,
@@ -4984,7 +5004,7 @@ async function processDesktopAccessibilityTreeInvocation({
   const constraintCheck = validateDesktopAccessibilityGrantConstraints({
     grant: authorization.grant,
     domain,
-    provider: SYNTHETIC_DESKTOP_PROVIDER_ID,
+    provider: testingDesktopProviderId,
   });
   if (!constraintCheck.allowed) {
     return recordSpaceCapabilityRefusal({
@@ -5006,6 +5026,10 @@ async function processDesktopAccessibilityTreeInvocation({
       capability: DESKTOP_ACCESSIBILITY_CAPABILITY,
       ref: {
         fixture_id: authorization.grant.constraints?.fixture_id,
+        provider_mode: authorization.grant.constraints?.provider_mode,
+        provider_id: authorization.grant.constraints?.provider_id,
+        session_id: authorization.grant.constraints?.session_id,
+        canary_set_id: authorization.grant.constraints?.canary_set_id,
         max_apps: authorization.grant.constraints?.max_apps,
         max_children: authorization.grant.constraints?.max_children,
       },
@@ -5025,7 +5049,7 @@ async function processDesktopAccessibilityTreeInvocation({
       domain,
     });
   }
-  if (descriptor.provider_id !== SYNTHETIC_DESKTOP_PROVIDER_ID || descriptor.provider_id !== authorization.grant.provider) {
+  if (descriptor.provider_id !== testingDesktopProviderId || descriptor.provider_id !== authorization.grant.provider) {
     return recordSpaceCapabilityRefusal({
       invocation,
       episode,
@@ -5038,7 +5062,7 @@ async function processDesktopAccessibilityTreeInvocation({
     });
   }
   if (
-    descriptor.provider_mode !== "synthetic_fixture" ||
+    !DESKTOP_ACCESSIBILITY_TESTING_PROVIDER_MODES.has(descriptor.provider_mode) ||
     descriptor.synthetic !== true ||
     descriptor.domain !== "testing" ||
     descriptor.resource_class !== "desktop" ||
@@ -5051,6 +5075,22 @@ async function processDesktopAccessibilityTreeInvocation({
       logger,
       caller,
       reason: "desktop_accessibility_descriptor_mismatch",
+      authorization,
+      domain,
+    });
+  }
+  const descriptorConstraintCheck = validateDesktopAccessibilityDescriptorConstraints({
+    grant: authorization.grant,
+    descriptor,
+  });
+  if (!descriptorConstraintCheck.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: descriptorConstraintCheck.reason,
       authorization,
       domain,
     });
@@ -5103,6 +5143,21 @@ function validateDesktopAccessibilityGrantConstraints({ grant = {}, domain = "",
   if (grant.constraints?.fixture_id !== undefined && typeof grant.constraints.fixture_id !== "string") {
     return { allowed: false, reason: "desktop_accessibility_fixture_invalid" };
   }
+  for (const field of ["provider_mode", "provider_id", "session_id", "canary_set_id"]) {
+    if (grant.constraints?.[field] !== undefined && typeof grant.constraints[field] !== "string") {
+      return { allowed: false, reason: `desktop_accessibility_${field}_invalid` };
+    }
+  }
+  return { allowed: true, reason: "" };
+}
+
+function validateDesktopAccessibilityDescriptorConstraints({ grant = {}, descriptor = {} } = {}) {
+  const constraints = grant.constraints ?? {};
+  for (const field of ["provider_mode", "provider_id", "fixture_id", "session_id", "canary_set_id"]) {
+    if (constraints[field] !== undefined && constraints[field] !== descriptor[field]) {
+      return { allowed: false, reason: `desktop_accessibility_${field}_mismatch` };
+    }
+  }
   return { allowed: true, reason: "" };
 }
 
@@ -5124,6 +5179,9 @@ function createDesktopAccessibilityResultEnvelope({
     synthetic: Boolean(descriptor.synthetic),
     fixture_id: descriptor.fixture_id ?? "",
     fixture_digest: descriptor.fixture_digest ?? "",
+    session_id: descriptor.session_id ?? "",
+    canary_set_id: descriptor.canary_set_id ?? "",
+    canary_set_digest: descriptor.canary_set_digest ?? "",
     limits: descriptor.limits ?? {},
     application_count: inspection.application_count ?? null,
     root_object_available_count: inspection.root_object_available_count ?? null,
@@ -5159,6 +5217,9 @@ function createDesktopAccessibilityReadEvent({ descriptor = {}, inspection = {},
     synthetic: Boolean(descriptor.synthetic),
     fixture_id: descriptor.fixture_id ?? "",
     fixture_digest: descriptor.fixture_digest ?? "",
+    session_id: descriptor.session_id ?? "",
+    canary_set_id: descriptor.canary_set_id ?? "",
+    canary_set_digest: descriptor.canary_set_digest ?? "",
     application_count: inspection.application_count ?? null,
     root_object_available_count: inspection.root_object_available_count ?? null,
     window_count: inspection.window_count ?? null,
@@ -5187,6 +5248,13 @@ function createDesktopAccessibilityReadEvent({ descriptor = {}, inspection = {},
 }
 
 function desktopAccessibilityResultDisclosure({ descriptor = {}, inspection = {} } = {}) {
+  if (descriptor.provider_mode === "synthetic_container_live") {
+    return [
+      "desktop.inspect.accessibility_tree delivered a synthetic-container, structure-only accessibility tree.",
+      `Canary set: ${descriptor.canary_set_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,
+      "No host display, host session bus, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+    ].join(" ");
+  }
   return [
     "desktop.inspect.accessibility_tree delivered a synthetic, structure-only accessibility tree.",
     `Fixture: ${descriptor.fixture_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,

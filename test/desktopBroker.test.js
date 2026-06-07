@@ -10,8 +10,10 @@ import {
   attachTraversalToDesktopInspectionResult,
   desktopBrokerHelperArgs,
   desktopTraversalHelperArgs,
+  inspectDesktopAccessibilityTreeWithDescriptor,
   inspectDesktopWindows,
   inspectDesktopTraversalWithRustHelper,
+  syntheticContainerDesktopBrokerArgs,
 } from "../src/desktopBroker.js";
 import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 
@@ -66,6 +68,66 @@ test("desktopBrokerHelperArgs combines application and child helper hints", () =
       "--max-root-child-metadata",
       "4",
     ],
+  );
+});
+
+test("syntheticContainerDesktopBrokerArgs targets the in-container broker adapter", () => {
+  assert.deepEqual(
+    syntheticContainerDesktopBrokerArgs({
+      descriptor: {
+        limits: { max_apps: 2, max_children: 1 },
+      },
+      env: {
+        SOMA_DESKTOP_REALISM_COMPOSE_PROJECT: "soma-desktop-realism",
+        SOMA_DESKTOP_REALISM_COMPOSE_FILE: "docker-compose.desktop-realism.yml",
+        SOMA_DESKTOP_REALISM_SERVICE: "desktop-realism",
+        SOMA_DESKTOP_REALISM_INSPECT_COMMAND: "/usr/local/bin/desktop-realism-broker-inspect",
+      },
+    }),
+    [
+      "compose",
+      "-p",
+      "soma-desktop-realism",
+      "-f",
+      "docker-compose.desktop-realism.yml",
+      "exec",
+      "-T",
+      "-e",
+      "DESKTOP_REALISM_BROKER_MAX_APPS=2",
+      "-e",
+      "DESKTOP_REALISM_BROKER_MAX_CHILDREN=1",
+      "desktop-realism",
+      "/usr/local/bin/desktop-realism-broker-inspect",
+    ],
+  );
+});
+
+test("synthetic_container_live descriptor invokes the container adapter and validates output", async () => {
+  const inspection = baseAtspiInspection();
+  const dockerPath = await executableScript("desktop-container-docker", `#!/bin/sh
+printf '%s\\n' '${JSON.stringify(inspection)}'
+`);
+
+  const result = await inspectDesktopAccessibilityTreeWithDescriptor({
+    descriptor: syntheticContainerDescriptor(),
+    env: { SOMA_DESKTOP_REALISM_DOCKER: dockerPath },
+  });
+
+  assert.equal(result.broker_source, "rust_helper");
+  assert.equal(result.tree_available, true);
+  assert.equal(result.application_count, 1);
+});
+
+test("synthetic_container_live descriptor fails closed when container adapter is unreachable", async () => {
+  await assert.rejects(
+    inspectDesktopAccessibilityTreeWithDescriptor({
+      descriptor: syntheticContainerDescriptor(),
+      env: { SOMA_DESKTOP_REALISM_DOCKER: "/does/not/exist/docker" },
+    }),
+    {
+      code: "desktop_synthetic_container_unreachable",
+      statusCode: 503,
+    },
   );
 });
 
@@ -327,6 +389,23 @@ function baseAtspiInspection() {
       text_content_included: false,
     },
     tree_available: true,
+  };
+}
+
+function syntheticContainerDescriptor() {
+  return {
+    domain: "testing",
+    capability: "desktop.inspect.accessibility_tree",
+    provider_id: "soma.provider.synthetic-container-desktop",
+    provider_mode: "synthetic_container_live",
+    resource_class: "desktop",
+    synthetic: true,
+    desktop_surface: "accessibility_tree",
+    session_id: "desktop-realism-minimal-x11-v1",
+    canary_set_id: "desktop-realism-minimal-x11-v1",
+    canary_set_digest: "0".repeat(64),
+    limits: { max_apps: 2, max_children: 1 },
+    grant_id: "grant-container-desktop",
   };
 }
 

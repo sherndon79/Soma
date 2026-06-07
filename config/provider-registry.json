@@ -223,6 +223,22 @@
       ]
     },
     {
+      "id": "soma.provider.synthetic-container-desktop",
+      "name": "Synthetic Container Desktop Provider",
+      "version": "0.1.0",
+      "runtime": "docker-compose-exec",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "desktop.inspect.accessibility_tree",
+          "provider_contract": "soma.desktop.inspect.accessibility_tree.v1",
+          "output_schema": "docs/schemas/desktop-inspection-result.schema.json",
+          "provider_mode": "synthetic_container_live"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.sensorium.jetsorano",
       "name": "Sensorium Node (jetsorano)",
       "version": "0.1.0",

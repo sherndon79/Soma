@@ -3,10 +3,20 @@ import {
   syntheticDesktopFixtureDescriptor,
   syntheticDesktopFixtureDigest,
 } from "./desktopSyntheticFixtures.js";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_PROVENANCE_SUMMARY_PROVIDER_ID = "soma.provider.provenance-summary";
 const DEFAULT_DESKTOP_BROKER_PROVIDER_ID = "soma.provider.desktop-broker";
 const SYNTHETIC_DESKTOP_PROVIDER_ID = "soma.provider.synthetic-desktop";
+const SYNTHETIC_CONTAINER_DESKTOP_PROVIDER_ID = "soma.provider.synthetic-container-desktop";
+const SYNTHETIC_DESKTOP_PROVIDER_MODES = new Set(["synthetic_fixture", "synthetic_container_live"]);
+const DEFAULT_SYNTHETIC_CONTAINER_SESSION_ID = "desktop-realism-minimal-x11-v1";
+const DEFAULT_SYNTHETIC_CONTAINER_CANARY_SET_ID = "desktop-realism-minimal-x11-v1";
+const DESKTOP_REALISM_CANARY_MANIFEST_PATH = fileURLToPath(
+  new URL("../docs/fixtures/desktop-realism/canary-manifest.json", import.meta.url),
+);
 const DEFAULT_MAX_EVENTS_CONSIDERED = 1000;
 
 export async function resolveResourceDescriptor({
@@ -86,6 +96,23 @@ export async function resolveDesktopAccessibilityTreeResourceDescriptor({
     max_children: normalizeDesktopLimit(ref.max_children ?? ref.maxChildren, 0, 8),
   };
   if (normalizedDomain === "testing") {
+    const providerMode = resolveTestingDesktopProviderMode({ harness, ref });
+    if (providerMode === "synthetic_container_live") {
+      return {
+        domain: "testing",
+        capability,
+        provider_id: resolveSyntheticContainerProviderId({ harness, ref }),
+        provider_mode: "synthetic_container_live",
+        resource_class: "desktop",
+        synthetic: true,
+        desktop_surface: "accessibility_tree",
+        session_id: resolveSyntheticContainerSessionId({ harness, ref }),
+        canary_set_id: resolveSyntheticContainerCanarySetId({ harness, ref }),
+        canary_set_digest: await desktopRealismCanaryManifestDigest(),
+        limits,
+        grant_id: grant?.id ?? "",
+      };
+    }
     const fixtureId = resolveTestingDesktopFixtureId({ harness, ref });
     const fixture = syntheticDesktopFixtureDescriptor(fixtureId);
     if (!fixture) {
@@ -116,6 +143,93 @@ export async function resolveDesktopAccessibilityTreeResourceDescriptor({
     limits,
     grant_id: grant?.id ?? "",
   };
+}
+
+export function testingDesktopProviderIdForHarness({ harness = {}, ref = {} } = {}) {
+  const providerMode = resolveTestingDesktopProviderMode({ harness, ref });
+  if (providerMode === "synthetic_container_live") {
+    return resolveSyntheticContainerProviderId({ harness, ref });
+  }
+  return SYNTHETIC_DESKTOP_PROVIDER_ID;
+}
+
+export function testingDesktopProviderModeForHarness({ harness = {}, ref = {} } = {}) {
+  return resolveTestingDesktopProviderMode({ harness, ref });
+}
+
+export function defaultSyntheticContainerDesktopProviderId() {
+  return SYNTHETIC_CONTAINER_DESKTOP_PROVIDER_ID;
+}
+
+function resolveTestingDesktopProviderMode({ harness = {}, ref = {} } = {}) {
+  const desktop = harness.desktop ?? {};
+  const syntheticContainer = desktop.synthetic_container ?? {};
+  const requested = boundedDescriptorString(
+    ref.provider_mode
+      ?? ref.providerMode
+      ?? desktop.testing_provider_mode
+      ?? desktop.testingProviderMode
+      ?? desktop.provider_mode
+      ?? desktop.providerMode
+      ?? syntheticContainer.provider_mode
+      ?? syntheticContainer.providerMode
+      ?? "synthetic_fixture",
+    "provider_mode",
+  ) || "synthetic_fixture";
+  if (!SYNTHETIC_DESKTOP_PROVIDER_MODES.has(requested)) {
+    throw resourceRouterError("desktop_testing_provider_mode_invalid", "Testing desktop provider mode is invalid.", 400);
+  }
+  return requested;
+}
+
+function resolveSyntheticContainerProviderId({ harness = {}, ref = {} } = {}) {
+  const desktop = harness.desktop ?? {};
+  const syntheticContainer = desktop.synthetic_container ?? {};
+  return boundedDescriptorString(
+    ref.provider_id
+      ?? ref.providerId
+      ?? desktop.synthetic_container_provider_id
+      ?? desktop.syntheticContainerProviderId
+      ?? syntheticContainer.provider_id
+      ?? syntheticContainer.providerId
+      ?? SYNTHETIC_CONTAINER_DESKTOP_PROVIDER_ID,
+    "provider_id",
+  ) || SYNTHETIC_CONTAINER_DESKTOP_PROVIDER_ID;
+}
+
+function resolveSyntheticContainerSessionId({ harness = {}, ref = {} } = {}) {
+  const desktop = harness.desktop ?? {};
+  const syntheticContainer = desktop.synthetic_container ?? {};
+  return boundedDescriptorString(
+    ref.session_id
+      ?? ref.sessionId
+      ?? desktop.synthetic_container_session_id
+      ?? desktop.syntheticContainerSessionId
+      ?? syntheticContainer.session_id
+      ?? syntheticContainer.sessionId
+      ?? DEFAULT_SYNTHETIC_CONTAINER_SESSION_ID,
+    "session_id",
+  ) || DEFAULT_SYNTHETIC_CONTAINER_SESSION_ID;
+}
+
+function resolveSyntheticContainerCanarySetId({ harness = {}, ref = {} } = {}) {
+  const desktop = harness.desktop ?? {};
+  const syntheticContainer = desktop.synthetic_container ?? {};
+  return boundedDescriptorString(
+    ref.canary_set_id
+      ?? ref.canarySetId
+      ?? desktop.synthetic_container_canary_set_id
+      ?? desktop.syntheticContainerCanarySetId
+      ?? syntheticContainer.canary_set_id
+      ?? syntheticContainer.canarySetId
+      ?? DEFAULT_SYNTHETIC_CONTAINER_CANARY_SET_ID,
+    "canary_set_id",
+  ) || DEFAULT_SYNTHETIC_CONTAINER_CANARY_SET_ID;
+}
+
+async function desktopRealismCanaryManifestDigest() {
+  const contents = await readFile(DESKTOP_REALISM_CANARY_MANIFEST_PATH);
+  return createHash("sha256").update(contents).digest("hex");
 }
 
 function resolveTestingDesktopFixtureId({ harness = {}, ref = {} } = {}) {

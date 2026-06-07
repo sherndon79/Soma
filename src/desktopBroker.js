@@ -18,6 +18,10 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_HELPER_PATH = fileURLToPath(
   new URL("../target/debug/soma-desktop-broker", import.meta.url),
 );
+const DEFAULT_DESKTOP_REALISM_COMPOSE_FILE = "docker-compose.desktop-realism.yml";
+const DEFAULT_DESKTOP_REALISM_PROJECT = "soma-desktop-realism";
+const DEFAULT_DESKTOP_REALISM_SERVICE = "desktop-realism";
+const DEFAULT_DESKTOP_REALISM_INSPECT_COMMAND = "/usr/local/bin/desktop-realism-broker-inspect";
 const MAX_ROOT_CHILD_METADATA_LIMIT = 4;
 const TRAVERSAL_HELPER_LIMITS = {
   maxDepth: [1, 4],
@@ -133,6 +137,15 @@ export async function inspectDesktopAccessibilityTreeWithDescriptor({
     const loaded = assertDesktopInspectionResult(await loadSyntheticDesktopFixture(descriptor.fixture_id));
     return assertDesktopInspectionResult(limitDesktopInspectionResult(loaded, limits));
   }
+  if (descriptor.provider_mode === "synthetic_container_live") {
+    if (descriptor.synthetic !== true || descriptor.domain !== "testing") {
+      const error = new Error("Synthetic container desktop inspection is only available in the testing domain.");
+      error.code = "synthetic_desktop_domain_required";
+      error.statusCode = 403;
+      throw error;
+    }
+    return inspectSyntheticContainerDesktop({ descriptor, env });
+  }
   if (descriptor.provider_mode === "live_helper") {
     return inspectDesktopBrokerEnvironment({
       mode: "atspi",
@@ -146,6 +159,79 @@ export async function inspectDesktopAccessibilityTreeWithDescriptor({
   error.code = "desktop_provider_mode_unsupported";
   error.statusCode = 400;
   throw error;
+}
+
+export function syntheticContainerDesktopBrokerArgs({ descriptor = {}, env = process.env } = {}) {
+  const limits = normalizeInspectionLimits({
+    maxApps: descriptor.limits?.max_apps,
+    maxChildren: descriptor.limits?.max_children,
+  });
+  const args = [
+    "compose",
+    "-p",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_PROJECT ?? DEFAULT_DESKTOP_REALISM_PROJECT),
+    "-f",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_FILE ?? DEFAULT_DESKTOP_REALISM_COMPOSE_FILE),
+    "exec",
+    "-T",
+  ];
+  if (limits.maxApps !== null) {
+    args.push("-e", `DESKTOP_REALISM_BROKER_MAX_APPS=${limits.maxApps}`);
+  }
+  if (limits.maxChildren !== null) {
+    args.push("-e", `DESKTOP_REALISM_BROKER_MAX_CHILDREN=${limits.maxChildren}`);
+  }
+  args.push(
+    String(env.SOMA_DESKTOP_REALISM_SERVICE ?? DEFAULT_DESKTOP_REALISM_SERVICE),
+    String(env.SOMA_DESKTOP_REALISM_INSPECT_COMMAND ?? DEFAULT_DESKTOP_REALISM_INSPECT_COMMAND),
+  );
+  return args;
+}
+
+async function inspectSyntheticContainerDesktop({ descriptor = {}, env = process.env } = {}) {
+  const dockerPath = String(env.SOMA_DESKTOP_REALISM_DOCKER ?? "docker");
+  const args = syntheticContainerDesktopBrokerArgs({ descriptor, env });
+  let payload;
+  try {
+    const { stdout } = await execFileAsync(dockerPath, args, {
+      env,
+      timeout: 5000,
+      maxBuffer: 512_000,
+    });
+    payload = JSON.parse(stdout);
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop inspection provider is unreachable.");
+    error.code = "desktop_synthetic_container_unreachable";
+    error.statusCode = 503;
+    error.cause = cause;
+    throw error;
+  }
+
+  let inspection;
+  try {
+    inspection = assertDesktopInspectionResult({
+      ...payload,
+      broker_source: payload.broker_source ?? "rust_helper",
+    });
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop inspection provider returned an invalid contract.");
+    error.code = "desktop_synthetic_container_contract_invalid";
+    error.statusCode = 502;
+    error.cause = cause;
+    throw error;
+  }
+
+  if (inspection.tree_available !== true || !inspection.tree) {
+    const error = new Error("Synthetic container desktop inspection tree is unavailable.");
+    error.code = "desktop_synthetic_container_tree_unavailable";
+    error.statusCode = 503;
+    throw error;
+  }
+  const limits = normalizeInspectionLimits({
+    maxApps: descriptor.limits?.max_apps,
+    maxChildren: descriptor.limits?.max_children,
+  });
+  return assertDesktopInspectionResult(limitDesktopInspectionResult(inspection, limits));
 }
 
 export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env, mode = "environment" } = {}) {

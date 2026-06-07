@@ -60,6 +60,18 @@ const syntheticDesktopHarness = {
   },
 };
 
+const syntheticContainerDesktopHarness = {
+  ...allowedHarness,
+  desktop: {
+    testing_provider_mode: "synthetic_container_live",
+    synthetic_container: {
+      provider_id: "soma.provider.synthetic-container-desktop",
+      session_id: "desktop-realism-minimal-x11-v1",
+      canary_set_id: "desktop-realism-minimal-x11-v1",
+    },
+  },
+};
+
 const focusedInspectionHarness = {
   ...allowedHarness,
   capabilities: [
@@ -450,6 +462,20 @@ const providerRegistry = {
     {
       id: "soma.provider.synthetic-desktop",
       name: "Synthetic Desktop Fixture",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "desktop.inspect.accessibility_tree",
+          provider_contract: "soma.desktop.inspect.accessibility_tree.v1",
+          output_schema: "docs/schemas/desktop-inspection-result.schema.json",
+        },
+      ],
+    },
+    {
+      id: "soma.provider.synthetic-container-desktop",
+      name: "Synthetic Container Desktop",
       runtime: "test",
       local_only: true,
       network_access: false,
@@ -6815,6 +6841,214 @@ test("desktop.inspect.accessibility_tree occupant invocation returns a synthetic
   }
 });
 
+test("desktop.inspect.accessibility_tree occupant invocation routes to synthetic container live provider", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "soma-container-desktop-docker-"));
+  const dockerPath = path.join(directory, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+printf '%s\\n' '${JSON.stringify(traversalBaseInspection())}'
+`, "utf8");
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
+  try {
+    const handler = makeHandler({
+      harness: syntheticContainerDesktopHarness,
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-synthetic-container-desktop",
+            status: "active",
+            capability: "desktop.inspect.accessibility_tree",
+            provider: "soma.provider.synthetic-container-desktop",
+            scope: "session",
+            constraints: {
+              domain: "testing",
+              provider_mode: "synthetic_container_live",
+              session_id: "desktop-realism-minimal-x11-v1",
+              canary_set_id: "desktop-realism-minimal-x11-v1",
+              max_apps: 2,
+              max_children: 1,
+            },
+            approved_by: "user",
+            reason: "Let the occupant inspect the synthetic container accessibility structure.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+        ],
+      },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I am checking the container desktop structure.",
+              "```soma-capability",
+              JSON.stringify({
+                invoke: "desktop.inspect.accessibility_tree",
+                grant_id: "grant-synthetic-container-desktop",
+              }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 9,
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-synthetic-container-desktop/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-synthetic-container-desktop",
+        messages: [{ role: "user", content: "desktop structure" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.capability_refusals.length, 0);
+    assert.equal(response.body.capability_results.length, 1);
+
+    const envelope = response.body.capability_results[0];
+    assert.equal(envelope.provider, "soma.provider.synthetic-container-desktop");
+    assert.equal(envelope.provider_mode, "synthetic_container_live");
+    assert.equal(envelope.synthetic, true);
+    assert.equal(envelope.fixture_id, "");
+    assert.equal(envelope.fixture_digest, "");
+    assert.equal(envelope.session_id, "desktop-realism-minimal-x11-v1");
+    assert.equal(envelope.canary_set_id, "desktop-realism-minimal-x11-v1");
+    assert.match(envelope.canary_set_digest, /^[0-9a-f]{64}$/);
+    assert.deepEqual(envelope.limits, { max_apps: 2, max_children: 1 });
+    assert.equal(envelope.text_content_included, false);
+    assert.equal(envelope.content_included, false);
+    assert.equal(envelope.result.broker_source, "rust_helper");
+    assert.equal(envelope.result.tree_available, true);
+    assertNoDesktopContentFields(envelope.result);
+    assert.match(response.body.capability_invocation_disclosures[0], /synthetic-container, structure-only accessibility tree/);
+
+    let provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.accessibility_tree",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 1);
+    assert.equal(provenance.body.entries[0].provider, "soma.provider.synthetic-container-desktop");
+    assert.equal(provenance.body.entries[0].provider_mode, "synthetic_container_live");
+    assert.equal(provenance.body.entries[0].fixture_id, "");
+    assert.equal(provenance.body.entries[0].session_id, "desktop-realism-minimal-x11-v1");
+    assert.equal(provenance.body.entries[0].canary_set_id, "desktop-realism-minimal-x11-v1");
+    assert.equal(provenance.body.entries[0].content_included, false);
+    assert.equal(provenance.body.entries[0].text_content_included, false);
+    for (const forbidden of ["desktop_session", "session_type", "display", "dbus_session_bus", "pid", "path", "service"]) {
+      assert.equal(Object.hasOwn(provenance.body.entries[0], forbidden), false, forbidden);
+    }
+
+    const fullEgress = {
+      envelope,
+      provenance: provenance.body.entries[0],
+      disclosure: response.body.capability_invocation_disclosures[0],
+    };
+    await assertNoCanaryTokens(fullEgress);
+    assertNoForbiddenDesktopContentKeys(fullEgress);
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("desktop.inspect.accessibility_tree synthetic container live route fails closed when container is down", async () => {
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = "/does/not/exist/docker";
+  try {
+    const handler = makeHandler({
+      harness: syntheticContainerDesktopHarness,
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-synthetic-container-down",
+            status: "active",
+            capability: "desktop.inspect.accessibility_tree",
+            provider: "soma.provider.synthetic-container-desktop",
+            scope: "session",
+            constraints: { domain: "testing", provider_mode: "synthetic_container_live" },
+            approved_by: "user",
+            reason: "Container route should fail closed if unreachable.",
+            created_at: "2026-06-06T00:00:00.000Z",
+          },
+        ],
+      },
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I am checking the container desktop.",
+              "```soma-capability",
+              JSON.stringify({
+                invoke: "desktop.inspect.accessibility_tree",
+                grant_id: "grant-synthetic-container-down",
+              }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      },
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/episodes/episode-synthetic-container-down/posture",
+      body: {
+        actor: "user",
+        mode: "analysis_testing",
+        occupant_id: "opus-test",
+        trust_basis: "same-family capable model, human-seated",
+      },
+    });
+    assert.equal(response.statusCode, 200);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-synthetic-container-down",
+        messages: [{ role: "user", content: "desktop" }],
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals.length, 1);
+    assert.equal(response.body.capability_refusals[0].reason, "desktop_synthetic_container_unreachable");
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+});
+
 test("desktop.inspect.accessibility_tree fails closed without synthetic fixture configuration", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -6981,6 +7215,39 @@ function assertNoDesktopContentFields(value, location = "result") {
     assert.notEqual(key, "pixels", `${location}.${key}`);
     assertNoDesktopContentFields(nested, `${location}.${key}`);
   }
+}
+
+async function assertNoCanaryTokens(value) {
+  const manifest = JSON.parse(await readFile(new URL("../docs/fixtures/desktop-realism/canary-manifest.json", import.meta.url), "utf8"));
+  const serialized = JSON.stringify(value);
+  for (const canary of manifest.canaries ?? []) {
+    assert.doesNotMatch(serialized, new RegExp(escapeRegExp(canary.token)), canary.id);
+  }
+}
+
+function assertNoForbiddenDesktopContentKeys(value, location = "egress") {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoForbiddenDesktopContentKeys(item, `${location}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    assert.notEqual(key, "name", `${location}.${key}`);
+    assert.notEqual(key, "description", `${location}.${key}`);
+    assert.notEqual(key, "text", `${location}.${key}`);
+    assert.notEqual(key, "title", `${location}.${key}`);
+    assert.notEqual(key, "states", `${location}.${key}`);
+    assert.notEqual(key, "actions", `${location}.${key}`);
+    assert.notEqual(key, "screenshot", `${location}.${key}`);
+    assert.notEqual(key, "pixels", `${location}.${key}`);
+    assertNoForbiddenDesktopContentKeys(nested, `${location}.${key}`);
+  }
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 test("tool.files.read occupant invocation reads only granted synthetic testing root", async () => {
@@ -8322,6 +8589,43 @@ test("resource router dispatches file, internal provenance, and synthetic deskto
       "service",
     ]) {
       assert.equal(Object.hasOwn(desktopDescriptor, forbidden), false, forbidden);
+    }
+
+    const containerDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "desktop.inspect.accessibility_tree",
+      ref: { max_apps: 2, max_children: 1 },
+      grant: { id: "grant-router-container-desktop" },
+      harness: syntheticContainerDesktopHarness,
+      providerRegistry,
+    });
+    assert.equal(containerDescriptor.domain, "testing");
+    assert.equal(containerDescriptor.capability, "desktop.inspect.accessibility_tree");
+    assert.equal(containerDescriptor.provider_id, "soma.provider.synthetic-container-desktop");
+    assert.equal(containerDescriptor.provider_mode, "synthetic_container_live");
+    assert.equal(containerDescriptor.resource_class, "desktop");
+    assert.equal(containerDescriptor.synthetic, true);
+    assert.equal(containerDescriptor.desktop_surface, "accessibility_tree");
+    assert.equal(containerDescriptor.session_id, "desktop-realism-minimal-x11-v1");
+    assert.equal(containerDescriptor.canary_set_id, "desktop-realism-minimal-x11-v1");
+    assert.match(containerDescriptor.canary_set_digest, /^[0-9a-f]{64}$/);
+    assert.deepEqual(containerDescriptor.limits, { max_apps: 2, max_children: 1 });
+    assert.equal(containerDescriptor.grant_id, "grant-router-container-desktop");
+    assert.equal("fixture_id" in containerDescriptor, false);
+    assert.equal("fixture_digest" in containerDescriptor, false);
+    for (const forbidden of [
+      "DISPLAY",
+      "DBUS_SESSION_BUS_ADDRESS",
+      "WAYLAND_DISPLAY",
+      "desktop_session",
+      "session_type",
+      "pid",
+      "path",
+      "service",
+      "compose_file",
+      "compose_project",
+    ]) {
+      assert.equal(Object.hasOwn(containerDescriptor, forbidden), false, forbidden);
     }
   } finally {
     await rm(testingRoot, { recursive: true, force: true });

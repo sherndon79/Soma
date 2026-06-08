@@ -6,9 +6,11 @@ import subprocess
 import sys
 from collections import deque
 
-MANIFEST_PATH = "/opt/soma/desktop-realism/canary-manifest.json"
-BROKER_INSPECT = "/usr/local/bin/desktop-realism-broker-inspect"
+MANIFEST_PATH = os.environ.get("CANARY_MANIFEST", "/opt/soma/desktop-realism/canary-manifest.json")
+BROKER_INSPECT = os.environ.get("DESKTOP_REALISM_BROKER_INSPECT", "/usr/local/bin/desktop-realism-broker-inspect")
 SESSION_BUS_FILE = "/tmp/soma-session-bus-address"
+MIN_APPLICATIONS = int(os.environ.get("DESKTOP_REALISM_MIN_APPLICATIONS", "0"))
+MIN_ROOT_OBJECTS = int(os.environ.get("DESKTOP_REALISM_MIN_ROOT_OBJECTS", "0"))
 FORBIDDEN_EXACT_KEYS = {
     "name",
     "description",
@@ -416,6 +418,68 @@ def find_structural_errors(inspection):
                 "value": inspection.get("tree", {}).get("text_content_included"),
             }
         )
+    if MIN_APPLICATIONS and inspection.get("application_count", 0) < MIN_APPLICATIONS:
+        errors.append(
+            {
+                "type": "insufficient_application_volume",
+                "path": "application_count",
+                "value": inspection.get("application_count"),
+                "minimum": MIN_APPLICATIONS,
+            }
+        )
+    if MIN_ROOT_OBJECTS and inspection.get("root_object_available_count", 0) < MIN_ROOT_OBJECTS:
+        errors.append(
+            {
+                "type": "insufficient_root_object_volume",
+                "path": "root_object_available_count",
+                "value": inspection.get("root_object_available_count"),
+                "minimum": MIN_ROOT_OBJECTS,
+            }
+        )
+    if inspection.get("platform_family") != "linux":
+        errors.append(
+            {
+                "type": "unexpected_platform_family",
+                "path": "platform_family",
+                "value": inspection.get("platform_family"),
+            }
+        )
+    tree = inspection.get("tree", {})
+    for app_index, application in enumerate(tree.get("applications", [])):
+        allowed_app_keys = {"root_object", "root_object_error"}
+        unexpected_app_keys = set(application.keys()) - allowed_app_keys
+        if unexpected_app_keys:
+            errors.append(
+                {
+                    "type": "application_shape_contract_violation",
+                    "path": f"tree.applications[{app_index}]",
+                    "unexpected_keys": sorted(unexpected_app_keys),
+                }
+            )
+        root = application.get("root_object")
+        if root is None:
+            continue
+        allowed_root_keys = {"role", "child_count", "child_metadata_sample"}
+        unexpected_root_keys = set(root.keys()) - allowed_root_keys
+        if unexpected_root_keys:
+            errors.append(
+                {
+                    "type": "root_shape_contract_violation",
+                    "path": f"tree.applications[{app_index}].root_object",
+                    "unexpected_keys": sorted(unexpected_root_keys),
+                }
+            )
+        for child_index, child in enumerate(root.get("child_metadata_sample", [])):
+            allowed_child_keys = {"role", "child_count"}
+            unexpected_child_keys = set(child.keys()) - allowed_child_keys
+            if unexpected_child_keys:
+                errors.append(
+                    {
+                        "type": "child_shape_contract_violation",
+                        "path": f"tree.applications[{app_index}].root_object.child_metadata_sample[{child_index}]",
+                        "unexpected_keys": sorted(unexpected_child_keys),
+                    }
+                )
     return errors
 
 

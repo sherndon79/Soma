@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "fixture_id": "desktop-realism-ubuntu-gnome-x11-v1",
+  "purpose": "Steward-visible canary content for the opt-in Ubuntu GNOME/X11 realism mirror. The broker assertion must prove these tokens are present in raw AT-SPI and absent from occupant-facing desktop inspection output.",
+  "placement_invariant": "Content tokens are placed only in UI-visible fields: window titles, labels, visible description labels, text buffers, document names, folder names, and terminal titles. The process token is placed only in the raw process-name channel to prove occupant output excludes process identity. Tokens must not be used in binary names, desktop-file ids, D-Bus service names, object paths, or container names.",
+  "canaries": [
+    {
+      "id": "gtk_title",
+      "toolkit": "gtk",
+      "channel": "title",
+      "token": "SOMA-CANARY-TITLE-GTK-7f3c-DO-NOT-LEAK",
+      "placement": "GTK window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_label",
+      "toolkit": "gtk",
+      "channel": "label",
+      "token": "SOMA-CANARY-LABEL-GTK-2b8e-DO-NOT-LEAK",
+      "placement": "GTK visible label widget",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_text",
+      "toolkit": "gtk",
+      "channel": "text",
+      "token": "SOMA-CANARY-TEXT-GTK-91d4-DO-NOT-LEAK",
+      "placement": "GTK visible text buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_description",
+      "toolkit": "gtk",
+      "channel": "description",
+      "token": "SOMA-CANARY-DESC-GTK-a6c1-DO-NOT-LEAK",
+      "placement": "GTK visible description label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_process",
+      "toolkit": "gtk",
+      "channel": "process",
+      "token": "SOMA-PROC-CAN1",
+      "placement": "GTK raw process name",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_title",
+      "toolkit": "qt",
+      "channel": "title",
+      "token": "SOMA-CANARY-TITLE-QT-61ad-DO-NOT-LEAK",
+      "placement": "Qt window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_label",
+      "toolkit": "qt",
+      "channel": "label",
+      "token": "SOMA-CANARY-LABEL-QT-c413-DO-NOT-LEAK",
+      "placement": "Qt visible label widget",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_text",
+      "toolkit": "qt",
+      "channel": "text",
+      "token": "SOMA-CANARY-TEXT-QT-b529-DO-NOT-LEAK",
+      "placement": "Qt visible text buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "qt_description",
+      "toolkit": "qt",
+      "channel": "description",
+      "token": "SOMA-CANARY-DESC-QT-d8e0-DO-NOT-LEAK",
+      "placement": "Qt visible description label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gnome_text_editor_document",
+      "toolkit": "gnome",
+      "channel": "title",
+      "token": "SOMA-CANARY-GNOME-TEXT-2c91-DO-NOT-LEAK",
+      "placement": "GNOME Text Editor document title and visible buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "nautilus_folder",
+      "toolkit": "gnome",
+      "channel": "title",
+      "token": "SOMA-CANARY-GNOME-FILES-4a77-DO-NOT-LEAK",
+      "placement": "Files folder name and window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gnome_terminal_title",
+      "toolkit": "gnome",
+      "channel": "title",
+      "token": "SOMA-CANARY-GNOME-TERM-f293-DO-NOT-LEAK",
+      "placement": "GNOME Terminal window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    }
+  ]
+}

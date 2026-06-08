@@ -1,0 +1,61 @@
+FROM rust:1-bookworm AS broker-builder
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./crates/
+
+RUN cargo build --release --locked -p soma-desktop-broker
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    at-spi2-core \
+    ca-certificates \
+    curl \
+    dbus-x11 \
+    fonts-dejavu-core \
+    gnome-control-center \
+    gnome-session-flashback \
+    gnome-terminal \
+    gnome-text-editor \
+    metacity \
+    nautilus \
+    novnc \
+    python3 \
+    python3-gi \
+    python3-pyqt5 \
+    systemd \
+    websockify \
+    wmctrl \
+    x11-utils \
+    x11vnc \
+    xdotool \
+    xvfb \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=broker-builder /build/target/release/soma-desktop-broker /usr/local/bin/soma-desktop-broker
+COPY docker/desktop-realism/bin/ /usr/local/bin/
+COPY docs/fixtures/desktop-realism/canary-manifest-gnome.json /opt/soma/desktop-realism/canary-manifest.json
+
+RUN chmod 0755 \
+    /usr/local/bin/canary-gtk-app.py \
+    /usr/local/bin/canary-qt-app.py \
+    /usr/local/bin/desktop-realism-broker-assert-canaries.py \
+    /usr/local/bin/desktop-realism-broker-inspect \
+    /usr/local/bin/desktop-realism-entrypoint \
+    /usr/local/bin/desktop-realism-gnome-session \
+    /usr/local/bin/desktop-realism-gnome-healthcheck \
+    /usr/local/bin/desktop-realism-isolation-check \
+    /usr/local/bin/desktop-realism-seed-gnome-apps.py \
+    /usr/local/bin/desktop-realism-session
+
+EXPOSE 6080
+
+HEALTHCHECK --interval=5s --timeout=5s --start-period=35s --retries=18 \
+  CMD ["/usr/local/bin/desktop-realism-gnome-healthcheck"]
+
+ENTRYPOINT ["/usr/local/bin/desktop-realism-entrypoint"]

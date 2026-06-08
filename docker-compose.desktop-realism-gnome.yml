@@ -1,0 +1,36 @@
+# Opt-in Ubuntu GNOME/X11 realism mirror for desktop minimization testing.
+#
+# This variant is intentionally separate from docker-compose.desktop-realism.yml. It does not mount
+# host X, host DBus, source trees, user files, or Soma runtime stores. It mirrors desktop shape with
+# synthetic content only.
+
+name: soma-desktop-realism-gnome
+
+services:
+  desktop-realism-gnome:
+    build:
+      context: .
+      dockerfile: docker/desktop-realism/Containerfile.gnome
+    image: soma-desktop-realism-gnome:local
+    container_name: soma-desktop-realism-gnome
+    init: true
+    shm_size: "1g"
+    restart: "no"
+    environment:
+      DISPLAY: ":99"
+      NOVNC_PORT: "6080"
+      VNC_PORT: "5900"
+      CANARY_MANIFEST: "/opt/soma/desktop-realism/canary-manifest.json"
+      DESKTOP_REALISM_SESSION: "gnome"
+      DESKTOP_REALISM_MIN_APPLICATIONS: "6"
+      DESKTOP_REALISM_MIN_ROOT_OBJECTS: "4"
+    ports:
+      - "127.0.0.1:${DESKTOP_REALISM_GNOME_NOVNC_PORT:-6081}:6080"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/desktop-realism-gnome-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      start_period: 35s
+      retries: 18

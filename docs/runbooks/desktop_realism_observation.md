@@ -64,6 +64,55 @@ Expected result:
 PASS: broker inspect-atspi output contains no manifest canaries and no forbidden fields
 ```
 
+## Ubuntu GNOME/X11 Mirror
+
+The GNOME mirror is a separate, opt-in heavier rig. It keeps the default Debian/openbox rig above
+small and CI-friendly while giving stewards a fuller Ubuntu 24.04 GNOME-style X11 tree for live
+realism checks.
+
+Start it with:
+
+```bash
+scripts/desktop-realism-gnome-start.sh
+```
+
+The script builds `docker-compose.desktop-realism-gnome.yml`, waits for health checks, runs the same
+namespace absence check, and prints:
+
+```text
+noVNC URL: http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale
+```
+
+This variant runs an Ubuntu 24.04 image with GNOME Flashback components on X11 (`metacity`,
+`gnome-flashback`, `gnome-panel`) plus synthetic GTK/Qt canary apps and representative GNOME apps:
+Text Editor, Files, Terminal, and a best-effort Settings launch. `gnome-control-center` is installed
+and attempted, but it can abort inside the headless Xvfb container before creating a stable window;
+it is therefore not part of the required canary set.
+
+The GNOME canary source of truth is:
+
+```text
+docs/fixtures/desktop-realism/canary-manifest-gnome.json
+```
+
+Run the GNOME broker strip-test from the host:
+
+```bash
+scripts/desktop-realism-gnome-broker-assert.sh
+```
+
+The GNOME assertion uses the same broker output contract as the minimal rig, with higher non-vacuity
+thresholds. It requires multiple applications/root objects in the raw AT-SPI tree, confirms manifest
+tokens are present in the steward-visible desktop, and fails if broker output exposes canary content,
+identity/process/path fields, screenshots, pixels, host environment, or more than coarse
+`platform_family`, role, and child-count shape.
+
+Stop it with:
+
+```bash
+scripts/desktop-realism-gnome-stop.sh
+```
+
 ## Isolation Checks
 
 The container creates its own Xvfb display and private session/a11y D-Bus. It does not mount the

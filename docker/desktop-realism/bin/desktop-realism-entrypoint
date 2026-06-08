@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec dbus-run-session -- /usr/local/bin/desktop-realism-session
+case "${DESKTOP_REALISM_SESSION:-minimal}" in
+  gnome)
+    exec dbus-run-session -- /usr/local/bin/desktop-realism-gnome-session
+    ;;
+  minimal|"")
+    exec dbus-run-session -- /usr/local/bin/desktop-realism-session
+    ;;
+  *)
+    printf 'ERROR: unknown DESKTOP_REALISM_SESSION=%s\n' "${DESKTOP_REALISM_SESSION}" >&2
+    exit 64
+    ;;
+esac

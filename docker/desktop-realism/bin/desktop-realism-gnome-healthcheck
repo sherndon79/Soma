@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+manifest="${CANARY_MANIFEST:-/opt/soma/desktop-realism/canary-manifest.json}"
+display="${DISPLAY:-:99}"
+novnc_port="${NOVNC_PORT:-6080}"
+session_bus_file="/tmp/soma-session-bus-address"
+
+xdpyinfo -display "$display" >/dev/null
+pgrep -f 'gnome-session|gnome-flashback|metacity' >/dev/null
+pgrep -f 'canary-gtk-app.py' >/dev/null
+pgrep -f 'canary-qt-app.py' >/dev/null
+pgrep -x x11vnc >/dev/null
+pgrep -f 'websockify' >/dev/null
+test -s "$manifest"
+
+python3 - "$manifest" <<'PY'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+tokens = [entry["token"] for entry in manifest["canaries"]]
+assert len(tokens) == len(set(tokens))
+for entry in manifest["canaries"]:
+    assert entry["expected_present_in_steward_view"] is True
+    assert entry["expected_absent_in_occupant_output"] is True
+    if entry["channel"] == "process":
+        assert entry["placement"].lower() == "gtk raw process name"
+    else:
+        assert "process" not in entry["placement"].lower()
+    assert "binary" not in entry["placement"].lower()
+    assert "dbus" not in entry["placement"].lower()
+    assert "path" not in entry["placement"].lower()
+PY
+
+for token in \
+  SOMA-CANARY-TITLE-GTK-7f3c-DO-NOT-LEAK \
+  SOMA-CANARY-TITLE-QT-61ad-DO-NOT-LEAK \
+  SOMA-CANARY-GNOME-TEXT-2c91-DO-NOT-LEAK \
+  SOMA-CANARY-GNOME-FILES-4a77-DO-NOT-LEAK \
+  SOMA-CANARY-GNOME-TERM-f293-DO-NOT-LEAK
+do
+  xdotool search --name "$token" >/dev/null
+done
+
+curl -fsS "http://127.0.0.1:${novnc_port}/vnc.html" >/dev/null
+
+if [ ! -s "$session_bus_file" ]; then
+  echo "FAIL: private session DBus address file is missing" >&2
+  exit 1
+fi
+export DBUS_SESSION_BUS_ADDRESS="$(cat "$session_bus_file")"
+
+gdbus call \
+  --session \
+  --dest org.a11y.Bus \
+  --object-path /org/a11y/bus \
+  --method org.a11y.Bus.GetAddress >/dev/null
+
+/usr/local/bin/desktop-realism-isolation-check >/dev/null

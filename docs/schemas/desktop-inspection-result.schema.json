@@ -6,10 +6,6 @@
   "required": [
     "mode",
     "broker_source",
-    "platform",
-    "release",
-    "desktop_session",
-    "session_type",
     "dbus_session_bus_available",
     "atspi_likely_available",
     "tree",
@@ -31,16 +27,7 @@
         "synthetic_fixture"
       ]
     },
-    "platform": {
-      "type": "string"
-    },
-    "release": {
-      "type": "string"
-    },
-    "desktop_session": {
-      "type": "string"
-    },
-    "session_type": {
+    "platform_family": {
       "type": "string"
     },
     "wayland_display_present": {
@@ -188,30 +175,10 @@
     "application": {
       "type": "object",
       "required": [
-        "service",
-        "pid",
-        "process",
-        "registry",
         "root_object",
         "root_object_error"
       ],
       "properties": {
-        "service": {
-          "type": "string"
-        },
-        "pid": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0
-        },
-        "process": {
-          "type": "string"
-        },
-        "registry": {
-          "type": "boolean"
-        },
         "root_object": {
           "oneOf": [
             {
@@ -234,30 +201,17 @@
     "root_object": {
       "type": "object",
       "required": [
-        "path",
         "role",
         "child_count",
-        "children_sample",
         "child_metadata_sample"
       ],
       "properties": {
-        "path": {
-          "type": "string",
-          "const": "/org/a11y/atspi/accessible/root"
-        },
         "role": {
           "type": "string"
         },
         "child_count": {
           "type": "integer",
           "minimum": 0
-        },
-        "children_sample": {
-          "type": "array",
-          "maxItems": 8,
-          "items": {
-            "$ref": "#/$defs/object_ref"
-          }
         },
         "child_metadata_sample": {
           "type": "array",
@@ -269,38 +223,14 @@
       },
       "additionalProperties": false
     },
-    "object_ref": {
-      "type": "object",
-      "required": [
-        "service",
-        "path"
-      ],
-      "properties": {
-        "service": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
     "child_metadata": {
       "type": "object",
       "description": "Shallow child metadata intentionally excludes child names, descriptions, text content, states, and actions.",
       "required": [
-        "service",
-        "path",
         "role",
         "child_count"
       ],
       "properties": {
-        "service": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
         "role": {
           "type": "string"
         },

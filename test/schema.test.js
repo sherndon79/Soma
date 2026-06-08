@@ -40,12 +40,15 @@ test("desktop inspection schema documents the current safe child metadata bounda
 
   assert.equal(schema.title, "Soma Desktop Inspection Result");
   assert.equal(schema.$defs.atspi_tree.properties.text_content_included.const, false);
-  assert.equal(schema.$defs.root_object.properties.children_sample.maxItems, 8);
+  assert.equal("children_sample" in schema.$defs.root_object.properties, false);
   assert.equal(schema.$defs.root_object.properties.child_metadata_sample.maxItems, 4);
+  assert.equal("path" in schema.$defs.root_object.properties, false);
   assert.equal("name" in schema.$defs.root_object.properties, false);
   assert.equal(schema.$defs.root_object.required.includes("name"), false);
-  assert.deepEqual(childMetadata.required, ["service", "path", "role", "child_count"]);
+  assert.deepEqual(childMetadata.required, ["role", "child_count"]);
   assert.equal(childMetadata.additionalProperties, false);
+  assert.equal("service" in childMetadata.properties, false);
+  assert.equal("path" in childMetadata.properties, false);
   assert.equal("name" in childMetadata.properties, false);
   assert.equal("description" in childMetadata.properties, false);
   assert.equal("text" in childMetadata.properties, false);
@@ -64,7 +67,6 @@ test("future desktop_ref_id fixture documents locations without enabling the cur
     "focused_object.application.desktop_ref_id",
   ]);
   assert.equal("desktop_ref_id" in schema.$defs.root_object.properties, false);
-  assert.equal("desktop_ref_id" in schema.$defs.object_ref.properties, false);
   assert.equal("desktop_ref_id" in schema.$defs.child_metadata.properties, false);
 });
 
@@ -202,8 +204,7 @@ test("traversal-specific schema keeps bounded traversal fields separate from def
 
 test("desktop inspection runtime validator accepts the current AT-SPI shape", () => {
   const result = validateDesktopInspectionResult(baseAtspiResult({
-    children_sample: [{ service: ":1.42", path: "/child" }],
-    child_metadata_sample: [{ service: ":1.42", path: "/child", role: "frame", child_count: 0 }],
+    child_metadata_sample: [{ role: "frame", child_count: 0 }],
   }));
 
   assert.equal(result.valid, true);
@@ -239,10 +240,7 @@ test("desktop inspection runtime validator rejects windows until window inspecti
   const result = validateDesktopInspectionResult({
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",
-    platform: "linux",
-    release: "test",
-    desktop_session: "GNOME",
-    session_type: "wayland",
+    platform_family: "linux",
     dbus_session_bus_available: true,
     atspi_likely_available: true,
     atspi_bus_address_available: true,
@@ -252,15 +250,9 @@ test("desktop inspection runtime validator rejects windows until window inspecti
     tree: {
       applications: [
         {
-          service: ":1.42",
-          pid: 123,
-          process: "test-app",
-          registry: false,
           root_object: {
-            path: "/org/a11y/atspi/accessible/root",
             role: "application",
             child_count: 1,
-            children_sample: [],
             child_metadata_sample: [],
           },
           root_object_error: null,
@@ -354,7 +346,9 @@ test("future traversal output cases remain rejected by current runtime validator
 
 test("future traversal-aware desktop validator accepts bounded traversal output behind an explicit gate", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
-  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal);
+  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.valid_case.traversal, {
+    traversalAuthorized: true,
+  });
   const result = validateFutureDesktopInspectionResultWithTraversal(traversalResult);
   const namedResult = validateTraversalAuthorizedDesktopInspectionResult(traversalResult);
 
@@ -372,7 +366,9 @@ test("future traversal-aware desktop validator accepts bounded traversal output 
 
 test("traversal-authorized desktop validator accepts unavailable traversal output behind an explicit gate", async () => {
   const fixture = JSON.parse(await readFile(futureTraversalOutputCasesPath, "utf8"));
-  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.unavailable_case.traversal);
+  const traversalResult = atspiResultWithRootObjectField("traversal", fixture.unavailable_case.traversal, {
+    traversalAuthorized: true,
+  });
   const result = validateTraversalAuthorizedDesktopInspectionResult(traversalResult);
 
   assert.deepEqual(result, { valid: true, errors: [] });
@@ -388,7 +384,9 @@ test("traversal-authorized desktop validator rejects invalid traversal output be
 
   for (const invalidCase of fixture.invalid_cases) {
     const result = validateTraversalAuthorizedDesktopInspectionResult(
-      atspiResultWithRootObjectField("traversal", invalidCase.traversal),
+      atspiResultWithRootObjectField("traversal", invalidCase.traversal, {
+        traversalAuthorized: true,
+      }),
     );
 
     assert.equal(result.valid, false, invalidCase.name);
@@ -407,6 +405,8 @@ test("traversal-authorized desktop assertion uses stable error semantics", async
       atspiResultWithRootObjectField("traversal", {
         ...fixture.valid_case.traversal,
         text_content_included: true,
+      }, {
+        traversalAuthorized: true,
       }),
     ),
     (error) => {
@@ -423,9 +423,6 @@ test("traversal-authorized desktop assertion uses stable error semantics", async
 test("desktop inspection runtime validator rejects desktop_ref_id until exposure is implemented", () => {
   for (const [name, result] of Object.entries({
     root_object: atspiResultWithRootObjectField("desktop_ref_id", "desktop-ref-root"),
-    child_ref: baseAtspiResult({
-      children_sample: [{ service: ":1.42", path: "/child", desktop_ref_id: "desktop-ref-child" }],
-    }),
     child_metadata: atspiResultWithChildField("desktop_ref_id", "desktop-ref-metadata"),
   })) {
     const validation = validateDesktopInspectionResult(result);
@@ -473,8 +470,6 @@ function atspiResultWithChildField(field, value) {
   return baseAtspiResult({
     child_metadata_sample: [
       {
-        service: ":1.42",
-        path: "/child",
         role: "frame",
         child_count: 0,
         [field]: value,
@@ -483,8 +478,9 @@ function atspiResultWithChildField(field, value) {
   });
 }
 
-function atspiResultWithRootObjectField(field, value) {
-  return baseAtspiResult({
+function atspiResultWithRootObjectField(field, value, options = {}) {
+  const base = options.traversalAuthorized ? baseTraversalAuthorizedAtspiResult : baseAtspiResult;
+  return base({
     [field]: value,
   });
 }
@@ -566,6 +562,37 @@ function baseWindowsResult() {
 }
 
 function baseAtspiResult(rootObjectOverrides = {}) {
+  return {
+    mode: "read_only_atspi_probe",
+    broker_source: "rust_helper",
+    platform_family: "linux",
+    dbus_session_bus_available: true,
+    atspi_likely_available: true,
+    atspi_bus_address_available: true,
+    application_count: 1,
+    root_object_available_count: 1,
+    window_count: 0,
+    tree: {
+      applications: [
+        {
+          root_object: {
+            role: "application",
+            child_count: 1,
+            child_metadata_sample: [],
+            ...rootObjectOverrides,
+          },
+          root_object_error: null,
+        },
+      ],
+      windows: [],
+      bounded: true,
+      text_content_included: false,
+    },
+    tree_available: true,
+  };
+}
+
+function baseTraversalAuthorizedAtspiResult(rootObjectOverrides = {}) {
   return {
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",

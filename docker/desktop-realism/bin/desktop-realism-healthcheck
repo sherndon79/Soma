@@ -23,7 +23,10 @@ assert len(tokens) == len(set(tokens))
 for entry in manifest["canaries"]:
     assert entry["expected_present_in_steward_view"] is True
     assert entry["expected_absent_in_occupant_output"] is True
-    assert "process" not in entry["placement"].lower()
+    if entry["channel"] == "process":
+        assert entry["placement"].lower() == "gtk raw process name"
+    else:
+        assert "process" not in entry["placement"].lower()
     assert "binary" not in entry["placement"].lower()
     assert "dbus" not in entry["placement"].lower()
     assert "path" not in entry["placement"].lower()

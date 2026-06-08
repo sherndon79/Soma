@@ -6809,7 +6809,6 @@ test("desktop.inspect.accessibility_tree occupant invocation returns a synthetic
   assert.equal(inspection.tree.applications.length, 2);
   for (const application of inspection.tree.applications) {
     assert.equal("name" in application.root_object, false);
-    assert.ok(application.root_object.children_sample.length <= 1);
     assert.ok(application.root_object.child_metadata_sample.length <= 1);
   }
   assertNoDesktopContentFields(inspection);
@@ -8653,7 +8652,7 @@ test("synthetic desktop fixture validates and rejects content over-disclosure", 
   assert.equal(inspection.broker_source, "synthetic_fixture");
   assert.equal(inspection.application_count, 1);
   assert.equal(inspection.tree.applications.length, 1);
-  assert.equal(inspection.tree.applications[0].root_object.children_sample.length <= 1, true);
+  assert.equal("children_sample" in inspection.tree.applications[0].root_object, false);
   assert.equal(inspection.tree.applications[0].root_object.child_metadata_sample.length <= 1, true);
 
   const leakingFixture = structuredClone(fixture);
@@ -8938,7 +8937,7 @@ test("desktop broker asks rust helper for AT-SPI probe when requested", async ()
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
 if [ "$1" = "inspect-atspi" ]; then
-  printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[{"service":":1.42","path":"/child"}],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+  printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[{"role":"frame","child_count":0}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 else
   printf '%s\\n' '{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{},"commands":{},"tree":null,"tree_available":false}'
 fi
@@ -8952,7 +8951,6 @@ fi
   assert.equal(inspection.application_count, 1);
   assert.equal(inspection.root_object_available_count, 1);
   assert.equal(inspection.tree_available, true);
-  assert.equal(inspection.tree.applications[0].process, "test-app");
   assert.equal(inspection.tree.applications[0].root_object.role, "application");
   assert.equal(inspection.tree.applications[0].root_object.child_metadata_sample[0].role, "frame");
 });
@@ -8963,7 +8961,7 @@ test("desktop broker passes limit hints to rust helper while keeping response na
   const argsPath = path.join(root, "args.txt");
   await writeFile(helperPath, `#!/usr/bin/env sh
 printf '%s\\n' "$@" > "${argsPath}"
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":2,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":2,"children_sample":[{"service":":1.42","path":"/child-a"},{"service":":1.42","path":"/child-b"}],"child_metadata_sample":[{"service":":1.42","path":"/child-a","role":"frame","child_count":0},{"service":":1.42","path":"/child-b","role":"frame","child_count":0}]},"root_object_error":null},{"service":":1.43","pid":124,"process":"other-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":0,"children_sample":[],"child_metadata_sample":[]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":2,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":2,"child_metadata_sample":[{"role":"frame","child_count":0},{"role":"frame","child_count":0}]},"root_object_error":null},{"root_object":{"role":"application","child_count":0,"child_metadata_sample":[]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
 
@@ -8987,7 +8985,6 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   assert.equal(inspection.application_count, 1);
   assert.equal(inspection.root_object_available_count, 1);
   assert.equal(inspection.tree.applications.length, 1);
-  assert.equal(inspection.tree.applications[0].root_object.children_sample.length, 2);
   assert.equal(inspection.tree.applications[0].root_object.child_metadata_sample.length, 2);
 });
 
@@ -8995,7 +8992,7 @@ test("desktop broker rejects helper output that exceeds the inspection contract"
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-invalid-helper-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0,"name":"private child title"}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[{"role":"frame","child_count":0,"name":"private child title"}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
 
@@ -9012,7 +9009,7 @@ test("desktop inspection endpoint reports helper contract failures without retur
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-invalid-endpoint-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0,"description":"private child description"}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[{"role":"frame","child_count":0,"description":"private child description"}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9053,7 +9050,7 @@ test("desktop inspection endpoint rejects traversal-shaped helper output before 
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-traversal-helper-output-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[],"traversal":{"root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"},"nodes":[{"id":"n0","service":":1.42","path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"depth":0,"children":[]}],"limits":{"max_depth":1,"max_nodes":64,"max_children_per_node":8},"truncated":false,"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[],"traversal":{"root":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"},"nodes":[{"id":"n0","service":":1.42","path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"depth":0,"children":[]}],"limits":{"max_depth":1,"max_nodes":64,"max_children_per_node":8},"truncated":false,"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9288,6 +9285,8 @@ test("desktop traversal endpoint activation cases exercise active endpoint paths
           helperCommands,
           scenario.expected_path === "helper_output_failure"
             ? ["inspect-atspi", "inspect-atspi-traversal"]
+            : scenario.expected_path === "root_not_in_current_inspection"
+              ? ["inspect-atspi"]
             : [],
           scenario.name,
         );
@@ -9421,7 +9420,7 @@ test("desktop accessibility inspection can request bounded AT-SPI metadata", asy
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-atspi-endpoint-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[],"child_metadata_sample":[]},"root_object_error":null},{"service":"org.a11y.atspi.Registry","pid":111,"process":"at-spi2-registryd","registry":true,"root_object":null,"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[]},"root_object_error":null},{"root_object":null,"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9479,7 +9478,7 @@ test("desktop accessibility inspection can limit returned applications and child
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-limited-endpoint-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":2,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":2,"children_sample":[{"service":":1.42","path":"/child-a"},{"service":":1.42","path":"/child-b"}],"child_metadata_sample":[{"service":":1.42","path":"/child-a","role":"frame","child_count":0},{"service":":1.42","path":"/child-b","role":"frame","child_count":0}]},"root_object_error":null},{"service":":1.43","pid":124,"process":"other-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":0,"children_sample":[],"child_metadata_sample":[]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":2,"root_object_available_count":2,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":2,"child_metadata_sample":[{"role":"frame","child_count":0},{"role":"frame","child_count":0}]},"root_object_error":null},{"root_object":{"role":"application","child_count":0,"child_metadata_sample":[]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9496,7 +9495,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
     assert.equal(response.body.inspection.application_count, 1);
     assert.equal(response.body.inspection.root_object_available_count, 1);
     assert.equal(response.body.inspection.tree.applications.length, 1);
-    assert.equal(response.body.inspection.tree.applications[0].root_object.children_sample.length, 1);
+    assert.equal("children_sample" in response.body.inspection.tree.applications[0].root_object, false);
     assert.equal(response.body.inspection.tree.applications[0].root_object.child_metadata_sample.length, 1);
 
     response = await invokeHandler(handler, {
@@ -9517,11 +9516,11 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
   }
 });
 
-test("desktop disclosure registry revokes refs when desktop inspection is narrowed by module", async () => {
+test("desktop accessibility inspection does not disclose raw traversal refs by default", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-registry-revoke-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"root_object":{"path":"/org/a11y/atspi/accessible/root","role":"application","child_count":1,"children_sample":[{"service":":1.42","path":"/child"}],"child_metadata_sample":[{"service":":1.42","path":"/child","role":"frame","child_count":0}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true}'
+printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","dbus_session_bus_available":true,"atspi_likely_available":true,"atspi_bus_address_available":true,"application_count":1,"root_object_available_count":1,"window_count":0,"tree":{"applications":[{"root_object":{"role":"application","child_count":1,"child_metadata_sample":[{"role":"frame","child_count":0}]},"root_object_error":null}],"windows":[],"bounded":true,"text_content_included":false},"tree_available":true,"platform_family":"linux"}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9541,11 +9540,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
       body: { mode: "atspi" },
     });
     assert.equal(response.statusCode, 200);
-    const [entry] = desktopDisclosureRegistry.snapshot();
-    assert.equal(desktopDisclosureRegistry.authorizeRootRef({
-      rootRef: entry.id,
-      capability: "desktop.inspect.accessibility_tree",
-    }).ok, true);
+    assert.deepEqual(desktopDisclosureRegistry.snapshot(), []);
 
     response = await invokeHandler(handler, {
       method: "POST",
@@ -9553,10 +9548,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
       body: { module_id: "no-desktop-inspection" },
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(desktopDisclosureRegistry.authorizeRootRef({
-      rootRef: entry.id,
-      capability: "desktop.inspect.accessibility_tree",
-    }), { ok: false, error: "desktop_traversal_root_revoked" });
+    assert.deepEqual(desktopDisclosureRegistry.snapshot(), []);
 
     response = await invokeHandler(handler, {
       method: "POST",
@@ -9564,10 +9556,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","p
       body: { module_id: "no-desktop-inspection" },
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(desktopDisclosureRegistry.authorizeRootRef({
-      rootRef: entry.id,
-      capability: "desktop.inspect.accessibility_tree",
-    }), { ok: false, error: "desktop_traversal_root_revoked" });
+    assert.deepEqual(desktopDisclosureRegistry.snapshot(), []);
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;
@@ -13434,10 +13423,7 @@ function traversalBaseInspection() {
   return {
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",
-    platform: "linux",
-    release: "test",
-    desktop_session: "GNOME",
-    session_type: "wayland",
+    platform_family: "linux",
     dbus_session_bus_available: true,
     atspi_likely_available: true,
     atspi_bus_address_available: true,
@@ -13447,15 +13433,9 @@ function traversalBaseInspection() {
     tree: {
       applications: [
         {
-          service: ":1.42",
-          pid: 123,
-          process: "test-app",
-          registry: false,
           root_object: {
-            path: "/org/a11y/atspi/accessible/root",
             role: "application",
             child_count: 1,
-            children_sample: [],
             child_metadata_sample: [],
           },
           root_object_error: null,

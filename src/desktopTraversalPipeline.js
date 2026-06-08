@@ -23,6 +23,12 @@ export async function runInternalDesktopTraversalRequest({
     authorizeRootRef: (args) => desktopDisclosureRegistry?.authorizeRootRef(args),
     capability: CAPABILITY,
   });
+  if (!inspectionContainsAuthorizedRoot(inspection, request.traversal.authorized_root)) {
+    const error = new Error("Traversal root is not present in the current desktop inspection.");
+    error.code = "desktop_traversal_root_not_in_inspection";
+    error.statusCode = 403;
+    throw error;
+  }
   const traversal = await inspectTraversal({
     helperPath,
     authorizedRoot: request.traversal.authorized_root,
@@ -48,6 +54,20 @@ export async function runInternalDesktopTraversalRequest({
     traversal_summary: traversalSummary,
     provenance,
   };
+}
+
+function inspectionContainsAuthorizedRoot(inspection, authorizedRoot) {
+  if (
+    typeof authorizedRoot?.service !== "string" ||
+    typeof authorizedRoot?.path !== "string" ||
+    !Array.isArray(inspection?.tree?.applications)
+  ) {
+    return false;
+  }
+  return inspection.tree.applications.some((application) => (
+    application?.service === authorizedRoot.service &&
+    application?.root_object?.path === authorizedRoot.path
+  ));
 }
 
 function createInternalDesktopTraversalEvent({ inspection, traversalSummary, caller }) {

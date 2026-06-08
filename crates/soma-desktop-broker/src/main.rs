@@ -513,14 +513,10 @@ fn inspect_environment_json() -> String {
 }
 
 fn inspect_atspi_json(limits: AtspiLimits) -> String {
-    let desktop_session = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    let session_type = env::var("XDG_SESSION_TYPE").unwrap_or_default();
     let dbus_session_bus_available = env::var("DBUS_SESSION_BUS_ADDRESS").is_ok();
 
     if !command_exists("busctl") {
         return atspi_unavailable_json(
-            &desktop_session,
-            &session_type,
             dbus_session_bus_available,
             "busctl_not_found",
             "",
@@ -529,8 +525,6 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
 
     let Some(address) = get_atspi_bus_address() else {
         return atspi_unavailable_json(
-            &desktop_session,
-            &session_type,
             dbus_session_bus_available,
             "atspi_bus_address_unavailable",
             "",
@@ -544,8 +538,6 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
             return atspi_unavailable_json(
-                &desktop_session,
-                &session_type,
                 dbus_session_bus_available,
                 "atspi_bus_list_unavailable",
                 &command_error(&output),
@@ -553,8 +545,6 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
         }
         Err(error) => {
             return atspi_unavailable_json(
-                &desktop_session,
-                &session_type,
                 dbus_session_bus_available,
                 "atspi_bus_list_command_failed",
                 &error.to_string(),
@@ -582,10 +572,7 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
             "{{",
             "\"mode\":\"read_only_atspi_probe\",",
             "\"broker_source\":\"rust_helper\",",
-            "\"platform\":\"{}\",",
-            "\"release\":\"{}\",",
-            "\"desktop_session\":\"{}\",",
-            "\"session_type\":\"{}\",",
+            "\"platform_family\":\"{}\",",
             "\"dbus_session_bus_available\":{},",
             "\"atspi_likely_available\":true,",
             "\"atspi_bus_address_available\":true,",
@@ -601,10 +588,7 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
             "\"tree_available\":true",
             "}}"
         ),
-        json_escape(env::consts::OS),
-        json_escape(&kernel_release()),
-        json_escape(&desktop_session),
-        json_escape(&session_type),
+        json_escape(platform_family()),
         dbus_session_bus_available,
         applications.len(),
         root_object_count,
@@ -613,8 +597,6 @@ fn inspect_atspi_json(limits: AtspiLimits) -> String {
 }
 
 fn atspi_unavailable_json(
-    desktop_session: &str,
-    session_type: &str,
     dbus_session_bus_available: bool,
     unavailable_reason: &str,
     diagnostic: &str,
@@ -624,10 +606,7 @@ fn atspi_unavailable_json(
             "{{",
             "\"mode\":\"read_only_atspi_probe\",",
             "\"broker_source\":\"rust_helper\",",
-            "\"platform\":\"{}\",",
-            "\"release\":\"{}\",",
-            "\"desktop_session\":\"{}\",",
-            "\"session_type\":\"{}\",",
+            "\"platform_family\":\"{}\",",
             "\"dbus_session_bus_available\":{},",
             "\"atspi_likely_available\":{},",
             "\"atspi_bus_address_available\":false,",
@@ -640,10 +619,7 @@ fn atspi_unavailable_json(
             "\"diagnostic\":\"{}\"",
             "}}"
         ),
-        json_escape(env::consts::OS),
-        json_escape(&kernel_release()),
-        json_escape(desktop_session),
-        json_escape(session_type),
+        json_escape(platform_family()),
         dbus_session_bus_available,
         dbus_session_bus_available,
         json_escape(unavailable_reason),
@@ -659,6 +635,10 @@ fn kernel_release() -> String {
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|release| release.trim().to_string())
         .unwrap_or_default()
+}
+
+fn platform_family() -> &'static str {
+    env::consts::OS
 }
 
 fn command_exists(name: &str) -> bool {
@@ -714,20 +694,10 @@ impl AtspiApplication {
         format!(
             concat!(
                 "{{",
-                "\"service\":\"{}\",",
-                "\"pid\":{},",
-                "\"process\":\"{}\",",
-                "\"registry\":{},",
                 "\"root_object\":{},",
                 "\"root_object_error\":{}",
                 "}}"
             ),
-            json_escape(&self.service),
-            self.pid
-                .map(|pid| pid.to_string())
-                .unwrap_or_else(|| "null".to_string()),
-            json_escape(&self.process),
-            self.registry,
             root_object_json,
             root_object_error_json,
         )
@@ -737,18 +707,11 @@ impl AtspiApplication {
 struct AtspiRootObject {
     role: String,
     child_count: i32,
-    children_sample: Vec<AtspiObjectRef>,
     child_metadata_sample: Vec<AtspiChildMetadata>,
 }
 
 impl AtspiRootObject {
     fn to_json(&self) -> String {
-        let children_json = self
-            .children_sample
-            .iter()
-            .map(|child| child.to_json())
-            .collect::<Vec<_>>()
-            .join(",");
         let child_metadata_json = self
             .child_metadata_sample
             .iter()
@@ -758,16 +721,13 @@ impl AtspiRootObject {
         format!(
             concat!(
                 "{{",
-                "\"path\":\"/org/a11y/atspi/accessible/root\",",
                 "\"role\":\"{}\",",
                 "\"child_count\":{},",
-                "\"children_sample\":[{}],",
                 "\"child_metadata_sample\":[{}]",
                 "}}"
             ),
             json_escape(&self.role),
             self.child_count,
-            children_json,
             child_metadata_json,
         )
     }
@@ -1188,8 +1148,6 @@ impl AtspiGeometry {
 }
 
 struct AtspiChildMetadata {
-    service: String,
-    path: String,
     role: String,
     child_count: i32,
 }
@@ -1199,14 +1157,10 @@ impl AtspiChildMetadata {
         format!(
             concat!(
                 "{{",
-                "\"service\":\"{}\",",
-                "\"path\":\"{}\",",
                 "\"role\":\"{}\",",
                 "\"child_count\":{}",
                 "}}"
             ),
-            json_escape(&self.service),
-            json_escape(&self.path),
             json_escape(&self.role),
             self.child_count,
         )
@@ -1331,7 +1285,6 @@ where
     Ok(AtspiRootObject {
         role: parse_busctl_string(&role_output).unwrap_or_default(),
         child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
-        children_sample,
         child_metadata_sample,
     })
 }
@@ -1554,8 +1507,6 @@ where
     ])?;
 
     Ok(AtspiChildMetadata {
-        service: child.service.clone(),
-        path: child.path.clone(),
         role: parse_busctl_string(&role_output).unwrap_or_default(),
         child_count: parse_busctl_int(&child_count_output).unwrap_or(0),
     })

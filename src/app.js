@@ -4878,15 +4878,19 @@ const DESKTOP_ACCESSIBILITY_TESTING_PROVIDER_MODES = new Set([
 ]);
 
 const DESKTOP_ACCESSIBILITY_DATA_CLASSES = Object.freeze([
-  "synthetic desktop accessibility structure",
+  "desktop accessibility structure",
   "application root roles and child counts",
-  "shallow child role/count metadata",
+  "ordered shallow child role/count metadata",
+  "coarse platform family and accessibility availability",
 ]);
 
 const DESKTOP_ACCESSIBILITY_EXCLUDED_DATA = Object.freeze([
   "host display identifiers",
   "host session bus addresses",
   "real desktop session handles",
+  "host environment specifics beyond coarse platform family",
+  "process identity including pids and process names",
+  "raw accessibility locators including services and object paths",
   "raw desktop text",
   "names and descriptions",
   "states and actions",
@@ -5252,13 +5256,13 @@ function desktopAccessibilityResultDisclosure({ descriptor = {}, inspection = {}
     return [
       "desktop.inspect.accessibility_tree delivered a synthetic-container, structure-only accessibility tree.",
       `Canary set: ${descriptor.canary_set_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,
-      "No host display, host session bus, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+      "Returned structure is limited to roles, counts, ordered child role/count shape, coarse platform family, and accessibility availability. No process identity, raw accessibility locators, host display, host session bus, exact host environment, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
     ].join(" ");
   }
   return [
     "desktop.inspect.accessibility_tree delivered a synthetic, structure-only accessibility tree.",
     `Fixture: ${descriptor.fixture_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,
-    "No host display, host session bus, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+    "Returned structure is limited to roles, counts, ordered child role/count shape, coarse platform family, and accessibility availability. No process identity, raw accessibility locators, host display, host session bus, exact host environment, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
   ].join(" ");
 }
 

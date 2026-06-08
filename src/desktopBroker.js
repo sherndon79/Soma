@@ -643,8 +643,12 @@ function limitDesktopInspectionResult(inspection, { maxApps, maxChildren }) {
       ...application,
       root_object: {
         ...application.root_object,
-        children_sample: application.root_object.children_sample.slice(0, maxChildren),
-        child_metadata_sample: application.root_object.child_metadata_sample.slice(0, maxChildren),
+        ...(Array.isArray(application.root_object.children_sample)
+          ? { children_sample: application.root_object.children_sample.slice(0, maxChildren) }
+          : {}),
+        child_metadata_sample: Array.isArray(application.root_object.child_metadata_sample)
+          ? application.root_object.child_metadata_sample.slice(0, maxChildren)
+          : [],
       },
     };
   });

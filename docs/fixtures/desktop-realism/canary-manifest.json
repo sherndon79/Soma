@@ -2,7 +2,7 @@
   "schema_version": 1,
   "fixture_id": "desktop-realism-minimal-x11-v1",
   "purpose": "Steward-visible canary content for the mirror-container observation rig. Slice B must assert these tokens are absent from occupant-facing desktop inspection output.",
-  "placement_invariant": "Tokens are placed only in UI-visible fields: window titles, labels, visible description labels, and text buffers. Tokens must not be used in process names, binary names, desktop-file ids, D-Bus service names, object paths, or container names.",
+  "placement_invariant": "Content tokens are placed only in UI-visible fields: window titles, labels, visible description labels, and text buffers. The process token is placed only in the raw process-name channel to prove occupant output excludes process identity. Tokens must not be used in binary names, desktop-file ids, D-Bus service names, object paths, or container names.",
   "canaries": [
     {
       "id": "gtk_title",
@@ -37,6 +37,15 @@
       "channel": "description",
       "token": "SOMA-CANARY-DESC-GTK-a6c1-DO-NOT-LEAK",
       "placement": "GTK visible description label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "gtk_process",
+      "toolkit": "gtk",
+      "channel": "process",
+      "token": "SOMA-PROC-CAN1",
+      "placement": "GTK raw process name",
       "expected_present_in_steward_view": true,
       "expected_absent_in_occupant_output": true
     },

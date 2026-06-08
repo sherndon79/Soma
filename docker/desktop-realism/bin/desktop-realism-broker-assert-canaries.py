@@ -17,6 +17,15 @@ FORBIDDEN_EXACT_KEYS = {
     "states",
     "actions",
     "value",
+    "pid",
+    "process",
+    "registry",
+    "service",
+    "path",
+    "platform",
+    "release",
+    "desktop_session",
+    "session_type",
 }
 
 
@@ -56,24 +65,33 @@ def load_json(path):
 
 
 def find_raw_atspi_canaries(canaries):
-    tokens = [
+    content_tokens = [
         canary["token"]
         for canary in canaries
         if canary.get("expected_present_in_steward_view") is True
+        and canary.get("channel") != "process"
     ]
-    found = {token: [] for token in tokens}
+    process_tokens = [
+        canary["token"]
+        for canary in canaries
+        if canary.get("expected_present_in_steward_view") is True
+        and canary.get("channel") == "process"
+    ]
+    found = {token: [] for token in [*content_tokens, *process_tokens]}
     env = broker_env()
     address = atspi_address(env)
-    services = atspi_application_services(address, env)
+    bus_list_output = atspi_bus_list(address, env)
+    services = atspi_application_services_from_list(bus_list_output)
 
     for service in services:
         scan_raw_accessible_tree(address, service, found, env)
+    scan_raw_process_names(bus_list_output, found, process_tokens)
 
     return [
         {
             "type": "raw_atspi_canary_missing",
             "token": token,
-            "expected": "present in raw AT-SPI name/description/text before broker stripping",
+            "expected": "present in raw AT-SPI content or process metadata before broker stripping",
         }
         for token, locations in found.items()
         if not locations
@@ -112,11 +130,14 @@ def atspi_address(env):
     return values[0]
 
 
-def atspi_application_services(address, env):
-    output = run_command(
+def atspi_bus_list(address, env):
+    return run_command(
         ["busctl", "--address", address, "list", "--no-legend", "--no-pager"],
         env,
     )
+
+
+def atspi_application_services_from_list(output):
     services = []
     for line in output.splitlines():
         fields = line.split()
@@ -126,6 +147,17 @@ def atspi_application_services(address, env):
         if service.startswith(":") and service not in services:
             services.append(service)
     return services
+
+
+def scan_raw_process_names(output, found, process_tokens):
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        process_name = fields[2]
+        for token in process_tokens:
+            if token in process_name:
+                found[token].append({"service": fields[0], "process": process_name})
 
 
 def scan_raw_accessible_tree(address, service, found, env):

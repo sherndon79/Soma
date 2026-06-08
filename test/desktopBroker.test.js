@@ -15,7 +15,6 @@ import {
   inspectDesktopTraversalWithRustHelper,
   syntheticContainerDesktopBrokerArgs,
 } from "../src/desktopBroker.js";
-import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 
 test("desktopBrokerHelperArgs preserves current invocation when limits are omitted", () => {
   assert.deepEqual(desktopBrokerHelperArgs(), ["inspect-environment"]);
@@ -298,18 +297,12 @@ printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","
   );
 });
 
-test("attachTraversalToDesktopInspectionResult uses traversal-authorized runtime assertion", () => {
+test("attachTraversalToDesktopInspectionResult rejects minimized inspection without raw root locators", () => {
   const inspection = baseAtspiInspection();
   const traversal = validTraversalOutput();
-  const withTraversal = attachTraversalToDesktopInspectionResult({ inspection, traversal });
-
-  assert.deepEqual(withTraversal.tree.applications[0].root_object.traversal, traversal);
   assert.throws(
-    () => assertDesktopInspectionResult(withTraversal),
-    {
-      code: "desktop_inspection_schema_invalid",
-      statusCode: 502,
-    },
+    () => attachTraversalToDesktopInspectionResult({ inspection, traversal }),
+    { code: "desktop_traversal_root_not_in_inspection" },
   );
 });
 
@@ -357,10 +350,7 @@ function baseAtspiInspection() {
   return {
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",
-    platform: "linux",
-    release: "test",
-    desktop_session: "GNOME",
-    session_type: "wayland",
+    platform_family: "linux",
     dbus_session_bus_available: true,
     atspi_likely_available: true,
     atspi_bus_address_available: true,
@@ -370,15 +360,9 @@ function baseAtspiInspection() {
     tree: {
       applications: [
         {
-          service: ":1.42",
-          pid: 123,
-          process: "test-app",
-          registry: false,
           root_object: {
-            path: "/org/a11y/atspi/accessible/root",
             role: "application",
             child_count: 1,
-            children_sample: [],
             child_metadata_sample: [],
           },
           root_object_error: null,

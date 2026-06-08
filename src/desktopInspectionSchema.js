@@ -3,6 +3,7 @@ import { validateDesktopTraversalOutput } from "./desktopTraversalOutput.js";
 const TOP_LEVEL_KEYS = new Set([
   "mode",
   "broker_source",
+  "platform_family",
   "platform",
   "release",
   "desktop_session",
@@ -34,26 +35,30 @@ const CANDIDATE_ADAPTER_KEYS = new Set([
 const COMMAND_KEYS = new Set(["gdbus", "busctl", "qdbus", "wtype", "ydotool"]);
 const TREE_KEYS = new Set(["applications", "windows", "bounded", "text_content_included"]);
 const APPLICATION_KEYS = new Set([
+  "root_object",
+  "root_object_error",
+]);
+const TRAVERSAL_AUTHORIZED_APPLICATION_KEYS = new Set([
   "service",
   "pid",
   "process",
   "registry",
-  "root_object",
-  "root_object_error",
+  ...APPLICATION_KEYS,
 ]);
 const ROOT_OBJECT_KEYS = new Set([
-  "path",
   "role",
   "child_count",
-  "children_sample",
   "child_metadata_sample",
 ]);
 const TRAVERSAL_AUTHORIZED_ROOT_OBJECT_KEYS = new Set([
   ...ROOT_OBJECT_KEYS,
+  "path",
+  "children_sample",
   "traversal",
 ]);
 const OBJECT_REF_KEYS = new Set(["service", "path"]);
-const CHILD_METADATA_KEYS = new Set(["service", "path", "role", "child_count"]);
+const CHILD_METADATA_KEYS = new Set(["role", "child_count"]);
+const TRAVERSAL_AUTHORIZED_CHILD_METADATA_KEYS = new Set(["service", "path", ...CHILD_METADATA_KEYS]);
 const WINDOWS_TOP_LEVEL_KEYS = new Set([
   "mode",
   "broker_source",
@@ -158,10 +163,29 @@ function validateTopLevel(value, errors, options) {
   rejectUnexpectedKeys(value, TOP_LEVEL_KEYS, "result", errors);
   requireStringEnum(value.mode, ["read_only_environment_probe", "read_only_atspi_probe"], "result.mode", errors);
   requireStringEnum(value.broker_source, ["rust_helper", "javascript_fallback", "synthetic_fixture"], "result.broker_source", errors);
-  requireString(value.platform, "result.platform", errors);
-  requireString(value.release, "result.release", errors);
-  requireString(value.desktop_session, "result.desktop_session", errors);
-  requireString(value.session_type, "result.session_type", errors);
+  if (value.mode === "read_only_atspi_probe" && !options.allowTraversalOutput) {
+    requireString(value.platform_family, "result.platform_family", errors);
+    rejectPresent(value, ["platform", "release", "desktop_session", "session_type"], "result", errors);
+  } else if (value.mode === "read_only_atspi_probe") {
+    if (value.platform_family === undefined) {
+      requireString(value.platform, "result.platform", errors);
+      requireString(value.release, "result.release", errors);
+      requireString(value.desktop_session, "result.desktop_session", errors);
+      requireString(value.session_type, "result.session_type", errors);
+    } else {
+      requireString(value.platform_family, "result.platform_family", errors);
+      optionalString(value.platform, "result.platform", errors);
+      optionalString(value.release, "result.release", errors);
+      optionalString(value.desktop_session, "result.desktop_session", errors);
+      optionalString(value.session_type, "result.session_type", errors);
+    }
+  } else {
+    requireString(value.platform, "result.platform", errors);
+    requireString(value.release, "result.release", errors);
+    requireString(value.desktop_session, "result.desktop_session", errors);
+    requireString(value.session_type, "result.session_type", errors);
+    optionalString(value.platform_family, "result.platform_family", errors);
+  }
   requireBoolean(value.dbus_session_bus_available, "result.dbus_session_bus_available", errors);
   requireBoolean(value.atspi_likely_available, "result.atspi_likely_available", errors);
   requireBoolean(value.tree_available, "result.tree_available", errors);
@@ -220,11 +244,14 @@ function validateApplication(value, path, errors, options) {
     errors.push(`${path} must be an object`);
     return;
   }
-  rejectUnexpectedKeys(value, APPLICATION_KEYS, path, errors);
-  requireString(value.service, `${path}.service`, errors);
-  requireNullableNonNegativeInteger(value.pid, `${path}.pid`, errors);
-  requireString(value.process, `${path}.process`, errors);
-  requireBoolean(value.registry, `${path}.registry`, errors);
+  const applicationKeys = options.allowTraversalOutput ? TRAVERSAL_AUTHORIZED_APPLICATION_KEYS : APPLICATION_KEYS;
+  rejectUnexpectedKeys(value, applicationKeys, path, errors);
+  if (options.allowTraversalOutput) {
+    requireString(value.service, `${path}.service`, errors);
+    requireNullableNonNegativeInteger(value.pid, `${path}.pid`, errors);
+    requireString(value.process, `${path}.process`, errors);
+    requireBoolean(value.registry, `${path}.registry`, errors);
+  }
   if (value.root_object !== null) {
     validateRootObject(value.root_object, `${path}.root_object`, errors, options);
   }
@@ -238,13 +265,17 @@ function validateRootObject(value, path, errors, options) {
   }
   const rootKeys = options.allowTraversalOutput ? TRAVERSAL_AUTHORIZED_ROOT_OBJECT_KEYS : ROOT_OBJECT_KEYS;
   rejectUnexpectedKeys(value, rootKeys, path, errors);
-  if (value.path !== "/org/a11y/atspi/accessible/root") {
-    errors.push(`${path}.path must be /org/a11y/atspi/accessible/root`);
+  if (options.allowTraversalOutput) {
+    if (value.path !== "/org/a11y/atspi/accessible/root") {
+      errors.push(`${path}.path must be /org/a11y/atspi/accessible/root`);
+    }
+    if (value.children_sample !== undefined) {
+      validateObjectRefArray(value.children_sample, 8, `${path}.children_sample`, errors);
+    }
   }
   requireString(value.role, `${path}.role`, errors);
   requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
-  validateObjectRefArray(value.children_sample, 8, `${path}.children_sample`, errors);
-  validateChildMetadataArray(value.child_metadata_sample, 4, `${path}.child_metadata_sample`, errors);
+  validateChildMetadataArray(value.child_metadata_sample, 4, `${path}.child_metadata_sample`, errors, options);
   if (options.allowTraversalOutput && value.traversal !== undefined) {
     const traversalResult = validateDesktopTraversalOutput(value.traversal);
     for (const error of traversalResult.errors) {
@@ -276,7 +307,7 @@ function validateObjectRef(value, path, errors) {
   requireString(value.path, `${path}.path`, errors);
 }
 
-function validateChildMetadataArray(value, maxItems, path, errors) {
+function validateChildMetadataArray(value, maxItems, path, errors, options = {}) {
   if (!Array.isArray(value)) {
     errors.push(`${path} must be an array`);
     return;
@@ -285,18 +316,21 @@ function validateChildMetadataArray(value, maxItems, path, errors) {
     errors.push(`${path} must have at most ${maxItems} items`);
   }
   value.forEach((entry, index) => {
-    validateChildMetadata(entry, `${path}[${index}]`, errors);
+    validateChildMetadata(entry, `${path}[${index}]`, errors, options);
   });
 }
 
-function validateChildMetadata(value, path, errors) {
+function validateChildMetadata(value, path, errors, options = {}) {
   if (!isPlainObject(value)) {
     errors.push(`${path} must be an object`);
     return;
   }
-  rejectUnexpectedKeys(value, CHILD_METADATA_KEYS, path, errors);
-  requireString(value.service, `${path}.service`, errors);
-  requireString(value.path, `${path}.path`, errors);
+  const childKeys = options.allowTraversalOutput ? TRAVERSAL_AUTHORIZED_CHILD_METADATA_KEYS : CHILD_METADATA_KEYS;
+  rejectUnexpectedKeys(value, childKeys, path, errors);
+  if (options.allowTraversalOutput) {
+    requireString(value.service, `${path}.service`, errors);
+    requireString(value.path, `${path}.path`, errors);
+  }
   requireString(value.role, `${path}.role`, errors);
   requireNonNegativeInteger(value.child_count, `${path}.child_count`, errors);
 }
@@ -418,6 +452,14 @@ function validateBooleanMap(value, keys, path, errors) {
 function rejectUnexpectedKeys(value, allowedKeys, path, errors) {
   for (const key of Object.keys(value)) {
     if (!allowedKeys.has(key)) {
+      errors.push(`${path}.${key} is not allowed`);
+    }
+  }
+}
+
+function rejectPresent(value, keys, path, errors) {
+  for (const key of keys) {
+    if (value?.[key] !== undefined) {
       errors.push(`${path}.${key} is not allowed`);
     }
   }

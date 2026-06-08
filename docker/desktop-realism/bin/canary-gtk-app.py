@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import ctypes
 
 import gi
 
@@ -19,6 +20,11 @@ def token(channel):
         if entry["channel"] == channel and entry["toolkit"] == "gtk":
             return entry["token"]
     raise KeyError(channel)
+
+try:
+    ctypes.CDLL(None).prctl(15, ctypes.c_char_p(token("process").encode("utf-8")), 0, 0, 0)
+except Exception:
+    pass
 
 
 window = Gtk.Window(title=token("title"))

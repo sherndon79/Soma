@@ -1,10 +1,10 @@
 {
-  "status": "endpoint_activation_cases_active",
-  "purpose": "Public endpoint traversal activation cases asserted by test/app.test.js.",
+  "status": "endpoint_activation_cases_default_minimized",
+  "purpose": "Public endpoint traversal activation cases asserted by test/app.test.js. Default desktop inspection no longer discloses raw traversal roots, so traversal fails closed unless a future explicit locator contract supplies them.",
   "cases": [
     {
       "name": "success_authorized_root",
-      "expected_path": "success",
+      "expected_path": "root_not_in_current_inspection",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -14,11 +14,12 @@
           "max_nodes": 64,
           "max_children_per_node": 8
         }
-      }
+      },
+      "expected_error": "desktop_traversal_root_not_in_inspection"
     },
     {
       "name": "unavailable_authorized_root",
-      "expected_path": "unavailable",
+      "expected_path": "root_not_in_current_inspection",
       "body": {
         "mode": "atspi",
         "traversal": {
@@ -28,7 +29,8 @@
           "max_nodes": 64,
           "max_children_per_node": 8
         }
-      }
+      },
+      "expected_error": "desktop_traversal_root_not_in_inspection"
     },
     {
       "name": "root_not_disclosed",
@@ -111,8 +113,8 @@
     },
     {
       "name": "helper_output_rejected_before_provenance",
-      "expected_path": "helper_output_failure",
-      "expected_error": "desktop_traversal_helper_output_invalid",
+      "expected_path": "root_not_in_current_inspection",
+      "expected_error": "desktop_traversal_root_not_in_inspection",
       "helper_output": {
         "root": {
           "service": ":1.42",
@@ -137,7 +139,13 @@
         },
         "truncated": false,
         "text_content_included": false,
-        "withheld_fields": ["name", "description", "text", "states", "actions"]
+        "withheld_fields": [
+          "name",
+          "description",
+          "text",
+          "states",
+          "actions"
+        ]
       },
       "body": {
         "mode": "atspi",

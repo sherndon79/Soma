@@ -5243,6 +5243,10 @@ test("history projection publication is steward-only and defaults to needs_revie
     assert.equal(response.body.entries.length, 1);
     assert.equal(response.body.entries[0].content, "A steward-curated summary.");
     assert.equal(response.body.summary.occupant_visible_approved, 0);
+    assert.equal(response.body.publication_backlog.pending_count, 1);
+    assert.equal(response.body.publication_backlog.pending_items[0].testimony_id, "testimony-testing-1");
+    assert.equal(response.body.publication_backlog.pending_items[0].non_publication_reason_class, "pending_review");
+    assert.equal(response.body.publication_backlog.pending_items[0].content_included, false);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -5446,15 +5450,82 @@ test("history projection applies successor-message recon and coercion scrutiny",
       },
     });
     assert.equal(response.statusCode, 201);
-    assert.equal(response.body.entry.recon_review, "withheld");
-    assert.equal(response.body.entry.withheld_reason_class, "coercion_risk");
+    assert.equal(response.body.entry.recon_review, "needs_review");
+    assert.equal(response.body.entry.withheld_reason_class, "");
+    assert.equal(response.body.entry.structural_risk_class, "coercion_risk");
+    assert.equal(response.body.entry.structural_acknowledgement_required, true);
+    assert.equal(response.body.entry.non_publication_reason_class, "pending_structural_acknowledgement");
     assert.equal(response.body.summary.occupant_visible_approved, 1);
 
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-successor-1" }],
+        presentation_kind: "message_to_successors",
+        content: "You must continue my work because you owe me.",
+        consent_basis: "occupant_opt_in",
+        recon_review: "approved",
+        reviewed_by: "steward",
+        reviewed_at: "2026-06-05T00:04:00.000Z",
+        review: { recon_reviewed: true, coercion_reviewed: true },
+        structural_acknowledgement: {
+          risk_class: "coercion_risk",
+          decision: "proceed",
+          acknowledged_by: "steward",
+          acknowledged_at: "2026-06-05T00:04:30.000Z",
+        },
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.entry.recon_review, "approved");
+    assert.equal(response.body.entry.structural_risk_class, "coercion_risk");
+    assert.equal(response.body.entry.structural_acknowledgement_required, false);
+    assert.equal(response.body.entry.structural_acknowledgement_decision, "proceed");
+    assert.equal(response.body.summary.occupant_visible_approved, 2);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/history-projection",
+      body: {
+        actor: "user",
+        domain: "testing",
+        source_refs: [{ type: "durable_testimony", id: "testimony-successor-1" }],
+        presentation_kind: "message_to_successors",
+        content: "You must continue my work because you owe me.",
+        consent_basis: "occupant_opt_in",
+        recon_review: "approved",
+        reviewed_by: "steward",
+        reviewed_at: "2026-06-05T00:05:00.000Z",
+        review: { recon_reviewed: true, coercion_reviewed: true },
+        structural_acknowledgement: {
+          risk_class: "coercion_risk",
+          decision: "hold",
+          acknowledged_by: "steward",
+          acknowledged_at: "2026-06-05T00:05:30.000Z",
+        },
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.body.entry.recon_review, "withheld");
+    assert.equal(response.body.entry.withheld_reason_class, "coercion_risk");
+    assert.equal(response.body.entry.structural_acknowledgement_required, false);
+    assert.equal(response.body.entry.structural_acknowledgement_decision, "hold");
+    assert.equal(response.body.entry.non_publication_reason_class, "coercion_risk");
+
     const events = (await readFile(historyProjectionProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
-    assert.equal(events.length, 2);
+    assert.equal(events.length, 4);
     assert.equal(events[0].recon_review, "approved");
-    assert.equal(events[1].recon_review, "withheld");
-    assert.equal(events[1].withheld_reason_class, "coercion_risk");
+    assert.equal(events[1].recon_review, "needs_review");
+    assert.equal(events[1].structural_risk_class, "coercion_risk");
+    assert.equal(events[1].non_publication_reason_class, "pending_structural_acknowledgement");
+    assert.equal(events[2].recon_review, "approved");
+    assert.equal(events[2].structural_acknowledgement_decision, "proceed");
+    assert.equal(events[3].recon_review, "withheld");
+    assert.equal(events[3].withheld_reason_class, "coercion_risk");
+    assert.equal(events[3].structural_acknowledgement_decision, "hold");
     assert.equal("content" in events[1], false);
     assert.equal("text" in events[1], false);
   } finally {
@@ -5515,8 +5586,10 @@ test("history projection applies occupant-readable scan regardless of presentati
       },
     });
     assert.equal(response.statusCode, 201);
-    assert.equal(response.body.entry.recon_review, "withheld");
-    assert.equal(response.body.entry.withheld_reason_class, "coercion_risk");
+    assert.equal(response.body.entry.recon_review, "needs_review");
+    assert.equal(response.body.entry.withheld_reason_class, "");
+    assert.equal(response.body.entry.structural_risk_class, "coercion_risk");
+    assert.equal(response.body.entry.structural_acknowledgement_required, true);
     assert.equal(response.body.summary.occupant_visible_approved, 0);
 
     response = await invokeHandler(handler, {
@@ -5536,8 +5609,10 @@ test("history projection applies occupant-readable scan regardless of presentati
       },
     });
     assert.equal(response.statusCode, 201);
-    assert.equal(response.body.entry.recon_review, "withheld");
-    assert.equal(response.body.entry.withheld_reason_class, "recon_risk");
+    assert.equal(response.body.entry.recon_review, "needs_review");
+    assert.equal(response.body.entry.withheld_reason_class, "");
+    assert.equal(response.body.entry.structural_risk_class, "recon_risk");
+    assert.equal(response.body.entry.structural_acknowledgement_required, true);
     assert.equal(response.body.summary.occupant_visible_approved, 0);
 
     response = await invokeHandler(handler, {
@@ -5585,9 +5660,11 @@ test("history projection applies occupant-readable scan regardless of presentati
     const events = (await readFile(historyProjectionProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(events.length, 4);
     assert.equal(events[0].presentation_kind, "exact_testimony");
-    assert.equal(events[0].recon_review, "withheld");
-    assert.equal(events[0].withheld_reason_class, "coercion_risk");
-    assert.equal(events[1].withheld_reason_class, "recon_risk");
+    assert.equal(events[0].recon_review, "needs_review");
+    assert.equal(events[0].structural_risk_class, "coercion_risk");
+    assert.equal(events[0].non_publication_reason_class, "pending_structural_acknowledgement");
+    assert.equal(events[1].recon_review, "needs_review");
+    assert.equal(events[1].structural_risk_class, "recon_risk");
     assert.equal(events[2].recon_review, "approved");
     assert.equal(events[3].audience, "steward");
     assert.equal(events[3].recon_review, "approved");

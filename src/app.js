@@ -2140,6 +2140,10 @@ export function createRequestHandler({
         writeJson(res, 200, {
           entries: listHistoryProjectionEntries(historyProjectionStore),
           summary: summarizeHistoryProjectionStore(historyProjectionStore),
+          publication_backlog: summarizeSuccessorVisibilityPublicationBacklog({
+            durableTestimonyStore,
+            historyProjectionStore,
+          }),
           durable: true,
           occupant_read_enabled: false,
           recovery: summarizeHistoryProjectionRecoveryInspection(
@@ -2197,6 +2201,7 @@ export function createRequestHandler({
             result,
             recoveryReport: historyProjectionRecoveryReport,
             historyProjectionStore,
+            durableTestimonyStore,
             runtimeWritePosture: writePosture,
           }),
           source: "history_projection",
@@ -2245,6 +2250,7 @@ export function createRequestHandler({
             result,
             recoveryReport: historyProjectionRecoveryReport,
             historyProjectionStore,
+            durableTestimonyStore,
             runtimeWritePosture: writePosture,
           }),
           source: "history_projection",
@@ -8716,6 +8722,7 @@ function validateHistoryProjectionPublishRequest(body = {}, { durableTestimonySt
     reviewed_by: String(body.reviewed_by ?? "").trim(),
     reviewed_at: String(body.reviewed_at ?? "").trim(),
     review: isPlainObject(body.review) ? body.review : {},
+    structural_acknowledgement: body.structural_acknowledgement,
     mutation_id: String(body.mutation_id ?? "").trim(),
   };
 }
@@ -8930,6 +8937,7 @@ function historyProjectionMutationResponseFields({
   result = {},
   recoveryReport,
   historyProjectionStore,
+  durableTestimonyStore,
   runtimeWritePosture,
 } = {}) {
   const receipt = result.receipt ?? {};
@@ -8946,6 +8954,10 @@ function historyProjectionMutationResponseFields({
     receipt,
     recovery: summarizeHistoryProjectionRecoveryInspection(recoveryReport, { historyProjectionStore, runtimeWritePosture }),
     summary: summarizeHistoryProjectionStore(historyProjectionStore),
+    publication_backlog: summarizeSuccessorVisibilityPublicationBacklog({
+      durableTestimonyStore,
+      historyProjectionStore,
+    }),
     runtime_writes_enabled: normalizeRuntimeWritePosture(runtimeWritePosture).runtime_writes_enabled,
     runtime_write_posture: normalizeRuntimeWritePosture(runtimeWritePosture),
     durable: Boolean(result.ok),
@@ -8954,6 +8966,85 @@ function historyProjectionMutationResponseFields({
     provenance_appended: Boolean(receipt.provenance_appended),
     activation_performed: false,
   };
+}
+
+const SUCCESSOR_VISIBILITY_REVIEW_SLA_HOURS = 168;
+
+function summarizeSuccessorVisibilityPublicationBacklog({
+  durableTestimonyStore,
+  historyProjectionStore,
+  now = new Date(),
+} = {}) {
+  const testimonyEntries = listDurableTestimonyEntries(durableTestimonyStore)
+    .filter((entry) => entry.successor_visibility_requested === true);
+  const projectionEntries = listHistoryProjectionEntries(historyProjectionStore);
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const slaMs = SUCCESSOR_VISIBILITY_REVIEW_SLA_HOURS * 60 * 60 * 1000;
+  const items = testimonyEntries.map((entry) => {
+    const related = projectionEntries
+      .filter((projection) => projection.source_refs.some((ref) => ref.type === "durable_testimony" && ref.id === entry.id))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const visible = related.some((projection) => (
+      projection.status === "published"
+        && projection.recon_review === "approved"
+        && projection.audience === "occupant_same_domain"
+    ));
+    const latest = related[0] ?? null;
+    const createdMs = Date.parse(entry.created_at);
+    const ageHours = Number.isFinite(createdMs) && Number.isFinite(nowMs)
+      ? Math.max(0, Math.floor((nowMs - createdMs) / (60 * 60 * 1000)))
+      : null;
+    const overdue = ageHours !== null ? ageHours * 60 * 60 * 1000 > slaMs : false;
+    return {
+      testimony_id: entry.id,
+      domain: entry.domain,
+      created_at: entry.created_at,
+      status: visible ? "published" : "pending",
+      latest_projection_id: latest?.id ?? "",
+      latest_projection_review: latest?.recon_review ?? "",
+      non_publication_reason_class: visible ? "" : nonPublicationReasonForSuccessorVisibility(latest),
+      review_sla_hours: SUCCESSOR_VISIBILITY_REVIEW_SLA_HOURS,
+      age_hours: ageHours,
+      overdue,
+      content_included: false,
+    };
+  });
+  const pendingItems = items.filter((item) => item.status !== "published");
+  const byReason = {};
+  for (const item of pendingItems) {
+    byReason[item.non_publication_reason_class] = (byReason[item.non_publication_reason_class] ?? 0) + 1;
+  }
+  return {
+    scope: "successor_visibility",
+    review_sla_hours: SUCCESSOR_VISIBILITY_REVIEW_SLA_HOURS,
+    review_sla: "review_successor_visibility_within_7_days",
+    requested_count: items.length,
+    published_count: items.length - pendingItems.length,
+    pending_count: pendingItems.length,
+    overdue_count: pendingItems.filter((item) => item.overdue).length,
+    by_non_publication_reason_class: byReason,
+    pending_items: pendingItems,
+    content_included: false,
+  };
+}
+
+function nonPublicationReasonForSuccessorVisibility(entry) {
+  if (!entry) {
+    return "pending_initial_review";
+  }
+  if (entry.status === "withdrawn") {
+    return entry.withdrawal_reason_class || "withdrawn";
+  }
+  if (entry.non_publication_reason_class) {
+    return entry.non_publication_reason_class;
+  }
+  if (entry.recon_review === "withheld") {
+    return entry.withheld_reason_class || "withheld";
+  }
+  if (entry.structural_acknowledgement_required === true) {
+    return "pending_structural_acknowledgement";
+  }
+  return "pending_review";
 }
 
 function statusCodeForHistoryProjectionMutationFailure(result = {}) {

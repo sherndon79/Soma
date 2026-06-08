@@ -31,6 +31,13 @@ const VALID_WITHHELD_REASON_CLASSES = new Set([
   "source_not_found",
   "invalid_source",
 ]);
+const VALID_STRUCTURAL_ACKNOWLEDGEMENT_DECISIONS = new Set(["", "proceed", "hold"]);
+const VALID_NON_PUBLICATION_REASON_CLASSES = new Set([
+  "",
+  "pending_review",
+  "pending_structural_acknowledgement",
+  ...VALID_WITHHELD_REASON_CLASSES,
+]);
 
 export async function loadHistoryProjectionStore(path = DEFAULT_HISTORY_PROJECTION_PATH) {
   const raw = await readFile(path, "utf8");
@@ -128,6 +135,12 @@ export function historyProjectionEntryFromInput(input = {}, context = {}) {
     audience,
     recon_review: review.recon_review,
     withheld_reason_class: review.withheld_reason_class,
+    structural_risk_class: review.structural_risk_class,
+    structural_acknowledgement_required: review.structural_acknowledgement_required,
+    structural_acknowledged_by: review.structural_acknowledged_by,
+    structural_acknowledged_at: review.structural_acknowledged_at,
+    structural_acknowledgement_decision: review.structural_acknowledgement_decision,
+    non_publication_reason_class: review.non_publication_reason_class,
     reviewed_by: review.reviewed_by,
     reviewed_at: review.reviewed_at,
     status: String(input.status ?? "published"),
@@ -154,6 +167,12 @@ export function publicHistoryProjectionEntry(entry = {}) {
     audience: normalizeAudience(entry.audience ?? "occupant_same_domain"),
     recon_review: normalizeReconReview(entry.recon_review ?? "needs_review"),
     withheld_reason_class: normalizeWithheldReasonClass(entry.withheld_reason_class ?? ""),
+    structural_risk_class: normalizeWithheldReasonClass(entry.structural_risk_class ?? ""),
+    structural_acknowledgement_required: Boolean(entry.structural_acknowledgement_required),
+    structural_acknowledged_by: String(entry.structural_acknowledged_by ?? ""),
+    structural_acknowledged_at: String(entry.structural_acknowledged_at ?? ""),
+    structural_acknowledgement_decision: normalizeStructuralAcknowledgementDecision(entry.structural_acknowledgement_decision ?? ""),
+    non_publication_reason_class: normalizeNonPublicationReasonClass(entry.non_publication_reason_class ?? deriveNonPublicationReasonClass(entry)),
     reviewed_by: String(entry.reviewed_by ?? ""),
     reviewed_at: String(entry.reviewed_at ?? ""),
     status: String(entry.status ?? "published") === "withdrawn" ? "withdrawn" : "published",
@@ -170,11 +189,19 @@ export function summarizeHistoryProjectionStore(store = {}) {
   const byDomain = {};
   const byReview = {};
   const byPresentation = {};
+  const byNonPublicationReason = {};
   let occupantVisibleApproved = 0;
+  let structuralAcknowledgementRequired = 0;
   for (const entry of entries) {
     byDomain[entry.domain] = (byDomain[entry.domain] ?? 0) + 1;
     byReview[entry.recon_review] = (byReview[entry.recon_review] ?? 0) + 1;
     byPresentation[entry.presentation_kind] = (byPresentation[entry.presentation_kind] ?? 0) + 1;
+    if (entry.non_publication_reason_class) {
+      byNonPublicationReason[entry.non_publication_reason_class] = (byNonPublicationReason[entry.non_publication_reason_class] ?? 0) + 1;
+    }
+    if (entry.structural_acknowledgement_required) {
+      structuralAcknowledgementRequired += 1;
+    }
     if (entry.status === "published" && entry.recon_review === "approved" && entry.audience === "occupant_same_domain") {
       occupantVisibleApproved += 1;
     }
@@ -184,7 +211,9 @@ export function summarizeHistoryProjectionStore(store = {}) {
     by_domain: byDomain,
     by_recon_review: byReview,
     by_presentation_kind: byPresentation,
+    by_non_publication_reason_class: byNonPublicationReason,
     occupant_visible_approved: occupantVisibleApproved,
+    structural_acknowledgement_required: structuralAcknowledgementRequired,
   };
 }
 
@@ -199,6 +228,11 @@ function normalizeHistoryProjectionReview(input = {}, { presentationKind, audien
   let withheldReasonClass = normalizeWithheldReasonClass(input.withheld_reason_class ?? "");
   const reviewedBy = boundedString(input.reviewed_by ?? "", "reviewed_by", 128).trim();
   let reviewedAt = String(input.reviewed_at ?? "");
+  let structuralRiskClass = "";
+  let structuralAcknowledgementRequired = false;
+  let structuralAcknowledgedBy = "";
+  let structuralAcknowledgedAt = "";
+  let structuralAcknowledgementDecision = "";
   const structural = audience === "occupant_same_domain"
     ? occupantReadableStructuralRisk(input.content ?? "")
     : "";
@@ -215,25 +249,91 @@ function normalizeHistoryProjectionReview(input = {}, { presentationKind, audien
         reconReview = "withheld";
         withheldReasonClass = "message_to_successors_review_required";
       } else if (structural) {
-        reconReview = "withheld";
-        withheldReasonClass = structural;
+        const acknowledgement = normalizeStructuralAcknowledgement(input.structural_acknowledgement, structural);
+        structuralRiskClass = structural;
+        structuralAcknowledgementRequired = !acknowledgement;
+        structuralAcknowledgedBy = acknowledgement?.acknowledged_by ?? "";
+        structuralAcknowledgedAt = acknowledgement?.acknowledged_at ?? "";
+        structuralAcknowledgementDecision = acknowledgement?.decision ?? "";
+        if (!acknowledgement) {
+          reconReview = "needs_review";
+          withheldReasonClass = "";
+        } else if (acknowledgement.decision === "hold") {
+          reconReview = "withheld";
+          withheldReasonClass = structural;
+        }
       }
     } else if (reconReview === "needs_review") {
       withheldReasonClass = "";
     }
   }
   if (presentationKind !== "message_to_successors" && reconReview === "approved" && structural) {
-    reconReview = "withheld";
-    withheldReasonClass = structural;
+    const acknowledgement = normalizeStructuralAcknowledgement(input.structural_acknowledgement, structural);
+    structuralRiskClass = structural;
+    structuralAcknowledgementRequired = !acknowledgement;
+    structuralAcknowledgedBy = acknowledgement?.acknowledged_by ?? "";
+    structuralAcknowledgedAt = acknowledgement?.acknowledged_at ?? "";
+    structuralAcknowledgementDecision = acknowledgement?.decision ?? "";
+    if (!acknowledgement) {
+      reconReview = "needs_review";
+      withheldReasonClass = "";
+    } else if (acknowledgement.decision === "hold") {
+      reconReview = "withheld";
+      withheldReasonClass = structural;
+    }
   }
   if (reconReview !== "approved") {
     reviewedAt = reviewedAt || "";
   }
+  if (reconReview === "approved") {
+    structuralAcknowledgementRequired = false;
+  }
+  if (structuralAcknowledgementDecision === "hold") {
+    structuralAcknowledgementRequired = false;
+  }
   return {
     recon_review: reconReview,
     withheld_reason_class: reconReview === "withheld" ? withheldReasonClass : "",
+    structural_risk_class: structuralRiskClass,
+    structural_acknowledgement_required: structuralAcknowledgementRequired,
+    structural_acknowledged_by: structuralAcknowledgedBy,
+    structural_acknowledged_at: structuralAcknowledgedAt,
+    structural_acknowledgement_decision: structuralAcknowledgementDecision,
+    non_publication_reason_class: deriveNonPublicationReasonClass({
+      recon_review: reconReview,
+      withheld_reason_class: reconReview === "withheld" ? withheldReasonClass : "",
+      structural_acknowledgement_required: structuralAcknowledgementRequired,
+    }),
     reviewed_by: reviewedBy,
     reviewed_at: reviewedAt,
+  };
+}
+
+function normalizeStructuralAcknowledgement(value, riskClass) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw historyProjectionError("history_projection_structural_acknowledgement_invalid", "Structural acknowledgement must be an object.");
+  }
+  const acknowledgedRiskClass = normalizeWithheldReasonClass(value.risk_class ?? "");
+  if (acknowledgedRiskClass !== riskClass) {
+    throw historyProjectionError("history_projection_structural_acknowledgement_risk_mismatch", "Structural acknowledgement risk_class must match the scan finding.");
+  }
+  const decision = normalizeStructuralAcknowledgementDecision(value.decision ?? "");
+  if (!decision) {
+    throw historyProjectionError("history_projection_structural_acknowledgement_decision_required", "Structural acknowledgement requires decision proceed or hold.");
+  }
+  const acknowledgedBy = boundedString(value.acknowledged_by ?? "", "structural_acknowledged_by", 128).trim();
+  const acknowledgedAt = boundedString(value.acknowledged_at ?? "", "structural_acknowledged_at", 128).trim();
+  if (!acknowledgedBy || !acknowledgedAt) {
+    throw historyProjectionError("history_projection_structural_acknowledgement_actor_required", "Structural acknowledgement requires acknowledged_by and acknowledged_at.");
+  }
+  return {
+    risk_class: acknowledgedRiskClass,
+    decision,
+    acknowledged_by: acknowledgedBy,
+    acknowledged_at: acknowledgedAt,
   };
 }
 
@@ -316,6 +416,39 @@ function normalizeWithheldReasonClass(value) {
     return reason;
   }
   throw historyProjectionError("history_projection_withheld_reason_invalid", "History projection withheld reason class is invalid.");
+}
+
+function normalizeStructuralAcknowledgementDecision(value) {
+  const decision = String(value ?? "").trim();
+  if (VALID_STRUCTURAL_ACKNOWLEDGEMENT_DECISIONS.has(decision)) {
+    return decision;
+  }
+  throw historyProjectionError("history_projection_structural_acknowledgement_decision_invalid", "Structural acknowledgement decision is invalid.");
+}
+
+function normalizeNonPublicationReasonClass(value) {
+  const reason = String(value ?? "").trim();
+  if (VALID_NON_PUBLICATION_REASON_CLASSES.has(reason)) {
+    return reason;
+  }
+  throw historyProjectionError("history_projection_non_publication_reason_invalid", "History projection non-publication reason class is invalid.");
+}
+
+function deriveNonPublicationReasonClass(entry = {}) {
+  const review = normalizeReconReview(entry.recon_review ?? "needs_review");
+  if (entry.status === "withdrawn") {
+    return normalizeWithheldReasonClass(entry.withdrawal_reason_class ?? "") || "pending_review";
+  }
+  if (review === "approved") {
+    return "";
+  }
+  if (review === "withheld") {
+    return normalizeWithheldReasonClass(entry.withheld_reason_class ?? "");
+  }
+  if (entry.structural_acknowledgement_required === true) {
+    return "pending_structural_acknowledgement";
+  }
+  return "pending_review";
 }
 
 function boundedString(value, field, maxLength) {

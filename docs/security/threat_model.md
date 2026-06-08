@@ -349,9 +349,12 @@ Current controls:
 - `message_to_successors` requires explicit recon and coercion review before approved publication
 - audience, not presentation label, determines the automated protection boundary: any approved
   `occupant_same_domain` publication is scanned for structurally risky, coercive, or
-  reconnaissance-sensitive content and force-withheld with a content-free reason class
+  reconnaissance-sensitive structure; findings are recorded content-free and require explicit
+  steward acknowledgement before a proceed-or-hold decision is accepted
 - `message_to_successors` keeps its additional explicit recon/coercion review ceremony on top of
   the automated occupant-readable scan
+- steward-visible history projection accounting reports successor-visibility pending counts, a
+  seven-day review SLA, and per-item non-publication reason classes without testimony content
 - mutation provenance is content-free and validator-enforced
 
 Residual risks:

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  printf 'FAIL: %s\n' "$1" >&2
+  exit 1
+}
+
+session_bus_file="/tmp/soma-session-bus-address"
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp/soma-wayland-runtime}"
+wayland_display="${WAYLAND_DISPLAY:-soma-wayland-0}"
+
+[ "${DISPLAY:-}" = ":99" ] || fail "DISPLAY must point at the private Xvfb display (:99)"
+[ "${XDG_SESSION_TYPE:-}" = "wayland" ] || fail "XDG_SESSION_TYPE must be wayland"
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -s "$session_bus_file" ]; then
+  DBUS_SESSION_BUS_ADDRESS="$(cat "$session_bus_file")"
+fi
+
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || fail "private session DBus address is missing"
+
+case "${DBUS_SESSION_BUS_ADDRESS}" in
+  *"/run/user/"*|*"host"*|*"system_bus_socket"*)
+    fail "DBUS_SESSION_BUS_ADDRESS looks host-derived: ${DBUS_SESSION_BUS_ADDRESS}"
+    ;;
+esac
+
+case "$runtime_dir" in
+  /tmp/soma-wayland-runtime) ;;
+  *) fail "XDG_RUNTIME_DIR is not the private Wayland runtime dir: ${runtime_dir}" ;;
+esac
+
+if awk '{print $5}' /proc/self/mountinfo | grep -qx '/tmp/.X11-unix'; then
+  fail "/tmp/.X11-unix is a mount point; expected private Xvfb-created socket directory"
+fi
+
+if awk '{print $5}' /proc/self/mountinfo | grep -Eq '(^|/)(wayland-[0-9]+|soma-wayland-[0-9]+)$'; then
+  fail "Wayland socket path is a mount point; expected private nested compositor socket"
+fi
+
+[ -S /tmp/.X11-unix/X99 ] || fail "private Xvfb socket /tmp/.X11-unix/X99 is missing"
+[ -S "$runtime_dir/$wayland_display" ] || fail "private Wayland socket ${runtime_dir}/${wayland_display} is missing"
+
+if ss -ltn 2>/dev/null | grep -q ':5900 '; then
+  ss -ltn | grep ':5900 ' | grep -q '127.0.0.1:5900' \
+    || fail "VNC port is not loopback-bound inside container"
+fi
+
+printf 'OK: private Xvfb view, private Wayland socket, private DBus, no host X/Wayland mounts\n'

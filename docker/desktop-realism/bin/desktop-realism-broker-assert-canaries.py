@@ -165,8 +165,10 @@ def scan_raw_process_names(output, found, process_tokens):
 def scan_raw_accessible_tree(address, service, found, env):
     queue = deque([(service, "/org/a11y/atspi/accessible/root", 0)])
     seen = set()
-    max_nodes = 512
-    max_depth = 8
+    # Blink-based browsers nest web content 12-14 levels below the application root,
+    # so the preflight must scan deeper than GTK/Qt apps need.
+    max_nodes = 2048
+    max_depth = 16
 
     while queue and len(seen) < max_nodes:
         object_service, path, depth = queue.popleft()

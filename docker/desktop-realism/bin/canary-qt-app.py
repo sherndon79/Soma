@@ -26,20 +26,43 @@ manifest = load_manifest()
 app = QApplication(sys.argv)
 
 window = QWidget()
-window.setWindowTitle(token(manifest, "title"))
+window.setWindowTitle(
+    " ".join(
+        [
+            token(manifest, "title"),
+            token(manifest, "label"),
+            token(manifest, "description"),
+            token(manifest, "text"),
+        ]
+    )
+)
+window.setAccessibleDescription(
+    "Qt steward-visible content canaries: "
+    f"{token(manifest, 'label')} "
+    f"{token(manifest, 'description')} "
+    f"{token(manifest, 'text')}"
+)
 window.resize(560, 360)
 
 layout = QVBoxLayout()
 
 label = QLabel(f"Qt label canary: {token(manifest, 'label')}")
+label.setAccessibleName(f"Qt label canary: {token(manifest, 'label')}")
 layout.addWidget(label)
 
 description = QLabel(f"Qt visible description canary: {token(manifest, 'description')}")
+description.setAccessibleDescription(
+    f"Qt visible description canary: {token(manifest, 'description')}"
+)
 description.setWordWrap(True)
 layout.addWidget(description)
 
 text = QTextEdit()
 text.setPlainText(
+    "Qt text buffer canary. This text is visible to the steward only: "
+    f"{token(manifest, 'text')}"
+)
+text.setAccessibleName(
     "Qt text buffer canary. This text is visible to the steward only: "
     f"{token(manifest, 'text')}"
 )

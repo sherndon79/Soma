@@ -1,0 +1,41 @@
+# Opt-in Ubuntu GNOME Shell/Wayland realism mirror for portal and Wayland convergence testing.
+#
+# This variant is intentionally separate from the minimal and GNOME-X11 compose files. It does not
+# mount host Wayland, host X, host DBus, source trees, user files, or Soma runtime stores. It mirrors
+# desktop shape with synthetic content only.
+
+name: soma-desktop-realism-wayland
+
+services:
+  desktop-realism-wayland:
+    build:
+      context: .
+      dockerfile: docker/desktop-realism/Containerfile.wayland
+    image: soma-desktop-realism-wayland:local
+    container_name: soma-desktop-realism-wayland
+    init: true
+    shm_size: "1g"
+    restart: "no"
+    environment:
+      DISPLAY: ":99"
+      NOVNC_PORT: "6080"
+      VNC_PORT: "5900"
+      CANARY_MANIFEST: "/opt/soma/desktop-realism/canary-manifest.json"
+      DESKTOP_REALISM_SESSION: "wayland"
+      DESKTOP_REALISM_MIN_APPLICATIONS: "8"
+      DESKTOP_REALISM_MIN_ROOT_OBJECTS: "4"
+      XDG_CURRENT_DESKTOP: "GNOME"
+      XDG_RUNTIME_DIR: "/tmp/soma-wayland-runtime"
+      XDG_SESSION_DESKTOP: "gnome"
+      XDG_SESSION_TYPE: "wayland"
+      WAYLAND_DISPLAY: "soma-wayland-0"
+    ports:
+      - "127.0.0.1:${DESKTOP_REALISM_WAYLAND_NOVNC_PORT:-6082}:6080"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/desktop-realism-wayland-healthcheck"]
+      interval: 10s
+      timeout: 45s
+      start_period: 120s
+      retries: 12

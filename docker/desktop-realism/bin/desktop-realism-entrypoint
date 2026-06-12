@@ -5,6 +5,9 @@ case "${DESKTOP_REALISM_SESSION:-minimal}" in
   gnome)
     exec dbus-run-session -- /usr/local/bin/desktop-realism-gnome-session
     ;;
+  wayland)
+    exec dbus-run-session -- /usr/local/bin/desktop-realism-wayland-session
+    ;;
   minimal|"")
     exec dbus-run-session -- /usr/local/bin/desktop-realism-session
     ;;

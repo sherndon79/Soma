@@ -22,7 +22,7 @@ services:
       VNC_PORT: "5900"
       CANARY_MANIFEST: "/opt/soma/desktop-realism/canary-manifest.json"
       DESKTOP_REALISM_SESSION: "gnome"
-      DESKTOP_REALISM_MIN_APPLICATIONS: "6"
+      DESKTOP_REALISM_MIN_APPLICATIONS: "8"
       DESKTOP_REALISM_MIN_ROOT_OBJECTS: "4"
     ports:
       - "127.0.0.1:${DESKTOP_REALISM_GNOME_NOVNC_PORT:-6081}:6080"
@@ -32,5 +32,5 @@ services:
       test: ["CMD", "/usr/local/bin/desktop-realism-gnome-healthcheck"]
       interval: 5s
       timeout: 5s
-      start_period: 35s
-      retries: 18
+      start_period: 90s
+      retries: 24

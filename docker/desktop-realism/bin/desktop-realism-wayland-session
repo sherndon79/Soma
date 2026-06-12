@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export DISPLAY="${DISPLAY:-:99}"
+export NO_AT_BRIDGE=0
+export GTK_MODULES="${GTK_MODULES:-gail:atk-bridge}"
+export QT_ACCESSIBILITY=1
+export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+export CANARY_MANIFEST="${CANARY_MANIFEST:-/opt/soma/desktop-realism/canary-manifest.json}"
+export NOVNC_PORT="${NOVNC_PORT:-6080}"
+export VNC_PORT="${VNC_PORT:-5900}"
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-gnome}"
+export XDG_SESSION_TYPE=wayland
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/soma-wayland-runtime}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-soma-wayland-0}"
+export LANG="${LANG:-C.UTF-8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export LIBGL_ALWAYS_SOFTWARE=1
+export GDK_BACKEND=wayland,x11
+export QT_QPA_PLATFORM=wayland
+export MOZ_ENABLE_WAYLAND=1
+export DESKTOP_REALISM_WINDOW_PROBE=atspi
+export DESKTOP_REALISM_BROWSER_BACKEND=wayland
+
+printf '%s\n' "$DBUS_SESSION_BUS_ADDRESS" > /tmp/soma-session-bus-address
+
+cleanup() {
+  jobs -pr | xargs -r kill 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+install -d -m 0700 "$XDG_RUNTIME_DIR"
+rm -f "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.lock"
+
+Xvfb "$DISPLAY" -screen 0 "${XVFB_GEOMETRY:-1440x900x24}" -nolisten tcp +extension GLX +render &
+
+for _ in $(seq 1 100); do
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
+xdpyinfo -display "$DISPLAY" >/dev/null
+
+mkdir -p "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads"
+
+if command -v gsettings >/dev/null 2>&1; then
+  gsettings set org.gnome.desktop.interface toolkit-accessibility true >/tmp/soma-wayland-gsettings.log 2>&1 || true
+fi
+
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment \
+    DISPLAY \
+    GDK_BACKEND \
+    GTK_MODULES \
+    LANG \
+    LC_ALL \
+    MOZ_ENABLE_WAYLAND \
+    NO_AT_BRIDGE \
+    QT_ACCESSIBILITY \
+    QT_LINUX_ACCESSIBILITY_ALWAYS_ON \
+    QT_QPA_PLATFORM \
+    WAYLAND_DISPLAY \
+    XDG_CURRENT_DESKTOP \
+    XDG_RUNTIME_DIR \
+    XDG_SESSION_DESKTOP \
+    XDG_SESSION_TYPE \
+    >/tmp/soma-wayland-dbus-activation-env.log 2>&1 || true
+fi
+
+if command -v at-spi2-registryd >/dev/null 2>&1; then
+  at-spi2-registryd >/tmp/soma-wayland-atspi-registry.log 2>&1 &
+elif [ -x /usr/lib/at-spi2-core/at-spi2-registryd ]; then
+  /usr/lib/at-spi2-core/at-spi2-registryd >/tmp/soma-wayland-atspi-registry.log 2>&1 &
+fi
+
+mkdir -p /run/dbus
+if [ ! -S /run/dbus/system_bus_socket ]; then
+  dbus-daemon --system --fork --nopidfile >/tmp/soma-wayland-system-dbus.log 2>&1
+fi
+
+if [ -x /lib/systemd/systemd-logind ]; then
+  /lib/systemd/systemd-logind >/tmp/soma-wayland-logind.log 2>&1 &
+elif [ -x /usr/lib/systemd/systemd-logind ]; then
+  /usr/lib/systemd/systemd-logind >/tmp/soma-wayland-logind.log 2>&1 &
+fi
+
+for _ in $(seq 1 60); do
+  if busctl --system list --no-pager --no-legend 2>/dev/null | grep -q '^org.freedesktop.login1'; then
+    break
+  fi
+  sleep 0.25
+done
+
+gnome-shell \
+  --nested \
+  --wayland \
+  --wayland-display="$WAYLAND_DISPLAY" \
+  >/tmp/soma-wayland-gnome-shell.log 2>&1 &
+
+for _ in $(seq 1 120); do
+  if [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && pgrep -x gnome-shell >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
+test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+
+python3 /usr/local/bin/desktop-realism-seed-gnome-apps.py >/tmp/soma-wayland-seed-gnome-apps.log 2>&1 &
+
+/usr/local/bin/canary-gtk-app.py >/tmp/soma-wayland-canary-gtk.log 2>&1 &
+/usr/local/bin/canary-qt-app.py >/tmp/soma-wayland-canary-qt.log 2>&1 &
+
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 x11vnc \
+  -display "$DISPLAY" \
+  -forever \
+  -shared \
+  -viewonly \
+  -nopw \
+  -listen 127.0.0.1 \
+  -rfbport "$VNC_PORT" \
+  >/tmp/soma-wayland-x11vnc.log 2>&1 &
+
+websockify \
+  --web /usr/share/novnc \
+  "0.0.0.0:${NOVNC_PORT}" \
+  "127.0.0.1:${VNC_PORT}" \
+  >/tmp/soma-wayland-websockify.log 2>&1 &
+
+printf 'Soma Ubuntu GNOME Shell/Wayland realism mirror started. noVNC inside container: http://127.0.0.1:%s/vnc.html?autoconnect=1&resize=scale\n' "$NOVNC_PORT"
+
+while true; do
+  sleep 3600 &
+  wait $!
+done

@@ -20,28 +20,30 @@ RUN apt-get update \
     fonts-dejavu-core \
     gedit \
     gnome-control-center \
-    gnome-session-flashback \
+    gnome-shell \
     gnome-terminal \
     gnome-text-editor \
     gnupg \
-    metacity \
+    mutter \
     nautilus \
     novnc \
     python3 \
     python3-gi \
     python3-pyqt5 \
+    qtwayland5 \
     systemd \
     websockify \
-    wmctrl \
     x11-utils \
     x11vnc \
-    xdotool \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gnome \
+    xwayland \
     xvfb \
   && rm -rf /var/lib/apt/lists/*
 
 # Real browser engines for a11y-tree realism: Firefox (Gecko) and Microsoft Edge (Blink).
 # Ubuntu 24.04's archive ships snap transitional stubs for both, which cannot run in this
-# container, so the vendor apt repositories provide the actual debs.
+# container, so the vendor apt repositories provide the actual debs. The Edge repo is amd64-only.
 RUN install -d -m 0755 /etc/apt/keyrings \
   && curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
     -o /etc/apt/keyrings/packages.mozilla.org.asc \
@@ -69,17 +71,21 @@ RUN chmod 0755 \
     /usr/local/bin/desktop-realism-actuation-preflight.py \
     /usr/local/bin/desktop-realism-atspi-token-probe.py \
     /usr/local/bin/desktop-realism-broker-assert-canaries.py \
+    /usr/local/bin/desktop-realism-broker-assert-text-canaries.py \
     /usr/local/bin/desktop-realism-broker-inspect \
     /usr/local/bin/desktop-realism-entrypoint \
     /usr/local/bin/desktop-realism-gnome-session \
     /usr/local/bin/desktop-realism-gnome-healthcheck \
     /usr/local/bin/desktop-realism-isolation-check \
     /usr/local/bin/desktop-realism-seed-gnome-apps.py \
-    /usr/local/bin/desktop-realism-session
+    /usr/local/bin/desktop-realism-session \
+    /usr/local/bin/desktop-realism-wayland-healthcheck \
+    /usr/local/bin/desktop-realism-wayland-isolation-check \
+    /usr/local/bin/desktop-realism-wayland-session
 
 EXPOSE 6080
 
-HEALTHCHECK --interval=5s --timeout=5s --start-period=90s --retries=24 \
-  CMD ["/usr/local/bin/desktop-realism-gnome-healthcheck"]
+HEALTHCHECK --interval=10s --timeout=45s --start-period=120s --retries=12 \
+  CMD ["/usr/local/bin/desktop-realism-wayland-healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/desktop-realism-entrypoint"]

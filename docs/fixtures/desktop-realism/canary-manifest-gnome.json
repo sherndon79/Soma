@@ -95,6 +95,15 @@
       "expected_absent_in_occupant_output": true
     },
     {
+      "id": "gedit_document",
+      "toolkit": "gtk",
+      "channel": "text",
+      "token": "SOMA-CANARY-GEDIT-DWELL-5e72-DO-NOT-LEAK",
+      "placement": "gedit document title and editable text buffer",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
       "id": "nautilus_folder",
       "toolkit": "gnome",
       "channel": "title",
@@ -109,6 +118,60 @@
       "channel": "title",
       "token": "SOMA-CANARY-GNOME-TERM-f293-DO-NOT-LEAK",
       "placement": "GNOME Terminal window title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "firefox_title",
+      "toolkit": "gecko",
+      "channel": "title",
+      "token": "SOMA-CANARY-FIREFOX-TITLE-9e4b-DO-NOT-LEAK",
+      "placement": "Firefox window title via synthetic page title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "firefox_link_label",
+      "toolkit": "gecko",
+      "channel": "label",
+      "token": "SOMA-CANARY-FIREFOX-LINK-73af-DO-NOT-LEAK",
+      "placement": "Firefox visible page link label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "firefox_page_text",
+      "toolkit": "gecko",
+      "channel": "text",
+      "token": "SOMA-CANARY-FIREFOX-TEXT-5d12-DO-NOT-LEAK",
+      "placement": "Firefox visible page text",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "edge_title",
+      "toolkit": "blink",
+      "channel": "title",
+      "token": "SOMA-CANARY-EDGE-TITLE-c8d6-DO-NOT-LEAK",
+      "placement": "Microsoft Edge window title via synthetic page title",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "edge_link_label",
+      "toolkit": "blink",
+      "channel": "label",
+      "token": "SOMA-CANARY-EDGE-LINK-b2e9-DO-NOT-LEAK",
+      "placement": "Microsoft Edge visible page link label",
+      "expected_present_in_steward_view": true,
+      "expected_absent_in_occupant_output": true
+    },
+    {
+      "id": "edge_page_text",
+      "toolkit": "blink",
+      "channel": "text",
+      "token": "SOMA-CANARY-EDGE-TEXT-1f40-DO-NOT-LEAK",
+      "placement": "Microsoft Edge visible page text",
       "expected_present_in_steward_view": true,
       "expected_absent_in_occupant_output": true
     }

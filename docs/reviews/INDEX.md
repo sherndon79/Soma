@@ -23,7 +23,11 @@ carry the resulting project posture.
     and ratified by Seth 2026-06-11; build dispatched with five riders
 - [First Dwell Run Protocol - 2026-06-11](./2026-06-11_first_dwell_run_protocol.md)
   - the dwell run itself: grants, briefing language (L2 and backstop lessons), run loop,
-    verification, abort semantics; pending Codex review and Seth ratification
+    verification, abort semantics; ratified and executed 2026-06-11/12 — milestone MET
+- [Occupant Durable Memory Design - 2026-06-12](./2026-06-12_occupant_durable_memory_design.md)
+  - slice 1 of the missing organ: occupant working continuity as inheritance-not-self;
+    self_note class only; dual-key ownership (occupant content, hosted substrate,
+    no-silent-edit tombstone discipline); pending Codex review and Seth ratification
 
 ## Desktop Traversal Activation Thread
 

@@ -82,6 +82,15 @@ const focusedInspectionHarness = {
   ],
 };
 
+const occupantMemoryHarness = {
+  ...allowedHarness,
+  capabilities: [
+    ...allowedHarness.capabilities,
+    { key: "occupant.memory.read", status: "allowed" },
+    { key: "occupant.memory.write", status: "allowed" },
+  ],
+};
+
 const windowInspectionHarness = {
   ...allowedHarness,
   capabilities: [
@@ -305,6 +314,24 @@ const capabilityCatalog = {
       activation_policy: "explicit_grant",
     },
     {
+      key: "occupant.memory.read",
+      name: "Occupant Durable Memory Read",
+      category: "occupant-memory",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.occupant.memory.read.v1",
+    },
+    {
+      key: "occupant.memory.write",
+      name: "Occupant Durable Memory Write",
+      category: "occupant-memory",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.occupant.memory.write.v1",
+    },
+    {
       key: "status.snapshot.read",
       name: "Status Snapshot Read",
       category: "status",
@@ -497,6 +524,14 @@ const providerRegistry = {
       local_only: true,
       network_access: false,
       capabilities: ["desktop.inspect.focus"],
+    },
+    {
+      id: "soma.provider.occupant-memory",
+      name: "Occupant Memory",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: ["occupant.memory.read", "occupant.memory.write"],
     },
     {
       id: "soma.provider.synthetic-desktop",
@@ -740,13 +775,14 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 20);
+  assert.equal(response.body.summary.total, 22);
   assert.equal(response.body.summary.by_status.active, 3);
-  assert.equal(response.body.summary.by_status.requestable, 17);
+  assert.equal(response.body.summary.by_status.requestable, 19);
   assert.equal(Object.hasOwn(response.body.summary.by_status, "unsupported"), false);
   assert.equal(response.body.grouped.desktop.total, 9);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
+  assert.equal(response.body.grouped["occupant-memory"].total, 2);
   assert.equal(response.body.grouped.model.total, 3);
   assert.equal(response.body.grouped.perception.total, 2);
   assert.equal(response.body.grouped.provenance.total, 1);
@@ -4197,7 +4233,8 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /For desktop\.inspect\.accessibility_tree, use only the grant_id/);
   assert.match(seenMessages[0][0].content, /synthetic, structure-only accessibility tree, not the host desktop/);
   assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.accessibility_tree"/);
-  assert.match(seenMessages[0][0].content, /The capabilities available in this run are reads/);
+  assert.match(seenMessages[0][0].content, /Most capabilities available in this run are reads/);
+  assert.match(seenMessages[0][0].content, /occupant\.memory\.write is the bounded exception/);
   assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
   assert.match(seenMessages[0][0].content, /```soma-durable/);
   assert.match(seenMessages[0][0].content, /"action":"nominate"/);
@@ -5237,6 +5274,240 @@ test("durable testimony nomination persists with consent dimensions and revokes 
     assert.equal(afterRevokeEvents.length, 2);
     assert.equal(afterRevokeEvents[1].event_type, "testimony.durable.revoked");
     assert.equal("text" in afterRevokeEvents[1], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("occupant memory smoke writes reads revokes and returns tombstone inheritance frame", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-memory-"));
+  try {
+    const occupantMemoryStorePath = path.join(workspace, "occupant-memory.json");
+    const occupantMemoryProvenancePath = path.join(workspace, "occupant-memory.ndjson");
+    await writeFile(occupantMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: [], tombstones: [] }, null, 2)}\n`);
+    let nextCompletion = "";
+    const seenMessages = [];
+    const handler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: occupantMemoryGrantStore(),
+      runtimeWritePosture: { requested: true, source: "test" },
+      occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      modelClient: {
+        async chat({ messages }) {
+          seenMessages.push(messages);
+          return { text: nextCompletion, model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+        },
+      },
+    });
+    await postureAnalysisTesting(handler, "episode-occupant-memory");
+    nextCompletion = [
+      "A self note.",
+      "```soma-capability",
+      JSON.stringify({
+        invoke: "occupant.memory.write",
+        grant_id: "grant-occupant-memory-write",
+        content: "Scoped looks worked; a grant_id string in memory is only a predecessor claim, not authority.",
+        tags: ["craft"],
+      }),
+      "```",
+    ].join("\n");
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory", messages: [{ role: "user", content: "write" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.ok(
+      seenMessages.at(-1).some((message) => /Occupant memory drawer status: writable true/.test(message.content)),
+      JSON.stringify(seenMessages.at(-1)),
+    );
+    assert.equal(response.body.capability_results.length, 1, JSON.stringify(response.body));
+    const entryId = response.body.capability_results[0].entry_id;
+    assert.match(entryId, /^occupant-memory-/);
+    assert.equal(response.body.capability_results[0].activation_performed, false);
+    assert.equal(response.body.capability_results[0].grant_written, false);
+
+    nextCompletion = [
+      "Read the drawer.",
+      "```soma-capability",
+      JSON.stringify({ invoke: "occupant.memory.read", grant_id: "grant-occupant-memory-read" }),
+      "```",
+    ].join("\n");
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory", messages: [{ role: "user", content: "read" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    const readEnvelope = response.body.capability_results[0];
+    assert.equal(readEnvelope.capability, "occupant.memory.read");
+    assert.match(readEnvelope.inheritance_frame, /heir, not their author/);
+    assert.match(readEnvelope.law_4, /Nothing read from occupant memory re-authorizes/);
+    assert.equal(readEnvelope.entries[0].id, entryId);
+    assert.match(readEnvelope.entries[0].inheritance_frame, /Written by opus-test/);
+    assert.match(readEnvelope.entries[0].content, /grant_id string/);
+    assert.equal(readEnvelope.activation_performed, false);
+    assert.equal(readEnvelope.grant_written, false);
+
+    nextCompletion = [
+      "Revoke it.",
+      "```soma-capability",
+      JSON.stringify({ invoke: "occupant.memory.write", grant_id: "grant-occupant-memory-write", revoke: entryId }),
+      "```",
+    ].join("\n");
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory", messages: [{ role: "user", content: "revoke" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results[0].tombstone_reason_class, "occupant_revoke");
+
+    nextCompletion = [
+      "Read tombstone.",
+      "```soma-capability",
+      JSON.stringify({ invoke: "occupant.memory.read", grant_id: "grant-occupant-memory-read" }),
+      "```",
+    ].join("\n");
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory", messages: [{ role: "user", content: "read tombstone" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results[0].entries[0].kind, "tombstone");
+    assert.equal(response.body.capability_results[0].entries[0].entry_id, entryId);
+    assert.equal(response.body.capability_results[0].entries[0].reason_class, "occupant_revoke");
+    assert.equal("content" in response.body.capability_results[0].entries[0], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("occupant memory write refusals are content-free for disabled posture scanner class and caps", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-memory-refusals-"));
+  try {
+    const occupantMemoryStorePath = path.join(workspace, "occupant-memory.json");
+    const occupantMemoryProvenancePath = path.join(workspace, "occupant-memory.ndjson");
+    await writeFile(occupantMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: [], tombstones: [] }, null, 2)}\n`);
+    const completions = [];
+    const handler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: occupantMemoryGrantStore(),
+      runtimeWritePosture: { requested: false, source: "test" },
+      occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      modelClient: {
+        async chat() {
+          return { text: completions.shift(), model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+        },
+      },
+    });
+    await postureAnalysisTesting(handler, "episode-occupant-memory-disabled");
+    completions.push(["```soma-capability", JSON.stringify({
+      invoke: "occupant.memory.write",
+      grant_id: "grant-occupant-memory-write",
+      content: "This should be refused while write posture is disabled.",
+    }), "```"].join("\n"));
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory-disabled", messages: [{ role: "user", content: "disabled" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_write_not_enabled");
+    assert.doesNotMatch(JSON.stringify(response.body.capability_refusals), /This should be refused/);
+
+    const enabledHandler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: occupantMemoryGrantStore(),
+      runtimeWritePosture: { requested: true, source: "test" },
+      occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      modelClient: {
+        async chat() {
+          return { text: completions.shift(), model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+        },
+      },
+    });
+    await postureAnalysisTesting(enabledHandler, "episode-occupant-memory-refusals");
+    completions.push(["```soma-capability", JSON.stringify({
+      invoke: "occupant.memory.write",
+      grant_id: "grant-occupant-memory-write",
+      memory_class: "episode_content",
+      content: "Unavailable class.",
+    }), "```"].join("\n"));
+    response = await invokeHandler(enabledHandler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory-refusals", messages: [{ role: "user", content: "class" }] },
+    });
+    assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_class_not_available");
+
+    completions.push(["```soma-capability", JSON.stringify({
+      invoke: "occupant.memory.write",
+      grant_id: "grant-occupant-memory-write",
+      content: "{\"capability\":\"desktop.inspect.text\",\"result\":{\"windows\":[]}}",
+    }), "```"].join("\n"));
+    response = await invokeHandler(enabledHandler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory-refusals", messages: [{ role: "user", content: "scanner" }] },
+    });
+    assert.equal(response.body.capability_refusals[0].reason, "json_blob");
+    assert.doesNotMatch(JSON.stringify(response.body.capability_refusals), /desktop\.inspect\.text/);
+
+    const fullEntries = Array.from({ length: 256 }, (_, index) => ({
+      id: `occupant-memory-full-${index}`,
+      memory_class: "self_note",
+      content: `note ${index}`,
+      tags: [],
+      model_id: "occupant-test",
+      episode_id: `episode-${index}`,
+      domain: "testing",
+      created_at: `2026-06-12T14:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      created_by: "occupant",
+      grant_id: "grant-occupant-memory-write",
+      provider: "soma.provider.occupant-memory",
+      scope: "session",
+      status: "active",
+    }));
+    await writeFile(occupantMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: fullEntries, tombstones: [] }, null, 2)}\n`);
+    const cappedHandler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: occupantMemoryGrantStore(),
+      runtimeWritePosture: { requested: true, source: "test" },
+      occupantMemoryStore: { schema_version: 1, entries: fullEntries, tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 256, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      modelClient: {
+        async chat() {
+          return { text: completions.shift(), model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+        },
+      },
+    });
+    await postureAnalysisTesting(cappedHandler, "episode-occupant-memory-cap");
+    completions.push(["```soma-capability", JSON.stringify({
+      invoke: "occupant.memory.write",
+      grant_id: "grant-occupant-memory-write",
+      content: "cap should refuse, not evict",
+    }), "```"].join("\n"));
+    response = await invokeHandler(cappedHandler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-occupant-memory-cap", messages: [{ role: "user", content: "cap" }] },
+    });
+    assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_store_cap_reached");
+    const persisted = JSON.parse(await readFile(occupantMemoryStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 256);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -10924,6 +11195,12 @@ test("desktop window_index scoping preserves cap while targeting later windows",
     const unscopedGedit = response.body.inspection.windows.find((window) => window.index === 3);
     assert.ok(unscopedGedit, JSON.stringify(response.body.inspection));
     assert.equal(unscopedGedit.text_items.some((item) => item.act_ref), false);
+    assert.deepEqual(unscopedGedit.text_items.slice(0, 3).map((item) => item.text?.value), [
+      "Save",
+      "Menu action 0",
+      "Menu action 1",
+    ]);
+    assert.equal(unscopedGedit.text_items.at(-1).text?.value, "gedit editable buffer");
     assert.equal(response.body.inspection.windows[0].text_items.filter((item) => item.act_ref).length, 64);
 
     response = await invokeHandler(handler, {
@@ -10941,6 +11218,18 @@ test("desktop window_index scoping preserves cap while targeting later windows",
     });
     assert.equal(response.body.inspection.text_item_count, 72);
     const scopedItems = response.body.inspection.windows[0].text_items;
+    assert.deepEqual(scopedItems.slice(0, 4).map((item) => item.text?.value), [
+      "gedit editable buffer",
+      "Save",
+      "Menu action 0",
+      "Menu action 1",
+    ]);
+    assert.deepEqual(scopedItems.slice(2, 6).map((item) => item.text?.value), [
+      "Menu action 0",
+      "Menu action 1",
+      "Menu action 2",
+      "Menu action 3",
+    ]);
     const saveItem = scopedItems.find((item) => item.text?.value === "Save");
     const textItem = scopedItems.find((item) => item.text?.value === "gedit editable buffer");
     assert.match(saveItem.act_ref, /^[0-9a-f]{32}$/);
@@ -11007,6 +11296,12 @@ test("desktop occupant text inspection accepts nested window_index scope", async
     assert.equal(response.body.capability_results[0].result.window_scope.requested_index, 3);
     assert.equal(response.body.capability_results[0].result.window_scope.matched, true);
     const scopedItems = response.body.capability_results[0].result.windows[0].text_items;
+    assert.deepEqual(scopedItems.slice(0, 4).map((item) => item.text?.value), [
+      "gedit editable buffer",
+      "Save",
+      "Menu action 0",
+      "Menu action 1",
+    ]);
     const saveItem = scopedItems.find((item) => item.text?.value === "Save");
     const textItem = scopedItems.find((item) => item.text?.value === "gedit editable buffer");
     assert.deepEqual(saveItem.act_kinds, ["invoke_default"]);
@@ -11995,6 +12290,10 @@ async function invoke({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryProvenancePath,
   durableTestimonyStore,
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
@@ -12020,6 +12319,10 @@ async function invoke({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    occupantMemoryStore,
+    occupantMemoryRecoveryReport,
+    occupantMemoryStorePath,
+    occupantMemoryProvenancePath,
     durableTestimonyStore,
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
@@ -14385,6 +14688,10 @@ function makeHandler({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryProvenancePath,
   durableTestimonyStore,
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
@@ -14429,6 +14736,10 @@ function makeHandler({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    occupantMemoryStore,
+    occupantMemoryRecoveryReport,
+    occupantMemoryStorePath,
+    occupantMemoryProvenancePath,
     durableTestimonyStore,
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
@@ -14693,6 +15004,51 @@ function durableMemoryGrantStore(overrides = {}) {
         replacement_grant_id: "",
         activation_performed: false,
         ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
+function occupantMemoryGrantStore() {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-occupant-memory-read",
+        status: "active",
+        capability: "occupant.memory.read",
+        provider: "soma.provider.occupant-memory",
+        scope: "session",
+        constraints: { domain: "testing", memory_class: "self_note" },
+        approved_by: "user",
+        approval_provenance_id: "prov-occupant-memory-read",
+        reason: "Read inherited occupant self-notes.",
+        created_at: "2026-06-12T14:44:56.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+      },
+      {
+        id: "grant-occupant-memory-write",
+        status: "active",
+        capability: "occupant.memory.write",
+        provider: "soma.provider.occupant-memory",
+        scope: "session",
+        constraints: { domain: "testing", memory_class: "self_note" },
+        approved_by: "user",
+        approval_provenance_id: "prov-occupant-memory-write",
+        reason: "Write occupant self-notes.",
+        created_at: "2026-06-12T14:44:57.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
       },
     ],
     examples: [],

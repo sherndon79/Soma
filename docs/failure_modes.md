@@ -480,6 +480,35 @@ Provenance:
   in-process provenance
 - no provenance event contains `text`, `content`, raw payloads, or messages
 
+### Occupant Durable Memory Refused Or Degraded
+
+Triggers:
+
+- `SOMA_RUNTIME_WRITES_ENABLED` is unset for an `occupant.memory.write` attempt
+- `config/occupant-memory.json` is corrupt or unreadable
+- occupant-memory mutation provenance cannot be read or appended
+- the write is outside the testing domain or lacks an active exact grant
+- the requested class is not `self_note`
+- the cheap self-note scanner detects raw result envelopes, JSON blobs, transcript blocks,
+  locator/identity fields, or about-participant markers
+- entry, episode, or store caps are reached
+
+Expected behavior:
+
+- refuse before mutation and return only a reason class
+- do not retain snippets, summaries, or raw memory content in provenance, disclosures, or refusal
+  payloads
+- do not silently evict old entries at cap
+- keep read-back available only when recovery is clean; tombstones remain visible on read
+- keep participant durable memory and durable testimony stores untouched
+- held-grants briefing states whether the drawer is writable before the occupant composes a write
+
+Provenance:
+
+- mutation provenance records `occupant.memory.written` and `occupant.memory.revoked` metadata only
+- read provenance records counts only, not memory content
+- no provenance event contains `text`, `content`, raw payloads, snippets, summaries, or messages
+
 ### History Projection Publication Refused Or Withheld
 
 Triggers:

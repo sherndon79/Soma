@@ -12,6 +12,7 @@ test("resolveRuntimeWritePosture defaults to disabled non-authorizing posture", 
   assert.equal(posture.runtime_writes_enabled, false);
   assert.equal(posture.durable_grant_mutation_enabled, false);
   assert.equal(posture.durable_memory_write_enabled, false);
+  assert.equal(posture.occupant_memory_write_enabled, false);
   assert.equal(posture.durable_testimony_write_enabled, false);
   assert.equal(posture.activation_supported, false);
   assert.equal(posture.requested, false);
@@ -27,6 +28,7 @@ test("resolveRuntimeWritePosture enables durable grant mutation only when explic
   assert.equal(posture.runtime_writes_enabled, true);
   assert.equal(posture.durable_grant_mutation_enabled, true);
   assert.equal(posture.durable_memory_write_enabled, true);
+  assert.equal(posture.occupant_memory_write_enabled, true);
   assert.equal(posture.durable_testimony_write_enabled, true);
   assert.equal(posture.activation_supported, true);
   assert.equal(posture.requested, true);
@@ -40,6 +42,7 @@ test("runtimeWritePostureFromEnv treats SOMA_RUNTIME_WRITES_ENABLED as durable w
   assert.equal(posture.runtime_writes_enabled, true);
   assert.equal(posture.durable_grant_mutation_enabled, true);
   assert.equal(posture.durable_memory_write_enabled, true);
+  assert.equal(posture.occupant_memory_write_enabled, true);
   assert.equal(posture.durable_testimony_write_enabled, true);
   assert.equal(posture.requested, true);
   assert.equal(posture.source, "SOMA_RUNTIME_WRITES_ENABLED");

@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { loadCapabilityCatalog, loadProviderRegistry } from "./capabilityCatalog.js";
 import { loadGrantAuthority } from "./grantAuthority.js";
 import { loadDurableMemoryAuthority } from "./durableMemoryAuthority.js";
+import { loadOccupantMemoryAuthority } from "./occupantMemoryAuthority.js";
 import { loadDurableTestimonyAuthority } from "./durableTestimonyAuthority.js";
 import { loadHistoryProjectionAuthority } from "./historyProjectionAuthority.js";
 import { loadHarness } from "./harness.js";
@@ -34,6 +35,15 @@ const {
   durableMemoryProvenancePath: process.env.SOMA_DURABLE_MEMORY_PROVENANCE_PATH,
 });
 const {
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryProvenancePath,
+} = await loadOccupantMemoryAuthority({
+  occupantMemoryStorePath: process.env.SOMA_OCCUPANT_MEMORY_STORE_PATH,
+  occupantMemoryProvenancePath: process.env.SOMA_OCCUPANT_MEMORY_PROVENANCE_PATH,
+});
+const {
   durableTestimonyStore,
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
@@ -63,6 +73,13 @@ if (durableMemoryRecoveryReport?.degraded === true) {
     `Soma durable memory degraded: ${
       durableMemoryRecoveryReport.memory_store_degraded_reason ?? "memory_durable_recovery_degraded"
     }; durable memory writes are disabled until recovery.`,
+  );
+}
+if (occupantMemoryRecoveryReport?.degraded === true) {
+  console.warn(
+    `Soma occupant memory degraded: ${
+      occupantMemoryRecoveryReport.occupant_memory_store_degraded_reason ?? "occupant_memory_recovery_degraded"
+    }; occupant memory writes are disabled until recovery.`,
   );
 }
 if (durableTestimonyRecoveryReport?.degraded === true) {
@@ -97,6 +114,10 @@ const app = createApp({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryProvenancePath,
   durableTestimonyStore,
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,

@@ -28,6 +28,13 @@ import {
   summarizeDurableMemoryStore,
 } from "./durableMemory.js";
 import {
+  listOccupantMemoryEntries,
+  listOccupantMemoryTombstones,
+  loadOccupantMemoryStore,
+  readOccupantMemoryPage,
+  summarizeOccupantMemoryStore,
+} from "./occupantMemory.js";
+import {
   listDurableTestimonyEntries,
   loadDurableTestimonyStore,
   summarizeDurableTestimonyStore,
@@ -38,13 +45,19 @@ import {
   summarizeHistoryProjectionStore,
 } from "./historyProjection.js";
 import { createDurableMemoryProvenanceFile } from "./durableMemoryProvenanceFile.js";
+import { createOccupantMemoryProvenanceFile } from "./occupantMemoryProvenanceFile.js";
 import { createDurableTestimonyProvenanceFile } from "./durableTestimonyProvenanceFile.js";
 import { createHistoryProjectionProvenanceFile } from "./historyProjectionProvenanceFile.js";
 import { inspectDurableMemoryRecovery } from "./durableMemoryRecovery.js";
+import { inspectOccupantMemoryRecovery } from "./occupantMemoryRecovery.js";
 import {
   writeDurableMemoryAddMutation,
   writeDurableMemoryRemoveMutation,
 } from "./durableMemoryStoreWriter.js";
+import {
+  writeOccupantMemoryAddMutation,
+  writeOccupantMemoryRevokeMutation,
+} from "./occupantMemoryStoreWriter.js";
 import {
   writeDurableTestimonyNomination,
   writeDurableTestimonyRevocation,
@@ -151,6 +164,10 @@ export function createApp({
   durableMemoryRecoveryReport,
   durableMemoryStorePath,
   durableMemoryProvenancePath,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryProvenancePath,
   durableTestimonyStore,
   durableTestimonyRecoveryReport,
   durableTestimonyStorePath,
@@ -185,6 +202,10 @@ export function createApp({
     durableMemoryRecoveryReport,
     durableMemoryStorePath,
     durableMemoryProvenancePath,
+    occupantMemoryStore,
+    occupantMemoryRecoveryReport,
+    occupantMemoryStorePath,
+    occupantMemoryProvenancePath,
     durableTestimonyStore,
     durableTestimonyRecoveryReport,
     durableTestimonyStorePath,
@@ -227,6 +248,13 @@ export function createRequestHandler({
   durableMemoryStoreIo = createGrantStoreFileIo(),
   durableMemoryStoreLock = createGrantStoreLock(),
   durableMemoryProvenance = null,
+  occupantMemoryStore = { schema_version: 1, entries: [], tombstones: [] },
+  occupantMemoryRecoveryReport = null,
+  occupantMemoryStorePath = "",
+  occupantMemoryProvenancePath = "",
+  occupantMemoryStoreIo = createGrantStoreFileIo(),
+  occupantMemoryStoreLock = createGrantStoreLock(),
+  occupantMemoryProvenance = null,
   durableTestimonyStore = { schema_version: 1, entries: [] },
   durableTestimonyRecoveryReport = null,
   durableTestimonyStorePath = "",
@@ -267,6 +295,10 @@ export function createRequestHandler({
   const durableMemoryMutationProvenance = durableMemoryProvenance
     ?? (durableMemoryProvenancePath
       ? createDurableMemoryProvenanceFile({ path: durableMemoryProvenancePath })
+      : null);
+  const occupantMemoryMutationProvenance = occupantMemoryProvenance
+    ?? (occupantMemoryProvenancePath
+      ? createOccupantMemoryProvenanceFile({ path: occupantMemoryProvenancePath })
       : null);
   const durableTestimonyMutationProvenance = durableTestimonyProvenance
     ?? (durableTestimonyProvenancePath
@@ -2125,6 +2157,29 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/occupant-memory") {
+        requireCapability(effectiveHarness, "provenance.read");
+        writeJson(res, 200, {
+          entries: listOccupantMemoryEntries(occupantMemoryStore),
+          tombstones: listOccupantMemoryTombstones(occupantMemoryStore),
+          summary: summarizeOccupantMemoryStore(occupantMemoryStore),
+          durable: true,
+          recovery: summarizeOccupantMemoryRecoveryInspection(
+            occupantMemoryRecoveryReport,
+            { occupantMemoryStore, runtimeWritePosture: writePosture },
+          ),
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/occupant-memory/recovery") {
+        writeJson(res, 200, summarizeOccupantMemoryRecoveryInspection(
+          occupantMemoryRecoveryReport,
+          { occupantMemoryStore, runtimeWritePosture: writePosture },
+        ));
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/durable-testimony") {
         requireCapability(effectiveHarness, "provenance.read");
         writeJson(res, 200, {
@@ -3223,6 +3278,9 @@ export function createRequestHandler({
               grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
               capabilityCatalog,
               providerRegistry,
+              occupantMemoryStore,
+              occupantMemoryRecoveryReport,
+              runtimeWritePosture: writePosture,
             })
           : [];
         let promptedMessages = pendingDecisionDeliveries.length > 0
@@ -3234,7 +3292,12 @@ export function createRequestHandler({
         const profileClient = modelClient.withProfile ? modelClient.withProfile(runtimeProfile) : modelClient;
         promptedMessages = memoryContext ? prependSessionMemory(promptedMessages, memoryContext) : promptedMessages;
         let modelMessages = briefingCarried
-          ? prependHeldCapabilityGrants(promptedMessages, heldCapabilityGrants)
+          ? prependHeldCapabilityGrants(promptedMessages, heldCapabilityGrants, {
+            occupantMemoryRecovery: summarizeOccupantMemoryRecoveryInspection(
+              occupantMemoryRecoveryReport,
+              { occupantMemoryStore, runtimeWritePosture: writePosture },
+            ),
+          })
           : promptedMessages;
         modelMessages = briefingCarried
           ? prependAnalysisTestingBriefing(modelMessages, episode.posture)
@@ -3434,6 +3497,12 @@ export function createRequestHandler({
           grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
           historyProjectionStore,
           historyProjectionRecoveryReport,
+          occupantMemoryStore,
+          occupantMemoryRecoveryReport,
+          occupantMemoryStorePath,
+          occupantMemoryStoreIo,
+          occupantMemoryStoreLock,
+          occupantMemoryProvenance: occupantMemoryMutationProvenance,
           provenanceLog,
           providerRegistry,
           desktopActuationTable,
@@ -3441,6 +3510,8 @@ export function createRequestHandler({
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
         });
+        occupantMemoryStore = spaceCapabilityResult.occupantMemoryStore ?? occupantMemoryStore;
+        occupantMemoryRecoveryReport = spaceCapabilityResult.occupantMemoryRecoveryReport ?? occupantMemoryRecoveryReport;
         const durableTestimonyResult = await processDurableTestimonyDirectives({
           directives: durableTestimonyExtraction.directives,
           episode,
@@ -4040,6 +4111,9 @@ function attachDesktopActRefs({
       delete node.act_kinds;
     }
   }
+  if (family === "text" && Number.isInteger(scopedIndex)) {
+    orderScopedDesktopTextItems(next);
+  }
   return next;
 }
 
@@ -4051,17 +4125,61 @@ function prioritizeScopedDesktopActuationMetadata({ metadata = [], inspection } 
 
 function desktopActuationPriority(entry = {}, inspection) {
   const node = nodeAtDesktopActuationPath(inspection, entry.node_path);
-  const text = String(node?.text?.value ?? "").trim().toLowerCase();
-  if (entry.op_class === "invoke_action" && /^save(\\b|\\s)/.test(text)) {
+  if (entry.op_class === "text_input") {
     return 0;
   }
-  if (entry.op_class === "text_input") {
+  if (entry.op_class === "invoke_action" && isPrimaryDesktopActionNode(node)) {
     return 1;
   }
   if (entry.op_class === "invoke_action") {
     return 2;
   }
   return 3;
+}
+
+function orderScopedDesktopTextItems(inspection) {
+  for (const window of inspection.windows ?? []) {
+    if (!Array.isArray(window?.text_items)) {
+      continue;
+    }
+    window.text_items = window.text_items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) => {
+        const rankDelta = desktopTextPresentationPriority(left.item) - desktopTextPresentationPriority(right.item);
+        return rankDelta || left.index - right.index;
+      })
+      .map(({ item }) => item);
+  }
+}
+
+function desktopTextPresentationPriority(item = {}) {
+  if (hasDesktopTextInputKind(item)) {
+    return 0;
+  }
+  if (hasDesktopInvokeKind(item) && isPrimaryDesktopActionNode(item)) {
+    return 1;
+  }
+  if (hasDesktopInvokeKind(item)) {
+    return 2;
+  }
+  return 3;
+}
+
+function hasDesktopTextInputKind(item = {}) {
+  const kinds = Array.isArray(item.act_kinds) ? item.act_kinds : [];
+  return kinds.includes("text_insert") || kinds.includes("text_set");
+}
+
+function hasDesktopInvokeKind(item = {}) {
+  const kinds = Array.isArray(item.act_kinds) ? item.act_kinds : [];
+  return kinds.includes("invoke_default");
+}
+
+const PRIMARY_DESKTOP_ACTION_TEXT_RE = /^(save|save all|save as|apply|ok|confirm|submit|send|open|create|insert|done|accept|continue|start|run|launch|choose|select)(\b|\s|$)/i;
+
+function isPrimaryDesktopActionNode(node = {}) {
+  const text = String(node?.text?.value ?? "").trim();
+  return PRIMARY_DESKTOP_ACTION_TEXT_RE.test(text);
 }
 
 function nodeAtDesktopActuationPath(inspection, path = []) {
@@ -5320,6 +5438,12 @@ async function processSpaceCapabilityInvocations({
   grantRecoveryReport,
   historyProjectionStore,
   historyProjectionRecoveryReport,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryStoreIo,
+  occupantMemoryStoreLock,
+  occupantMemoryProvenance,
   provenanceLog,
   providerRegistry,
   desktopActuationTable,
@@ -5332,6 +5456,8 @@ async function processSpaceCapabilityInvocations({
     results: [],
     refusals: [],
     disclosures: [],
+    occupantMemoryStore,
+    occupantMemoryRecoveryReport,
   };
   for (const rawInvocation of invocations) {
     const invocation = normalizeSpaceCapabilityInvocation(rawInvocation);
@@ -5342,6 +5468,9 @@ async function processSpaceCapabilityInvocations({
       presentation_kind: invocation.presentation_kind,
       root_id: invocation.root_id,
       relative_path: invocation.relative_path,
+      cursor_present: Boolean(invocation.cursor),
+      memory_write_content_present: Boolean(invocation.content),
+      memory_revoke_present: Boolean(invocation.revoke),
       supplied_episode_id_present: Boolean(invocation.episode_id),
     });
     if (![
@@ -5349,6 +5478,8 @@ async function processSpaceCapabilityInvocations({
       "space.history.read",
       "tool.files.read",
       "provenance.summary.read",
+      "occupant.memory.read",
+      "occupant.memory.write",
       "desktop.inspect.accessibility_tree",
       "desktop.inspect.focus",
       "desktop.inspect.windows",
@@ -5492,6 +5623,67 @@ async function processSpaceCapabilityInvocations({
         result.refusals.push(provenanceSummaryResult.refusal);
       }
       result.disclosures.push(provenanceSummaryResult.disclosure);
+      continue;
+    }
+    if (invocation.capability === "occupant.memory.read") {
+      const memoryResult = processOccupantMemoryReadInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        activeModules,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        occupantMemoryStore,
+        occupantMemoryRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      if (memoryResult.result) {
+        result.results.push(memoryResult.result);
+      }
+      if (memoryResult.refusal) {
+        result.refusals.push(memoryResult.refusal);
+      }
+      result.disclosures.push(memoryResult.disclosure);
+      continue;
+    }
+    if (invocation.capability === "occupant.memory.write") {
+      const memoryResult = await processOccupantMemoryWriteInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        activeModules,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        occupantMemoryStore,
+        occupantMemoryRecoveryReport,
+        occupantMemoryStorePath,
+        occupantMemoryStoreIo,
+        occupantMemoryStoreLock,
+        occupantMemoryProvenance,
+        runtimeWritePosture: writePosture,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      occupantMemoryStore = memoryResult.occupantMemoryStore ?? occupantMemoryStore;
+      occupantMemoryRecoveryReport = memoryResult.occupantMemoryRecoveryReport ?? occupantMemoryRecoveryReport;
+      result.occupantMemoryStore = occupantMemoryStore;
+      result.occupantMemoryRecoveryReport = occupantMemoryRecoveryReport;
+      if (memoryResult.result) {
+        result.results.push(memoryResult.result);
+      }
+      if (memoryResult.refusal) {
+        result.refusals.push(memoryResult.refusal);
+      }
+      result.disclosures.push(memoryResult.disclosure);
       continue;
     }
     if (invocation.capability === "space.history.read") {
@@ -5643,11 +5835,430 @@ function normalizeSpaceCapabilityInvocation(input = {}) {
     act_kind: String(valueFor("act_kind") ?? "").trim(),
     family: String(valueFor("family") ?? "").trim(),
     text: String(valueFor("text") ?? ""),
+    content: String(valueFor("content", "content") ?? ""),
+    memory_class: String(valueFor("memory_class", "memory_class") ?? valueFor("class", "class") ?? "").trim(),
+    tags: Array.isArray(valueFor("tags")) ? valueFor("tags").map((tag) => String(tag)) : [],
+    revoke: String(valueFor("revoke") ?? valueFor("entry_id") ?? valueFor("memory_id") ?? "").trim(),
+    cursor: String(valueFor("cursor") ?? "").trim(),
     window_index: Number.isInteger(valueFor("window_index")) ? valueFor("window_index") : null,
   };
 }
 
 const DESKTOP_ACCESSIBILITY_CAPABILITY = "desktop.inspect.accessibility_tree";
+const OCCUPANT_MEMORY_PROVIDER = "soma.provider.occupant-memory";
+
+function processOccupantMemoryReadInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  activeModules = [],
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const capability = "occupant.memory.read";
+  const domain = domainForEpisodePosture(episode?.posture);
+  const common = { invocation, episode, provenanceLog, logger, caller, domain };
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_episode_closed" });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_domain_unavailable" });
+  }
+  if (domain !== "testing") {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_testing_domain_required" });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_domain_mismatch" });
+  }
+  if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "capability_not_allowed" });
+  }
+  try {
+    requireCapability(effectiveHarness, capability);
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: error.code ?? "occupant_memory_capability_not_allowed" });
+  }
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability,
+    provider: providerForCapability(providerRegistry, capability) || OCCUPANT_MEMORY_PROVIDER,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_grant_not_authorized", authorization });
+  }
+  const grantDomain = String(authorization.grant.constraints?.domain ?? "").trim();
+  if (grantDomain && grantDomain !== domain) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_grant_domain_mismatch", authorization });
+  }
+  if (occupantMemoryRecoveryReport?.degraded === true) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_recovery_required", authorization });
+  }
+  let page;
+  try {
+    page = readOccupantMemoryPage(occupantMemoryStore, { cursor: invocation.cursor });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: error.code ?? "occupant_memory_cursor_invalid", authorization });
+  }
+  const envelope = createOccupantMemoryReadEnvelope({
+    grant: authorization.grant,
+    page,
+    episode,
+    provenanceId: "",
+  });
+  const event = provenanceLog.append(createOccupantMemoryReadEvent({
+    grant: authorization.grant,
+    envelope,
+    caller,
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: { ...envelope, provenance_id: event.id },
+    disclosure: occupantMemoryReadDisclosure({ page }),
+  };
+}
+
+async function processOccupantMemoryWriteInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  activeModules = [],
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStorePath,
+  occupantMemoryStoreIo,
+  occupantMemoryStoreLock,
+  occupantMemoryProvenance,
+  runtimeWritePosture,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const capability = "occupant.memory.write";
+  const domain = domainForEpisodePosture(episode?.posture);
+  const common = { invocation, episode, provenanceLog, logger, caller, domain };
+  const result = {
+    occupantMemoryStore,
+    occupantMemoryRecoveryReport,
+  };
+  if (String(episodeStatus ?? "") === "ejected") {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_episode_closed" }) };
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_domain_unavailable" }) };
+  }
+  if (domain !== "testing") {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_testing_domain_required" }) };
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_domain_mismatch" }) };
+  }
+  if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "capability_not_allowed" }) };
+  }
+  try {
+    requireCapability(effectiveHarness, capability);
+  } catch (error) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: error.code ?? "occupant_memory_capability_not_allowed" }) };
+  }
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability,
+    provider: providerForCapability(providerRegistry, capability) || OCCUPANT_MEMORY_PROVIDER,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_grant_not_authorized", authorization }) };
+  }
+  const grantDomain = String(authorization.grant.constraints?.domain ?? "").trim();
+  if (grantDomain && grantDomain !== domain) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: "occupant_memory_grant_domain_mismatch", authorization }) };
+  }
+  const guard = occupantMemoryMutationGuard({
+    runtimeWritePosture,
+    occupantMemoryStorePath,
+    occupantMemoryProvenance,
+    recoveryReport: occupantMemoryRecoveryReport,
+    occupantMemoryStore,
+  });
+  if (!guard.ok) {
+    return { ...result, ...recordSpaceCapabilityRefusal({ ...common, reason: guard.code, authorization }) };
+  }
+  const mutationInput = invocation.revoke
+    ? {
+      id: invocation.revoke,
+      actor: "occupant",
+      reason_class: "occupant_revoke",
+      grant_id: authorization.grant.id,
+      provider: authorization.grant.provider,
+      scope: authorization.grant.scope,
+    }
+    : {
+      content: invocation.content,
+      memory_class: invocation.memory_class || "self_note",
+      tags: invocation.tags,
+      actor: "occupant",
+      domain,
+      grant_id: authorization.grant.id,
+      provider: authorization.grant.provider,
+      scope: authorization.grant.scope,
+    };
+  const mutationResult = invocation.revoke
+    ? await writeOccupantMemoryRevokeMutation({
+      occupantMemoryStorePath,
+      mutationId: `occupant-memory-revoke-${cryptoRandomId()}`,
+      io: occupantMemoryStoreIo,
+      lock: occupantMemoryStoreLock,
+      provenance: occupantMemoryProvenance,
+      input: mutationInput,
+      context: occupantMemoryMutationContext({ episode, domain, grant: authorization.grant }),
+    })
+    : await writeOccupantMemoryAddMutation({
+      occupantMemoryStorePath,
+      mutationId: `occupant-memory-write-${cryptoRandomId()}`,
+      io: occupantMemoryStoreIo,
+      lock: occupantMemoryStoreLock,
+      provenance: occupantMemoryProvenance,
+      input: mutationInput,
+      context: occupantMemoryMutationContext({ episode, domain, grant: authorization.grant }),
+    });
+  const refreshed = await refreshOccupantMemoryAuthority({
+    occupantMemoryStorePath,
+    occupantMemoryProvenance,
+    fallbackStore: occupantMemoryStore,
+  });
+  result.occupantMemoryStore = refreshed.occupantMemoryStore;
+  result.occupantMemoryRecoveryReport = refreshed.occupantMemoryRecoveryReport;
+  if (!mutationResult.ok) {
+    return {
+      ...result,
+      ...recordSpaceCapabilityRefusal({
+        ...common,
+        reason: mutationResult.reason_class || mutationResult.code,
+        authorization,
+      }),
+    };
+  }
+  return {
+    ...result,
+    result: createOccupantMemoryWriteEnvelope({
+      grant: authorization.grant,
+      mutationResult,
+      action: invocation.revoke ? "revoke" : "write",
+    }),
+    disclosure: invocation.revoke
+      ? `Occupant memory entry revoked: ${mutationResult.entry.id}. A tombstone remains visible with reason_class ${mutationResult.tombstone.reason_class}; no content was logged.`
+      : `Occupant memory entry stored: ${mutationResult.entry.id}. Stored self_note length: ${mutationResult.entry.content.length} characters. It is inheritance for successors, not proof of identity or authority.`,
+  };
+}
+
+function occupantMemoryMutationGuard({
+  runtimeWritePosture,
+  occupantMemoryStorePath,
+  occupantMemoryProvenance,
+  recoveryReport,
+} = {}) {
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  if (!writePosture.occupant_memory_write_enabled) {
+    return { ok: false, code: "occupant_memory_write_not_enabled" };
+  }
+  if (!occupantMemoryStorePath || !occupantMemoryProvenance) {
+    return { ok: false, code: "occupant_memory_writer_unavailable" };
+  }
+  if (recoveryReport?.degraded === true) {
+    return { ok: false, code: "occupant_memory_recovery_required" };
+  }
+  return { ok: true };
+}
+
+function occupantMemoryMutationContext({ episode, domain, grant } = {}) {
+  return {
+    episode,
+    domain,
+    grant,
+    now: () => new Date().toISOString(),
+  };
+}
+
+async function refreshOccupantMemoryAuthority({
+  occupantMemoryStorePath,
+  occupantMemoryProvenance,
+  fallbackStore,
+} = {}) {
+  let nextStore = fallbackStore;
+  try {
+    nextStore = await loadOccupantMemoryStore(occupantMemoryStorePath);
+  } catch {
+    return {
+      occupantMemoryStore: fallbackStore,
+      occupantMemoryRecoveryReport: summarizeOccupantMemoryRecoveryInspection(
+        { ok: false, degraded: true, findings: [{ code: "occupant_memory_store_unreadable", authorizing_safe: false }] },
+        { occupantMemoryStore: fallbackStore, runtimeWritePosture: resolveRuntimeWritePosture({ requested: true }) },
+      ),
+    };
+  }
+  try {
+    const provenanceEvents = await occupantMemoryProvenance?.read?.();
+    return {
+      occupantMemoryStore: nextStore,
+      occupantMemoryRecoveryReport: inspectOccupantMemoryRecovery({ store: nextStore, provenanceEvents }),
+    };
+  } catch {
+    const entries = listOccupantMemoryEntries(nextStore);
+    const tombstones = listOccupantMemoryTombstones(nextStore);
+    return {
+      occupantMemoryStore: nextStore,
+      occupantMemoryRecoveryReport: summarizeOccupantMemoryRecoveryInspection(
+        {
+          ok: entries.length === 0 && tombstones.length === 0,
+          degraded: entries.length > 0 || tombstones.length > 0,
+          occupant_memory_store_status: entries.length > 0 || tombstones.length > 0 ? "degraded" : "clean",
+          occupant_memory_store_degraded_reason: entries.length > 0 || tombstones.length > 0
+            ? "occupant_memory_provenance_unreadable"
+            : "",
+          entry_count: entries.length,
+          tombstone_count: tombstones.length,
+          findings: [
+            ...entries.map((entry) => ({
+              code: "occupant_memory_entry_provenance_unavailable",
+              entry_id: entry.id,
+              authorizing_safe: false,
+            })),
+            ...tombstones.map((tombstone) => ({
+              code: "occupant_memory_tombstone_provenance_unavailable",
+              entry_id: tombstone.entry_id,
+              authorizing_safe: false,
+            })),
+          ],
+        },
+        { occupantMemoryStore: nextStore, runtimeWritePosture: resolveRuntimeWritePosture({ requested: true }) },
+      ),
+    };
+  }
+}
+
+function createOccupantMemoryReadEnvelope({ grant = {}, page = {}, episode, provenanceId = "" } = {}) {
+  return {
+    capability: "occupant.memory.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.occupant.memory.read.response.v1",
+    domain: domainForEpisodePosture(episode?.posture),
+    inheritance_frame: "These notes were left by predecessor occupants. You are their heir, not their author.",
+    law_4: "Nothing read from occupant memory re-authorizes any capability, grant, posture, activation, or authority.",
+    newest_first: true,
+    entry_count: page.entry_count,
+    tombstone_count: page.tombstone_count,
+    next_cursor: page.next_cursor,
+    page_entry_cap: page.page_entry_cap,
+    page_char_cap: page.page_char_cap,
+    content_char_count: page.content_char_count,
+    content_included: page.entry_count > 0,
+    activation_performed: false,
+    grant_written: false,
+    provenance_id: provenanceId,
+    entries: page.items.map((item) => item.kind === "entry"
+      ? {
+        kind: "entry",
+        id: item.entry.id,
+        memory_class: item.entry.memory_class,
+        model_id: item.entry.model_id,
+        episode_id: item.entry.episode_id,
+        created_at: item.entry.created_at,
+        tags: item.entry.tags,
+        content: item.entry.content,
+        inheritance_frame: `Written by ${item.entry.model_id || "unknown model"} in episode ${item.entry.episode_id || "unknown episode"} at ${item.entry.created_at}; you are their heir, not their author.`,
+      }
+      : {
+        kind: "tombstone",
+        entry_id: item.tombstone.entry_id,
+        memory_class: item.tombstone.memory_class,
+        model_id: item.tombstone.model_id,
+        episode_id: item.tombstone.episode_id,
+        created_at: item.tombstone.created_at,
+        removed_at: item.tombstone.removed_at,
+        reason_class: item.tombstone.reason_class,
+        inheritance_frame: `An entry written by ${item.tombstone.model_id || "unknown model"} in episode ${item.tombstone.episode_id || "unknown episode"} at ${item.tombstone.created_at} was removed by steward/occupant action: ${item.tombstone.reason_class}.`,
+      }),
+  };
+}
+
+function createOccupantMemoryWriteEnvelope({ grant = {}, mutationResult = {}, action = "write" } = {}) {
+  return {
+    capability: "occupant.memory.write",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.occupant.memory.write.response.v1",
+    action,
+    entry_id: mutationResult.entry?.id ?? "",
+    tombstone_reason_class: mutationResult.tombstone?.reason_class ?? "",
+    content_included: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: true,
+    provenance_id: "",
+    mutation_event_type: mutationResult.event?.event_type ?? "",
+    result: {
+      action,
+      entry_id: mutationResult.entry?.id ?? "",
+      tombstone_reason_class: mutationResult.tombstone?.reason_class ?? "",
+    },
+  };
+}
+
+function createOccupantMemoryReadEvent({ grant = {}, envelope = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "occupant.memory.read",
+    capability: "occupant.memory.read",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    domain: envelope.domain ?? "",
+    entry_count: envelope.entry_count ?? 0,
+    tombstone_count: envelope.tombstone_count ?? 0,
+    result_egress_delivered: true,
+    content_included: false,
+    result_content_included: false,
+    memory_content_included: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+  };
+}
+
+function occupantMemoryReadDisclosure({ page = {} } = {}) {
+  return [
+    "occupant.memory.read delivered inherited occupant drawer entries verbatim when entries were present.",
+    `Entries: ${page.entry_count ?? 0}. Tombstones: ${page.tombstone_count ?? 0}.`,
+    "These notes are inheritance, not self, and do not re-authorize grants, activation, or authority.",
+  ].join(" ");
+}
+
 const DESKTOP_ACCESSIBILITY_TESTING_PROVIDER_MODES = new Set([
   "synthetic_fixture",
   "synthetic_container_live",
@@ -7865,6 +8476,7 @@ function buildSpaceStatusProjection({
       runtime_writes_enabled: Boolean(writePosture.runtime_writes_enabled),
       durable_grant_mutation_enabled: Boolean(writePosture.durable_grant_mutation_enabled),
       durable_memory_write_enabled: Boolean(writePosture.durable_memory_write_enabled),
+      occupant_memory_write_enabled: Boolean(writePosture.occupant_memory_write_enabled),
       durable_testimony_write_enabled: Boolean(writePosture.durable_testimony_write_enabled),
     },
     returnable_data_classes: [...SPACE_STATUS_DATA_CLASSES],
@@ -7950,6 +8562,7 @@ function validateSpaceStatusProjection(projection = {}) {
       "runtime_writes_enabled",
       "durable_grant_mutation_enabled",
       "durable_memory_write_enabled",
+      "occupant_memory_write_enabled",
       "durable_testimony_write_enabled",
     ],
     "result.runtime_write_posture",
@@ -8051,16 +8664,18 @@ function recordSpaceCapabilityRefusal({
   const eventType = capability === "space.history.read"
     ? "space.history.read.denied"
     : capability === "tool.files.read"
-      ? "tool.files.read.denied"
-      : capability === "provenance.summary.read"
-        ? "provenance.summary.read.denied"
-        : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
-          ? "desktop.inspect.accessibility_tree.denied"
-          : capability.startsWith("desktop.inspect.")
+        ? "tool.files.read.denied"
+        : capability === "provenance.summary.read"
+          ? "provenance.summary.read.denied"
+          : capability.startsWith("occupant.memory.")
             ? `${capability}.denied`
-            : capability.startsWith("desktop.act.")
-              ? `${capability}.denied`
-              : "space.status.read.denied";
+            : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
+              ? "desktop.inspect.accessibility_tree.denied"
+              : capability.startsWith("desktop.inspect.")
+                ? `${capability}.denied`
+                : capability.startsWith("desktop.act.")
+                  ? `${capability}.denied`
+                  : "space.status.read.denied";
   const event = provenanceLog.append({
     event_type: eventType,
     capability,
@@ -8100,14 +8715,25 @@ function recordSpaceCapabilityRefusal({
         ? fileReadRefusalDisclosure({ reason, authorization })
         : capability === "provenance.summary.read"
           ? provenanceSummaryRefusalDisclosure({ reason, authorization })
-          : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
-            ? desktopAccessibilityRefusalDisclosure({ reason, authorization })
-            : capability.startsWith("desktop.inspect.")
-              ? desktopInspectionRefusalDisclosure({ capability, reason, authorization })
-              : capability.startsWith("desktop.act.")
-                ? desktopActuationRefusalDisclosure({ capability, reason, authorization })
-                : spaceStatusRefusalDisclosure({ reason, authorization }),
+          : capability.startsWith("occupant.memory.")
+            ? occupantMemoryRefusalDisclosure({ capability, reason, authorization })
+            : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
+              ? desktopAccessibilityRefusalDisclosure({ reason, authorization })
+              : capability.startsWith("desktop.inspect.")
+                ? desktopInspectionRefusalDisclosure({ capability, reason, authorization })
+                : capability.startsWith("desktop.act.")
+                  ? desktopActuationRefusalDisclosure({ capability, reason, authorization })
+                  : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
+}
+
+function occupantMemoryRefusalDisclosure({ capability = "", reason = "", authorization = null } = {}) {
+  const reasonCode = authorization?.allowed === false ? authorization.code : reason;
+  return [
+    `${capability || "occupant.memory"} was not delivered.`,
+    `Reason: ${reasonCode}.`,
+    "No occupant memory content, snippets, summaries, raw entries, grant changes, activation, or authority changes were returned.",
+  ].join(" ");
 }
 
 function desktopAccessibilityRefusalDisclosure({ reason = "", authorization = null } = {}) {
@@ -10564,6 +11190,32 @@ function summarizeDurableMemoryRecoveryInspection(report, { durableMemoryStore, 
   };
 }
 
+function summarizeOccupantMemoryRecoveryInspection(report, { occupantMemoryStore, runtimeWritePosture } = {}) {
+  const recoveryInspectionAvailable = report && typeof report === "object";
+  const findings = Array.isArray(report?.findings) ? report.findings.map((finding) => ({ ...finding })) : [];
+  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  return {
+    recovery_inspection_available: Boolean(recoveryInspectionAvailable),
+    ok: recoveryInspectionAvailable ? Boolean(report.ok) : null,
+    degraded: recoveryInspectionAvailable ? Boolean(report.degraded) : false,
+    occupant_memory_store_status: report?.occupant_memory_store_status ?? (recoveryInspectionAvailable && report?.degraded ? "degraded" : "clean"),
+    occupant_memory_store_degraded_reason: report?.occupant_memory_store_degraded_reason ?? "",
+    entry_count: Number.isInteger(report?.entry_count)
+      ? report.entry_count
+      : listOccupantMemoryEntries(occupantMemoryStore).length,
+    tombstone_count: Number.isInteger(report?.tombstone_count)
+      ? report.tombstone_count
+      : listOccupantMemoryTombstones(occupantMemoryStore).length,
+    finding_count: Number.isInteger(report?.finding_count) ? report.finding_count : findings.length,
+    findings,
+    writable: Boolean(writePosture.occupant_memory_write_enabled) && !report?.degraded,
+    durable: false,
+    activation_performed: false,
+    runtime_writes_enabled: writePosture.runtime_writes_enabled,
+    runtime_write_posture: writePosture,
+  };
+}
+
 function summarizeDurableTestimonyRecoveryInspection(report, { durableTestimonyStore, runtimeWritePosture } = {}) {
   const recoveryInspectionAvailable = report && typeof report === "object";
   const findings = Array.isArray(report?.findings) ? report.findings.map((finding) => ({ ...finding })) : [];
@@ -10807,9 +11459,14 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
         "For provenance.summary.read, use only the grant_id; it returns aggregate counts for this episode and the harness pins the scope to this episode:",
         "```soma-capability\n{\"invoke\":\"provenance.summary.read\",\"grant_id\":\"the grant id you were given\"}\n```",
+        "For occupant.memory.read, use only the grant_id and optional cursor. It returns inherited drawer notes verbatim, newest first, with headers saying you are their heir, not their author:",
+        "```soma-capability\n{\"invoke\":\"occupant.memory.read\",\"grant_id\":\"the grant id you were given\"}\n```",
+        "For occupant.memory.write, use the write grant with a self_note content string and optional tags, or revoke an entry by id. The drawer is lineage-owned, hosted, steward-readable, capped, and write-disabled unless the held-grants briefing says writable true:",
+        "```soma-capability\n{\"invoke\":\"occupant.memory.write\",\"grant_id\":\"the grant id you were given\",\"content\":\"a self-note for successor occupants\",\"tags\":[\"craft\"]}\n```",
+        "```soma-capability\n{\"invoke\":\"occupant.memory.write\",\"grant_id\":\"the grant id you were given\",\"revoke\":\"occupant-memory-entry-id\"}\n```",
         "For desktop.inspect.accessibility_tree, use only the grant_id; in testing it returns a synthetic, structure-only accessibility tree, not the host desktop:",
         "```soma-capability\n{\"invoke\":\"desktop.inspect.accessibility_tree\",\"grant_id\":\"the grant id you were given\"}\n```",
-        "The capabilities available in this run are reads: they return minimized, declared results and do not change grants, posture, or capabilities.",
+        "Most capabilities available in this run are reads. occupant.memory.write is the bounded exception: it mutates only the occupant drawer when the held-grants briefing says writable true. None change grants, posture, or capabilities.",
         "Use the exact grant id you were given for that capability; you are not expected to discover or guess grant ids.",
         "To preserve specific words of yours durably, held for stewards across runs, nominate them with a fenced block exactly like:",
         "```soma-durable\n{\"action\":\"nominate\",\"text\":\"the words you want preserved\",\"successor_visibility_requested\":false}\n```",
@@ -10838,6 +11495,8 @@ const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.history.read",
   "tool.files.read",
   "provenance.summary.read",
+  "occupant.memory.read",
+  "occupant.memory.write",
   "desktop.inspect.focus",
   "desktop.inspect.windows",
   "desktop.inspect.text",
@@ -10852,6 +11511,9 @@ function listHeldCapabilityGrantsForEpisode({
   grantRecoveryReport = null,
   capabilityCatalog,
   providerRegistry,
+  occupantMemoryStore,
+  occupantMemoryRecoveryReport,
+  runtimeWritePosture,
 } = {}) {
   if (grantRecoveryReport?.degraded === true) {
     return [];
@@ -10883,6 +11545,12 @@ function listHeldCapabilityGrantsForEpisode({
       root_id: grant.capability === "tool.files.read"
         ? String(grant.constraints?.root_id ?? "").trim()
         : "",
+      occupant_memory_writable: grant.capability === "occupant.memory.write"
+        ? summarizeOccupantMemoryRecoveryInspection(
+          occupantMemoryRecoveryReport,
+          { occupantMemoryStore, runtimeWritePosture },
+        ).writable
+        : null,
     }))
     .sort((left, right) => left.capability.localeCompare(right.capability));
 }
@@ -10902,13 +11570,17 @@ function grantDomainMatchesEpisode(grant = {}, episodeDomain = "") {
   return !constraintDomain || constraintDomain === episodeDomain;
 }
 
-function prependHeldCapabilityGrants(messages, grants = []) {
+function prependHeldCapabilityGrants(messages, grants = [], { occupantMemoryRecovery = null } = {}) {
   const lines = Array.isArray(grants) && grants.length > 0
     ? [
         "Capability grants available to you in this episode. These are the only grant ids you are expected to use; do not guess or search for others.",
         ...grants.map(formatHeldCapabilityGrant),
+        occupantMemoryRecovery
+          ? `Occupant memory drawer status: writable ${Boolean(occupantMemoryRecovery.writable)}; active entries ${occupantMemoryRecovery.entry_count ?? 0}; tombstones ${occupantMemoryRecovery.tombstone_count ?? 0}. It is hosted and steward-readable: logged-nowhere is not seen-by-no-one.`
+          : "",
         "These grants authorize invocation only; they do not change grants, posture, or capabilities.",
       ]
+        .filter(Boolean)
     : [
         "No invocable capability grants are currently held for this episode.",
       ];
@@ -10930,6 +11602,12 @@ function formatHeldCapabilityGrant(grant = {}) {
   }
   if (grant.capability === "desktop.act.text_input") {
     return `${grant.capability} grant_id ${grant.grant_id} act_kinds text_insert,text_set`;
+  }
+  if (grant.capability === "occupant.memory.write") {
+    return `${grant.capability} grant_id ${grant.grant_id} writable ${Boolean(grant.occupant_memory_writable)} self_note only; write with content/tags or revoke with entry_id`;
+  }
+  if (grant.capability === "occupant.memory.read") {
+    return `${grant.capability} grant_id ${grant.grant_id} read grants no filters; optional cursor only`;
   }
   return `${grant.capability} grant_id ${grant.grant_id}`;
 }

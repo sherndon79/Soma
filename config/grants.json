@@ -251,6 +251,55 @@
       "revocation_reason": "",
       "replacement_grant_id": "",
       "activation_performed": false
+    },
+    {
+      "id": "grant-occupant-memory-read-2026-06-12",
+      "status": "active",
+      "capability": "occupant.memory.read",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "constraints": {
+        "domain": "testing",
+        "memory_class": "self_note",
+        "page_entry_cap": 16,
+        "page_char_cap": 32000
+      },
+      "approved_by": "user",
+      "approval_provenance_id": "seth-ratified-occupant-durable-memory-2026-06-12",
+      "source_proposal_id": "",
+      "reason": "Authorize testing-domain occupant inherited self-note drawer reads.",
+      "created_at": "2026-06-12T14:44:56.000Z",
+      "review_required": false,
+      "revoked_at": null,
+      "revoked_by": "",
+      "revocation_reason": "",
+      "replacement_grant_id": "",
+      "activation_performed": false
+    },
+    {
+      "id": "grant-occupant-memory-write-2026-06-12",
+      "status": "active",
+      "capability": "occupant.memory.write",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "constraints": {
+        "domain": "testing",
+        "memory_class": "self_note",
+        "entry_char_cap": 2000,
+        "episode_entry_cap": 32,
+        "store_entry_cap": 256
+      },
+      "approved_by": "user",
+      "approval_provenance_id": "seth-ratified-occupant-durable-memory-2026-06-12",
+      "source_proposal_id": "",
+      "reason": "Authorize testing-domain occupant self-note drawer writes and lineage-owned revocation.",
+      "created_at": "2026-06-12T14:44:57.000Z",
+      "review_required": false,
+      "revoked_at": null,
+      "revoked_by": "",
+      "revocation_reason": "",
+      "replacement_grant_id": "",
+      "activation_performed": false
     }
   ],
   "examples": [

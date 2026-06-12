@@ -110,6 +110,13 @@ still excluding pid/process/service/path identity, registry data, raw AT-SPI loc
 states, actions, pointer/keyboard state, and actuation. Its provenance contract is summary-only and
 does not store returned text content.
 
+## Scoped Desktop Text Ranking
+
+The presentation order used only when `desktop.inspect.text` is narrowed by `window_index`.
+Editable text targets rank first, primary action buttons rank next, other invokable items follow,
+and passive labels or inventory remain last. The same ranking is used before scoped actuation ref
+minting, and equal-ranked items keep source traversal order.
+
 ## Steward Watch
 
 An episode posture field describing whether catch-under-load has a backstop beyond the occupant's
@@ -160,6 +167,13 @@ self-scoped narrowing modules in the MVP.
 
 The human using Soma. The participant is not a data source to be profiled; they are the authority
 whose consent, refusal, memory controls, and revocation rights shape the harness.
+
+## Occupant Durable Memory
+
+A testing-domain, grant-bound drawer of occupant-authored `self_note` entries for successor
+occupants. It is inheritance, not self: read-back names the writer model, episode, and date, and
+states that the current occupant is heir, not author. It is distinct from participant durable memory
+and durable testimony. `self_note` is declared and cheap-scanned, not semantically proven.
 
 ## Proposal
 

@@ -35,6 +35,22 @@
       "description": "Persist durable memory beyond the current session."
     },
     {
+      "key": "occupant.memory.read",
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-occupant-durable-memory-2026-06-12",
+      "activation_scope": "testing-domain occupant self-note drawer only; runtime grant still required",
+      "description": "Read bounded inherited occupant self-note drawer entries with heir-not-author framing."
+    },
+    {
+      "key": "occupant.memory.write",
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-occupant-durable-memory-2026-06-12",
+      "activation_scope": "testing-domain occupant self-note drawer only; runtime grant and runtime-write posture still required",
+      "description": "Append or revoke bounded occupant self-note drawer entries with scanner, cap, and tombstone discipline."
+    },
+    {
       "key": "memory.session.read",
       "status": "allowed",
       "revocable": true,

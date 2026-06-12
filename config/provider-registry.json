@@ -62,6 +62,26 @@
       ]
     },
     {
+      "id": "soma.provider.occupant-memory",
+      "name": "Occupant Durable Memory Store",
+      "version": "0.1.0",
+      "runtime": "node-file-backed",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "occupant.memory.read",
+          "provider_contract": "soma.occupant.memory.read.v1",
+          "output_schema": "soma.occupant.memory.read.response.v1"
+        },
+        {
+          "key": "occupant.memory.write",
+          "provider_contract": "soma.occupant.memory.write.v1",
+          "output_schema": "soma.occupant.memory.write.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.anthropic",
       "name": "Anthropic Messages API",
       "version": "0.1.0",
@@ -196,7 +216,8 @@
           "key": "desktop.inspect.focus",
           "provider_contract": "soma.desktop.inspect.focus.v1",
           "output_schema": "soma.desktop.inspect.focus.response.v1",
-          "command": "inspect-focus"
+          "command": "inspect-focus",
+          "operator_note": "Intentionally remains on the native desktop broker provider. Focus is a bounded broker probe and exact capability+provider grants already exist for this key; synthetic-container text/windows/actuation grants are separate policy identifiers."
         },
         {
           "key": "desktop.inspect.windows",

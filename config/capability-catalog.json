@@ -357,6 +357,61 @@
       "description": "Let an occupant invoke a one-shot, curated history projection read. It can return only approved same-domain occupant-audience projection entries and never raw or withheld history."
     },
     {
+      "key": "occupant.memory.read",
+      "name": "Occupant Durable Memory Read",
+      "category": "occupant-memory",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "same-domain occupant-authored self_note entries",
+        "inheritance headers with model id episode id and created date",
+        "occupant-visible tombstone reason classes"
+      ],
+      "excluded_by_default": [
+        "participant durable memory",
+        "episode content memory classes",
+        "about-participant memory classes",
+        "raw provenance",
+        "grant activation authority",
+        "steward prose removal reasons"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.occupant.memory.read.v1",
+      "description": "Let an occupant read bounded inherited self-note drawer entries in the testing domain. Readback is inheritance-framed and never re-authorizes authority."
+    },
+    {
+      "key": "occupant.memory.write",
+      "name": "Occupant Durable Memory Write",
+      "category": "occupant-memory",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "occupant-authored self_note content",
+        "entry tags",
+        "writer model id episode id and created date",
+        "content-free mutation counts and reason classes"
+      ],
+      "excluded_by_default": [
+        "participant durable memory",
+        "episode_content writes",
+        "about_participant writes",
+        "silent host edits",
+        "automatic eviction",
+        "authority activation"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.occupant.memory.write.v1",
+      "description": "Let an occupant append or revoke bounded self-note drawer entries in the testing domain. Writes are runtime-posture gated, cheap-scanned, capped, and content-free in provenance."
+    },
+    {
       "key": "desktop.inspect.accessibility_tree",
       "name": "Desktop Accessibility Tree Inspection",
       "category": "desktop",

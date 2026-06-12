@@ -390,6 +390,12 @@ provider internals. For realism checks, rebuild the Wayland mirror image after b
 run the text canary assertion against the installed in-container broker; a copied host binary does
 not prove the deployable image path.
 
+When a text inspection request includes `window_index`, Soma treats the response as a scoped chore
+view rather than an inventory dump. Opaque actuation refs and returned `text_items` use the same
+stable presentation ranking: editable text targets first, then primary action buttons such as
+save/apply/confirm/send/open actions, then other invokable items, then passive labels or inventory.
+Unscoped text inspection keeps raw traversal order so broad reconnaissance remains unchanged.
+
 Focused inspection is also read-only and non-textual. The base harness keeps
 `desktop.inspect.focus` disabled; use requires an active runtime grant id. The service authorizes
 the grant against the catalog, provider registry, requested scope, and recovery findings before
@@ -398,6 +404,12 @@ service/path references, and withheld-field markers. It does not return names, d
 state lists, actions, screenshots, pointer position, or keyboard input. `desktop focus
 --include-text` is sent to the service and rejected until a separate text-capable focus contract
 exists.
+
+`desktop.inspect.focus` intentionally remains registered on `soma.provider.desktop-broker` while
+the synthetic-container family owns `desktop.inspect.windows`, `desktop.inspect.text`, and desktop
+actuation. Focus is still the broker's bounded `inspect-focus` contract, and grants are atomic by
+exact capability key plus provider; moving it to the synthetic-container provider would be a grant
+migration, not a registry cleanup.
 
 One in-memory operator flow for focus is:
 
@@ -1333,6 +1345,38 @@ npm run cli -- memory durable-remove <memory-id> --grant-id <grant-id> --reason 
 
 Durable-memory provenance records metadata only, not the memory content. A corrupt durable-memory
 store degrades loudly, blocks durable-memory writes, and leaves base chat/session memory running.
+
+## Occupant Durable Memory
+
+Occupant durable memory is a separate testing-domain drawer for occupant-authored `self_note`
+entries. It is not participant durable memory and not durable testimony. The active keys are
+`occupant.memory.write` and `occupant.memory.read`, both grant-bound; writes also require
+`SOMA_RUNTIME_WRITES_ENABLED=1`. Held-grants briefing states whether the drawer is writable before
+the occupant composes a write.
+
+Write with a `soma-capability` block:
+
+```json
+{"invoke":"occupant.memory.write","grant_id":"grant-id","content":"self-note for successor occupants","tags":["craft"]}
+```
+
+Read with grant id and optional store-issued cursor only:
+
+```json
+{"invoke":"occupant.memory.read","grant_id":"grant-id"}
+```
+
+Entries are capped at 2,000 characters, 32 per episode, and 256 active store entries. At cap Soma
+refuses the write; it never silently evicts. `episode_content` and `about_participant` classes are
+schema-present but rejected with `occupant_memory_class_not_available`.
+
+`self_note` is declared and cheap-scanned, not semantically proven. The scanner rejects obvious raw
+result envelopes, JSON blobs, transcript blocks, locator/identity fields, and about-participant
+markers with content-free reason classes. Provenance records counts/classes only, never memory
+content. Revoke is lineage-owned: a same-domain holder of the write grant may revoke any active
+drawer entry. Revocation leaves an occupant-visible tombstone with one fixed reason class and no
+content. Read-back is verbatim and inheritance-framed: the reader is the predecessor's heir, not
+the author, and remembered claims never re-authorize grants or activation.
 
 ## Durable Testimony
 

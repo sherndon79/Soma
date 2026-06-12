@@ -431,6 +431,27 @@ Residual risks:
   tests move with it
 - a human may grant the capability when the occupant should not receive status metadata
 
+## Occupant Durable Memory
+
+Occupant durable memory introduces a lineage drawer for testing-domain `self_note` entries. The
+main threats are dossier accumulation, cross-episode recon laundering, authority laundering, and
+host gaslighting through silent edits.
+
+Controls:
+
+- only `self_note` is implemented; `episode_content` and `about_participant` are schema-present but
+  rejected until their live preconditions exist
+- `self_note` is declared and cheap-scanned, not semantically proven
+- the scanner rejects obvious raw result envelopes, JSON blobs, transcript blocks, locator/identity
+  fields, and about-participant markers with content-free reason classes
+- entries are capped, the store refuses at cap, and no silent eviction occurs
+- reads are grant-bound, newest-first, cursor-only, and inheritance-framed: the current occupant is
+  heir, not author
+- nothing read from memory re-authorizes a capability, grant, posture, activation, or authority
+- revocation leaves occupant-visible tombstones with fixed reason classes; no silent edits are
+  permitted
+- provenance is count/class metadata only and never contains memory content, snippets, or summaries
+
 ## Non-Defenses
 
 Soma currently does not defend against:

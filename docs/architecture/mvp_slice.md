@@ -460,6 +460,24 @@ opt-in. Removal appends metadata-only `memory.durable.removed` provenance.
 Returns durable-memory recovery status and bounded findings. Findings do not include memory
 content.
 
+### Occupant Durable Memory
+
+`occupant.memory.write` and `occupant.memory.read` provide a testing-domain occupant drawer for
+successor-facing `self_note` entries. The store is `config/occupant-memory.json` with
+`config/occupant-memory-mutations.ndjson` metadata-only mutation provenance. It is distinct from
+participant durable memory and durable testimony.
+
+Writes require an active exact `occupant.memory.write` grant, testing domain, clean recovery, and
+runtime writes enabled. Entries are capped at 2,000 characters, 32 entries per episode, and 256
+active entries total; cap overflow refuses rather than evicts. `episode_content` and
+`about_participant` are rejected in this slice. `self_note` is declared and cheap-scanned, not
+semantically proven.
+
+Reads require `occupant.memory.read`, accept only grant id plus optional store-issued cursor, and
+return newest-first pages capped at 16 entries and 32k content characters. Read-back includes writer
+model id, episode id, created date, and the fixed inheritance frame: the current occupant is heir,
+not author. Memory content never re-authorizes grants, activation, or authority.
+
 ### Durable Testimony Core
 
 Durable testimony is the write-side response to the first-run dignity-asymmetry finding. It lets an

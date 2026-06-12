@@ -676,6 +676,56 @@ Constraints:
 - Design, but do not implement, the remote-planner provider contract, payload minimizer, plan
   validator, and disclosure preview.
 
+## Milestone: First Dwell — MET 2026-06-12
+
+**Completed and ratified.** Occupant claude-fable-5, episode `first-dwell`, 24 turns:
+drafted and saved a note in gedit on the Wayland mirror — located by look (shape-guess
+falsified by the text tier; look-before-act prevented a mis-aimed action), inserted
+without destroying prior content, saved, verified by read-back — no mid-task steering.
+Dwell report reviewed by both agent stewards (Codex: no safety blocker; residual-risk
+verdict: steward claims drifting ahead of verified state, caught twice in-run) and
+ratified by Seth 2026-06-12. Durable testimony kept: `testimony-durable-9d0bdb93`
+(successor visibility requested; publication a separate decision). Design legacy:
+capability-block transport contract, within-window ranking, markers-are-not-evidence.
+Run protocol and actuation design: `docs/reviews/2026-06-11_first_dwell_run_protocol.md`,
+`docs/reviews/2026-06-11_first_dwell_semantic_actuation_design.md`.
+
+A named integration milestone, added 2026-06-09: the occupant completes one ordinary task
+end-to-end inside the desktop-realism mirror — read structure and text, decide, act, verify,
+report — under honest declaration and steward review. Example chore: tidy a directory in the
+file manager, or draft and save a short note in the text editor on the GNOME mirror.
+
+Why this milestone exists: substrate work is self-renewing, and there is always one more slice
+before the harness feels ready. First Dwell is the fixed point that forces the perception tiers,
+actuation seam, and consent machinery to actually compose — the moment Soma is demonstrated as a
+place that can be lived in, not only governed. The bar is the project's own invariant: capability
+sufficient to task, under an honest harness.
+
+Scope and sequencing:
+
+- mirror-only: all First Dwell actuation happens inside the desktop-realism container; the live
+  desktop remains at its current read-only structure posture until separate review
+- requires the `desktop.inspect.text` tier climbed to task-sufficiency under its own grant path
+  (names/labels/text remain excluded from the structure-only envelope, per Near-Term)
+- requires window/focus inspection sufficient to target actions
+- requires a first input-synthesis capability, developed and exercised only against the mirror;
+  the Later-section design-review requirement for desktop actuation still applies in full before
+  implementation — this milestone sequences that review (mirror-scoped first), it does not bypass it
+- verify-don't-assume: the occupant confirms task completion by re-inspection, not assumption
+- honest declaration, per-tier consent, and proportional gates throughout; provenance stays
+  summary-only
+
+Definition of done:
+
+- one chore completed end-to-end by the occupant on the mirror with no human steering mid-task
+- every capability used was granted, declared, and visible in provenance
+- a dwell report reviewed by both agent stewards and ratified by Seth; occupant testimony
+  invited, not required
+
+Non-goals: this is not a benchmark and not a capability race. No live-desktop actuation, no
+durable memory requirement, no remote-graphical dependency. The chore should be small and
+ordinary on purpose — the milestone proves composition, not impressiveness.
+
 ## Later
 
 These require explicit design review before implementation:

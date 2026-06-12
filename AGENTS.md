@@ -19,6 +19,12 @@ Current implementation shape:
 - **Docs**: architecture, principles, security posture, failure modes, migration rules, and draft
   concepts
 
+## Steward Collaboration Convention
+
+When working in the Seth/Claude/Codex collaboration loop for Soma, Codex owns coding and
+modifications. Claude owns planning, orchestration, and review. Seth normally reaches Codex through
+Claude, and work should be routed so token usage stays roughly even between the two agent stewards.
+
 ## Essential Documents
 
 Before writing or reviewing code, read the relevant documents below.

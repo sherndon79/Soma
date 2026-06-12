@@ -13,6 +13,17 @@ carry the resulting project posture.
   - review of escalation, capability, and planning draft commits
 - [Implementation and Review Scope Guides Review - 2026-05-09](./2026-05-09_implementation_and_review_scope_guides_review.md)
   - review of implementation-guide and review-scope guidance
+- [Soma Direction Peer Review (Claude → Codex) - 2026-05-29](./2026-05-29_soma_direction_peer_review_claude_to_codex.md)
+  - peer direction review naming the uniform-ceremony risk; answered by the proportional-gates
+    invariant (2026-05-31) and the risk-tiered co-inhabitation eval work; relocated from
+    `from_the_between/Soma/` during 2026-06-09 curation
+- [First Dwell Semantic Actuation Design - 2026-06-11](./2026-06-11_first_dwell_semantic_actuation_design.md)
+  - the Later-gate actuation design review, mirror-scoped: semantic AT-SPI Action/EditableText
+    capabilities, generation-scoped action handles, bounds, dwell protocol; Codex PASS (rev 2)
+    and ratified by Seth 2026-06-11; build dispatched with five riders
+- [First Dwell Run Protocol - 2026-06-11](./2026-06-11_first_dwell_run_protocol.md)
+  - the dwell run itself: grants, briefing language (L2 and backstop lessons), run loop,
+    verification, abort semantics; pending Codex review and Seth ratification
 
 ## Desktop Traversal Activation Thread
 

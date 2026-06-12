@@ -2881,8 +2881,7 @@ test("runCli desktop inspect calls accessibility-tree endpoint", async () => {
         inspection: {
           mode: "read_only_atspi_probe",
           broker_source: "rust_helper",
-          desktop_session: "GNOME",
-          session_type: "wayland",
+          platform_family: "linux",
           application_count: 2,
           root_object_available_count: 1,
           window_count: 0,
@@ -2955,8 +2954,7 @@ test("runCli desktop focus calls focused inspection endpoint", async () => {
         inspection: {
           mode: "read_only_focused_object_probe",
           broker_source: "rust_helper",
-          desktop_session: "GNOME",
-          session_type: "wayland",
+          platform_family: "linux",
           focus_available: true,
           focused_object: {
             role: "frame",
@@ -3008,8 +3006,7 @@ test("runCli desktop focus sends include-text to server refusal path", async () 
         inspection: {
           mode: "read_only_focused_object_probe",
           broker_source: "rust_helper",
-          desktop_session: "GNOME",
-          session_type: "wayland",
+          platform_family: "linux",
           focus_available: false,
           focused_object: null,
           text_content_included: false,
@@ -3041,8 +3038,7 @@ test("runCli desktop windows calls window inspection endpoint", async () => {
         inspection: {
           mode: "read_only_window_probe",
           broker_source: "rust_helper",
-          desktop_session: "GNOME",
-          session_type: "wayland",
+          platform_family: "linux",
           window_count: 2,
           applications: [{ service: ":1.42" }],
           text_content_included: false,

@@ -356,6 +356,40 @@ The CLI validates desktop inspection `--mode`, `--max-apps`, and `--max-children
 sending the request, so malformed inspect flags are not silently omitted. The service still owns
 the authoritative request and provider-output validation boundary.
 
+Window/focus targeting uses `desktop.inspect.windows`, not the standalone focus route. The base
+harness keeps it disabled; use requires an active runtime grant whose provider is
+`soma.provider.synthetic-container-desktop`. The service resolves a ResourceDescriptor before
+grant use and accepts only the testing-domain `synthetic_container_live` provider mode. Operational
+live desktop routing is refused. The returned window records are content-free: result-local
+`index`, `role`, `child_count`, `focused`, `z_order`, and bounded `geometry`. They do not include
+window titles, names, descriptions, text, pid/process metadata, desktop service names, raw AT-SPI
+paths, registry fields, screenshots, states, actions, pointer state, keyboard input, or actuation.
+
+Text inspection uses `desktop.inspect.text`, not an `include_text` option on the structure or
+window routes. The base harness keeps it disabled; use requires an active runtime grant whose
+provider is `soma.provider.synthetic-container-desktop`. The service resolves a ResourceDescriptor
+before grant use and accepts only the testing-domain `synthetic_container_live` provider mode.
+Operational live desktop routing is refused. The returned text records may include synthetic window
+titles, accessible names, descriptions, and text content, but the broker bounds window count,
+accessible-node traversal, item count, and per-item characters before JSON egress. The contract
+rejects pid/process metadata, desktop service names, raw AT-SPI paths, registry fields,
+screenshots, states, actions, pointer state, keyboard input, and actuation fields.
+
+One direct text inspection invocation after a grant exists is:
+
+```bash
+curl -X POST http://127.0.0.1:8765/desktop/inspect/text \
+  -H 'content-type: application/json' \
+  -d '{"grant_id":"grant-runtime-id","scope":"session","domain":"testing"}'
+```
+
+The response includes the bounded `inspection` result. The paired provenance event is
+summary-only: provider, grant id, scope/domain, counts, bounds, truncation, and inclusion booleans.
+It does not store returned titles, text values, window arrays, screenshots, raw object locators, or
+provider internals. For realism checks, rebuild the Wayland mirror image after broker changes and
+run the text canary assertion against the installed in-container broker; a copied host binary does
+not prove the deployable image path.
+
 Focused inspection is also read-only and non-textual. The base harness keeps
 `desktop.inspect.focus` disabled; use requires an active runtime grant id. The service authorizes
 the grant against the catalog, provider registry, requested scope, and recovery findings before
@@ -418,6 +452,9 @@ Desktop inspection events only:
 ```bash
 npm run cli -- provenance list --capability desktop.inspect.accessibility_tree
 ```
+
+For content-bearing text inspection, use `--capability desktop.inspect.text`; the listed events are
+still summary-only and do not include the returned text values.
 
 Full records:
 

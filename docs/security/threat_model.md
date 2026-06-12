@@ -139,6 +139,20 @@ Current controls:
   future app/window-name inspection must be a separate operator-scoped contract rather than a field
   on the structure-only result
 - live desktop inspection remains an operator route and omits names and text content by default
+- `desktop.inspect.windows` is a separate Stage 3a window/focus targeting tier. It is disabled by
+  default, grant-bound, and descriptor-routed only to the testing-domain synthetic container
+  mirror. Operational/live routing fails closed. Its egress is content-free: result-local window
+  index, role, child count, focused boolean, z-order position, and bounded geometry only. It
+  excludes window titles, names, descriptions, text, process ids/names, desktop service names, raw
+  AT-SPI object paths, registry fields, screenshots, states, actions, and actuation.
+- `desktop.inspect.text` is a separate Stage 3b content-bearing tier. It is disabled by default,
+  grant-bound under its own capability key, and descriptor-routed only to the testing-domain
+  synthetic container. Operational/live routing fails closed. The Rust broker bounds window count,
+  text-node count, item count, and per-item characters before JSON egress. It may return synthetic
+  window titles, accessible names, descriptions, and text content, but excludes process ids/names,
+  desktop service names, raw AT-SPI object paths, registry fields, screenshots, states, actions,
+  pointer state, keyboard state, and actuation. Provenance records only summary metadata such as
+  counts, bounds, inclusion booleans, provider, and grant id; it does not store returned text.
 - capability proposals require structured reason, risk, exposure, and fallback
 - protective near-miss detection is limited to command-shaped malformed control attempts on their
   own line; it auto-pauses and records content-free metadata, never auto-ejects, and does not mine
@@ -148,7 +162,8 @@ Residual risk:
 
 - prompt injection can still influence model recommendations
 - no dedicated prompt-injection detector exists
-- future text inspection will increase this risk
+- text inspection increases this risk when granted; the current route confines it to synthetic
+  testing content and summary-only provenance
 
 ### Malicious Or Compromised Provider
 

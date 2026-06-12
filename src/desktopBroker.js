@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertDesktopInspectionResult,
+  assertDesktopTextInspectionResult,
   assertDesktopWindowsInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
 } from "./desktopInspectionSchema.js";
@@ -22,6 +23,11 @@ const DEFAULT_DESKTOP_REALISM_COMPOSE_FILE = "docker-compose.desktop-realism.yml
 const DEFAULT_DESKTOP_REALISM_PROJECT = "soma-desktop-realism";
 const DEFAULT_DESKTOP_REALISM_SERVICE = "desktop-realism";
 const DEFAULT_DESKTOP_REALISM_INSPECT_COMMAND = "/usr/local/bin/desktop-realism-broker-inspect";
+const DEFAULT_DESKTOP_REALISM_WINDOWS_COMMAND = "/usr/local/bin/soma-desktop-broker";
+const DEFAULT_DESKTOP_REALISM_TEXT_COMMAND = "/usr/local/bin/soma-desktop-broker";
+const DEFAULT_DESKTOP_REALISM_TIMEOUT_MS = 5000;
+const DESKTOP_ACTUATION_METADATA = Symbol("desktopActuationMetadata");
+const ACT_KINDS = new Set(["invoke_default", "text_insert", "text_set"]);
 const MAX_ROOT_CHILD_METADATA_LIMIT = 4;
 const TRAVERSAL_HELPER_LIMITS = {
   maxDepth: [1, 4],
@@ -188,6 +194,80 @@ export function syntheticContainerDesktopBrokerArgs({ descriptor = {}, env = pro
   return args;
 }
 
+export function syntheticContainerDesktopWindowsBrokerArgs({ env = process.env } = {}) {
+  const command = String(env.SOMA_DESKTOP_REALISM_WINDOWS_COMMAND ?? DEFAULT_DESKTOP_REALISM_WINDOWS_COMMAND);
+  const mode = String(env.SOMA_DESKTOP_REALISM_WINDOWS_ACTUATION_METADATA === "1" ? "inspect-windows-actuation" : "inspect-windows");
+  return [
+    "compose",
+    "-p",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_PROJECT ?? DEFAULT_DESKTOP_REALISM_PROJECT),
+    "-f",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_FILE ?? DEFAULT_DESKTOP_REALISM_COMPOSE_FILE),
+    "exec",
+    "-T",
+    String(env.SOMA_DESKTOP_REALISM_SERVICE ?? DEFAULT_DESKTOP_REALISM_SERVICE),
+    "sh",
+    "-lc",
+    syntheticContainerBrokerShellCommand(command, mode),
+  ];
+}
+
+export function syntheticContainerDesktopTextBrokerArgs({ env = process.env } = {}) {
+  const command = String(env.SOMA_DESKTOP_REALISM_TEXT_COMMAND ?? DEFAULT_DESKTOP_REALISM_TEXT_COMMAND);
+  const mode = String(env.SOMA_DESKTOP_REALISM_TEXT_ACTUATION_METADATA === "1" ? "inspect-text-actuation" : "inspect-text");
+  return [
+    "compose",
+    "-p",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_PROJECT ?? DEFAULT_DESKTOP_REALISM_PROJECT),
+    "-f",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_FILE ?? DEFAULT_DESKTOP_REALISM_COMPOSE_FILE),
+    "exec",
+    "-T",
+    String(env.SOMA_DESKTOP_REALISM_SERVICE ?? DEFAULT_DESKTOP_REALISM_SERVICE),
+    "sh",
+    "-lc",
+    syntheticContainerBrokerShellCommand(command, mode),
+  ];
+}
+
+export function syntheticContainerDesktopActBrokerArgs({ actKind = "", locator = {}, text = "", env = process.env } = {}) {
+  const args = [
+    "compose",
+    "-p",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_PROJECT ?? DEFAULT_DESKTOP_REALISM_PROJECT),
+    "-f",
+    String(env.SOMA_DESKTOP_REALISM_COMPOSE_FILE ?? DEFAULT_DESKTOP_REALISM_COMPOSE_FILE),
+    "exec",
+    "-T",
+  ];
+  if (text !== "") {
+    args.push("-e", `SOMA_DESKTOP_ACT_TEXT=${text}`);
+  }
+  const command = String(env.SOMA_DESKTOP_REALISM_TEXT_COMMAND ?? DEFAULT_DESKTOP_REALISM_TEXT_COMMAND);
+  args.push(
+    String(env.SOMA_DESKTOP_REALISM_SERVICE ?? DEFAULT_DESKTOP_REALISM_SERVICE),
+    "sh",
+    "-lc",
+    syntheticContainerBrokerShellCommand(
+      command,
+      actKind === "invoke_default" ? "act-invoke" : "act-text",
+      [
+        "--service",
+        String(locator.service ?? ""),
+        "--path",
+        String(locator.path ?? ""),
+        "--act-kind",
+        String(actKind ?? ""),
+      ],
+    ),
+  );
+  return args;
+}
+
+export function desktopActuationMetadata(inspection) {
+  return inspection?.[DESKTOP_ACTUATION_METADATA] ?? null;
+}
+
 async function inspectSyntheticContainerDesktop({ descriptor = {}, env = process.env } = {}) {
   const dockerPath = String(env.SOMA_DESKTOP_REALISM_DOCKER ?? "docker");
   const args = syntheticContainerDesktopBrokerArgs({ descriptor, env });
@@ -195,7 +275,7 @@ async function inspectSyntheticContainerDesktop({ descriptor = {}, env = process
   try {
     const { stdout } = await execFileAsync(dockerPath, args, {
       env,
-      timeout: 5000,
+      timeout: desktopRealismTimeoutMs(env),
       maxBuffer: 512_000,
     });
     payload = JSON.parse(stdout);
@@ -232,6 +312,315 @@ async function inspectSyntheticContainerDesktop({ descriptor = {}, env = process
     maxChildren: descriptor.limits?.max_children,
   });
   return assertDesktopInspectionResult(limitDesktopInspectionResult(inspection, limits));
+}
+
+export async function inspectDesktopWindowsWithDescriptor({
+  descriptor = {},
+  env = process.env,
+} = {}) {
+  if (descriptor.capability !== "desktop.inspect.windows") {
+    const error = new Error("Desktop windows descriptor capability is invalid.");
+    error.code = "desktop_windows_descriptor_capability_invalid";
+    error.statusCode = 400;
+    throw error;
+  }
+  if (descriptor.provider_mode !== "synthetic_container_live") {
+    const error = new Error("Desktop windows inspection is only routed through the synthetic container provider.");
+    error.code = "desktop_windows_provider_mode_unsupported";
+    error.statusCode = 403;
+    throw error;
+  }
+  if (descriptor.synthetic !== true || descriptor.domain !== "testing") {
+    const error = new Error("Synthetic container desktop window inspection is only available in the testing domain.");
+    error.code = "synthetic_desktop_domain_required";
+    error.statusCode = 403;
+    throw error;
+  }
+  return inspectSyntheticContainerDesktopWindows({ descriptor, env });
+}
+
+export async function inspectDesktopTextWithDescriptor({
+  descriptor = {},
+  env = process.env,
+} = {}) {
+  if (descriptor.capability !== "desktop.inspect.text") {
+    const error = new Error("Desktop text descriptor capability is invalid.");
+    error.code = "desktop_text_descriptor_capability_invalid";
+    error.statusCode = 400;
+    throw error;
+  }
+  if (descriptor.provider_mode !== "synthetic_container_live") {
+    const error = new Error("Desktop text inspection is only routed through the synthetic container provider.");
+    error.code = "desktop_text_provider_mode_unsupported";
+    error.statusCode = 403;
+    throw error;
+  }
+  if (descriptor.synthetic !== true || descriptor.domain !== "testing") {
+    const error = new Error("Synthetic container desktop text inspection is only available in the testing domain.");
+    error.code = "synthetic_desktop_domain_required";
+    error.statusCode = 403;
+    throw error;
+  }
+  return inspectSyntheticContainerDesktopText({ descriptor, env });
+}
+
+async function inspectSyntheticContainerDesktopWindows({ descriptor = {}, env = process.env } = {}) {
+  const dockerPath = String(env.SOMA_DESKTOP_REALISM_DOCKER ?? "docker");
+  const args = syntheticContainerDesktopWindowsBrokerArgs({
+    descriptor,
+    env: { ...env, SOMA_DESKTOP_REALISM_WINDOWS_ACTUATION_METADATA: "1" },
+  });
+  let payload;
+  try {
+    const { stdout } = await execFileAsync(dockerPath, args, {
+      env,
+      timeout: desktopRealismTimeoutMs(env),
+      maxBuffer: 512_000,
+    });
+    payload = JSON.parse(stdout);
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop window inspection provider is unreachable.");
+    error.code = "desktop_synthetic_container_windows_unreachable";
+    error.statusCode = 503;
+    error.cause = cause;
+    throw error;
+  }
+
+  try {
+    const { publicPayload, metadata } = extractWindowsActuationMetadata({
+      ...payload,
+      broker_source: payload.broker_source ?? "rust_helper",
+    });
+    const inspection = assertDesktopWindowsInspectionResult(publicPayload);
+    attachDesktopActuationMetadata(inspection, metadata);
+    return inspection;
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop window inspection provider returned an invalid contract.");
+    error.code = "desktop_synthetic_container_windows_contract_invalid";
+    error.statusCode = 502;
+    error.cause = cause;
+    error.validation_errors = cause.validation_errors;
+    throw error;
+  }
+}
+
+async function inspectSyntheticContainerDesktopText({ descriptor = {}, env = process.env } = {}) {
+  const dockerPath = String(env.SOMA_DESKTOP_REALISM_DOCKER ?? "docker");
+  const args = syntheticContainerDesktopTextBrokerArgs({
+    descriptor,
+    env: { ...env, SOMA_DESKTOP_REALISM_TEXT_ACTUATION_METADATA: "1" },
+  });
+  let payload;
+  try {
+    const { stdout } = await execFileAsync(dockerPath, args, {
+      env,
+      timeout: desktopRealismTimeoutMs(env),
+      maxBuffer: 1_024_000,
+    });
+    payload = JSON.parse(stdout);
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop text inspection provider is unreachable.");
+    error.code = "desktop_synthetic_container_text_unreachable";
+    error.statusCode = 503;
+    error.cause = cause;
+    throw error;
+  }
+
+  try {
+    const { publicPayload, metadata } = extractTextActuationMetadata({
+      ...payload,
+      broker_source: payload.broker_source ?? "rust_helper",
+    });
+    const inspection = assertDesktopTextInspectionResult(publicPayload);
+    attachDesktopActuationMetadata(inspection, metadata);
+    return inspection;
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop text inspection provider returned an invalid contract.");
+    error.code = "desktop_synthetic_container_text_contract_invalid";
+    error.statusCode = 502;
+    error.cause = cause;
+    error.validation_errors = cause.validation_errors;
+    throw error;
+  }
+}
+
+export async function invokeDesktopActuationWithDescriptor({
+  descriptor = {},
+  actKind = "",
+  locator = {},
+  text = "",
+  env = process.env,
+} = {}) {
+  if (descriptor.capability !== "desktop.act.invoke_action" && descriptor.capability !== "desktop.act.text_input") {
+    const error = new Error("Desktop actuation descriptor capability is invalid.");
+    error.code = "desktop_act_descriptor_capability_invalid";
+    error.statusCode = 400;
+    throw error;
+  }
+  if (descriptor.provider_mode !== "synthetic_container_live") {
+    const error = new Error("Desktop actuation is only routed through the synthetic container provider.");
+    error.code = "desktop_act_provider_mode_unsupported";
+    error.statusCode = 403;
+    throw error;
+  }
+  const dockerPath = String(env.SOMA_DESKTOP_REALISM_DOCKER ?? "docker");
+  const args = syntheticContainerDesktopActBrokerArgs({ descriptor, actKind, locator, text, env });
+  let payload;
+  try {
+    const { stdout } = await execFileAsync(dockerPath, args, {
+      env: { ...env, SOMA_DESKTOP_ACT_TEXT: String(text ?? "") },
+      timeout: desktopRealismTimeoutMs(env),
+      maxBuffer: 512_000,
+    });
+    payload = JSON.parse(stdout);
+  } catch (cause) {
+    const error = new Error("Synthetic container desktop actuation provider is unreachable.");
+    error.code = "desktop_synthetic_container_act_unreachable";
+    error.statusCode = 503;
+    error.cause = cause;
+    throw error;
+  }
+  const outcome = String(payload?.outcome ?? "").trim();
+  if (![
+    "success",
+    "provider_unavailable",
+    "target_unavailable",
+    "action_failed",
+    "text_failed",
+    "op_not_allowed",
+    "bounds_exceeded",
+    "contract_invalid",
+  ].includes(outcome)) {
+    const error = new Error("Synthetic container desktop actuation provider returned an invalid contract.");
+    error.code = "desktop_synthetic_container_act_contract_invalid";
+    error.statusCode = 502;
+    throw error;
+  }
+  return { outcome };
+}
+
+function desktopRealismTimeoutMs(env = process.env) {
+  const value = Number.parseInt(String(env.SOMA_DESKTOP_REALISM_TIMEOUT_MS ?? ""), 10);
+  return Number.isInteger(value) && value >= 1000 ? value : DEFAULT_DESKTOP_REALISM_TIMEOUT_MS;
+}
+
+function extractWindowsActuationMetadata(payload) {
+  const metadata = [];
+  const publicPayload = {
+    ...payload,
+    windows: Array.isArray(payload.windows)
+      ? payload.windows.map((window) => {
+        const sanitized = sanitizeActuationNode(window);
+        if (sanitized.metadata) {
+          metadata.push({
+            node_path: ["windows", sanitized.publicNode.index],
+            role: sanitized.publicNode.role,
+            window_index: sanitized.publicNode.index,
+            op_class: "invoke_action",
+            ...sanitized.metadata,
+          });
+        }
+        return sanitized.publicNode;
+      })
+      : payload.windows,
+  };
+  return { publicPayload, metadata };
+}
+
+function extractTextActuationMetadata(payload) {
+  const metadata = [];
+  const publicPayload = {
+    ...payload,
+    windows: Array.isArray(payload.windows)
+      ? payload.windows.map((window) => ({
+        ...window,
+        text_items: Array.isArray(window.text_items)
+          ? window.text_items.map((item, itemIndex) => {
+            const sanitized = sanitizeActuationNode(item);
+            if (sanitized.metadata) {
+              metadata.push({
+                node_path: ["windows", window.index, "text_items", itemIndex],
+                role: sanitized.publicNode.role,
+                window_index: window.index,
+                op_class: sanitized.metadata.act_kinds.includes("text_insert")
+                  || sanitized.metadata.act_kinds.includes("text_set")
+                  ? "text_input"
+                  : "invoke_action",
+                ...sanitized.metadata,
+              });
+            }
+            return sanitized.publicNode;
+          })
+          : window.text_items,
+      }))
+      : payload.windows,
+  };
+  return { publicPayload, metadata };
+}
+
+function sanitizeActuationNode(node) {
+  if (!Array.isArray(node?.act_kinds) || !isValidActKinds(node.act_kinds)) {
+    return { publicNode: node, metadata: null };
+  }
+  if (typeof node.service !== "string" || typeof node.path !== "string") {
+    return { publicNode: node, metadata: null };
+  }
+  const stripped = stripRawActuationFields(node);
+  return {
+    publicNode: {
+      ...stripped.publicNode,
+      act_kinds: [...new Set(node.act_kinds)],
+    },
+    metadata: {
+      act_kinds: [...new Set(node.act_kinds)],
+      locator: {
+        service: node.service,
+        path: node.path,
+      },
+    },
+  };
+}
+
+function stripRawActuationFields(node) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) {
+    return { publicNode: node, metadata: null };
+  }
+  const {
+    service: _service,
+    path: _path,
+    actions: _actions,
+    action_names: _actionNames,
+    raw_atspi_locators: _raw,
+    ...publicNode
+  } = node;
+  return { publicNode, metadata: null };
+}
+
+function isValidActKinds(value) {
+  return value.every((entry) => typeof entry === "string" && ACT_KINDS.has(entry));
+}
+
+function attachDesktopActuationMetadata(inspection, metadata) {
+  Object.defineProperty(inspection, DESKTOP_ACTUATION_METADATA, {
+    value: metadata,
+    enumerable: false,
+    configurable: false,
+  });
+}
+
+function syntheticContainerBrokerShellCommand(command, subcommand, args = []) {
+  const parts = [
+    "export DBUS_SESSION_BUS_ADDRESS=\"$(cat /tmp/soma-session-bus-address 2>/dev/null || true)\";",
+    "exec",
+    shellQuote(command),
+    shellQuote(subcommand),
+    ...args.map(shellQuote),
+  ];
+  return parts.join(" ");
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
 export async function inspectDesktopBrokerEnvironmentFallback({ env = process.env, mode = "environment" } = {}) {
@@ -472,10 +861,7 @@ function focusedObjectUnavailable({ brokerSource, env, unavailableReason }) {
   return {
     mode: "read_only_focused_object_probe",
     broker_source: brokerSource,
-    platform: process.platform,
-    release: os.release(),
-    desktop_session: env.XDG_CURRENT_DESKTOP ?? "",
-    session_type: env.XDG_SESSION_TYPE ?? "",
+    platform_family: process.platform,
     focus_available: false,
     focused_object: null,
     unavailable_reason: unavailableReason,
@@ -488,19 +874,32 @@ function windowsUnavailable({ brokerSource, env, unavailableReason }) {
   return {
     mode: "read_only_window_probe",
     broker_source: brokerSource,
-    platform: process.platform,
-    release: os.release(),
-    desktop_session: env.XDG_CURRENT_DESKTOP ?? "",
-    session_type: env.XDG_SESSION_TYPE ?? "",
+    platform_family: process.platform,
     dbus_session_bus_available: Boolean(env.DBUS_SESSION_BUS_ADDRESS),
     atspi_bus_address_available: false,
     window_count: 0,
-    applications: [],
     windows: [],
     bounded: true,
+    geometry_included: true,
+    focus_included: true,
+    identity_fields_included: false,
     text_content_included: false,
     titles_included: false,
-    withheld_fields: ["name", "description", "text", "title", "states", "actions", "screenshots"],
+    withheld_fields: [
+      "name",
+      "description",
+      "text",
+      "title",
+      "pid",
+      "process",
+      "service",
+      "path",
+      "registry",
+      "raw_atspi_locators",
+      "states",
+      "actions",
+      "screenshots",
+    ],
     unavailable_reason: unavailableReason,
   };
 }
@@ -510,10 +909,7 @@ function assertFocusedDesktopInspection(result) {
   const allowedTopLevel = new Set([
     "mode",
     "broker_source",
-    "platform",
-    "release",
-    "desktop_session",
-    "session_type",
+    "platform_family",
     "dbus_session_bus_available",
     "focus_available",
     "focused_object",
@@ -529,6 +925,14 @@ function assertFocusedDesktopInspection(result) {
 
   if (result?.mode !== "read_only_focused_object_probe") {
     errors.push("result.mode must be read_only_focused_object_probe");
+  }
+  if (typeof result?.platform_family !== "string") {
+    errors.push("result.platform_family must be string");
+  }
+  for (const forbidden of ["platform", "release", "desktop_session", "session_type"]) {
+    if (Object.hasOwn(result ?? {}, forbidden)) {
+      errors.push(`result.${forbidden} is not allowed`);
+    }
   }
   if (result?.text_content_included !== false) {
     errors.push("result.text_content_included must be false");

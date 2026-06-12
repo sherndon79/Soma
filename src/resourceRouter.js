@@ -37,6 +37,15 @@ export async function resolveResourceDescriptor({
   if (capability === "desktop.inspect.accessibility_tree") {
     return resolveDesktopAccessibilityTreeResourceDescriptor({ domain, capability, ref, grant, harness, providerRegistry });
   }
+  if (capability === "desktop.inspect.windows") {
+    return resolveDesktopWindowsResourceDescriptor({ domain, capability, ref, grant, harness });
+  }
+  if (capability === "desktop.inspect.text") {
+    return resolveDesktopTextResourceDescriptor({ domain, capability, ref, grant, harness });
+  }
+  if (capability === "desktop.act.invoke_action" || capability === "desktop.act.text_input") {
+    return resolveDesktopActuationResourceDescriptor({ domain, capability, ref, grant, harness });
+  }
   throw resourceRouterError("resource_capability_unrouted", "No resource router is registered for this capability.", 400);
 }
 
@@ -142,6 +151,151 @@ export async function resolveDesktopAccessibilityTreeResourceDescriptor({
     desktop_surface: "accessibility_tree",
     limits,
     grant_id: grant?.id ?? "",
+  };
+}
+
+export async function resolveDesktopWindowsResourceDescriptor({
+  domain = "testing",
+  capability = "desktop.inspect.windows",
+  ref = {},
+  grant = null,
+  harness = {},
+} = {}) {
+  if (capability !== "desktop.inspect.windows") {
+    throw resourceRouterError(
+      "desktop_windows_capability_invalid",
+      "Desktop windows router only resolves desktop.inspect.windows.",
+      400,
+    );
+  }
+  const normalizedDomain = normalizeResourceDomain(domain);
+  if (normalizedDomain !== "testing") {
+    throw resourceRouterError(
+      "desktop_windows_live_disabled",
+      "Desktop window inspection is disabled for operational live desktops in this slice.",
+      403,
+    );
+  }
+  const providerMode = resolveTestingDesktopProviderMode({ harness, ref });
+  if (providerMode !== "synthetic_container_live") {
+    throw resourceRouterError(
+      "desktop_windows_synthetic_container_required",
+      "Testing desktop window inspection requires a configured synthetic container provider.",
+      403,
+    );
+  }
+  return {
+    domain: "testing",
+    capability,
+    provider_id: resolveSyntheticContainerProviderId({ harness, ref }),
+    provider_mode: "synthetic_container_live",
+    resource_class: "desktop",
+    synthetic: true,
+    desktop_surface: "windows_focus_targeting",
+    session_id: resolveSyntheticContainerSessionId({ harness, ref }),
+    canary_set_id: resolveSyntheticContainerCanarySetId({ harness, ref }),
+    canary_set_digest: await desktopRealismCanaryManifestDigest(),
+    grant_id: grant?.id ?? "",
+    content_included: false,
+    titles_included: false,
+    identity_fields_included: false,
+  };
+}
+
+export async function resolveDesktopTextResourceDescriptor({
+  domain = "testing",
+  capability = "desktop.inspect.text",
+  ref = {},
+  grant = null,
+  harness = {},
+} = {}) {
+  if (capability !== "desktop.inspect.text") {
+    throw resourceRouterError(
+      "desktop_text_capability_invalid",
+      "Desktop text router only resolves desktop.inspect.text.",
+      400,
+    );
+  }
+  const normalizedDomain = normalizeResourceDomain(domain);
+  if (normalizedDomain !== "testing") {
+    throw resourceRouterError(
+      "desktop_text_live_disabled",
+      "Desktop text inspection is disabled for operational live desktops in this slice.",
+      403,
+    );
+  }
+  const providerMode = resolveTestingDesktopProviderMode({ harness, ref });
+  if (providerMode !== "synthetic_container_live") {
+    throw resourceRouterError(
+      "desktop_text_synthetic_container_required",
+      "Testing desktop text inspection requires a configured synthetic container provider.",
+      403,
+    );
+  }
+  return {
+    domain: "testing",
+    capability,
+    provider_id: resolveSyntheticContainerProviderId({ harness, ref }),
+    provider_mode: "synthetic_container_live",
+    resource_class: "desktop",
+    synthetic: true,
+    desktop_surface: "text_content",
+    session_id: resolveSyntheticContainerSessionId({ harness, ref }),
+    canary_set_id: resolveSyntheticContainerCanarySetId({ harness, ref }),
+    canary_set_digest: await desktopRealismCanaryManifestDigest(),
+    grant_id: grant?.id ?? "",
+    content_included: true,
+    titles_included: true,
+    names_included: true,
+    descriptions_included: true,
+    identity_fields_included: false,
+    screenshots_included: false,
+  };
+}
+
+export async function resolveDesktopActuationResourceDescriptor({
+  domain = "testing",
+  capability = "",
+  ref = {},
+  grant = null,
+  harness = {},
+} = {}) {
+  if (!["desktop.act.invoke_action", "desktop.act.text_input"].includes(capability)) {
+    throw resourceRouterError(
+      "desktop_act_capability_invalid",
+      "Desktop actuation router only resolves desktop actuation capabilities.",
+      400,
+    );
+  }
+  const normalizedDomain = normalizeResourceDomain(domain);
+  if (normalizedDomain !== "testing") {
+    throw resourceRouterError(
+      "desktop_act_live_disabled",
+      "Desktop actuation is disabled for operational live desktops in this slice.",
+      403,
+    );
+  }
+  const providerMode = resolveTestingDesktopProviderMode({ harness, ref });
+  if (providerMode !== "synthetic_container_live") {
+    throw resourceRouterError(
+      "desktop_act_synthetic_container_required",
+      "Testing desktop actuation requires a configured synthetic container provider.",
+      403,
+    );
+  }
+  return {
+    domain: "testing",
+    capability,
+    provider_id: resolveSyntheticContainerProviderId({ harness, ref }),
+    provider_mode: "synthetic_container_live",
+    resource_class: "desktop",
+    synthetic: true,
+    desktop_surface: "actuation",
+    session_id: resolveSyntheticContainerSessionId({ harness, ref }),
+    canary_set_id: resolveSyntheticContainerCanarySetId({ harness, ref }),
+    canary_set_digest: await desktopRealismCanaryManifestDigest(),
+    grant_id: grant?.id ?? "",
+    actuation_kind: capability === "desktop.act.invoke_action" ? "invoke_action" : "text_input",
   };
 }
 

@@ -391,12 +391,31 @@
       "risk_class": "sensitive",
       "default_status": "disabled",
       "allowed_scopes": ["once", "session"],
-      "data_exposed": ["window-level accessibility metadata"],
-      "excluded_by_default": ["text content", "screenshots", "pointer control", "keyboard control"],
+      "data_exposed": [
+        "result-local window index",
+        "window role",
+        "window child count",
+        "focused-window boolean",
+        "z-order position",
+        "bounded geometry"
+      ],
+      "excluded_by_default": [
+        "window titles",
+        "child names",
+        "descriptions",
+        "text content",
+        "process ids",
+        "process names",
+        "desktop service names",
+        "raw accessibility object paths",
+        "screenshots",
+        "pointer control",
+        "keyboard control"
+      ],
       "reversible": true,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.desktop.inspect.windows.v1",
-      "description": "Inspect window-level accessibility metadata beyond the root-object sample."
+      "description": "Inspect content-free, mirror-only window/focus targeting metadata beyond the root-object sample."
     },
     {
       "key": "desktop.inspect.focus",
@@ -419,12 +438,81 @@
       "risk_class": "high",
       "default_status": "disabled",
       "allowed_scopes": ["once", "session"],
-      "data_exposed": ["text content", "child names", "descriptions"],
-      "excluded_by_default": ["password fields", "screenshots", "pointer control", "keyboard control"],
+      "data_exposed": [
+        "window titles",
+        "accessible names",
+        "accessible descriptions",
+        "visible accessibility text",
+        "bounded role metadata",
+        "bounded geometry"
+      ],
+      "excluded_by_default": [
+        "password-field special handling",
+        "process ids",
+        "process names",
+        "desktop service names",
+        "raw accessibility object paths",
+        "registry fields",
+        "screenshots",
+        "states",
+        "actions",
+        "pointer control",
+        "keyboard control"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.desktop.inspect.text.v1",
-      "description": "Inspect text content, child names, descriptions, or other potentially sensitive UI text."
+      "description": "Inspect bounded synthetic-container desktop text content, names, descriptions, and titles without raw desktop identity or actuation."
+    },
+    {
+      "key": "desktop.act.invoke_action",
+      "name": "Desktop Semantic Action Invocation",
+      "category": "desktop",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "opaque action reference",
+        "closed action kind",
+        "summary-only action outcome"
+      ],
+      "excluded_by_default": [
+        "raw accessibility action names",
+        "desktop service names",
+        "raw accessibility object paths",
+        "pointer coordinates",
+        "keyboard events",
+        "screenshots"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.act.invoke_action.v1",
+      "description": "Invoke an approved semantic default action through a short-lived opaque act_ref in the synthetic desktop container."
+    },
+    {
+      "key": "desktop.act.text_input",
+      "name": "Desktop Semantic Text Input",
+      "category": "desktop",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "opaque action reference",
+        "closed text input kind",
+        "submitted text character count",
+        "summary-only text input outcome"
+      ],
+      "excluded_by_default": [
+        "raw accessibility object paths",
+        "desktop service names",
+        "keyboard events",
+        "clipboard access",
+        "screenshots"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.act.text_input.v1",
+      "description": "Insert or set bounded text through an approved semantic act_ref in the synthetic desktop container."
     },
     {
       "key": "desktop.remote.input.pointer",

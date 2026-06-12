@@ -4,9 +4,11 @@ import test from "node:test";
 
 import {
   assertDesktopInspectionResult,
+  assertDesktopTextInspectionResult,
   assertDesktopWindowsInspectionResult,
   assertTraversalAuthorizedDesktopInspectionResult,
   validateDesktopInspectionResult,
+  validateDesktopTextInspectionResult,
   validateDesktopWindowsInspectionResult,
   validateFutureDesktopInspectionResultWithTraversal,
   validateTraversalAuthorizedDesktopInspectionResult,
@@ -283,6 +285,11 @@ test("desktop windows inspection validator rejects text and title over-disclosur
     name: "private name",
     description: "private description",
     text: "private text",
+    service: ":1.42",
+    path: "/org/a11y/atspi/accessible/window",
+    application: { service: ":1.42" },
+    pid: 123,
+    process: "test-app",
     actions: ["click"],
     screenshots: ["image"],
   })) {
@@ -299,6 +306,91 @@ test("desktop windows inspection validator rejects text and title over-disclosur
     assert.equal(result.valid, false, field);
     assert.ok(result.errors.includes(`result.windows[0].${field} is not allowed`), field);
   }
+});
+
+test("desktop windows inspection validator rejects host identity top-level fields", () => {
+  for (const [field, value] of Object.entries({
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+  })) {
+    const result = validateDesktopWindowsInspectionResult({
+      ...baseWindowsResult(),
+      [field]: value,
+    });
+
+    assert.equal(result.valid, false, field);
+    assert.ok(result.errors.includes(`result.${field} is not allowed`), field);
+  }
+});
+
+test("desktop text inspection validator accepts bounded text content", () => {
+  const textResult = baseTextResult();
+  const result = validateDesktopTextInspectionResult(textResult);
+
+  assert.deepEqual(result, { valid: true, errors: [] });
+  assert.equal(assertDesktopTextInspectionResult(textResult), textResult);
+});
+
+test("desktop text inspection validator rejects identity and control over-disclosure", () => {
+  for (const [field, value] of Object.entries({
+    service: ":1.42",
+    path: "/org/a11y/atspi/accessible/window",
+    application: { service: ":1.42" },
+    pid: 123,
+    process: "test-app",
+    registry: false,
+    states: ["focused"],
+    actions: ["click"],
+    screenshots: ["image"],
+  })) {
+    const result = validateDesktopTextInspectionResult({
+      ...baseTextResult(),
+      windows: [
+        {
+          ...baseTextResult().windows[0],
+          [field]: value,
+        },
+      ],
+    });
+
+    assert.equal(result.valid, false, field);
+    assert.ok(result.errors.includes(`result.windows[0].${field} is not allowed`), field);
+  }
+});
+
+test("desktop text inspection validator rejects host identity top-level fields", () => {
+  for (const [field, value] of Object.entries({
+    platform: "linux",
+    release: "test",
+    desktop_session: "GNOME",
+    session_type: "wayland",
+  })) {
+    const result = validateDesktopTextInspectionResult({
+      ...baseTextResult(),
+      [field]: value,
+    });
+
+    assert.equal(result.valid, false, field);
+    assert.ok(result.errors.includes(`result.${field} is not allowed`), field);
+  }
+});
+
+test("desktop text inspection validator enforces per-item text bounds", () => {
+  const result = validateDesktopTextInspectionResult({
+    ...baseTextResult(),
+    max_text_chars_per_item: 4,
+    windows: [
+      {
+        ...baseTextResult().windows[0],
+        title: { value: "too long", char_count: 8, truncated: false },
+      },
+    ],
+  });
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes("result.windows[0].title.value must have at most result.max_text_chars_per_item characters"));
 });
 
 test("desktop inspection runtime validator rejects traversal output until traversal is implemented", () => {
@@ -520,44 +612,101 @@ function baseWindowsResult() {
   return {
     mode: "read_only_window_probe",
     broker_source: "rust_helper",
-    platform: "linux",
-    release: "test",
-    desktop_session: "GNOME",
-    session_type: "wayland",
+    platform_family: "linux",
     dbus_session_bus_available: true,
     atspi_bus_address_available: true,
     window_count: 1,
-    applications: [
-      {
-        service: ":1.42",
-        pid: 123,
-        process: "test-app",
-        registry: false,
-        window_count: 1,
-      },
-    ],
     windows: [
       {
-        service: ":1.42",
-        path: "/org/a11y/atspi/accessible/window",
-        application: {
-          service: ":1.42",
-          pid: 123,
-          process: "test-app",
-          registry: false,
-          window_count: 1,
-        },
+        index: 0,
+        z_order: 0,
         role: "frame",
         child_count: 2,
+        focused: true,
         geometry: { x: 10, y: 20, width: 800, height: 600 },
         text_content_included: false,
         titles_included: false,
       },
     ],
     bounded: true,
+    geometry_included: true,
+    focus_included: true,
+    identity_fields_included: false,
     text_content_included: false,
     titles_included: false,
-    withheld_fields: ["name", "description", "text", "title", "states", "actions", "screenshots"],
+    withheld_fields: [
+      "name",
+      "description",
+      "text",
+      "title",
+      "pid",
+      "process",
+      "service",
+      "path",
+      "registry",
+      "raw_atspi_locators",
+      "states",
+      "actions",
+      "screenshots",
+    ],
+  };
+}
+
+function baseTextResult() {
+  return {
+    mode: "read_only_desktop_text_probe",
+    broker_source: "rust_helper",
+    platform_family: "linux",
+    dbus_session_bus_available: true,
+    atspi_bus_address_available: true,
+    window_count: 1,
+    text_item_count: 2,
+    windows: [
+      {
+        index: 0,
+        z_order: 0,
+        role: "frame",
+        child_count: 2,
+        geometry: { x: 10, y: 20, width: 800, height: 600 },
+        title: { value: "Window title", char_count: 12, truncated: false },
+        text_items: [
+          {
+            kind: "name",
+            role: "push button",
+            text: { value: "Button label", char_count: 12, truncated: false },
+          },
+          {
+            kind: "text",
+            role: "paragraph",
+            text: { value: "Visible text", char_count: 12, truncated: false },
+          },
+        ],
+        truncated: false,
+      },
+    ],
+    bounded: true,
+    truncated: false,
+    max_windows: 16,
+    max_nodes_per_window: 512,
+    max_text_items: 1024,
+    max_text_chars_per_item: 512,
+    titles_included: true,
+    names_included: true,
+    descriptions_included: true,
+    text_content_included: true,
+    identity_fields_included: false,
+    screenshots_included: false,
+    withheld_fields: [
+      "pid",
+      "process",
+      "service",
+      "path",
+      "registry",
+      "raw_atspi_locators",
+      "states",
+      "actions",
+      "screenshots",
+    ],
   };
 }
 
@@ -596,10 +745,7 @@ function baseTraversalAuthorizedAtspiResult(rootObjectOverrides = {}) {
   return {
     mode: "read_only_atspi_probe",
     broker_source: "rust_helper",
-    platform: "linux",
-    release: "test",
-    desktop_session: "GNOME",
-    session_type: "wayland",
+    platform_family: "linux",
     dbus_session_bus_available: true,
     atspi_likely_available: true,
     atspi_bus_address_available: true,

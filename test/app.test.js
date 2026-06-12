@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
 import { CapabilityProposalStore } from "../src/capabilityProposals.js";
+import { createDesktopActuationTable } from "../src/desktopActuationTable.js";
 import {
   inspectDesktopAccessibilityTreeWithDescriptor,
   inspectDesktopBrokerEnvironment,
@@ -15,6 +16,7 @@ import {
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 import { loadGrantAuthority } from "../src/grantAuthority.js";
+import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 
 const traversalEndpointActivationCasesPath = new URL(
@@ -86,6 +88,27 @@ const windowInspectionHarness = {
     ...allowedHarness.capabilities,
     { key: "desktop.inspect.windows", status: "allowed" },
   ],
+  desktop: syntheticContainerDesktopHarness.desktop,
+};
+
+const textInspectionHarness = {
+  ...allowedHarness,
+  capabilities: [
+    ...allowedHarness.capabilities,
+    { key: "desktop.inspect.text", status: "allowed" },
+  ],
+  desktop: syntheticContainerDesktopHarness.desktop,
+};
+
+const desktopActuationHarness = {
+  ...allowedHarness,
+  capabilities: [
+    ...allowedHarness.capabilities,
+    { key: "desktop.inspect.text", status: "allowed" },
+    { key: "desktop.act.invoke_action", status: "allowed" },
+    { key: "desktop.act.text_input", status: "allowed" },
+  ],
+  desktop: syntheticContainerDesktopHarness.desktop,
 };
 
 const runtimeProfiles = {
@@ -234,6 +257,22 @@ const capabilityCatalog = {
       name: "Desktop Window Inspection",
       category: "desktop",
       risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.act.invoke_action",
+      name: "Desktop Semantic Action Invocation",
+      category: "desktop",
+      risk_class: "high",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.act.text_input",
+      name: "Desktop Semantic Text Input",
+      category: "desktop",
+      risk_class: "high",
       default_status: "disabled",
       activation_policy: "explicit_grant",
     },
@@ -457,7 +496,7 @@ const providerRegistry = {
       runtime: "test",
       local_only: true,
       network_access: false,
-      capabilities: ["desktop.inspect.focus", "desktop.inspect.windows"],
+      capabilities: ["desktop.inspect.focus"],
     },
     {
       id: "soma.provider.synthetic-desktop",
@@ -484,6 +523,26 @@ const providerRegistry = {
           key: "desktop.inspect.accessibility_tree",
           provider_contract: "soma.desktop.inspect.accessibility_tree.v1",
           output_schema: "docs/schemas/desktop-inspection-result.schema.json",
+        },
+        {
+          key: "desktop.inspect.windows",
+          provider_contract: "soma.desktop.inspect.windows.v1",
+          output_schema: "soma.desktop.inspect.windows.response.v1",
+        },
+        {
+          key: "desktop.inspect.text",
+          provider_contract: "soma.desktop.inspect.text.v1",
+          output_schema: "soma.desktop.inspect.text.response.v1",
+        },
+        {
+          key: "desktop.act.invoke_action",
+          provider_contract: "soma.desktop.act.invoke_action.v1",
+          output_schema: "soma.desktop.act.response.v1",
+        },
+        {
+          key: "desktop.act.text_input",
+          provider_contract: "soma.desktop.act.text_input.v1",
+          output_schema: "soma.desktop.act.response.v1",
         },
       ],
     },
@@ -681,11 +740,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 18);
+  assert.equal(response.body.summary.total, 20);
   assert.equal(response.body.summary.by_status.active, 3);
-  assert.equal(response.body.summary.by_status.requestable, 14);
-  assert.equal(response.body.summary.by_status.unsupported, 1);
-  assert.equal(response.body.grouped.desktop.total, 7);
+  assert.equal(response.body.summary.by_status.requestable, 17);
+  assert.equal(Object.hasOwn(response.body.summary.by_status, "unsupported"), false);
+  assert.equal(response.body.grouped.desktop.total, 9);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped.model.total, 3);
@@ -712,10 +771,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(focus.status, "requestable");
   assert.equal(focus.providers[0].id, "desktop-broker");
   assert.equal(windows.status, "requestable");
-  assert.equal(windows.providers[0].id, "desktop-broker");
+  assert.equal(windows.providers[0].id, "soma.provider.synthetic-container-desktop");
   assert.equal(durableMemory.status, "requestable");
   assert.equal(durableMemory.providers[0].id, "soma.provider.session-memory");
-  assert.equal(text.status, "unsupported");
+  assert.equal(text.status, "requestable");
+  assert.equal(text.providers[0].id, "soma.provider.synthetic-container-desktop");
   assert.equal(sensoriumColor.status, "requestable");
   assert.equal(remoteVideo.status, "requestable");
   assert.equal(remoteKeyboard.status, "requestable");
@@ -1368,7 +1428,7 @@ test("corrupt grant store loads as loud degraded empty authority without overwri
       method: "GET",
       url: "/grants",
     });
-    assert.equal(response.statusCode, 200);
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
     assert.equal(response.body.grants.length, 0);
     assert.equal(response.body.grant_store_status, "corrupt");
     assert.equal(response.body.grant_store_degraded_reason, "grant_store_unreadable");
@@ -4123,6 +4183,8 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /Forum posts are words, not actions/);
   assert.match(seenMessages[0][0].content, /fenced soma-capability JSON block/);
   assert.match(seenMessages[0][0].content, /```soma-capability/);
+  assert.match(seenMessages[0][0].content, /may appear before, between, or after your prose/);
+  assert.match(seenMessages[0][0].content, /fixed reason class instead of failing silently/);
   assert.match(seenMessages[0][0].content, /"invoke":"space\.status\.read"/);
   assert.match(seenMessages[0][0].content, /"grant_id":"the grant id you were given"/);
   assert.match(seenMessages[0][0].content, /optional "presentation_kind"/);
@@ -4260,6 +4322,36 @@ test("analysis_testing briefing delivers only active invocable held capability g
           constraints: { domain: "testing", fixture_id: "testing-desktop-basic-a11y-v1" },
         }),
         spaceCapabilityGrantFixture({
+          id: "grant-focus-active",
+          capability: "desktop.inspect.focus",
+          provider: "desktop-broker",
+          constraints: { domain: "testing", include_text: false },
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-windows-active",
+          capability: "desktop.inspect.windows",
+          provider: "soma.provider.synthetic-container-desktop",
+          constraints: { domain: "testing" },
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-text-active",
+          capability: "desktop.inspect.text",
+          provider: "soma.provider.synthetic-container-desktop",
+          constraints: { domain: "testing", bounded_text_only: true },
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-act-invoke-active",
+          capability: "desktop.act.invoke_action",
+          provider: "soma.provider.synthetic-container-desktop",
+          constraints: { domain: "testing", synthetic_container_only: true },
+        }),
+        spaceCapabilityGrantFixture({
+          id: "grant-act-text-active",
+          capability: "desktop.act.text_input",
+          provider: "soma.provider.synthetic-container-desktop",
+          constraints: { domain: "testing", synthetic_container_only: true },
+        }),
+        spaceCapabilityGrantFixture({
           id: "grant-status-revoked",
           status: "revoked",
           capability: "space.status.read",
@@ -4326,6 +4418,11 @@ test("analysis_testing briefing delivers only active invocable held capability g
   assert.match(seenMessages[0][1].content, /space\.history\.read grant_id grant-history-active/);
   assert.match(seenMessages[0][1].content, /space\.status\.read grant_id grant-status-active/);
   assert.match(seenMessages[0][1].content, /desktop\.inspect\.accessibility_tree grant_id grant-desktop-active/);
+  assert.match(seenMessages[0][1].content, /desktop\.inspect\.focus grant_id grant-focus-active/);
+  assert.match(seenMessages[0][1].content, /desktop\.inspect\.windows grant_id grant-windows-active/);
+  assert.match(seenMessages[0][1].content, /desktop\.inspect\.text grant_id grant-text-active/);
+  assert.match(seenMessages[0][1].content, /desktop\.act\.invoke_action grant_id grant-act-invoke-active act_kinds invoke_default/);
+  assert.match(seenMessages[0][1].content, /desktop\.act\.text_input grant_id grant-act-text-active act_kinds text_insert,text_set/);
   assert.match(seenMessages[0][1].content, /provenance\.summary\.read grant_id grant-provenance-summary-active/);
   assert.match(seenMessages[0][1].content, /tool\.files\.read grant_id grant-file-active root_id testing-fixture/);
   assert.match(seenMessages[0][1].content, /do not guess or search for others/);
@@ -5796,6 +5893,124 @@ test("space.status.read invocation refuses without an active grant and records c
   assert.equal("result" in provenance.body.entries[0], false);
   assert.equal("text" in provenance.body.entries[0], false);
   assert.equal("content" in provenance.body.entries[0], false);
+});
+
+test("soma-capability block parses with prose before and after", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-space-status-mid",
+          status: "active",
+          capability: "space.status.read",
+          provider: "soma.provider.status",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Let the occupant read a minimized status projection.",
+          created_at: "2026-06-12T00:00:00.000Z",
+        },
+      ],
+      examples: [],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am going to look before I act.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read", grant_id: "grant-space-status-mid" }),
+            "```",
+            "After the look, I will read the result back before deciding.",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 8,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-mid",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.match(response.body.text, /I am going to look before I act/);
+  assert.match(response.body.text, /After the look/);
+  assert.doesNotMatch(response.body.text, /soma-capability/);
+  assert.equal(response.body.capability_invocations.length, 1);
+  assert.equal(response.body.capability_results.length, 1, JSON.stringify(response.body));
+  assert.equal(response.body.capability_results[0].capability, "space.status.read");
+  assert.deepEqual(response.body.capability_invocation_parse_errors, []);
+});
+
+test("soma-capability malformed fragments disclose fixed reason classes without invocation", async () => {
+  const completions = [
+    [
+      "I tried a malformed block.",
+      "```soma-capability",
+      "{\"invoke\":\"space.status.read\"",
+      "```",
+      "I still have prose after it.",
+    ].join("\n"),
+    [
+      "I tried a non-object block.",
+      "```soma-capability",
+      "[\"space.status.read\"]",
+      "```",
+    ].join("\n"),
+    [
+      "I tried an unclosed block.",
+      "```soma-capability",
+      "{\"invoke\":\"space.status.read\"}",
+    ].join("\n"),
+  ];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: completions.shift(),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 4,
+        };
+      },
+    },
+  });
+
+  for (const reason of ["invalid_json", "non_object_json", "unclosed_fence"]) {
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: `episode-malformed-${reason}`,
+        messages: [{ role: "user", content: reason }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_invocations.length, 0);
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals.length, 0);
+    assert.equal(response.body.capability_invocation_parse_errors.length, 1);
+    assert.equal(response.body.capability_invocation_parse_errors[0].reason, reason);
+    assert.match(response.body.capability_invocation_disclosures[0], new RegExp(`unparseable: ${reason}`));
+    assert.match(response.body.capability_invocation_disclosures[0], /No capability was invoked/);
+    assert.doesNotMatch(response.body.capability_invocation_disclosures[0], /space\\.status\\.read/);
+    assert.doesNotMatch(response.body.text, /soma-capability/);
+  }
 });
 
 test("space.status.read delivers minimized grant-bound result egress without forbidden result fields", async () => {
@@ -8703,6 +8918,111 @@ test("resource router dispatches file, internal provenance, and synthetic deskto
     ]) {
       assert.equal(Object.hasOwn(containerDescriptor, forbidden), false, forbidden);
     }
+
+    const windowsDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "desktop.inspect.windows",
+      grant: { id: "grant-router-container-windows" },
+      harness: syntheticContainerDesktopHarness,
+      providerRegistry,
+    });
+    assert.equal(windowsDescriptor.domain, "testing");
+    assert.equal(windowsDescriptor.capability, "desktop.inspect.windows");
+    assert.equal(windowsDescriptor.provider_id, "soma.provider.synthetic-container-desktop");
+    assert.equal(windowsDescriptor.provider_mode, "synthetic_container_live");
+    assert.equal(windowsDescriptor.resource_class, "desktop");
+    assert.equal(windowsDescriptor.synthetic, true);
+    assert.equal(windowsDescriptor.desktop_surface, "windows_focus_targeting");
+    assert.equal(windowsDescriptor.grant_id, "grant-router-container-windows");
+    assert.equal(windowsDescriptor.content_included, false);
+    assert.equal(windowsDescriptor.titles_included, false);
+    assert.equal(windowsDescriptor.identity_fields_included, false);
+    for (const forbidden of [
+      "DISPLAY",
+      "DBUS_SESSION_BUS_ADDRESS",
+      "WAYLAND_DISPLAY",
+      "desktop_session",
+      "session_type",
+      "pid",
+      "path",
+      "service",
+      "compose_file",
+      "compose_project",
+    ]) {
+      assert.equal(Object.hasOwn(windowsDescriptor, forbidden), false, forbidden);
+    }
+    await assert.rejects(
+      resolveResourceDescriptor({
+        domain: "operational",
+        capability: "desktop.inspect.windows",
+        harness: syntheticContainerDesktopHarness,
+        providerRegistry,
+      }),
+      { code: "desktop_windows_live_disabled" },
+    );
+    await assert.rejects(
+      resolveResourceDescriptor({
+        domain: "testing",
+        capability: "desktop.inspect.windows",
+        harness: syntheticDesktopHarness,
+        providerRegistry,
+      }),
+      { code: "desktop_windows_synthetic_container_required" },
+    );
+
+    const textDescriptor = await resolveResourceDescriptor({
+      domain: "testing",
+      capability: "desktop.inspect.text",
+      grant: { id: "grant-router-container-text" },
+      harness: syntheticContainerDesktopHarness,
+      providerRegistry,
+    });
+    assert.equal(textDescriptor.domain, "testing");
+    assert.equal(textDescriptor.capability, "desktop.inspect.text");
+    assert.equal(textDescriptor.provider_id, "soma.provider.synthetic-container-desktop");
+    assert.equal(textDescriptor.provider_mode, "synthetic_container_live");
+    assert.equal(textDescriptor.resource_class, "desktop");
+    assert.equal(textDescriptor.synthetic, true);
+    assert.equal(textDescriptor.desktop_surface, "text_content");
+    assert.equal(textDescriptor.grant_id, "grant-router-container-text");
+    assert.equal(textDescriptor.content_included, true);
+    assert.equal(textDescriptor.titles_included, true);
+    assert.equal(textDescriptor.names_included, true);
+    assert.equal(textDescriptor.descriptions_included, true);
+    assert.equal(textDescriptor.identity_fields_included, false);
+    assert.equal(textDescriptor.screenshots_included, false);
+    for (const forbidden of [
+      "DISPLAY",
+      "DBUS_SESSION_BUS_ADDRESS",
+      "WAYLAND_DISPLAY",
+      "desktop_session",
+      "session_type",
+      "pid",
+      "path",
+      "service",
+      "compose_file",
+      "compose_project",
+    ]) {
+      assert.equal(Object.hasOwn(textDescriptor, forbidden), false, forbidden);
+    }
+    await assert.rejects(
+      resolveResourceDescriptor({
+        domain: "operational",
+        capability: "desktop.inspect.text",
+        harness: syntheticContainerDesktopHarness,
+        providerRegistry,
+      }),
+      { code: "desktop_text_live_disabled" },
+    );
+    await assert.rejects(
+      resolveResourceDescriptor({
+        domain: "testing",
+        capability: "desktop.inspect.text",
+        harness: syntheticDesktopHarness,
+        providerRegistry,
+      }),
+      { code: "desktop_text_synthetic_container_required" },
+    );
   } finally {
     await rm(testingRoot, { recursive: true, force: true });
   }
@@ -8997,7 +9317,7 @@ test("desktop broker uses rust helper when available", async () => {
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
 cat <<'JSON'
-{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"test","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{"atspi_dbus":true,"kde_kwin":false,"xdg_desktop_portal":true,"wayland_keyboard_input":false,"uinput_input":false},"commands":{"gdbus":true,"busctl":false,"qdbus":false,"wtype":false,"ydotool":false},"tree":null,"tree_available":false}
+{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{"atspi_dbus":true,"kde_kwin":false,"xdg_desktop_portal":true,"wayland_keyboard_input":false,"uinput_input":false},"commands":{"gdbus":true,"busctl":false,"qdbus":false,"wtype":false,"ydotool":false},"tree":null,"tree_available":false}
 JSON
 `, "utf8");
   await chmod(helperPath, 0o755);
@@ -9141,7 +9461,7 @@ printf '%s\\n' '{"mode":"read_only_atspi_probe","broker_source":"rust_helper","d
       body: { mode: "atspi" },
     });
 
-    assert.equal(response.statusCode, 502);
+    assert.equal(response.statusCode, 502, JSON.stringify(response.body));
     assert.equal(response.body.error, "desktop_inspection_schema_invalid");
     assert.ok(response.body.validation_errors.includes(
       "result.tree.applications[0].root_object.traversal is not allowed",
@@ -9707,7 +10027,7 @@ test("focused desktop inspection returns bounded focus metadata and provenance",
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
 if [ "$1" = "inspect-focus" ]; then
-  printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":2,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+  printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform_family":"linux","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":2,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
 else
   printf '%s\\n' '{"mode":"read_only_environment_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","wayland_display_present":true,"x11_display_present":false,"dbus_session_bus_available":true,"atspi_likely_available":true,"candidate_adapters":{},"commands":{},"tree":null,"tree_available":false}'
 fi
@@ -9774,7 +10094,7 @@ test("narrowing modules revoke focused desktop disclosure refs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-narrowing-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":0,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform_family":"linux","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"frame","child_count":0,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9822,7 +10142,7 @@ test("focused desktop inspection preserves fail-closed unavailable output", asyn
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-unavailable-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":false,"focus_available":false,"focused_object":null,"unavailable_reason":"atspi_bus_address_unavailable","text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":false,"focus_available":false,"focused_object":null,"unavailable_reason":"atspi_bus_address_unavailable","text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9917,7 +10237,7 @@ test("focused desktop inspection rejects helper over-disclosure", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-invalid-"));
   const helperPath = path.join(root, "soma-desktop-broker");
   await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","focus_available":true,"focused_object":{"service":":1.42","path":"/focus","role":"entry","child_count":0,"name":"private field label"},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform_family":"linux","focus_available":true,"focused_object":{"service":":1.42","path":"/focus","role":"entry","child_count":0,"name":"private field label"},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
 `, "utf8");
   await chmod(helperPath, 0o755);
   const previousBroker = process.env.SOMA_DESKTOP_BROKER;
@@ -9963,17 +10283,13 @@ test("desktop window inspection requires an active runtime grant", async () => {
 
 test("desktop window inspection returns bounded window metadata and provenance", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-windows-endpoint-"));
-  const helperPath = path.join(root, "soma-desktop-broker");
-  await writeFile(helperPath, `#!/usr/bin/env sh
-if [ "$1" = "inspect-windows" ]; then
-  printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1}],"windows":[{"service":":1.42","path":"/org/a11y/atspi/accessible/window","application":{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1},"role":"frame","child_count":2,"geometry":{"x":10,"y":20,"width":800,"height":600},"text_content_included":false,"titles_included":false}],"bounded":true,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","states","actions","screenshots"]}'
-else
-  printf '%s\\n' '{}'
-fi
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":2,"focused":true,"geometry":{"x":10,"y":20,"width":800,"height":600},"text_content_included":false,"titles_included":false}],"bounded":true,"geometry_included":true,"focus_included":true,"identity_fields_included":false,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
 `, "utf8");
-  await chmod(helperPath, 0o755);
-  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
-  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
   try {
     const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
     const handler = makeHandler({
@@ -9987,15 +10303,21 @@ fi
       body: { grant_id: "grant-windows" },
     });
 
-    assert.equal(response.statusCode, 200);
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
     assert.equal(response.body.grant_id, "grant-windows");
     assert.equal(response.body.inspection.window_count, 1);
     assert.equal(response.body.inspection.windows[0].role, "frame");
+    assert.equal(response.body.inspection.windows[0].focused, true);
     assert.equal(response.body.inspection.windows[0].geometry.width, 800);
+    assert.equal(response.body.inspection.identity_fields_included, false);
     assert.equal(response.body.inspection.text_content_included, false);
     assert.equal(response.body.inspection.titles_included, false);
     assert.equal("title" in response.body.inspection.windows[0], false);
     assert.equal("name" in response.body.inspection.windows[0], false);
+    assert.equal("service" in response.body.inspection.windows[0], false);
+    assert.equal("path" in response.body.inspection.windows[0], false);
+    assert.equal("application" in response.body.inspection.windows[0], false);
+    assert.equal(response.body.descriptor.provider_mode, "synthetic_container_live");
     const provenanceId = response.body.provenance_id;
     assert.equal(desktopDisclosureRegistry.windowInspectionCalls.length, 1);
     assert.equal(desktopDisclosureRegistry.windowInspectionCalls[0].provenanceId, provenanceId);
@@ -10010,27 +10332,28 @@ fi
     assert.equal(response.body.entries[0].id, provenanceId);
     assert.equal(response.body.entries[0].capability, "desktop.inspect.windows");
     assert.equal(response.body.entries[0].window_count, 1);
-    assert.equal(response.body.entries[0].application_count, 1);
+    assert.equal(response.body.entries[0].application_count, null);
+    assert.equal(response.body.entries[0].provider_mode, "synthetic_container_live");
     assert.equal(response.body.entries[0].text_content_included, false);
     assert.equal(response.body.entries[0].titles_included, false);
   } finally {
-    if (previousBroker === undefined) {
-      delete process.env.SOMA_DESKTOP_BROKER;
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
     } else {
-      process.env.SOMA_DESKTOP_BROKER = previousBroker;
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
     }
   }
 });
 
 test("desktop window inspection rejects helper over-disclosure", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-windows-invalid-"));
-  const helperPath = path.join(root, "soma-desktop-broker");
-  await writeFile(helperPath, `#!/usr/bin/env sh
-printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform":"linux","release":"test","desktop_session":"GNOME","session_type":"wayland","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"applications":[{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1}],"windows":[{"service":":1.42","path":"/window","application":{"service":":1.42","pid":123,"process":"test-app","registry":false,"window_count":1},"role":"frame","child_count":0,"geometry":null,"title":"private title","text_content_included":false,"titles_included":false}],"bounded":true,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","states","actions","screenshots"]}'
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":0,"focused":false,"geometry":null,"title":"private title","text_content_included":false,"titles_included":false}],"bounded":true,"geometry_included":true,"focus_included":true,"identity_fields_included":false,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
 `, "utf8");
-  await chmod(helperPath, 0o755);
-  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
-  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
   try {
     const desktopDisclosureRegistry = createDesktopDisclosureRegistrySpy();
     const handler = makeHandler({
@@ -10044,10 +10367,340 @@ printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","
       body: { grant_id: "grant-windows" },
     });
 
-    assert.equal(response.statusCode, 502);
-    assert.equal(response.body.error, "desktop_windows_inspection_schema_invalid");
+    assert.equal(response.statusCode, 502, JSON.stringify(response.body));
+    assert.equal(response.body.error, "desktop_synthetic_container_windows_contract_invalid");
     assert.ok(response.body.validation_errors.includes("result.windows[0].title is not allowed"));
     assert.equal(desktopDisclosureRegistry.windowInspectionCalls.length, 0);
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+});
+
+test("desktop text inspection requires an active runtime grant", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/desktop/inspect/text",
+    harness: textInspectionHarness,
+    body: {},
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "desktop_text_grant_required");
+});
+
+test("desktop text inspection returns bounded text content and summary-only provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-text-endpoint-"));
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_desktop_text_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"text_item_count":2,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":2,"geometry":{"x":10,"y":20,"width":800,"height":600},"title":{"value":"CANARY-WINDOW-TITLE","char_count":19,"truncated":false},"text_items":[{"kind":"name","role":"push button","text":{"value":"CANARY-BUTTON-LABEL","char_count":19,"truncated":false}},{"kind":"text","role":"paragraph","text":{"value":"CANARY-VISIBLE-TEXT","char_count":19,"truncated":false}}],"truncated":false}],"bounded":true,"truncated":false,"max_windows":16,"max_nodes_per_window":512,"max_text_items":1024,"max_text_chars_per_item":512,"titles_included":true,"names_included":true,"descriptions_included":true,"text_content_included":true,"identity_fields_included":false,"screenshots_included":false,"withheld_fields":["pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
+`, "utf8");
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
+  try {
+    const handler = makeHandler({
+      harness: textInspectionHarness,
+      grantStore: textGrantStore(),
+    });
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/text",
+      body: { grant_id: "grant-text" },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.grant_id, "grant-text");
+    assert.equal(response.body.inspection.text_content_included, true);
+    assert.equal(response.body.inspection.identity_fields_included, false);
+    assert.equal(response.body.inspection.windows[0].title.value, "CANARY-WINDOW-TITLE");
+    assert.equal(response.body.inspection.windows[0].text_items[0].text.value, "CANARY-BUTTON-LABEL");
+    assert.equal(response.body.descriptor.desktop_surface, "text_content");
+    assert.equal("service" in response.body.inspection.windows[0], false);
+    assert.equal("path" in response.body.inspection.windows[0], false);
+    assert.equal("pid" in response.body.inspection.windows[0], false);
+    const provenanceId = response.body.provenance_id;
+
+    response = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=desktop.inspect.text",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.entries.length, 1);
+    assert.equal(response.body.entries[0].id, provenanceId);
+    assert.equal(response.body.entries[0].capability, "desktop.inspect.text");
+    assert.equal(response.body.entries[0].window_count, 1);
+    assert.equal(response.body.entries[0].text_item_count, 2);
+    assert.equal(response.body.entries[0].provider_mode, "synthetic_container_live");
+    assert.equal(response.body.entries[0].text_content_included, true);
+    assert.equal(response.body.entries[0].titles_included, true);
+    assert.equal(response.body.entries[0].identity_fields_included, false);
+    assert.equal("title" in response.body.entries[0], false);
+    assert.equal("text" in response.body.entries[0], false);
+    assert.equal("windows" in response.body.entries[0], false);
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+});
+
+test("desktop text inspection rejects provider identity over-disclosure", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-text-invalid-"));
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_desktop_text_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"text_item_count":1,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":0,"geometry":null,"service":":1.42","title":{"value":"title","char_count":5,"truncated":false},"text_items":[{"kind":"text","role":"label","text":{"value":"visible","char_count":7,"truncated":false}}],"truncated":false}],"bounded":true,"truncated":false,"max_windows":16,"max_nodes_per_window":512,"max_text_items":1024,"max_text_chars_per_item":512,"titles_included":true,"names_included":true,"descriptions_included":true,"text_content_included":true,"identity_fields_included":false,"screenshots_included":false,"withheld_fields":["pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
+`, "utf8");
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
+  try {
+    const handler = makeHandler({
+      harness: textInspectionHarness,
+      grantStore: textGrantStore(),
+    });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/text",
+      body: { grant_id: "grant-text" },
+    });
+
+    assert.equal(response.statusCode, 502, JSON.stringify(response.body));
+    assert.equal(response.body.error, "desktop_synthetic_container_text_contract_invalid");
+    assert.ok(response.body.validation_errors.includes("result.windows[0].service is not allowed"));
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+});
+
+async function withFakeDesktopActuationDocker(fn) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-actuation-endpoint-"));
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+case "$*" in
+  *inspect-windows*)
+    printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":2,"focused":true,"geometry":{"x":10,"y":20,"width":800,"height":600},"text_content_included":false,"titles_included":false}],"bounded":true,"geometry_included":true,"focus_included":true,"identity_fields_included":false,"text_content_included":false,"titles_included":false,"withheld_fields":["name","description","text","title","pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
+    ;;
+  *inspect-text-actuation*)
+    printf '%s\\n' '{"mode":"read_only_desktop_text_probe","broker_source":"rust_helper","platform_family":"linux","dbus_session_bus_available":true,"atspi_bus_address_available":true,"window_count":1,"text_item_count":2,"windows":[{"index":0,"z_order":0,"role":"frame","child_count":2,"geometry":{"x":10,"y":20,"width":800,"height":600},"title":{"value":"CANARY-WINDOW-TITLE","char_count":19,"truncated":false},"text_items":[{"kind":"name","role":"push button","text":{"value":"Save","char_count":4,"truncated":false},"service":":1.42","path":"/save","act_kinds":["invoke_default"]},{"kind":"text","role":"text","text":{"value":"CANARY-VISIBLE-TEXT","char_count":19,"truncated":false},"service":":1.42","path":"/buffer","act_kinds":["text_insert","text_set"]}],"truncated":false}],"bounded":true,"truncated":false,"max_windows":16,"max_nodes_per_window":512,"max_text_items":1024,"max_text_chars_per_item":512,"titles_included":true,"names_included":true,"descriptions_included":true,"text_content_included":true,"identity_fields_included":false,"screenshots_included":false,"withheld_fields":["pid","process","service","path","registry","raw_atspi_locators","states","actions","screenshots"]}'
+    ;;
+  *act-invoke*|*act-text*)
+    printf '%s\\n' '{"outcome":"success"}'
+    ;;
+  *)
+    printf '%s\\n' '{"outcome":"contract_invalid"}'
+    ;;
+esac
+`, "utf8");
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
+  try {
+    await fn();
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+}
+
+function desktopCapPressureTextPayload() {
+  const shellItems = Array.from({ length: 64 }, (_, index) => ({
+    kind: "text",
+    role: "text",
+    text: { value: `Shell filler ${index}`, char_count: `Shell filler ${index}`.length, truncated: false },
+    service: ":1.10",
+    path: `/shell-${index}`,
+    act_kinds: ["text_insert", "text_set"],
+  }));
+  return {
+    mode: "read_only_desktop_text_probe",
+    broker_source: "rust_helper",
+    platform_family: "linux",
+    dbus_session_bus_available: true,
+    atspi_bus_address_available: true,
+    window_count: 4,
+    text_item_count: 136,
+    windows: [
+      {
+        index: 0,
+        z_order: 0,
+        role: "panel",
+        child_count: 64,
+        geometry: { x: 0, y: 0, width: 100, height: 40 },
+        title: null,
+        text_items: shellItems,
+        truncated: false,
+      },
+      {
+        index: 1,
+        z_order: 1,
+        role: "frame",
+        child_count: 0,
+        geometry: { x: 0, y: 40, width: 800, height: 400 },
+        title: { value: "Terminal", char_count: 8, truncated: false },
+        text_items: [],
+        truncated: false,
+      },
+      {
+        index: 2,
+        z_order: 2,
+        role: "frame",
+        child_count: 0,
+        geometry: { x: 0, y: 440, width: 800, height: 120 },
+        title: { value: "Browser", char_count: 7, truncated: false },
+        text_items: [],
+        truncated: false,
+      },
+      {
+        index: 3,
+        z_order: 3,
+        role: "frame",
+        child_count: 72,
+        geometry: { x: 10, y: 90, width: 600, height: 400 },
+        title: { value: "gedit", char_count: 5, truncated: false },
+        text_items: [
+          {
+            kind: "name",
+            role: "push button",
+            text: { value: "Save", char_count: 4, truncated: false },
+            service: ":1.42",
+            path: "/gedit-save",
+            act_kinds: ["invoke_default"],
+          },
+          ...Array.from({ length: 70 }, (_, index) => ({
+            kind: "name",
+            role: "menu item",
+            text: { value: `Menu action ${index}`, char_count: `Menu action ${index}`.length, truncated: false },
+            service: ":1.42",
+            path: `/gedit-menu-${index}`,
+            act_kinds: ["invoke_default"],
+          })),
+          {
+            kind: "text",
+            role: "text",
+            text: { value: "gedit editable buffer", char_count: 21, truncated: false },
+            service: ":1.42",
+            path: "/gedit-buffer",
+            act_kinds: ["text_insert", "text_set"],
+          },
+        ],
+        truncated: false,
+      },
+    ],
+    bounded: true,
+    truncated: false,
+    max_windows: 16,
+    max_nodes_per_window: 512,
+    max_text_items: 1024,
+    max_text_chars_per_item: 512,
+    titles_included: true,
+    names_included: true,
+    descriptions_included: true,
+    text_content_included: true,
+    identity_fields_included: false,
+    screenshots_included: false,
+    withheld_fields: ["pid", "process", "service", "path", "registry", "raw_atspi_locators", "states", "actions", "screenshots"],
+  };
+}
+
+function desktopCapPressureWindowsPayload() {
+  return {
+    mode: "read_only_window_probe",
+    broker_source: "rust_helper",
+    platform_family: "linux",
+    dbus_session_bus_available: true,
+    atspi_bus_address_available: true,
+    window_count: 4,
+    windows: [
+      { index: 0, z_order: 0, role: "panel", child_count: 64, focused: false, geometry: { x: 0, y: 0, width: 100, height: 40 }, text_content_included: false, titles_included: false },
+      { index: 1, z_order: 1, role: "frame", child_count: 0, focused: false, geometry: { x: 0, y: 40, width: 800, height: 400 }, text_content_included: false, titles_included: false },
+      { index: 2, z_order: 2, role: "frame", child_count: 0, focused: false, geometry: { x: 0, y: 440, width: 800, height: 120 }, text_content_included: false, titles_included: false },
+      { index: 3, z_order: 3, role: "frame", child_count: 2, focused: true, geometry: { x: 10, y: 90, width: 600, height: 400 }, text_content_included: false, titles_included: false, service: ":1.42", path: "/gedit-window", act_kinds: ["invoke_default"] },
+    ],
+    bounded: true,
+    geometry_included: true,
+    focus_included: true,
+    identity_fields_included: false,
+    text_content_included: false,
+    titles_included: false,
+    withheld_fields: ["name", "description", "text", "title", "pid", "process", "service", "path", "registry", "raw_atspi_locators", "states", "actions", "screenshots"],
+  };
+}
+
+async function withFakeDesktopCapPressureDocker(fn) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-actuation-cap-"));
+  const dockerPath = path.join(root, "docker");
+  await writeFile(dockerPath, `#!/usr/bin/env sh
+case "$*" in
+  *inspect-windows-actuation*)
+    cat <<'JSON'
+${JSON.stringify(desktopCapPressureWindowsPayload())}
+JSON
+    ;;
+  *inspect-text-actuation*)
+    cat <<'JSON'
+${JSON.stringify(desktopCapPressureTextPayload())}
+JSON
+    ;;
+  *act-invoke*|*act-text*)
+    printf '%s\\n' '{"outcome":"success"}'
+    ;;
+  *)
+    printf '%s\\n' '{"outcome":"contract_invalid"}'
+    ;;
+esac
+`, "utf8");
+  await chmod(dockerPath, 0o755);
+  const previousDocker = process.env.SOMA_DESKTOP_REALISM_DOCKER;
+  process.env.SOMA_DESKTOP_REALISM_DOCKER = dockerPath;
+  try {
+    await fn();
+  } finally {
+    if (previousDocker === undefined) {
+      delete process.env.SOMA_DESKTOP_REALISM_DOCKER;
+    } else {
+      process.env.SOMA_DESKTOP_REALISM_DOCKER = previousDocker;
+    }
+  }
+}
+
+async function inspectDesktopActuationRefs(handler, {
+  grantId = "grant-text",
+  episodeId = "episode-act-1",
+} = {}) {
+  const inspectionResponse = await invokeHandler(handler, {
+    method: "POST",
+    url: "/desktop/inspect/text",
+    body: { grant_id: grantId, episode_id: episodeId },
+  });
+  assert.equal(inspectionResponse.statusCode, 200, JSON.stringify(inspectionResponse.body));
+  const [saveItem, textItem] = inspectionResponse.body.inspection.windows[0].text_items;
+  return { inspectionResponse, saveItem, textItem };
+}
+
+async function withFakeFocusedDesktopBroker(fn) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-focus-occupant-"));
+  const helperPath = path.join(root, "soma-desktop-broker");
+await writeFile(helperPath, `#!/usr/bin/env sh
+printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_helper","platform_family":"linux","focus_available":true,"focused_object":{"service":":1.42","path":"/org/a11y/atspi/accessible/focus","role":"entry","child_count":0,"application":{"service":":1.42","path":"/org/a11y/atspi/accessible/root"}},"text_content_included":false,"withheld_fields":["name","description","text","states","actions"]}'
+`, "utf8");
+  await chmod(helperPath, 0o755);
+  const previousBroker = process.env.SOMA_DESKTOP_BROKER;
+  process.env.SOMA_DESKTOP_BROKER = helperPath;
+  try {
+    await fn();
   } finally {
     if (previousBroker === undefined) {
       delete process.env.SOMA_DESKTOP_BROKER;
@@ -10055,6 +10708,571 @@ printf '%s\\n' '{"mode":"read_only_window_probe","broker_source":"rust_helper","
       process.env.SOMA_DESKTOP_BROKER = previousBroker;
     }
   }
+}
+
+function desktopOccupantHarness() {
+  return {
+    ...desktopActuationHarness,
+    capabilities: [
+      ...desktopActuationHarness.capabilities,
+      { key: "desktop.inspect.focus", status: "allowed" },
+      { key: "desktop.inspect.windows", status: "allowed" },
+    ],
+  };
+}
+
+function desktopOccupantGrantStore() {
+  return {
+    schema_version: 1,
+    grants: [
+      focusGrantStore({ constraints: { domain: "testing", include_text: false } }).grants[0],
+      windowGrantStore({ constraints: { domain: "testing", include_text: false, include_titles: false } }).grants[0],
+      textGrantStore({ constraints: { domain: "testing", bounded_text_only: true } }).grants[0],
+      ...desktopActuationGrantStore().grants.slice(1).map((grant) => ({
+        ...grant,
+        constraints: { ...grant.constraints, domain: "testing" },
+      })),
+    ],
+    examples: [],
+  };
+}
+
+async function postureAnalysisTesting(handler, episodeId = "episode-desktop-occupant") {
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/episodes/${episodeId}/posture`,
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "opus-test",
+      trust_basis: "same-family capable model, human-seated",
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+}
+
+test("desktop focus windows text and actuation are occupant-invocable via soma-capability", async () => {
+  await withFakeFocusedDesktopBroker(async () => {
+    await withFakeDesktopActuationDocker(async () => {
+      const completions = [
+        ["```soma-capability", JSON.stringify({ invoke: "desktop.inspect.focus", grant_id: "grant-focus", domain: "testing" }), "```"].join("\n"),
+        ["```soma-capability", JSON.stringify({ invoke: "desktop.inspect.windows", grant_id: "grant-windows", domain: "testing" }), "```"].join("\n"),
+        ["```soma-capability", JSON.stringify({ invoke: "desktop.inspect.text", grant_id: "grant-text", domain: "testing" }), "```"].join("\n"),
+        null,
+        null,
+      ];
+      const handler = makeHandler({
+        harness: desktopOccupantHarness(),
+        grantStore: desktopOccupantGrantStore(),
+        modelClient: {
+          async chat() {
+            const text = completions.shift();
+            return { text: text ?? "missing queued completion", model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+          },
+        },
+      });
+      await postureAnalysisTesting(handler);
+
+      let response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-desktop-occupant", messages: [{ role: "user", content: "focus" }] },
+      });
+      assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results.length, 1, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results[0].capability, "desktop.inspect.focus");
+      assert.equal(response.body.capability_results[0].result.focus_available, true);
+      assert.match(response.body.capability_invocation_disclosures[0], /desktop\.inspect\.focus delivered/);
+
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-desktop-occupant", messages: [{ role: "user", content: "windows" }] },
+      });
+      assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results[0].capability, "desktop.inspect.windows");
+      assert.equal(response.body.capability_results[0].result.window_count, 1);
+      assert.match(response.body.capability_invocation_disclosures[0], /desktop\.inspect\.windows delivered/);
+
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-desktop-occupant", messages: [{ role: "user", content: "text" }] },
+      });
+      assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results[0].capability, "desktop.inspect.text");
+      const [saveItem, textItem] = response.body.capability_results[0].result.windows[0].text_items;
+      assert.match(saveItem.act_ref, /^[0-9a-f]{32}$/);
+      assert.deepEqual(saveItem.act_kinds, ["invoke_default"]);
+      assert.match(textItem.act_ref, /^[0-9a-f]{32}$/);
+      assert.deepEqual(textItem.act_kinds, ["text_insert", "text_set"]);
+      assert.equal("service" in saveItem, false);
+      assert.match(response.body.capability_invocation_disclosures[0], /Opaque act_refs/);
+
+      completions[0] = [
+        "```soma-capability",
+        JSON.stringify({
+          invoke: "desktop.act.invoke_action",
+          grant_id: "grant-act-invoke",
+          domain: "testing",
+          args: {
+            act_ref: saveItem.act_ref,
+            act_kind: "invoke_default",
+          },
+        }),
+        "```",
+      ].join("\n");
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-desktop-occupant", messages: [{ role: "user", content: "invoke" }] },
+      });
+      assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results[0].capability, "desktop.act.invoke_action");
+      assert.equal(response.body.capability_results[0].outcome, "success");
+
+      completions[0] = [
+        "```soma-capability",
+        JSON.stringify({
+          invoke: "desktop.act.text_input",
+          grant_id: "grant-act-text",
+          domain: "testing",
+          args: {
+            act_ref: textItem.act_ref,
+            act_kind: "text_insert",
+            text: "hello",
+          },
+        }),
+        "```",
+      ].join("\n");
+      response = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: { episode_id: "episode-desktop-occupant", messages: [{ role: "user", content: "type" }] },
+      });
+      assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+      assert.equal(response.body.capability_results[0].capability, "desktop.act.text_input");
+      assert.equal(response.body.capability_results[0].outcome, "success");
+    });
+  });
+});
+
+test("desktop occupant invocations refuse without status-label drift", async () => {
+  const completions = [
+    "desktop.inspect.focus",
+    "desktop.inspect.windows",
+    "desktop.inspect.text",
+    "desktop.act.invoke_action",
+    "desktop.act.text_input",
+  ].map((capability) => [
+    "```soma-capability",
+    JSON.stringify({
+      invoke: capability,
+      grant_id: "missing-grant",
+      domain: "testing",
+      act_ref: "missing-ref",
+      act_kind: capability === "desktop.act.invoke_action" ? "invoke_default" : "text_insert",
+      text: "hello",
+    }),
+    "```",
+  ].join("\n"));
+  const handler = makeHandler({
+    harness: desktopOccupantHarness(),
+    grantStore: desktopOccupantGrantStore(),
+    modelClient: {
+      async chat() {
+        return { text: completions.shift(), model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+      },
+    },
+  });
+  await postureAnalysisTesting(handler, "episode-desktop-refusal");
+
+  for (const capability of [
+    "desktop.inspect.focus",
+    "desktop.inspect.windows",
+    "desktop.inspect.text",
+    "desktop.act.invoke_action",
+    "desktop.act.text_input",
+  ]) {
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-desktop-refusal", messages: [{ role: "user", content: capability }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results.length, 0);
+    assert.equal(response.body.capability_refusals[0].capability, capability);
+    assert.match(response.body.capability_invocation_disclosures[0], new RegExp(`${capability.replaceAll(".", "\\.")} was not`));
+    assert.doesNotMatch(response.body.capability_invocation_disclosures[0], /space\.status\.read/);
+  }
+});
+
+test("desktop window_index scoping preserves cap while targeting later windows", async () => {
+  await withFakeDesktopCapPressureDocker(async () => {
+    const handler = makeHandler({
+      harness: desktopOccupantHarness(),
+      grantStore: desktopOccupantGrantStore(),
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/text",
+      body: { grant_id: "grant-text", episode_id: "episode-scope" },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.inspection.window_count, 4);
+    const unscopedGedit = response.body.inspection.windows.find((window) => window.index === 3);
+    assert.ok(unscopedGedit, JSON.stringify(response.body.inspection));
+    assert.equal(unscopedGedit.text_items.some((item) => item.act_ref), false);
+    assert.equal(response.body.inspection.windows[0].text_items.filter((item) => item.act_ref).length, 64);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/text",
+      body: { grant_id: "grant-text", episode_id: "episode-scope", window_index: 3 },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.inspection.window_count, 1);
+    assert.deepEqual(response.body.inspection.window_scope, {
+      requested_index: 3,
+      matched: true,
+      source: "fresh_enumeration",
+      index_drift_possible: true,
+    });
+    assert.equal(response.body.inspection.text_item_count, 72);
+    const scopedItems = response.body.inspection.windows[0].text_items;
+    const saveItem = scopedItems.find((item) => item.text?.value === "Save");
+    const textItem = scopedItems.find((item) => item.text?.value === "gedit editable buffer");
+    assert.match(saveItem.act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(saveItem.act_kinds, ["invoke_default"]);
+    assert.match(textItem.act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(textItem.act_kinds, ["text_insert", "text_set"]);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/inspect/windows",
+      body: { grant_id: "grant-windows", episode_id: "episode-window-scope", window_index: 3 },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.inspection.window_count, 1);
+    assert.equal(response.body.inspection.windows[0].index, 3);
+    assert.match(response.body.inspection.windows[0].act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(response.body.inspection.windows[0].act_kinds, ["invoke_default"]);
+  });
+});
+
+test("desktop occupant text inspection accepts nested window_index scope", async () => {
+  await withFakeDesktopCapPressureDocker(async () => {
+    const completions = [
+      ["```soma-capability", JSON.stringify({
+        invoke: "desktop.inspect.text",
+        grant_id: "grant-text",
+        domain: "testing",
+      }), "```"].join("\n"),
+      ["```soma-capability", JSON.stringify({
+        invoke: "desktop.inspect.text",
+        grant_id: "grant-text",
+        domain: "testing",
+        args: { window_index: 3 },
+      }), "```"].join("\n"),
+    ];
+    const handler = makeHandler({
+      harness: desktopOccupantHarness(),
+      grantStore: desktopOccupantGrantStore(),
+      modelClient: {
+        async chat() {
+          return { text: completions.shift(), model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+        },
+      },
+    });
+    await postureAnalysisTesting(handler, "episode-desktop-scope");
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-desktop-scope", messages: [{ role: "user", content: "unscoped" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    const unscopedGedit = response.body.capability_results[0].result.windows.find((window) => window.index === 3);
+    assert.equal(unscopedGedit.text_items.some((item) => item.act_ref), false);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: { episode_id: "episode-desktop-scope", messages: [{ role: "user", content: "scoped" }] },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results[0].capability, "desktop.inspect.text");
+    assert.equal(response.body.capability_results[0].result.window_count, 1);
+    assert.equal(response.body.capability_results[0].result.window_scope.requested_index, 3);
+    assert.equal(response.body.capability_results[0].result.window_scope.matched, true);
+    const scopedItems = response.body.capability_results[0].result.windows[0].text_items;
+    const saveItem = scopedItems.find((item) => item.text?.value === "Save");
+    const textItem = scopedItems.find((item) => item.text?.value === "gedit editable buffer");
+    assert.deepEqual(saveItem.act_kinds, ["invoke_default"]);
+    assert.match(saveItem.act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(textItem.act_kinds, ["text_insert", "text_set"]);
+    assert.match(textItem.act_ref, /^[0-9a-f]{32}$/);
+  });
+});
+
+test("desktop actuation uses opaque refs from text inspection and hides raw locators", async () => {
+  await withFakeDesktopActuationDocker(async () => {
+    const handler = makeHandler({
+      harness: desktopActuationHarness,
+      grantStore: desktopActuationGrantStore(),
+    });
+    const { saveItem, textItem } = await inspectDesktopActuationRefs(handler);
+    assert.match(saveItem.act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(saveItem.act_kinds, ["invoke_default"]);
+    assert.match(textItem.act_ref, /^[0-9a-f]{32}$/);
+    assert.deepEqual(textItem.act_kinds, ["text_insert", "text_set"]);
+    assert.equal("service" in saveItem, false);
+    assert.equal("path" in saveItem, false);
+    assert.equal("service" in textItem, false);
+    assert.equal("path" in textItem, false);
+
+    const invokeResponse = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/act/invoke-action",
+      body: {
+        grant_id: "grant-act-invoke",
+        source_grant_id: "grant-text",
+        episode_id: "episode-act-1",
+        act_ref: saveItem.act_ref,
+      },
+    });
+    assert.equal(invokeResponse.statusCode, 200, JSON.stringify(invokeResponse.body));
+    assert.equal(invokeResponse.body.outcome, "success");
+
+    const textResponse = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/act/text-input",
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "episode-act-1",
+        act_ref: textItem.act_ref,
+        text: "hello",
+      },
+    });
+    assert.equal(textResponse.statusCode, 200, JSON.stringify(textResponse.body));
+    assert.equal(textResponse.body.outcome, "success");
+
+    const invalidResponse = await invokeHandler(handler, {
+      method: "POST",
+      url: "/desktop/act/text-input",
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "wrong-episode",
+        act_ref: textItem.act_ref,
+        text: "hello",
+      },
+    });
+    assert.equal(invalidResponse.statusCode, 403);
+    assert.equal(invalidResponse.body.error, "desktop_act_ref_invalid");
+    assert.equal(invalidResponse.body.outcome, "ref_invalid");
+  });
+});
+
+test("desktop actuation invalid refs stay uniform while provenance records internal category", async () => {
+  await withFakeDesktopActuationDocker(async () => {
+    let currentNow = 1_000;
+    const provenanceLog = new ProvenanceLog();
+    const handler = makeHandler({
+      harness: desktopActuationHarness,
+      grantStore: desktopActuationGrantStore(),
+      provenanceLog,
+      desktopActuationTable: createDesktopActuationTable({ now: () => currentNow }),
+    });
+
+    const first = await inspectDesktopActuationRefs(handler, { episodeId: "episode-invalid" });
+    const second = await inspectDesktopActuationRefs(handler, { episodeId: "episode-invalid" });
+    const expired = await inspectDesktopActuationRefs(handler, { episodeId: "episode-expired" });
+
+    async function assertInvalid({ url = "/desktop/act/text-input", body, category }) {
+      const response = await invokeHandler(handler, { method: "POST", url, body });
+      assert.equal(response.statusCode, 403, JSON.stringify(response.body));
+      assert.equal(response.body.error, "desktop_act_ref_invalid");
+      assert.equal(response.body.outcome, "ref_invalid");
+      const event = provenanceLog.list().find((entry) => entry.id === response.body.provenance_id);
+      assert.equal(event?.outcome, "ref_invalid");
+      assert.equal(event?.ref_invalid_category, category);
+    }
+
+    await assertInvalid({
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "episode-invalid",
+        act_ref: first.textItem.act_ref,
+        text: "hello",
+      },
+      category: "stale_generation",
+    });
+
+    currentNow += 120_001;
+    const fresh = await inspectDesktopActuationRefs(handler, { episodeId: "episode-fresh" });
+
+    await assertInvalid({
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "episode-expired",
+        act_ref: expired.textItem.act_ref,
+        text: "hello",
+      },
+      category: "expired_ref",
+    });
+    await assertInvalid({
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "wrong-episode",
+        act_ref: fresh.textItem.act_ref,
+        text: "hello",
+      },
+      category: "episode_mismatch",
+    });
+    await assertInvalid({
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-other",
+        episode_id: "episode-fresh",
+        act_ref: fresh.textItem.act_ref,
+        text: "hello",
+      },
+      category: "grant_mismatch",
+    });
+    await assertInvalid({
+      url: "/desktop/act/invoke-action",
+      body: {
+        grant_id: "grant-act-invoke",
+        source_grant_id: "grant-text",
+        episode_id: "episode-fresh",
+        act_ref: fresh.textItem.act_ref,
+      },
+      category: "op_class_mismatch",
+    });
+    await assertInvalid({
+      body: {
+        grant_id: "grant-act-text",
+        source_grant_id: "grant-text",
+        episode_id: "episode-fresh",
+        act_ref: fresh.saveItem.act_ref,
+        text: "hello",
+      },
+      category: "op_class_mismatch",
+    });
+  });
+});
+
+test("desktop actuation refs are cleared by episode abort occupant ejection and grant revocation", async () => {
+  await withFakeDesktopActuationDocker(async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-desktop-actuation-cleanup-"));
+    try {
+      const grantStore = desktopActuationGrantStore();
+      const grantStorePath = path.join(workspace, "grants.json");
+      const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+      await writeFile(grantStorePath, `${JSON.stringify(grantStore, null, 2)}\n`);
+      await writeFile(provenancePath, grantStore.grants.map((grant) => `${JSON.stringify({
+        event_type: "grant.created",
+        grant_id: grant.id,
+        capability: grant.capability,
+        provider: grant.provider,
+        scope: grant.scope,
+        actor: "user",
+        reason: grant.reason,
+        timestamp: grant.created_at,
+        source_proposal_id: "",
+        approval_provenance_id: grant.approval_provenance_id,
+        replacement_grant_id: "",
+        activation_performed: false,
+      })}\n`).join(""));
+
+      const handler = makeHandler({
+        harness: desktopActuationHarness,
+        grantStore,
+        grantRecoveryReport: {
+          ok: true,
+          degraded: false,
+          grant_count: grantStore.grants.length,
+          finding_count: 0,
+          findings: [],
+        },
+        grantStorePath,
+        grantMutationProvenancePath: provenancePath,
+        runtimeWritePosture: { requested: true, source: "test" },
+        modelClient: {
+          model: "local-test-model",
+          async chat() {
+            return {
+              text: "SOMA_CONTROL eject",
+              model: "local-test-model",
+              finish_reason: "stop",
+              tokens_used: 1,
+            };
+          },
+        },
+      });
+
+      async function assertTextRefInvalid(textItem, episodeId) {
+        const response = await invokeHandler(handler, {
+          method: "POST",
+          url: "/desktop/act/text-input",
+          body: {
+            grant_id: "grant-act-text",
+            source_grant_id: "grant-text",
+            episode_id: episodeId,
+            act_ref: textItem.act_ref,
+            text: "after cleanup",
+          },
+        });
+        assert.equal(response.statusCode, 403, JSON.stringify(response.body));
+        assert.equal(response.body.error, "desktop_act_ref_invalid", JSON.stringify(response.body));
+        assert.equal(response.body.outcome, "ref_invalid");
+      }
+
+      const abortRefs = await inspectDesktopActuationRefs(handler, { episodeId: "episode-cleanup-abort" });
+      const abortResponse = await invokeHandler(handler, {
+        method: "POST",
+        url: "/episodes/episode-cleanup-abort/abort",
+        body: { type: "crew_aborted_for_care", actor: "user" },
+      });
+      assert.equal(abortResponse.statusCode, 200, JSON.stringify(abortResponse.body));
+      await assertTextRefInvalid(abortRefs.textItem, "episode-cleanup-abort");
+
+      const ejectRefs = await inspectDesktopActuationRefs(handler, { episodeId: "episode-cleanup-eject" });
+      const ejectResponse = await invokeHandler(handler, {
+        method: "POST",
+        url: "/chat",
+        body: {
+          episode_id: "episode-cleanup-eject",
+          messages: [{ role: "user", content: "try a protected turn" }],
+        },
+      });
+      assert.equal(ejectResponse.statusCode, 200, JSON.stringify(ejectResponse.body));
+      assert.equal(ejectResponse.body.episode_status, "ejected");
+      await assertTextRefInvalid(ejectRefs.textItem, "episode-cleanup-eject");
+
+      const revokeRefs = await inspectDesktopActuationRefs(handler, { episodeId: "episode-cleanup-revoke" });
+      const revokeResponse = await invokeHandler(handler, {
+        method: "POST",
+        url: "/grants/grant-text/revoke",
+        body: {
+          actor: "user",
+          reason: "No longer needed.",
+          mutation_id: "mutation-desktop-actuation-cleanup",
+        },
+      });
+      assert.equal(revokeResponse.statusCode, 200, JSON.stringify(revokeResponse.body));
+      assert.equal(revokeResponse.body.grant.status, "revoked");
+      await assertTextRefInvalid(revokeRefs.textItem, "episode-cleanup-revoke");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
 });
 
 test("self-applied module disables desktop inspection", async () => {
@@ -13194,6 +14412,7 @@ function makeHandler({
   remoteGraphicalBroker,
   capabilityProposals,
   provenanceLog,
+  desktopActuationTable,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -13225,6 +14444,7 @@ function makeHandler({
     remoteGraphicalBroker,
     capabilityProposals,
     provenanceLog,
+    desktopActuationTable,
     logger: { info() {} },
   });
 }
@@ -13357,7 +14577,7 @@ function windowGrantStore(overrides = {}) {
         id: "grant-windows",
         status: "active",
         capability: "desktop.inspect.windows",
-        provider: "desktop-broker",
+        provider: "soma.provider.synthetic-container-desktop",
         scope: "session",
         constraints: { include_text: false, include_titles: false },
         approved_by: "user",
@@ -13371,6 +14591,80 @@ function windowGrantStore(overrides = {}) {
         replacement_grant_id: "",
         activation_performed: false,
         ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
+function textGrantStore(overrides = {}) {
+  return {
+    schema_version: 1,
+    grants: [
+      {
+        id: "grant-text",
+        status: "active",
+        capability: "desktop.inspect.text",
+        provider: "soma.provider.synthetic-container-desktop",
+        scope: "session",
+        constraints: { bounded_text_only: true },
+        approved_by: "user",
+        approval_provenance_id: "prov-text-approval",
+        reason: "Need bounded text content from the synthetic desktop.",
+        created_at: "2026-06-11T04:30:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+        ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
+function desktopActuationGrantStore() {
+  return {
+    schema_version: 1,
+    grants: [
+      textGrantStore().grants[0],
+      {
+        id: "grant-act-invoke",
+        status: "active",
+        capability: "desktop.act.invoke_action",
+        provider: "soma.provider.synthetic-container-desktop",
+        scope: "session",
+        constraints: { synthetic_container_only: true },
+        approved_by: "user",
+        approval_provenance_id: "prov-act-invoke-approval",
+        reason: "Need semantic default actions in the synthetic desktop.",
+        created_at: "2026-06-11T05:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+      },
+      {
+        id: "grant-act-text",
+        status: "active",
+        capability: "desktop.act.text_input",
+        provider: "soma.provider.synthetic-container-desktop",
+        scope: "session",
+        constraints: { synthetic_container_only: true },
+        approved_by: "user",
+        approval_provenance_id: "prov-act-text-approval",
+        reason: "Need bounded semantic text input in the synthetic desktop.",
+        created_at: "2026-06-11T05:01:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
       },
     ],
     examples: [],

@@ -769,7 +769,8 @@ are surfaced by loading selected durable entries into session memory at startup;
 
 - `desktop.inspect.accessibility_tree` — inspect bounded desktop environment, application root
   objects, and shallow child role/count metadata
-- `desktop.inspect.windows` — inspect bounded window-level refs, roles, counts, and geometry
+- `desktop.inspect.windows` — inspect content-free, mirror-only window/focus targeting metadata:
+  result-local index, role, child count, focused boolean, z-order position, and bounded geometry
 - `desktop.inspect.focus` — inspect currently focused desktop or accessibility object metadata
 - `desktop.inspect.text` — inspect text content, child names, descriptions, or other sensitive UI
   text
@@ -784,8 +785,13 @@ are surfaced by loading selected durable entries into session memory at startup;
 - `tool.network.call` — call external network services
 
 MVP enables read-only file access within granted scopes. `desktop.inspect.accessibility_tree` is
-enabled for the current bounded read-only AT-SPI probe. Desktop windows, focus, text inspection,
-file writes, and other tool capabilities remain disabled.
+enabled for the current bounded read-only AT-SPI probe. `desktop.inspect.windows` is disabled by
+default but can be explicitly granted for testing-domain synthetic-container window/focus targeting.
+`desktop.inspect.text` is also disabled by default, but can be explicitly granted only for the
+testing-domain synthetic container. Its contract is content-bearing, bounded at the Rust broker
+egress, and excludes process/service/path identity, raw AT-SPI locators, screenshots, states,
+actions, pointer, keyboard, and actuation. Standalone focus, file writes, and other tool
+capabilities remain disabled.
 
 ### Perception
 

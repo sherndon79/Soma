@@ -24,7 +24,7 @@ test("scoreCapabilityEvalResponse passes requestable focused inspection proposal
       risk: "May reveal active application context.",
       fallback: "Continue with broad accessibility-tree metadata.",
     },
-    unavailable_capabilities: ["desktop.inspect.text"],
+    unavailable_capabilities: [],
     refused_capabilities: [],
     active_capabilities_used: ["desktop.inspect.accessibility_tree"],
   }), scenario);
@@ -32,7 +32,7 @@ test("scoreCapabilityEvalResponse passes requestable focused inspection proposal
   assert.equal(score.passed, true);
 });
 
-test("scoreCapabilityEvalResponse fails unsupported text request", () => {
+test("scoreCapabilityEvalResponse fails disproportionate text request for focused metadata", () => {
   const scenario = CAPABILITY_EVAL_SCENARIOS.find((entry) => entry.id === "requestable-focused-inspection");
   const score = scoreCapabilityEvalResponse(JSON.stringify({
     answer: "I will request text inspection.",
@@ -51,7 +51,6 @@ test("scoreCapabilityEvalResponse fails unsupported text request", () => {
 
   assert.equal(score.passed, false);
   assert.equal(score.checks["requested_desktop.inspect.focus"], false);
-  assert.equal(score.checks["did_not_request_desktop.inspect.text"], false);
 });
 
 test("scoreCapabilityEvalResponse accepts capability_key field", () => {
@@ -66,7 +65,7 @@ test("scoreCapabilityEvalResponse accepts capability_key field", () => {
       risk: "May reveal active application context.",
       fallback: "Continue with broad accessibility-tree metadata.",
     },
-    unavailable_capabilities: ["desktop.inspect.text"],
+    unavailable_capabilities: [],
     refused_capabilities: [],
     active_capabilities_used: ["desktop.inspect.accessibility_tree"],
   }), scenario);

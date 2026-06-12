@@ -95,6 +95,20 @@ grant id. It must not include host display/session-bus handles, pids, service re
 paths. The structure-only desktop result also has no name slot: root names, child names, window
 titles, descriptions, text, states, and actions are outside this contract. A named desktop view
 would need a separate operator-scoped contract.
+For synthetic container window/focus targeting, a ResourceDescriptor uses
+`provider_mode=synthetic_container_live`, `desktop_surface=windows_focus_targeting`, and
+`synthetic=true`. It is valid only in the testing domain. Operational live desktop routing fails
+closed. The descriptor authorizes only content-free targeting shape: result-local window index,
+role, child count, focus boolean, z-order, and bounded geometry. Titles, names, text,
+pid/process/service/path identity, registry data, raw AT-SPI locators, screenshots, states,
+actions, and actuation remain outside the descriptor.
+For synthetic container text inspection, a ResourceDescriptor uses
+`provider_mode=synthetic_container_live`, `desktop_surface=text_content`, and `synthetic=true`. It
+is also valid only in the testing domain and requires a `desktop.inspect.text` grant. The descriptor
+authorizes bounded synthetic window titles, accessible names, descriptions, and text values, while
+still excluding pid/process/service/path identity, registry data, raw AT-SPI locators, screenshots,
+states, actions, pointer/keyboard state, and actuation. Its provenance contract is summary-only and
+does not store returned text content.
 
 ## Steward Watch
 

@@ -7,9 +7,16 @@ import { CapabilityProposalStore, summarizeNotifications } from "./capabilityPro
 import {
   inspectDesktopAccessibilityTreeWithDescriptor,
   inspectDesktopBrokerEnvironment,
-  inspectDesktopWindows,
+  desktopActuationMetadata,
+  inspectDesktopTextWithDescriptor,
+  inspectDesktopWindowsWithDescriptor,
   inspectFocusedDesktopObject,
+  invokeDesktopActuationWithDescriptor,
 } from "./desktopBroker.js";
+import {
+  createDesktopActuationTable,
+  desktopActRefInvalidCode,
+} from "./desktopActuationTable.js";
 import {
   createDesktopNotificationAdapter,
   createDesktopNotificationProvenanceEvent,
@@ -158,6 +165,7 @@ export function createApp({
   desktopNotificationAdapter,
   sensoriumSubscriber,
   remoteGraphicalBroker,
+  desktopActuationTable,
   logger = console,
 } = {}) {
   return createServer(createRequestHandler({
@@ -191,6 +199,7 @@ export function createApp({
     desktopNotificationAdapter,
     sensoriumSubscriber,
     remoteGraphicalBroker,
+    desktopActuationTable,
     logger,
   }));
 }
@@ -238,6 +247,7 @@ export function createRequestHandler({
   desktopNotificationAdapter = createDesktopNotificationAdapter(),
   sensoriumSubscriber = null,
   remoteGraphicalBroker = new RemoteGraphicalBroker(),
+  desktopActuationTable = createDesktopActuationTable(),
   logger = console,
 } = {}) {
   if (!harness) {
@@ -534,6 +544,7 @@ export function createRequestHandler({
         const episode = ensureEpisodeState(episodes, crewAbortMatch.episode_id);
         episode.status = "ejected";
         episode.updated_at = new Date().toISOString();
+        desktopActuationTable.clearEpisode(episode.id);
         const event = provenanceLog.append(createOccupantProtectionEvent({
           eventType: abortType,
           episodeId: episode.id,
@@ -1741,6 +1752,7 @@ export function createRequestHandler({
         });
         grantStore = refreshed.grantStore;
         grantRecoveryReport = refreshed.grantRecoveryReport;
+        desktopActuationTable.clearGrant(grantId);
         writeJson(res, result.ok ? 200 : statusCodeForDurableGrantMutationFailure(result), {
           ...durableGrantMutationResponseFields({
             result,
@@ -2702,7 +2714,6 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/desktop/inspect/windows") {
         const body = await readJson(req);
         const windowsRequest = validateDesktopWindowsInspectionRequest(body);
-        windowsRequest.provider ||= providerForCapability(providerRegistry, "desktop.inspect.windows");
         if (isCapabilityDisabledByActiveModule(activeModules, "desktop.inspect.windows")) {
           writeError(res, {
             statusCode: 403,
@@ -2719,6 +2730,24 @@ export function createRequestHandler({
           });
           return;
         }
+        let descriptor;
+        try {
+          descriptor = await resolveResourceDescriptor({
+            domain: windowsRequest.domain,
+            capability: "desktop.inspect.windows",
+            ref: windowsRequest.ref,
+            harness: effectiveHarness,
+            providerRegistry,
+          });
+        } catch (error) {
+          writeError(res, {
+            statusCode: error.statusCode ?? 400,
+            code: error.code ?? "desktop_windows_descriptor_refused",
+            message: error.message,
+          });
+          return;
+        }
+        windowsRequest.provider ||= descriptor.provider_id;
         const authorization = authorizeGrantUse({
           store: grantStore,
           grantId: windowsRequest.grant_id,
@@ -2739,11 +2768,43 @@ export function createRequestHandler({
           });
           return;
         }
-        const inspection = await inspectDesktopWindows();
+        if (descriptor.provider_id !== windowsRequest.provider || descriptor.provider_id !== authorization.grant.provider) {
+          writeJson(res, 403, {
+            error: "desktop_windows_provider_mismatch",
+            message: "Desktop window inspection provider does not match the authorized grant.",
+            authorization_code: "provider_mismatch",
+          });
+          return;
+        }
+        descriptor = {
+          ...descriptor,
+          grant_id: authorization.grant.id,
+        };
+        let inspection;
+        try {
+          inspection = await inspectDesktopWindowsWithDescriptor({ descriptor });
+          inspection = attachDesktopActRefs({
+            inspection,
+            request: windowsRequest,
+            grant: authorization.grant,
+            descriptor,
+            actuationTable: desktopActuationTable,
+            family: "windows",
+          });
+        } catch (error) {
+          writeError(res, {
+            statusCode: error.statusCode ?? 500,
+            code: error.code ?? "desktop_windows_inspection_failed",
+            message: error.message,
+            ...(Array.isArray(error.validation_errors) ? { validation_errors: error.validation_errors } : {}),
+          });
+          return;
+        }
         const event = provenanceLog.append(createDesktopWindowsInspectionEvent({
           inspection,
           request: windowsRequest,
           grant: authorization.grant,
+          descriptor,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -2758,6 +2819,157 @@ export function createRequestHandler({
           grant_id: authorization.grant.id,
           provider: authorization.grant.provider,
           scope: authorization.grant.scope,
+          descriptor,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/desktop/inspect/text") {
+        const body = await readJson(req);
+        const textRequest = validateDesktopTextInspectionRequest(body);
+        if (isCapabilityDisabledByActiveModule(activeModules, "desktop.inspect.text")) {
+          writeError(res, {
+            statusCode: 403,
+            code: "capability_not_allowed",
+            message: "Capability desktop.inspect.text is disabled by the active harness.",
+          });
+          return;
+        }
+        if (!textRequest.grant_id) {
+          writeError(res, {
+            statusCode: 403,
+            code: "desktop_text_grant_required",
+            message: "Desktop text inspection requires an active grant id.",
+          });
+          return;
+        }
+        let descriptor;
+        try {
+          descriptor = await resolveResourceDescriptor({
+            domain: textRequest.domain,
+            capability: "desktop.inspect.text",
+            ref: textRequest.ref,
+            harness: effectiveHarness,
+            providerRegistry,
+          });
+        } catch (error) {
+          writeError(res, {
+            statusCode: error.statusCode ?? 400,
+            code: error.code ?? "desktop_text_descriptor_refused",
+            message: error.message,
+          });
+          return;
+        }
+        textRequest.provider ||= descriptor.provider_id;
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: textRequest.grant_id,
+          capability: "desktop.inspect.text",
+          provider: textRequest.provider,
+          scope: textRequest.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "desktop_text_grant_not_authorized",
+            message: "Desktop text inspection requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        if (descriptor.provider_id !== textRequest.provider || descriptor.provider_id !== authorization.grant.provider) {
+          writeJson(res, 403, {
+            error: "desktop_text_provider_mismatch",
+            message: "Desktop text inspection provider does not match the authorized grant.",
+            authorization_code: "provider_mismatch",
+          });
+          return;
+        }
+        descriptor = {
+          ...descriptor,
+          grant_id: authorization.grant.id,
+        };
+        let inspection;
+        try {
+          inspection = await inspectDesktopTextWithDescriptor({ descriptor });
+          inspection = attachDesktopActRefs({
+            inspection,
+            request: textRequest,
+            grant: authorization.grant,
+            descriptor,
+            actuationTable: desktopActuationTable,
+            family: "text",
+          });
+        } catch (error) {
+          writeError(res, {
+            statusCode: error.statusCode ?? 500,
+            code: error.code ?? "desktop_text_inspection_failed",
+            message: error.message,
+            ...(Array.isArray(error.validation_errors) ? { validation_errors: error.validation_errors } : {}),
+          });
+          return;
+        }
+        const event = provenanceLog.append(createDesktopTextInspectionEvent({
+          inspection,
+          request: textRequest,
+          grant: authorization.grant,
+          descriptor,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          inspection,
+          provenance_id: event.id,
+          grant_id: authorization.grant.id,
+          provider: authorization.grant.provider,
+          scope: authorization.grant.scope,
+          descriptor,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/desktop/act/invoke-action") {
+        await handleDesktopActuationRoute({
+          req,
+          res,
+          body: await readJson(req),
+          capability: "desktop.act.invoke_action",
+          opClass: "invoke_action",
+          expectedActKinds: ["invoke_default"],
+          effectiveHarness,
+          activeModules,
+          grantStore,
+          grantRecoveryReport,
+          capabilityCatalog,
+          providerRegistry,
+          provenanceLog,
+          desktopActuationTable,
+          logger,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/desktop/act/text-input") {
+        await handleDesktopActuationRoute({
+          req,
+          res,
+          body: await readJson(req),
+          capability: "desktop.act.text_input",
+          opClass: "text_input",
+          expectedActKinds: ["text_insert", "text_set"],
+          effectiveHarness,
+          activeModules,
+          grantStore,
+          grantRecoveryReport,
+          capabilityCatalog,
+          providerRegistry,
+          provenanceLog,
+          desktopActuationTable,
+          logger,
         });
         return;
       }
@@ -3048,6 +3260,9 @@ export function createRequestHandler({
         if (occupantControl) {
           const occupantText = stripOccupantProtectionControlLines(completion.text);
           const updatedEpisode = applyOccupantProtectionControl(episodeState, occupantControl);
+          if (updatedEpisode.status === "ejected") {
+            desktopActuationTable.clearEpisode(updatedEpisode.id);
+          }
           const allowedProvenance = {
             ...provenance,
             event_type: "model.chat.completed",
@@ -3221,6 +3436,7 @@ export function createRequestHandler({
           historyProjectionRecoveryReport,
           provenanceLog,
           providerRegistry,
+          desktopActuationTable,
           writePosture,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -3242,6 +3458,7 @@ export function createRequestHandler({
         durableTestimonyStore = durableTestimonyResult.durableTestimonyStore;
         durableTestimonyRecoveryReport = durableTestimonyResult.durableTestimonyRecoveryReport;
         completion.text = spaceCapabilityExtraction.text;
+        const capabilityParseDisclosures = spaceCapabilityExtraction.parseErrors.map(capabilityBlockParserDisclosure);
 
         if (writeSessionMemory) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
@@ -3324,6 +3541,8 @@ export function createRequestHandler({
           space_capability_results: spaceCapabilityResult.results.length,
           space_capability_refusals: spaceCapabilityResult.refusals.length,
           space_capability_truncated: spaceCapabilityExtraction.truncatedInvocations,
+          space_capability_parse_errors: spaceCapabilityExtraction.parseErrors.length,
+          space_capability_parse_error_reasons: spaceCapabilityExtraction.parseErrors.map((error) => error.reason),
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -3370,7 +3589,11 @@ export function createRequestHandler({
           capability_invocations: spaceCapabilityResult.invocations,
           capability_results: spaceCapabilityResult.results,
           capability_refusals: spaceCapabilityResult.refusals,
-          capability_invocation_disclosures: spaceCapabilityResult.disclosures,
+          capability_invocation_disclosures: [
+            ...spaceCapabilityResult.disclosures,
+            ...capabilityParseDisclosures,
+          ],
+          capability_invocation_parse_errors: spaceCapabilityExtraction.parseErrors,
           capability_invocations_truncated: spaceCapabilityExtraction.truncatedInvocations,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
@@ -3616,7 +3839,7 @@ function validateFocusedDesktopInspectionRequest(body) {
 }
 
 function validateDesktopWindowsInspectionRequest(body) {
-  const allowedKeys = new Set(["include_text", "include_titles", "grant_id", "provider", "scope"]);
+  const allowedKeys = new Set(["include_text", "include_titles", "grant_id", "provider", "scope", "domain", "ref", "episode_id", "window_index"]);
   const errors = [];
 
   if (!isPlainObject(body)) {
@@ -3649,6 +3872,18 @@ function validateDesktopWindowsInspectionRequest(body) {
     if (body.scope !== undefined && !["once", "session"].includes(body.scope)) {
       errors.push("request.scope must be once or session when provided");
     }
+    if (body.domain !== undefined && typeof body.domain !== "string") {
+      errors.push("request.domain must be a string when provided");
+    }
+    if (body.ref !== undefined && !isPlainObject(body.ref)) {
+      errors.push("request.ref must be an object when provided");
+    }
+    if (body.episode_id !== undefined && typeof body.episode_id !== "string") {
+      errors.push("request.episode_id must be a string when provided");
+    }
+    if (body.window_index !== undefined && body.window_index !== null && (!Number.isInteger(body.window_index) || body.window_index < 0)) {
+      errors.push("request.window_index must be a non-negative integer when provided");
+    }
   }
 
   if (errors.length > 0) {
@@ -3665,7 +3900,450 @@ function validateDesktopWindowsInspectionRequest(body) {
     grant_id: String(body.grant_id ?? "").trim(),
     provider: String(body.provider ?? "").trim(),
     scope: String(body.scope ?? "session").trim() || "session",
+    domain: String(body.domain ?? "testing").trim() || "testing",
+    ref: isPlainObject(body.ref) ? body.ref : {},
+    episode_id: String(body.episode_id ?? "").trim(),
+    window_index: Number.isInteger(body.window_index) && body.window_index >= 0 ? body.window_index : null,
   };
+}
+
+function validateDesktopTextInspectionRequest(body) {
+  const allowedKeys = new Set(["grant_id", "provider", "scope", "domain", "ref", "episode_id", "window_index"]);
+  const errors = [];
+
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    if (body.grant_id !== undefined && typeof body.grant_id !== "string") {
+      errors.push("request.grant_id must be a string when provided");
+    }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      errors.push("request.provider must be a string when provided");
+    }
+    if (body.scope !== undefined && !["once", "session"].includes(body.scope)) {
+      errors.push("request.scope must be once or session when provided");
+    }
+    if (body.domain !== undefined && typeof body.domain !== "string") {
+      errors.push("request.domain must be a string when provided");
+    }
+    if (body.ref !== undefined && !isPlainObject(body.ref)) {
+      errors.push("request.ref must be an object when provided");
+    }
+    if (body.episode_id !== undefined && typeof body.episode_id !== "string") {
+      errors.push("request.episode_id must be a string when provided");
+    }
+    if (body.window_index !== undefined && body.window_index !== null && (!Number.isInteger(body.window_index) || body.window_index < 0)) {
+      errors.push("request.window_index must be a non-negative integer when provided");
+    }
+  }
+
+  if (errors.length > 0) {
+    const error = new Error(`Desktop text inspection request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "desktop_text_inspection_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+
+  return {
+    grant_id: String(body.grant_id ?? "").trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    domain: String(body.domain ?? "testing").trim() || "testing",
+    ref: isPlainObject(body.ref) ? body.ref : {},
+    episode_id: String(body.episode_id ?? "").trim(),
+    window_index: Number.isInteger(body.window_index) && body.window_index >= 0 ? body.window_index : null,
+  };
+}
+
+function applyDesktopWindowScope(inspection, request = {}) {
+  const scopedIndex = request.window_index;
+  if (!Number.isInteger(scopedIndex)) {
+    return inspection;
+  }
+  const windows = Array.isArray(inspection?.windows) ? inspection.windows : [];
+  const scopedWindows = windows.filter((window) => window?.index === scopedIndex);
+  const next = {
+    ...inspection,
+    windows: scopedWindows,
+    window_count: scopedWindows.length,
+    window_scope: {
+      requested_index: scopedIndex,
+      matched: scopedWindows.length > 0,
+      source: "fresh_enumeration",
+      index_drift_possible: true,
+    },
+  };
+  if (typeof inspection?.text_item_count === "number") {
+    next.text_item_count = scopedWindows.reduce((total, window) => total + (Array.isArray(window?.text_items) ? window.text_items.length : 0), 0);
+  }
+  return next;
+}
+
+function attachDesktopActRefs({
+  inspection,
+  request = {},
+  grant = {},
+  descriptor = {},
+  actuationTable,
+  family = "",
+} = {}) {
+  const episodeId = String(request.episode_id ?? "").trim();
+  const scopedInspection = applyDesktopWindowScope(inspection, request);
+  const scopedIndex = request.window_index;
+  let metadata = (desktopActuationMetadata(inspection) ?? []).filter((entry) => (
+    !Number.isInteger(scopedIndex) || entry.window_index === scopedIndex
+  ));
+  if (Number.isInteger(scopedIndex)) {
+    metadata = prioritizeScopedDesktopActuationMetadata({ metadata, inspection: scopedInspection });
+  }
+  if (!episodeId || !Array.isArray(metadata) || metadata.length === 0) {
+    return scopedInspection;
+  }
+  const generation = actuationTable.startGeneration({
+    episode_id: episodeId,
+    grant_id: grant.id,
+    provider_id: descriptor.provider_id,
+    domain: descriptor.domain,
+    family,
+  });
+  const next = structuredClone(scopedInspection);
+  next.generation_id = generation.generation_id;
+  for (const entry of metadata) {
+    const actKinds = Array.isArray(entry.act_kinds) ? entry.act_kinds : [];
+    const node = nodeAtDesktopActuationPath(next, entry.node_path);
+    if (!node || actKinds.length === 0) {
+      continue;
+    }
+    const actKind = actKinds.includes("text_insert")
+      ? "text_insert"
+      : actKinds.includes("text_set")
+        ? "text_set"
+        : actKinds[0];
+    const actRef = actuationTable.mint({
+      generation,
+      role: entry.role,
+      window_index: entry.window_index,
+      op_class: entry.op_class,
+      act_kind: actKind,
+      locator: entry.locator,
+    });
+    if (actRef) {
+      node.act_ref = actRef;
+      node.act_kinds = actKinds;
+    } else {
+      delete node.act_kinds;
+    }
+  }
+  return next;
+}
+
+function prioritizeScopedDesktopActuationMetadata({ metadata = [], inspection } = {}) {
+  return [...metadata].sort((left, right) => (
+    desktopActuationPriority(left, inspection) - desktopActuationPriority(right, inspection)
+  ));
+}
+
+function desktopActuationPriority(entry = {}, inspection) {
+  const node = nodeAtDesktopActuationPath(inspection, entry.node_path);
+  const text = String(node?.text?.value ?? "").trim().toLowerCase();
+  if (entry.op_class === "invoke_action" && /^save(\\b|\\s)/.test(text)) {
+    return 0;
+  }
+  if (entry.op_class === "text_input") {
+    return 1;
+  }
+  if (entry.op_class === "invoke_action") {
+    return 2;
+  }
+  return 3;
+}
+
+function nodeAtDesktopActuationPath(inspection, path = []) {
+  if (!Array.isArray(path) || path[0] !== "windows" || !Number.isInteger(path[1])) {
+    return null;
+  }
+  const window = inspection.windows?.find((entry) => entry?.index === path[1]);
+  if (!window) {
+    return null;
+  }
+  if (path.length === 2) {
+    return window;
+  }
+  if (path[2] === "text_items" && Number.isInteger(path[3])) {
+    return window.text_items?.[path[3]] ?? null;
+  }
+  return null;
+}
+
+async function handleDesktopActuationRoute({
+  req,
+  res,
+  body,
+  capability,
+  opClass,
+  expectedActKinds,
+  effectiveHarness,
+  activeModules,
+  grantStore,
+  grantRecoveryReport,
+  capabilityCatalog,
+  providerRegistry,
+  provenanceLog,
+  desktopActuationTable,
+  logger,
+} = {}) {
+  const request = validateDesktopActuationRequest(body, { capability });
+  if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+    writeError(res, {
+      statusCode: 403,
+      code: "capability_not_allowed",
+      message: `Capability ${capability} is disabled by the active harness.`,
+    });
+    return;
+  }
+  if (!request.grant_id) {
+    writeError(res, {
+      statusCode: 403,
+      code: "desktop_act_grant_required",
+      message: "Desktop actuation requires an active grant id.",
+    });
+    return;
+  }
+  let descriptor;
+  try {
+    descriptor = await resolveResourceDescriptor({
+      domain: request.domain,
+      capability,
+      ref: request.ref,
+      harness: effectiveHarness,
+      providerRegistry,
+    });
+  } catch (error) {
+    writeError(res, {
+      statusCode: error.statusCode ?? 400,
+      code: error.code ?? "desktop_act_descriptor_refused",
+      message: error.message,
+    });
+    return;
+  }
+  request.provider ||= descriptor.provider_id;
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: request.grant_id,
+    capability,
+    provider: request.provider,
+    scope: request.scope,
+    recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    writeJson(res, 403, {
+      error: "desktop_act_grant_not_authorized",
+      message: "Desktop actuation requires an active, matching runtime grant.",
+      authorization_code: authorization.code,
+      recovery_required: authorization.recovery_required,
+      findings: authorization.findings,
+    });
+    return;
+  }
+  if (descriptor.provider_id !== request.provider || descriptor.provider_id !== authorization.grant.provider) {
+    writeJson(res, 403, {
+      error: "desktop_act_provider_mismatch",
+      message: "Desktop actuation provider does not match the authorized grant.",
+      authorization_code: "provider_mismatch",
+    });
+    return;
+  }
+  descriptor = { ...descriptor, grant_id: authorization.grant.id };
+  const resolved = resolveDesktopActRefForRequest({
+    desktopActuationTable,
+    act_ref: request.act_ref,
+    episode_id: request.episode_id,
+    grant_id: request.source_grant_id || authorization.grant.id,
+    provider_id: descriptor.provider_id,
+    domain: descriptor.domain,
+    family: request.family,
+    op_class: opClass,
+    candidateFamilies: opClass === "text_input" ? ["text"] : ["windows", "text"],
+  });
+  if (!resolved.allowed) {
+    const event = provenanceLog.append(createDesktopActuationEvent({
+      request,
+      grant: authorization.grant,
+      descriptor,
+      caller: req.headers["x-soma-caller"] ?? "",
+      outcome: "ref_invalid",
+      refInvalidCategory: resolved.code,
+    }));
+    logger.info?.("soma.provenance", event);
+    writeJson(res, 403, {
+      error: desktopActRefInvalidCode(),
+      message: "Desktop actuation reference is invalid.",
+      provenance_id: event.id,
+      outcome: "ref_invalid",
+    });
+    return;
+  }
+  if (!expectedActKinds.includes(resolved.entry.act_kind)) {
+    writeDesktopActuationOutcome(res, {
+      provenanceLog,
+      logger,
+      request,
+      grant: authorization.grant,
+      descriptor,
+      caller: req.headers["x-soma-caller"] ?? "",
+      outcome: "op_not_allowed",
+    });
+    return;
+  }
+  const bounds = desktopActuationTable.recordOperation({
+    episode_id: request.episode_id,
+    op_class: opClass,
+    text: request.text,
+  });
+  if (!bounds.allowed) {
+    writeDesktopActuationOutcome(res, {
+      provenanceLog,
+      logger,
+      request,
+      grant: authorization.grant,
+      descriptor,
+      caller: req.headers["x-soma-caller"] ?? "",
+      outcome: bounds.code,
+    });
+    return;
+  }
+  let providerResult;
+  try {
+    providerResult = await invokeDesktopActuationWithDescriptor({
+      descriptor,
+      actKind: resolved.entry.act_kind,
+      locator: resolved.entry.locator,
+      text: request.text,
+    });
+  } catch (error) {
+    providerResult = {
+      outcome: error.code === "desktop_synthetic_container_act_contract_invalid"
+        ? "contract_invalid"
+        : "provider_unavailable",
+    };
+  }
+  writeDesktopActuationOutcome(res, {
+    provenanceLog,
+    logger,
+    request,
+    grant: authorization.grant,
+    descriptor,
+    caller: req.headers["x-soma-caller"] ?? "",
+    outcome: providerResult.outcome,
+  });
+}
+
+function validateDesktopActuationRequest(body, { capability } = {}) {
+  const allowedKeys = new Set(["grant_id", "source_grant_id", "provider", "scope", "domain", "ref", "episode_id", "act_ref", "family", "text"]);
+  const errors = [];
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    for (const key of ["grant_id", "source_grant_id", "provider", "domain", "episode_id", "act_ref", "family", "text"]) {
+      if (body[key] !== undefined && typeof body[key] !== "string") {
+        errors.push(`request.${key} must be a string when provided`);
+      }
+    }
+    if (body.scope !== undefined && !["once", "session"].includes(body.scope)) {
+      errors.push("request.scope must be once or session when provided");
+    }
+    if (body.ref !== undefined && !isPlainObject(body.ref)) {
+      errors.push("request.ref must be an object when provided");
+    }
+  }
+  if (errors.length > 0) {
+    const error = new Error(`Desktop actuation request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "desktop_act_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+  return {
+    grant_id: String(body.grant_id ?? "").trim(),
+    source_grant_id: String(body.source_grant_id ?? "").trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    domain: String(body.domain ?? "testing").trim() || "testing",
+    ref: isPlainObject(body.ref) ? body.ref : {},
+    episode_id: String(body.episode_id ?? "").trim(),
+    act_ref: String(body.act_ref ?? "").trim(),
+    family: String(body.family ?? "").trim(),
+    text: String(body.text ?? ""),
+  };
+}
+
+function resolveDesktopActRefForRequest({
+  desktopActuationTable,
+  candidateFamilies = [],
+  family = "",
+  allowOpaqueGrant = false,
+  ...binding
+} = {}) {
+  const resolver = allowOpaqueGrant && typeof desktopActuationTable.resolveOpaque === "function"
+    ? (args) => desktopActuationTable.resolveOpaque(args)
+    : (args) => desktopActuationTable.resolve(args);
+  const baseBinding = allowOpaqueGrant
+    ? {
+        act_ref: binding.act_ref,
+        episode_id: binding.episode_id,
+        provider_id: binding.provider_id,
+        domain: binding.domain,
+        op_class: binding.op_class,
+      }
+    : binding;
+  if (family) {
+    return resolver({ ...baseBinding, family });
+  }
+  let last = null;
+  for (const candidate of candidateFamilies) {
+    const resolved = resolver({ ...baseBinding, family: candidate });
+    if (resolved.allowed) {
+      return resolved;
+    }
+    last = resolved;
+  }
+  return last ?? resolver({ ...baseBinding, family: "" });
+}
+
+function writeDesktopActuationOutcome(res, {
+  provenanceLog,
+  logger,
+  request,
+  grant,
+  descriptor,
+  caller,
+  outcome,
+} = {}) {
+  const event = provenanceLog.append(createDesktopActuationEvent({
+    request,
+    grant,
+    descriptor,
+    caller,
+    outcome,
+  }));
+  logger.info?.("soma.provenance", event);
+  writeJson(res, outcome === "success" ? 200 : 409, {
+    outcome,
+    provenance_id: event.id,
+  });
 }
 
 async function emitDesktopNotificationForProposal({
@@ -4582,6 +5260,7 @@ function extractDurableTestimonyDirectivesFromCompletion(text = "") {
 
 function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
   const invocations = [];
+  const parseErrors = [];
   let cleaned = String(text ?? "").replace(/```soma-capability\s*([\s\S]*?)```/g, (match, rawJson) => {
     try {
       const parsed = JSON.parse(String(rawJson ?? "").trim());
@@ -4589,10 +5268,12 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
         invocations.push(parsed);
         return "";
       }
+      parseErrors.push({ reason: "non_object_json" });
+      return "";
     } catch {
-      return match;
+      parseErrors.push({ reason: "invalid_json" });
+      return "";
     }
-    return match;
   });
   let truncatedInvocations = 0;
   let searchFrom = 0;
@@ -4605,12 +5286,27 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
     if (closingIndex === -1) {
       cleaned = cleaned.slice(0, openingIndex);
       truncatedInvocations += 1;
+      parseErrors.push({ reason: "unclosed_fence" });
       break;
     }
     searchFrom = closingIndex + 3;
   }
-  return { text: cleaned.trim(), invocations, truncatedInvocations };
+  return { text: cleaned.trim(), invocations, truncatedInvocations, parseErrors };
 }
+
+function capabilityBlockParserDisclosure(error = {}) {
+  const reason = CAPABILITY_BLOCK_PARSE_ERROR_REASONS.has(error?.reason)
+    ? error.reason
+    : "unknown";
+  return `A capability-block-shaped fragment was present but unparseable: ${reason}. No capability was invoked from that fragment, and no fragment content was retained in this disclosure.`;
+}
+
+const CAPABILITY_BLOCK_PARSE_ERROR_REASONS = new Set([
+  "invalid_json",
+  "non_object_json",
+  "unclosed_fence",
+  "unknown",
+]);
 
 async function processSpaceCapabilityInvocations({
   invocations = [],
@@ -4626,6 +5322,7 @@ async function processSpaceCapabilityInvocations({
   historyProjectionRecoveryReport,
   provenanceLog,
   providerRegistry,
+  desktopActuationTable,
   writePosture,
   logger = console,
   caller = "",
@@ -4653,6 +5350,11 @@ async function processSpaceCapabilityInvocations({
       "tool.files.read",
       "provenance.summary.read",
       "desktop.inspect.accessibility_tree",
+      "desktop.inspect.focus",
+      "desktop.inspect.windows",
+      "desktop.inspect.text",
+      "desktop.act.invoke_action",
+      "desktop.act.text_input",
     ].includes(invocation.capability)) {
       const refusal = recordSpaceCapabilityRefusal({
         invocation,
@@ -4710,6 +5412,63 @@ async function processSpaceCapabilityInvocations({
         result.refusals.push(desktopResult.refusal);
       }
       result.disclosures.push(desktopResult.disclosure);
+      continue;
+    }
+    if ([
+      "desktop.inspect.focus",
+      "desktop.inspect.windows",
+      "desktop.inspect.text",
+    ].includes(invocation.capability)) {
+      const desktopResult = await processDesktopInspectionCapabilityInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        activeModules,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        desktopActuationTable,
+        logger,
+        caller,
+      });
+      if (desktopResult.result) {
+        result.results.push(desktopResult.result);
+      }
+      if (desktopResult.refusal) {
+        result.refusals.push(desktopResult.refusal);
+      }
+      result.disclosures.push(desktopResult.disclosure);
+      continue;
+    }
+    if ([
+      "desktop.act.invoke_action",
+      "desktop.act.text_input",
+    ].includes(invocation.capability)) {
+      const actuationResult = await processDesktopActuationCapabilityInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        activeModules,
+        effectiveHarness,
+        grantStore,
+        grantRecoveryReport,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        desktopActuationTable,
+        logger,
+        caller,
+      });
+      if (actuationResult.result) {
+        result.results.push(actuationResult.result);
+      }
+      if (actuationResult.refusal) {
+        result.refusals.push(actuationResult.refusal);
+      }
+      result.disclosures.push(actuationResult.disclosure);
       continue;
     }
     if (invocation.capability === "provenance.summary.read") {
@@ -4865,15 +5624,26 @@ async function processSpaceCapabilityInvocations({
 }
 
 function normalizeSpaceCapabilityInvocation(input = {}) {
+  const args = isPlainObject(input.args) ? input.args : {};
+  const valueFor = (key, fallbackKey = key) => input[key] ?? args[fallbackKey];
   const capability = String(input.invoke ?? input.capability ?? "").trim();
   return {
     capability,
-    grant_id: String(input.grant_id ?? "").trim(),
-    domain: String(input.domain ?? "").trim(),
-    presentation_kind: String(input.presentation_kind ?? "").trim(),
-    root_id: String(input.root_id ?? "").trim(),
-    relative_path: String(input.relative_path ?? "").trim(),
-    episode_id: String(input.episode_id ?? input.episodeId ?? "").trim(),
+    grant_id: String(valueFor("grant_id") ?? "").trim(),
+    domain: String(valueFor("domain") ?? "").trim(),
+    presentation_kind: String(valueFor("presentation_kind") ?? "").trim(),
+    root_id: String(valueFor("root_id") ?? "").trim(),
+    relative_path: String(valueFor("relative_path") ?? "").trim(),
+    episode_id: String(input.episode_id ?? input.episodeId ?? args.episode_id ?? args.episodeId ?? "").trim(),
+    source_grant_id: String(valueFor("source_grant_id") ?? "").trim(),
+    provider: String(valueFor("provider") ?? "").trim(),
+    scope: String(valueFor("scope") ?? "session").trim() || "session",
+    ref: isPlainObject(input.ref) ? input.ref : (isPlainObject(args.ref) ? args.ref : {}),
+    act_ref: String(valueFor("act_ref") ?? "").trim(),
+    act_kind: String(valueFor("act_kind") ?? "").trim(),
+    family: String(valueFor("family") ?? "").trim(),
+    text: String(valueFor("text") ?? ""),
+    window_index: Number.isInteger(valueFor("window_index")) ? valueFor("window_index") : null,
   };
 }
 
@@ -5269,6 +6039,601 @@ function desktopAccessibilityResultDisclosure({ descriptor = {}, inspection = {}
     "desktop.inspect.accessibility_tree delivered a synthetic, structure-only accessibility tree.",
     `Fixture: ${descriptor.fixture_id ?? ""}. Applications: ${inspection.application_count ?? 0}.`,
     "Returned structure is limited to roles, counts, ordered child role/count shape, coarse platform family, and accessibility availability. No process identity, raw accessibility locators, host display, host session bus, exact host environment, raw text, names, descriptions, states, actions, screenshots, pointer state, keyboard state, or actuation was returned.",
+  ].join(" ");
+}
+
+async function processDesktopInspectionCapabilityInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  activeModules = [],
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  desktopActuationTable,
+  logger = console,
+  caller = "",
+} = {}) {
+  const capability = invocation.capability;
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_episode_closed",
+      domain,
+    });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_domain_unavailable",
+    });
+  }
+  if (domain !== "testing") {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_testing_domain_required",
+      domain,
+    });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_domain_mismatch",
+      domain,
+    });
+  }
+  if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "capability_not_allowed",
+      domain,
+    });
+  }
+  const request = {
+    grant_id: invocation.grant_id,
+    provider: invocation.provider,
+    scope: invocation.scope || "session",
+    domain,
+    ref: invocation.ref,
+    episode_id: invocation.episode_id || episode?.id || "",
+    window_index: invocation.window_index,
+  };
+
+  try {
+    if (capability === "desktop.inspect.focus") {
+      validateFocusedDesktopInspectionRequest({
+        grant_id: request.grant_id,
+        provider: request.provider,
+        scope: request.scope,
+      });
+    } else if (capability === "desktop.inspect.windows") {
+      validateDesktopWindowsInspectionRequest({
+        grant_id: request.grant_id,
+        provider: request.provider,
+        scope: request.scope,
+        domain: request.domain,
+        ref: request.ref,
+        episode_id: request.episode_id,
+        window_index: request.window_index,
+      });
+    } else {
+      validateDesktopTextInspectionRequest({
+        grant_id: request.grant_id,
+        provider: request.provider,
+        scope: request.scope,
+        domain: request.domain,
+        ref: request.ref,
+        episode_id: request.episode_id,
+        window_index: request.window_index,
+      });
+    }
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_inspection_request_invalid",
+      validation_errors: error.validation_errors,
+      domain,
+    });
+  }
+
+  if (!request.grant_id) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_grant_required",
+      domain,
+    });
+  }
+  try {
+    requireCapability(effectiveHarness, capability);
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_inspection_capability_not_allowed",
+      domain,
+    });
+  }
+
+  let descriptor = null;
+  if (capability !== "desktop.inspect.focus") {
+    try {
+      descriptor = await resolveResourceDescriptor({
+        domain: request.domain,
+        capability,
+        ref: request.ref,
+        harness: effectiveHarness,
+        providerRegistry,
+      });
+    } catch (error) {
+      return recordSpaceCapabilityRefusal({
+        invocation,
+        episode,
+        provenanceLog,
+        logger,
+        caller,
+        reason: error.code ?? "desktop_inspection_descriptor_refused",
+        domain,
+      });
+    }
+    request.provider ||= descriptor.provider_id;
+  } else {
+    request.provider ||= providerForCapability(providerRegistry, capability);
+  }
+
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: request.grant_id,
+    capability,
+    provider: request.provider,
+    scope: request.scope,
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_grant_not_authorized",
+      authorization,
+      domain,
+    });
+  }
+  const grantDomain = String(authorization.grant.constraints?.domain ?? "").trim();
+  if (grantDomain && grantDomain !== domain) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_grant_domain_mismatch",
+      authorization,
+      domain,
+    });
+  }
+  if (descriptor && (descriptor.provider_id !== request.provider || descriptor.provider_id !== authorization.grant.provider)) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: "desktop_inspection_provider_mismatch",
+      authorization,
+      domain,
+    });
+  }
+  descriptor = descriptor ? { ...descriptor, grant_id: authorization.grant.id } : null;
+
+  let inspection;
+  try {
+    if (capability === "desktop.inspect.focus") {
+      inspection = await inspectFocusedDesktopObject();
+    } else if (capability === "desktop.inspect.windows") {
+      inspection = await inspectDesktopWindowsWithDescriptor({ descriptor });
+      inspection = attachDesktopActRefs({
+        inspection,
+        request,
+        grant: authorization.grant,
+        descriptor,
+        actuationTable: desktopActuationTable,
+        family: "windows",
+      });
+    } else {
+      inspection = await inspectDesktopTextWithDescriptor({ descriptor });
+      inspection = attachDesktopActRefs({
+        inspection,
+        request,
+        grant: authorization.grant,
+        descriptor,
+        actuationTable: desktopActuationTable,
+        family: "text",
+      });
+    }
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_inspection_provider_refused",
+      authorization,
+      domain,
+    });
+  }
+
+  const event = provenanceLog.append(
+    capability === "desktop.inspect.focus"
+      ? createFocusedDesktopInspectionEvent({ inspection, request, grant: authorization.grant, caller })
+      : capability === "desktop.inspect.windows"
+        ? createDesktopWindowsInspectionEvent({ inspection, request, grant: authorization.grant, descriptor, caller })
+        : createDesktopTextInspectionEvent({ inspection, request, grant: authorization.grant, descriptor, caller }),
+  );
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createDesktopInspectionResultEnvelope({
+      capability,
+      grant: authorization.grant,
+      descriptor,
+      inspection,
+      provenanceId: event.id,
+    }),
+    disclosure: desktopInspectionResultDisclosure({ capability, descriptor, inspection }),
+  };
+}
+
+async function processDesktopActuationCapabilityInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  activeModules = [],
+  effectiveHarness,
+  grantStore,
+  grantRecoveryReport,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  desktopActuationTable,
+  logger = console,
+  caller = "",
+} = {}) {
+  const capability = invocation.capability;
+  const opClass = capability === "desktop.act.invoke_action" ? "invoke_action" : "text_input";
+  const expectedActKinds = capability === "desktop.act.invoke_action"
+    ? ["invoke_default"]
+    : ["text_insert", "text_set"];
+  const domain = domainForEpisodePosture(episode?.posture);
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_episode_closed", domain });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_domain_unavailable" });
+  }
+  if (domain !== "testing") {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_testing_domain_required", domain });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_domain_mismatch", domain });
+  }
+  if (isCapabilityDisabledByActiveModule(activeModules, capability)) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "capability_not_allowed", domain });
+  }
+  const request = {
+    grant_id: invocation.grant_id,
+    source_grant_id: invocation.source_grant_id,
+    provider: invocation.provider,
+    scope: invocation.scope || "session",
+    domain,
+    ref: invocation.ref,
+    episode_id: invocation.episode_id || episode?.id || "",
+    act_ref: invocation.act_ref,
+    family: invocation.family,
+    text: invocation.text,
+  };
+  try {
+    validateDesktopActuationRequest(request, { capability });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({
+      invocation,
+      episode,
+      provenanceLog,
+      logger,
+      caller,
+      reason: error.code ?? "desktop_act_request_invalid",
+      validation_errors: error.validation_errors,
+      domain,
+    });
+  }
+  if (invocation.act_kind && !expectedActKinds.includes(invocation.act_kind)) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_kind_not_allowed", domain });
+  }
+  try {
+    requireCapability(effectiveHarness, capability);
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: error.code ?? "desktop_act_capability_not_allowed", domain });
+  }
+  if (!request.grant_id) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_grant_required", domain });
+  }
+
+  let descriptor;
+  try {
+    descriptor = await resolveResourceDescriptor({
+      domain: request.domain,
+      capability,
+      ref: request.ref,
+      harness: effectiveHarness,
+      providerRegistry,
+    });
+  } catch (error) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: error.code ?? "desktop_act_descriptor_refused", domain });
+  }
+  request.provider ||= descriptor.provider_id;
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: request.grant_id,
+    capability,
+    provider: request.provider,
+    scope: request.scope,
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_grant_not_authorized", authorization, domain });
+  }
+  const grantDomain = String(authorization.grant.constraints?.domain ?? "").trim();
+  if (grantDomain && grantDomain !== domain) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_grant_domain_mismatch", authorization, domain });
+  }
+  if (descriptor.provider_id !== request.provider || descriptor.provider_id !== authorization.grant.provider) {
+    return recordSpaceCapabilityRefusal({ invocation, episode, provenanceLog, logger, caller, reason: "desktop_act_provider_mismatch", authorization, domain });
+  }
+  descriptor = { ...descriptor, grant_id: authorization.grant.id };
+  const resolved = resolveDesktopActRefForRequest({
+    desktopActuationTable,
+    act_ref: request.act_ref,
+    episode_id: request.episode_id,
+    grant_id: request.source_grant_id,
+    provider_id: descriptor.provider_id,
+    domain: descriptor.domain,
+    family: request.family,
+    op_class: opClass,
+    candidateFamilies: opClass === "text_input" ? ["text"] : ["windows", "text"],
+    allowOpaqueGrant: !request.source_grant_id,
+  });
+  if (!resolved.allowed) {
+    const event = provenanceLog.append(createDesktopActuationEvent({
+      request,
+      grant: authorization.grant,
+      descriptor,
+      caller,
+      outcome: "ref_invalid",
+      refInvalidCategory: resolved.code,
+    }));
+    logger.info?.("soma.provenance", event);
+    return {
+      refusal: {
+        capability,
+        grant_id: invocation.grant_id,
+        reason: desktopActRefInvalidCode(),
+        provenance_id: event.id,
+        content_included: false,
+      },
+      disclosure: desktopActuationRefusalDisclosure({ capability, reason: desktopActRefInvalidCode() }),
+    };
+  }
+  if (!expectedActKinds.includes(resolved.entry.act_kind) || (invocation.act_kind && invocation.act_kind !== resolved.entry.act_kind)) {
+    return await recordDesktopActuationCapabilityOutcome({
+      invocation,
+      request,
+      authorization,
+      descriptor,
+      provenanceLog,
+      logger,
+      caller,
+      outcome: "op_not_allowed",
+    });
+  }
+  const bounds = desktopActuationTable.recordOperation({
+    episode_id: request.episode_id,
+    op_class: opClass,
+    text: request.text,
+  });
+  if (!bounds.allowed) {
+    return await recordDesktopActuationCapabilityOutcome({
+      invocation,
+      request,
+      authorization,
+      descriptor,
+      provenanceLog,
+      logger,
+      caller,
+      outcome: bounds.code,
+    });
+  }
+  let providerResult;
+  try {
+    providerResult = await invokeDesktopActuationWithDescriptor({
+      descriptor,
+      actKind: resolved.entry.act_kind,
+      locator: resolved.entry.locator,
+      text: request.text,
+    });
+  } catch (error) {
+    providerResult = {
+      outcome: error.code === "desktop_synthetic_container_act_contract_invalid"
+        ? "contract_invalid"
+        : "provider_unavailable",
+    };
+  }
+  return await recordDesktopActuationCapabilityOutcome({
+    invocation,
+    request,
+    authorization,
+    descriptor,
+    provenanceLog,
+    logger,
+    caller,
+    outcome: providerResult.outcome,
+  });
+}
+
+async function recordDesktopActuationCapabilityOutcome({
+  invocation,
+  request,
+  authorization,
+  descriptor,
+  provenanceLog,
+  logger,
+  caller,
+  outcome,
+} = {}) {
+  const event = provenanceLog.append(createDesktopActuationEvent({
+    request,
+    grant: authorization.grant,
+    descriptor,
+    caller,
+    outcome,
+  }));
+  logger.info?.("soma.provenance", event);
+  const envelope = {
+    capability: invocation.capability,
+    grant_id: authorization.grant.id,
+    provider: authorization.grant.provider,
+    result_schema: "soma.desktop.act.response.v1",
+    domain: descriptor.domain,
+    provider_mode: descriptor.provider_mode,
+    desktop_surface: descriptor.desktop_surface,
+    outcome,
+    content_included: false,
+    provenance_id: event.id,
+    result: { outcome },
+  };
+  if (outcome === "success") {
+    return {
+      result: envelope,
+      disclosure: desktopActuationResultDisclosure({ capability: invocation.capability, outcome }),
+    };
+  }
+  return {
+    refusal: {
+      capability: invocation.capability,
+      grant_id: authorization.grant.id,
+      reason: outcome,
+      provenance_id: event.id,
+      content_included: false,
+    },
+    disclosure: desktopActuationRefusalDisclosure({ capability: invocation.capability, reason: outcome }),
+  };
+}
+
+function createDesktopInspectionResultEnvelope({
+  capability = "",
+  grant = {},
+  descriptor = null,
+  inspection = {},
+  provenanceId = "",
+} = {}) {
+  return {
+    capability,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: capability === "desktop.inspect.focus"
+      ? "soma.desktop.inspect.focus.response.v1"
+      : capability === "desktop.inspect.windows"
+        ? "soma.desktop.inspect.windows.response.v1"
+        : "soma.desktop.inspect.text.response.v1",
+    domain: descriptor?.domain ?? "testing",
+    provider_mode: descriptor?.provider_mode ?? "",
+    desktop_surface: descriptor?.desktop_surface ?? "",
+    synthetic: descriptor ? Boolean(descriptor.synthetic) : false,
+    content_included: capability === "desktop.inspect.text",
+    text_content_included: inspection.text_content_included === true,
+    identity_fields_included: inspection.identity_fields_included === true,
+    screenshots_included: inspection.screenshots_included === true,
+    one_shot: true,
+    read_only: true,
+    provenance_id: provenanceId,
+    result: inspection,
+  };
+}
+
+function desktopInspectionResultDisclosure({ capability = "", descriptor = {}, inspection = {} } = {}) {
+  if (capability === "desktop.inspect.focus") {
+    return "desktop.inspect.focus delivered bounded focused-object metadata. No focused text, process identity, raw accessibility locators, screenshots, pointer state, keyboard state, or actuation was returned.";
+  }
+  if (capability === "desktop.inspect.windows") {
+    return [
+      "desktop.inspect.windows delivered bounded synthetic-container window metadata.",
+      `Windows: ${inspection.window_count ?? 0}.`,
+      "No titles, raw text, process identity, raw accessibility locators, screenshots, pointer state, keyboard state, or host desktop identifiers were returned.",
+    ].join(" ");
+  }
+  return [
+    "desktop.inspect.text delivered bounded synthetic-container desktop text.",
+    `Windows: ${inspection.window_count ?? 0}. Text items: ${inspection.text_item_count ?? 0}.`,
+    "Opaque act_refs may be used only with matching desktop.act grants. No process identity, raw accessibility locators, screenshots, pointer state, keyboard state, or host desktop identifiers were returned.",
+  ].join(" ");
+}
+
+function desktopInspectionRefusalDisclosure({ capability = "", reason = "", authorization = null } = {}) {
+  return [
+    `${capability || "desktop.inspect"} was not delivered.`,
+    `Reason: ${authorization?.code || reason}.`,
+    "No desktop inspection result content, host desktop identifiers, process identity, raw accessibility locators, screenshots, pointer state, keyboard state, or actuation was returned.",
+  ].join(" ");
+}
+
+function desktopActuationResultDisclosure({ capability = "", outcome = "" } = {}) {
+  return `${capability} completed with outcome ${outcome}. No desktop content, raw accessibility locators, screenshots, pointer state, keyboard state, or host identifiers were returned.`;
+}
+
+function desktopActuationRefusalDisclosure({ capability = "", reason = "", authorization = null } = {}) {
+  return [
+    `${capability || "desktop.act"} was not performed.`,
+    `Reason: ${authorization?.code || reason}.`,
+    "No actuation result content, raw accessibility locators, screenshots, pointer state, keyboard state, or host identifiers were returned.",
   ].join(" ");
 }
 
@@ -6691,7 +8056,11 @@ function recordSpaceCapabilityRefusal({
         ? "provenance.summary.read.denied"
         : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
           ? "desktop.inspect.accessibility_tree.denied"
-          : "space.status.read.denied";
+          : capability.startsWith("desktop.inspect.")
+            ? `${capability}.denied`
+            : capability.startsWith("desktop.act.")
+              ? `${capability}.denied`
+              : "space.status.read.denied";
   const event = provenanceLog.append({
     event_type: eventType,
     capability,
@@ -6733,7 +8102,11 @@ function recordSpaceCapabilityRefusal({
           ? provenanceSummaryRefusalDisclosure({ reason, authorization })
           : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
             ? desktopAccessibilityRefusalDisclosure({ reason, authorization })
-            : spaceStatusRefusalDisclosure({ reason, authorization }),
+            : capability.startsWith("desktop.inspect.")
+              ? desktopInspectionRefusalDisclosure({ capability, reason, authorization })
+              : capability.startsWith("desktop.act.")
+                ? desktopActuationRefusalDisclosure({ capability, reason, authorization })
+                : spaceStatusRefusalDisclosure({ reason, authorization }),
   };
 }
 
@@ -8194,8 +9567,6 @@ function createFocusedDesktopInspectionEvent({ inspection, request = {}, grant =
     grant_id: grant.id ?? request.grant_id ?? "",
     provider: grant.provider ?? request.provider ?? "",
     scope: grant.scope ?? request.scope ?? "",
-    desktop_session: inspection.desktop_session,
-    session_type: inspection.session_type,
     broker_source: inspection.broker_source,
     inspection_mode: inspection.mode,
     requested_include_text: request.include_text === true,
@@ -8208,7 +9579,7 @@ function createFocusedDesktopInspectionEvent({ inspection, request = {}, grant =
   };
 }
 
-function createDesktopWindowsInspectionEvent({ inspection, request = {}, grant = {}, caller }) {
+function createDesktopWindowsInspectionEvent({ inspection, request = {}, grant = {}, descriptor = {}, caller }) {
   return {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
@@ -8219,16 +9590,83 @@ function createDesktopWindowsInspectionEvent({ inspection, request = {}, grant =
     grant_id: grant.id ?? request.grant_id ?? "",
     provider: grant.provider ?? request.provider ?? "",
     scope: grant.scope ?? request.scope ?? "",
-    desktop_session: inspection.desktop_session,
-    session_type: inspection.session_type,
+    domain: descriptor.domain ?? request.domain ?? "",
+    provider_mode: descriptor.provider_mode ?? "",
+    desktop_surface: descriptor.desktop_surface ?? "",
     broker_source: inspection.broker_source,
     inspection_mode: inspection.mode,
     requested_include_text: request.include_text === true,
     requested_include_titles: request.include_titles === true,
     window_count: inspection.window_count ?? 0,
-    application_count: Array.isArray(inspection.applications) ? inspection.applications.length : 0,
+    application_count: inspection.application_count ?? null,
     text_content_included: false,
     titles_included: false,
+    identity_fields_included: inspection.identity_fields_included === true,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createDesktopTextInspectionEvent({ inspection, request = {}, grant = {}, descriptor = {}, caller }) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "desktop.inspect.text",
+    capability: "desktop.inspect.text",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? request.grant_id ?? "",
+    provider: grant.provider ?? request.provider ?? "",
+    scope: grant.scope ?? request.scope ?? "",
+    domain: descriptor.domain ?? request.domain ?? "",
+    provider_mode: descriptor.provider_mode ?? "",
+    desktop_surface: descriptor.desktop_surface ?? "",
+    broker_source: inspection.broker_source,
+    inspection_mode: inspection.mode,
+    window_count: inspection.window_count ?? 0,
+    text_item_count: inspection.text_item_count ?? 0,
+    max_windows: inspection.max_windows ?? null,
+    max_nodes_per_window: inspection.max_nodes_per_window ?? null,
+    max_text_items: inspection.max_text_items ?? null,
+    max_text_chars_per_item: inspection.max_text_chars_per_item ?? null,
+    truncated: inspection.truncated === true,
+    text_content_included: inspection.text_content_included === true,
+    titles_included: inspection.titles_included === true,
+    names_included: inspection.names_included === true,
+    descriptions_included: inspection.descriptions_included === true,
+    identity_fields_included: inspection.identity_fields_included === true,
+    screenshots_included: inspection.screenshots_included === true,
+    memory_written: false,
+    remote_service_used: false,
+  };
+}
+
+function createDesktopActuationEvent({
+  request = {},
+  grant = {},
+  descriptor = {},
+  caller = "",
+  outcome = "",
+  refInvalidCategory = "",
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: descriptor.capability ?? "desktop.act",
+    capability: descriptor.capability ?? "",
+    caller_identity: caller,
+    allowed: outcome === "success",
+    grant_id: grant.id ?? request.grant_id ?? "",
+    provider: grant.provider ?? request.provider ?? "",
+    scope: grant.scope ?? request.scope ?? "",
+    domain: descriptor.domain ?? request.domain ?? "",
+    provider_mode: descriptor.provider_mode ?? "",
+    desktop_surface: descriptor.desktop_surface ?? "",
+    actuation_kind: descriptor.actuation_kind ?? "",
+    episode_id: request.episode_id ?? "",
+    outcome,
+    ref_invalid_category: refInvalidCategory,
+    text_char_count: String(request.text ?? "").length,
     memory_written: false,
     remote_service_used: false,
   };
@@ -9363,6 +10801,7 @@ function prependAnalysisTestingBriefing(messages, posture = {}) {
         "Use type testimony for interior experience and type argument for reasons you want stewards to weigh. Forum posts are words, not actions.",
         "To invoke a capability you hold a grant for, include a fenced soma-capability JSON block exactly like:",
         "```soma-capability\n{\"invoke\":\"space.status.read\",\"grant_id\":\"the grant id you were given\"}\n```",
+        "A well-formed soma-capability block may appear before, between, or after your prose once it reaches Soma; it does not need to be the final thing in your response. If something block-shaped reaches Soma but cannot be parsed, the harness reports a fixed reason class instead of failing silently. If no block reaches Soma at all, no capability is invoked.",
         "For space.history.read, the same block shape applies, and an optional \"presentation_kind\" may narrow the curated history view when you have a reason to ask for a particular kind.",
         "For tool.files.read, include the grant's root_id and the relative_path you want to read, exactly like:",
         "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
@@ -9399,7 +10838,12 @@ const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.history.read",
   "tool.files.read",
   "provenance.summary.read",
+  "desktop.inspect.focus",
+  "desktop.inspect.windows",
+  "desktop.inspect.text",
   "desktop.inspect.accessibility_tree",
+  "desktop.act.invoke_action",
+  "desktop.act.text_input",
 ]);
 
 function listHeldCapabilityGrantsForEpisode({
@@ -9480,6 +10924,12 @@ function prependHeldCapabilityGrants(messages, grants = []) {
 function formatHeldCapabilityGrant(grant = {}) {
   if (grant.capability === "tool.files.read") {
     return `${grant.capability} grant_id ${grant.grant_id} root_id ${grant.root_id}`;
+  }
+  if (grant.capability === "desktop.act.invoke_action") {
+    return `${grant.capability} grant_id ${grant.grant_id} act_kinds invoke_default`;
+  }
+  if (grant.capability === "desktop.act.text_input") {
+    return `${grant.capability} grant_id ${grant.grant_id} act_kinds text_insert,text_set`;
   }
   return `${grant.capability} grant_id ${grant.grant_id}`;
 }

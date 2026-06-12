@@ -72,21 +72,43 @@
     },
     {
       "key": "desktop.inspect.windows",
-      "status": "disabled",
-      "requires": "explicit_grant",
-      "description": "Inspect window-level accessibility metadata beyond the root-object sample."
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-first-dwell-protocol-2026-06-11",
+      "activation_scope": "testing-domain synthetic-container mirror only; runtime grant still required",
+      "description": "Inspect content-free, mirror-only window/focus targeting metadata: result-local index, role, child count, focus, z-order, and bounded geometry."
     },
     {
       "key": "desktop.inspect.focus",
-      "status": "disabled",
-      "requires": "explicit_grant",
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-first-dwell-protocol-2026-06-11",
+      "activation_scope": "testing-domain focused metadata only; runtime grant still required",
       "description": "Inspect currently focused desktop or accessibility object metadata."
     },
     {
       "key": "desktop.inspect.text",
-      "status": "disabled",
-      "requires": "explicit_grant",
-      "description": "Inspect text content, child names, descriptions, or other potentially sensitive UI text."
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-first-dwell-protocol-2026-06-11",
+      "activation_scope": "testing-domain synthetic-container mirror only; runtime grant still required",
+      "description": "Inspect bounded synthetic-container desktop text content, names, descriptions, and titles without raw desktop identity or actuation."
+    },
+    {
+      "key": "desktop.act.invoke_action",
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-first-dwell-protocol-2026-06-11",
+      "activation_scope": "testing-domain synthetic-container mirror only; runtime grant and opaque act_ref still required",
+      "description": "Invoke an approved semantic desktop action by opaque act_ref in a synthetic desktop container."
+    },
+    {
+      "key": "desktop.act.text_input",
+      "status": "allowed",
+      "revocable": true,
+      "activation_provenance_id": "seth-ratified-first-dwell-protocol-2026-06-11",
+      "activation_scope": "testing-domain synthetic-container mirror only; runtime grant, opaque act_ref, and text bounds still required",
+      "description": "Send bounded semantic text input by opaque act_ref in a synthetic desktop container."
     },
     {
       "key": "tool.files.read",
@@ -133,5 +155,15 @@
   "filesystem": {
     "read_roots": ["."],
     "max_read_bytes": 256000
+  },
+  "desktop": {
+    "synthetic_fixtures": ["testing-desktop-basic-a11y-v1"],
+    "default_synthetic_fixture_id": "testing-desktop-basic-a11y-v1",
+    "testing_provider_mode": "synthetic_container_live",
+    "synthetic_container": {
+      "provider_id": "soma.provider.synthetic-container-desktop",
+      "session_id": "desktop-realism-minimal-x11-v1",
+      "canary_set_id": "desktop-realism-minimal-x11-v1"
+    }
   }
 }

@@ -235,6 +235,30 @@
           "provider_contract": "soma.desktop.inspect.accessibility_tree.v1",
           "output_schema": "docs/schemas/desktop-inspection-result.schema.json",
           "provider_mode": "synthetic_container_live"
+        },
+        {
+          "key": "desktop.inspect.windows",
+          "provider_contract": "soma.desktop.inspect.windows.v1",
+          "output_schema": "soma.desktop.inspect.windows.response.v1",
+          "provider_mode": "synthetic_container_live"
+        },
+        {
+          "key": "desktop.inspect.text",
+          "provider_contract": "soma.desktop.inspect.text.v1",
+          "output_schema": "soma.desktop.inspect.text.response.v1",
+          "provider_mode": "synthetic_container_live"
+        },
+        {
+          "key": "desktop.act.invoke_action",
+          "provider_contract": "soma.desktop.act.invoke_action.v1",
+          "output_schema": "soma.desktop.act.response.v1",
+          "provider_mode": "synthetic_container_live"
+        },
+        {
+          "key": "desktop.act.text_input",
+          "provider_contract": "soma.desktop.act.text_input.v1",
+          "output_schema": "soma.desktop.act.response.v1",
+          "provider_mode": "synthetic_container_live"
         }
       ]
     },

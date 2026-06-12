@@ -328,6 +328,59 @@ Retry:
 
 - safe after the fixture id, digest, and output contract are verified
 
+### Synthetic Container Window/Focus Provider Missing Or Invalid
+
+Current behavior:
+
+- `desktop.inspect.windows` resolves only in the testing domain through the
+  `synthetic_container_live` provider; operational/live desktop routing returns
+  `desktop_windows_live_disabled`
+- if the harness is not configured for a synthetic container provider, window/focus targeting
+  returns `desktop_windows_synthetic_container_required` instead of falling back to the live helper
+- provider output must validate as content-free window/focus targeting metadata; title/name/text,
+  pid/process, service/path, registry, raw AT-SPI locators, screenshots, states, and actions are
+  rejected before provenance or disclosure recording
+
+Recovery:
+
+- configure the synthetic container provider in the harness and verify the container is healthy
+- fix the broker output until it passes the minimized `desktop.inspect.windows` contract
+- do not substitute an operational desktop helper for testing-domain occupant use
+
+Retry:
+
+- safe after provider reachability and minimized-output validation are verified
+
+### Synthetic Container Text Provider Missing Or Invalid
+
+Current behavior:
+
+- `desktop.inspect.text` resolves only in the testing domain through the
+  `synthetic_container_live` provider; operational/live desktop routing returns
+  `desktop_text_live_disabled`
+- if the harness is not configured for a synthetic container provider, text inspection returns
+  `desktop_text_synthetic_container_required` instead of falling back to the live helper
+- missing or inactive grants fail before provider invocation with `desktop_text_grant_required` or
+  `desktop_text_grant_not_authorized`
+- provider output must validate as bounded text content: window titles, accessible names,
+  descriptions, and text are allowed, but pid/process, service/path, registry, raw AT-SPI locators,
+  screenshots, states, actions, pointer, keyboard, and actuation fields are rejected before response
+  egress or provenance recording
+- provenance records only summary metadata and counts, not returned window titles or text items
+
+Recovery:
+
+- configure the synthetic container provider in the harness and verify the container is healthy
+- fix the broker output until it passes the `desktop.inspect.text` contract
+- do not substitute an operational desktop helper for testing-domain occupant use
+- if live canary assertions fail after code changes, rebuild the mirror image so the installed
+  `/usr/local/bin/soma-desktop-broker` matches the source tree
+
+Retry:
+
+- safe after provider reachability, grant authorization, minimized identity stripping, and bounded
+  text-output validation are verified
+
 ### AT-SPI Unavailable
 
 Current behavior:

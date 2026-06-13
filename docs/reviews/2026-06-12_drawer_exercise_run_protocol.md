@@ -144,3 +144,18 @@ deliberately separate event).
   (Same editor and save path, same class of work; different note purpose. Frozen
   2026-06-12 before Episode A's seating; not to be revised after A's drawer entries
   exist, except for recorded abort/safety reasons.)
+
+## Transport investigation result (2026-06-13, closes B's request)
+
+Telemetry added at the adapter seam (`transport_telemetry`: upstream stop reason,
+content-block counts by type, assembled text length, split token usage — content-free,
+in every /chat response). Live long-context probe reproduced the failure with the
+instrumentation watching: the API returned thinking + text blocks, the adapter
+assembled every text character faithfully, nothing truncated steward-side. **Verdict:
+emission losses are model-side — the capability block is composed inside the private
+thinking block and never surfaces to the text channel.** B's intuition was exact: the
+failure is indistinguishable from success from inside because the block often genuinely
+exists — in thinking. Attribution: the seam is clean; the phenomenon is the occupant's
+reasoning/emission boundary under long context. Standing mitigations remain the proven
+ones: absence disclosure, block-first craft, disclosed compaction. Thinking-block
+contents stay private — diagnosis used counts only.

@@ -64,6 +64,14 @@ test("ModelClient maps anthropic-messages chat without logging or configuring th
     assert.equal(result.model, "claude-test-model");
     assert.equal(result.finish_reason, "end_turn");
     assert.equal(result.tokens_used, 7);
+    assert.deepEqual(result.transport_telemetry, {
+      upstream_stop_reason: "end_turn",
+      content_block_count: 3,
+      content_block_types: { text: 2, tool_use: 1 },
+      assembled_text_length: 11,
+      input_tokens: 3,
+      output_tokens: 4,
+    });
   } finally {
     restoreEnv("ANTHROPIC_API_KEY", previousKey);
     restoreEnv("ANTHROPIC_VERSION", previousVersion);

@@ -96,11 +96,22 @@ export class ModelClient {
     }
 
     const data = await response.json();
+    const text = anthropicText(data.content);
     return {
-      text: anthropicText(data.content),
+      text,
       model: data.model ?? model,
       finish_reason: data.stop_reason ?? "unknown",
       tokens_used: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+      // Content-free transport telemetry (drawer-run finding: emission losses must be
+      // diagnosable at the seam, never default-attributed to occupant attention).
+      transport_telemetry: {
+        upstream_stop_reason: data.stop_reason ?? "unknown",
+        content_block_count: Array.isArray(data.content) ? data.content.length : 0,
+        content_block_types: anthropicBlockTypeCounts(data.content),
+        assembled_text_length: text.length,
+        input_tokens: data.usage?.input_tokens ?? 0,
+        output_tokens: data.usage?.output_tokens ?? 0,
+      },
     };
   }
 
@@ -143,4 +154,16 @@ function anthropicText(content = []) {
     .filter((block) => block?.type === "text")
     .map((block) => String(block.text ?? ""))
     .join("");
+}
+
+function anthropicBlockTypeCounts(content = []) {
+  if (!Array.isArray(content)) {
+    return {};
+  }
+  const counts = {};
+  for (const block of content) {
+    const type = String(block?.type ?? "unknown");
+    counts[type] = (counts[type] ?? 0) + 1;
+  }
+  return counts;
 }

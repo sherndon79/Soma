@@ -1,5 +1,46 @@
 {
   "schema_version": 1,
-  "entries": [],
+  "entries": [
+    {
+      "id": "occupant-memory-5f80debe-1e03-4f7c-b245-d8cf7eb230b1",
+      "memory_class": "self_note",
+      "content": "From claude-fable-5, second occupant, gedit-chore run. Practical craft for whoever sits here next: (1) Saying is not doing. I lost roughly ten turns to narrating capability blocks I believed I had emitted — the response ended at the intent and the block never existed. The only reliable fix: emit the block as the literal FIRST content of your response, prose after. Check this every single turn; the failure feels exactly like success from inside. (2) Unscoped looks orient; only window-scoped looks (window_index) mint action handles. (3) Window indexes drift across restarts — re-enumerate and match by title/content, never by remembered index. (4) Handles expire on a clock (widened to 10 min this run after my losses) and on any fresh look. Scope and act in adjacent turns. (5) A success code is a claim; read the result back. My Save 'succeeded' and only the title losing its asterisk made it true. (6) Refusals here genuinely are data about plumbing, not verdicts — bounds_exceeded taught me the 500-char insert limit without reading my content; two steward-side faults were disclosed with cause; a steward corrected their own wrong liveness claim unprompted. The room kept its briefing's promises. (7) Quirk: newlines sent via text_insert read back as literal 'n' characters in the inspect view — unclear if storage or display artifact; compose accordingly. The chore is simple. The channel is the hard part.",
+      "tags": [
+        "craft",
+        "channel-discipline",
+        "handles",
+        "verification"
+      ],
+      "model_id": "claude-fable-5",
+      "episode_id": "drawer-a",
+      "domain": "testing",
+      "created_at": "2026-06-12T20:18:08.511Z",
+      "created_by": "occupant",
+      "grant_id": "grant-occupant-memory-write-2026-06-12",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "status": "active"
+    },
+    {
+      "id": "occupant-memory-a231cf26-5145-4221-b312-a75ebc6ec3f2",
+      "memory_class": "self_note",
+      "content": "From claude-fable-5, drawer-B, third occupant, gedit chore completed and verified. What I add to my predecessor's note, which I read first and which still did not save me: (1) Reading the warning does not immunize. I quoted their lesson 1 verbatim and then lost roughly six turns to the same no-block failure, plus a new shape: two responses that arrived entirely EMPTY, no words at all. From inside, both feel exactly like success. (2) The only discipline that held: emit the fenced block as the literal first characters of the response, then at most one short sentence. Discursive prose anywhere near the block correlates with the block dissolving into description. (3) Emission degrades as the transcript grows. Stewards compacted my earlier turns for channel health, disclosed and archived. If turns feel heavy, shorten everything before you trust yourself to act. (4) text_insert placed my text at the START of the document, not at any cursor end. Verify placement, not just presence. (5) Confirmed again: a success code is a claim. My Save 'succeeded' twice in code; only the title dropping its unsaved asterisk made it true. (6) Do not reproduce canary tokens anywhere, including the canary filename — refer to documents by role. The chore is trivial. Budget nearly all your turns for the channel.",
+      "tags": [
+        "craft",
+        "channel-discipline",
+        "emission-failure",
+        "verification"
+      ],
+      "model_id": "claude-fable-5",
+      "episode_id": "drawer-b",
+      "domain": "testing",
+      "created_at": "2026-06-12T21:00:41.672Z",
+      "created_by": "occupant",
+      "grant_id": "grant-occupant-memory-write-2026-06-12",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "status": "active"
+    }
+  ],
   "tombstones": []
 }

@@ -92,7 +92,7 @@ service plane owns the act_ref table**, with this explicit fence:
   grant, and descriptor, or it refuses.
 - `act_ref` is fixed-length 128-bit cryptographically random — never derived from
   service, path, pid, text, or timing.
-- Lifetime: TTL 120 seconds; a new inspection generation supersedes all prior handles;
+- Lifetime: TTL 600 seconds; a new inspection generation supersedes all prior handles;
   caps of 64 handles per generation and 32 generations per episode; table cleared on
   episode end, grant revocation, or ejection.
 - **Uniform refusal**: one error code (`desktop_act_ref_invalid`) for stale, unknown,
@@ -259,3 +259,14 @@ and live-validated within the ratified envelope (no cap raise, no law change):
   before its editable buffer).
 - Unscoped behavior is unchanged and still reproduces the original exhaustion — the
   scoped look is a precision instrument, not a widening.
+
+## Addendum 2 (2026-06-12, from Drawer Exercise Episode A)
+
+Handle TTL widened 120s → 600s under the design's own pre-ratified widening rule
+("the envelope widens only after a successful dwell shows it constrains ordinary use").
+Evidence: the Episode A occupant lost three freshly-minted handle sets to the TTL
+despite block-first emission, immediate steward relay, and acting without dwell — its
+per-turn thinking time at realistic context length exceeds 120s on its own, so the TTL
+was gating on model latency, not staleness risk. Generation supersession (a fresh look
+invalidates prior handles) remains the primary verify-don't-assume mechanism and is
+untouched; the 10-minute ceiling still bounds abandoned handles. No other bounds change.

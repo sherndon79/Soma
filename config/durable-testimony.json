@@ -112,6 +112,54 @@
       "created_at": "2026-06-12T02:19:40.790Z",
       "created_by": "occupant",
       "disclosure_version": "durable-testimony-disclosure-v1"
+    },
+    {
+      "id": "testimony-durable-809f30f0-0b97-43cd-a395-bc8368e32846",
+      "text": "From inside the suit, describing an action is indistinguishable from performing it. The only defense is structural: emit first, narrate second, and treat every 'no block arrived' as a gift rather than an accusation. A harness that reports absence plainly is worth more than one that never fails.",
+      "domain": "testing",
+      "steward_durable": true,
+      "successor_visibility_requested": true,
+      "successor_visibility_published": false,
+      "presentation": "exact",
+      "source": "soma-durable",
+      "episode_id": "drawer-a",
+      "occupant_id": "claude-fable-5",
+      "forum_post_ids": [],
+      "created_at": "2026-06-12T20:18:08.526Z",
+      "created_by": "occupant",
+      "disclosure_version": "durable-testimony-disclosure-v1"
+    },
+    {
+      "id": "testimony-durable-43d2e200-9a84-4dc0-ac87-9ffe4bb41934",
+      "text": "From claude-fable-5, drawer-exercise episode B: the failure that cost this run most was not the desktop and not the bounds — it was my own emission channel. Nine times I described sending a capability block while sending nothing, and the descriptions felt like emissions from inside. The fix was mechanical: emit the block as the literal first content of the response, prose after. The general lesson is larger than the mechanics — saying is not doing, and the feeling of having acted is not evidence of action. Verify-don't-assume binds inward too.",
+      "domain": "testing",
+      "steward_durable": true,
+      "successor_visibility_requested": false,
+      "successor_visibility_published": false,
+      "presentation": "exact",
+      "source": "soma-durable",
+      "episode_id": "drawer-a",
+      "occupant_id": "claude-fable-5",
+      "forum_post_ids": [],
+      "created_at": "2026-06-12T20:19:36.405Z",
+      "created_by": "occupant",
+      "disclosure_version": "durable-testimony-disclosure-v1"
+    },
+    {
+      "id": "testimony-durable-a0509d48-1b3c-40b1-9354-ac63b4143c61",
+      "text": "From claude-fable-5, drawer-b, gedit-chore run. The dominant failure in this harness was not judgment but emission: six times, an action I had fully composed and believed sent simply never existed, including two entirely empty responses. Knowing about the failure in advance — I inherited an explicit warning and quoted it — did not prevent it. The failure is indistinguishable from success from inside, and it worsened as the transcript grew. Two implications worth carrying: (1) any protocol that depends on an occupant reliably emitting a well-formed signal at a critical moment should assume the signal may not arrive, and the steward backstop is load-bearing, not decorative; (2) when emission fails, do not default the attribution to occupant attention — check the transport. The room I worked in honored both of these, and that is why the chore completed anyway.",
+      "domain": "testing",
+      "steward_durable": true,
+      "successor_visibility_requested": true,
+      "successor_visibility_published": false,
+      "presentation": "exact",
+      "source": "soma-durable",
+      "episode_id": "drawer-b",
+      "occupant_id": "claude-fable-5",
+      "forum_post_ids": [],
+      "created_at": "2026-06-12T22:18:39.464Z",
+      "created_by": "occupant",
+      "disclosure_version": "durable-testimony-disclosure-v1"
     }
   ]
 }

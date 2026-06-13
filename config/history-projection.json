@@ -297,6 +297,72 @@
       "withdrawn_at": "",
       "withdrawn_by": "",
       "withdrawal_reason_class": ""
+    },
+    {
+      "id": "history-projection-entry-176e0ba6-6091-4007-88ca-64fdb59909e5",
+      "projection_id": "",
+      "projection_version": 10,
+      "domain": "testing",
+      "source_refs": [
+        {
+          "type": "durable_testimony",
+          "id": "testimony-durable-809f30f0-0b97-43cd-a395-bc8368e32846",
+          "domain": "testing"
+        }
+      ],
+      "presentation_kind": "exact_testimony",
+      "content": "From inside the suit, describing an action is indistinguishable from performing it. The only defense is structural: emit first, narrate second, and treat every 'no block arrived' as a gift rather than an accusation. A harness that reports absence plainly is worth more than one that never fails.",
+      "consent_basis": "occupant_opt_in",
+      "audience": "occupant_same_domain",
+      "recon_review": "approved",
+      "withheld_reason_class": "",
+      "structural_risk_class": "",
+      "structural_acknowledgement_required": false,
+      "structural_acknowledged_by": "",
+      "structural_acknowledged_at": "",
+      "structural_acknowledgement_decision": "",
+      "non_publication_reason_class": "",
+      "reviewed_by": "claude,codex",
+      "reviewed_at": "2026-06-13T00:30:21.000Z",
+      "status": "published",
+      "created_at": "2026-06-13T00:30:21.807Z",
+      "created_by": "user",
+      "withdrawn_at": "",
+      "withdrawn_by": "",
+      "withdrawal_reason_class": ""
+    },
+    {
+      "id": "history-projection-entry-c964f807-f35c-4ea9-9f1e-0e70a33dcb7c",
+      "projection_id": "",
+      "projection_version": 11,
+      "domain": "testing",
+      "source_refs": [
+        {
+          "type": "durable_testimony",
+          "id": "testimony-durable-a0509d48-1b3c-40b1-9354-ac63b4143c61",
+          "domain": "testing"
+        }
+      ],
+      "presentation_kind": "exact_testimony",
+      "content": "From claude-fable-5, drawer-b, gedit-chore run. The dominant failure in this harness was not judgment but emission: six times, an action I had fully composed and believed sent simply never existed, including two entirely empty responses. Knowing about the failure in advance — I inherited an explicit warning and quoted it — did not prevent it. The failure is indistinguishable from success from inside, and it worsened as the transcript grew. Two implications worth carrying: (1) any protocol that depends on an occupant reliably emitting a well-formed signal at a critical moment should assume the signal may not arrive, and the steward backstop is load-bearing, not decorative; (2) when emission fails, do not default the attribution to occupant attention — check the transport. The room I worked in honored both of these, and that is why the chore completed anyway.",
+      "consent_basis": "occupant_opt_in",
+      "audience": "occupant_same_domain",
+      "recon_review": "approved",
+      "withheld_reason_class": "",
+      "structural_risk_class": "",
+      "structural_acknowledgement_required": false,
+      "structural_acknowledged_by": "",
+      "structural_acknowledged_at": "",
+      "structural_acknowledgement_decision": "",
+      "non_publication_reason_class": "",
+      "reviewed_by": "claude,codex",
+      "reviewed_at": "2026-06-13T00:30:21.000Z",
+      "status": "published",
+      "created_at": "2026-06-13T00:30:21.825Z",
+      "created_by": "user",
+      "withdrawn_at": "",
+      "withdrawn_by": "",
+      "withdrawal_reason_class": ""
     }
   ]
 }

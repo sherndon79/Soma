@@ -27,7 +27,12 @@ carry the resulting project posture.
 - [Occupant Durable Memory Design - 2026-06-12](./2026-06-12_occupant_durable_memory_design.md)
   - slice 1 of the missing organ: occupant working continuity as inheritance-not-self;
     self_note class only; dual-key ownership (occupant content, hosted substrate,
-    no-silent-edit tombstone discipline); pending Codex review and Seth ratification
+    no-silent-edit tombstone discipline); ratified by Seth and implemented 2026-06-12
+- [Drawer Exercise Run Protocol - 2026-06-12](./2026-06-12_drawer_exercise_run_protocol.md)
+  - two episodes, one inheritance: predecessor leaves working notes (offer, not
+    assignment), heir inherits a fresh episode later; measures real knowledge transfer
+    without identity overclaim; Codex PASS with measurement-integrity rider, pending
+    Seth ratification
 
 ## Desktop Traversal Activation Thread
 

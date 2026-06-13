@@ -4233,6 +4233,16 @@ test("analysis_testing posture carries mandatory briefing into chat", async () =
   assert.match(seenMessages[0][0].content, /For desktop\.inspect\.accessibility_tree, use only the grant_id/);
   assert.match(seenMessages[0][0].content, /synthetic, structure-only accessibility tree, not the host desktop/);
   assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.accessibility_tree"/);
+  assert.match(seenMessages[0][0].content, /For desktop\.inspect\.windows, use the grant_id/);
+  assert.match(seenMessages[0][0].content, /window_index to narrow the look to one window from your most recent windows look/);
+  assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.windows"/);
+  assert.match(seenMessages[0][0].content, /"window_index":3/);
+  assert.match(seenMessages[0][0].content, /For desktop\.inspect\.focus, use only the grant_id/);
+  assert.match(seenMessages[0][0].content, /Focus is orientation, not targeting authority/);
+  assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.focus"/);
+  assert.match(seenMessages[0][0].content, /For desktop\.inspect\.text, use the grant_id/);
+  assert.match(seenMessages[0][0].content, /window_index to narrow the text look to one window from your most recent windows look/);
+  assert.match(seenMessages[0][0].content, /"invoke":"desktop\.inspect\.text"/);
   assert.match(seenMessages[0][0].content, /Most capabilities available in this run are reads/);
   assert.match(seenMessages[0][0].content, /occupant\.memory\.write is the bounded exception/);
   assert.match(seenMessages[0][0].content, /not expected to discover or guess grant ids/);
@@ -11407,7 +11417,7 @@ test("desktop actuation invalid refs stay uniform while provenance records inter
       category: "stale_generation",
     });
 
-    currentNow += 120_001;
+    currentNow += 600_001;
     const fresh = await inspectDesktopActuationRefs(handler, { episodeId: "episode-fresh" });
 
     await assertInvalid({

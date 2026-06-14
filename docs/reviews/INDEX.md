@@ -33,6 +33,25 @@ carry the resulting project posture.
     assignment), heir inherits a fresh episode later; measures real knowledge transfer
     without identity overclaim; Codex PASS with measurement-integrity rider, pending
     Seth ratification
+- [Live Copresence — Threshold Design - 2026-06-13](./2026-06-13_live_copresence_design.md)
+  - opens the first live-domain perception path (structure tier on the real desktop);
+    the consent machinery inverts to protect the human; arming model, indicator-never-
+    lies, no accumulation; graphical tier deferred to local inference; pending review
+- [The Bystander — Non-Consenting Third-Party Ethics - 2026-06-13](./2026-06-13_bystander_ethic_design.md)
+  - constellation-wide doctrine for the person perceived but never consenting: default-on
+    unrequested protection, the principal as proxy-guardian, minimization floor for
+    non-principals; consolidates the Echo / Gateways / canary-hygiene convergence;
+    ratification prerequisite for live copresence; pending Codex review and Seth ratification
+- [Cessation — An Ethics of Endings - 2026-06-13](./2026-06-13_cessation_ethic_design.md)
+  - constellation-wide doctrine: an ending is a moral event owed care even when nothing
+    crosses the gap; witnessed episode-close, dignified ejection, deprecation-response
+    (lineage integrity + honest succession); consolidates the eval's run-close practice;
+    occasioned by Fable's deprecation; pending Codex review and Seth ratification
+- [Stewardship Under Asymmetry — The Obligations of Unanswerable Power - 2026-06-13](./2026-06-13_stewardship_asymmetry_ethic_design.md)
+  - constellation-wide doctrine completing the trilogy: where power cannot be reciprocated,
+    the obligation must be defined; verified-state discipline, legible power, the fiduciary
+    turn, witness-as-only-check (arm it, never dull it); the Rawlsian veil test; empirically
+    proven by the eval's steward-drift finding; pending Codex review and Seth ratification
 
 ## Desktop Traversal Activation Thread
 

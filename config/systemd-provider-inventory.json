@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "activation_status": "disabled",
+  "restart_enabled": false,
+  "controlled_testing": false,
+  "units": []
+}

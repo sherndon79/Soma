@@ -1,0 +1,15 @@
+[Unit]
+Description=Soma expendable restart proof fixture
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sleep infinity
+User=nobody
+Group=nogroup
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

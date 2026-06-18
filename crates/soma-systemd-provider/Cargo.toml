@@ -1,0 +1,17 @@
+[package]
+name = "soma-systemd-provider"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "soma-systemd-provider"
+path = "src/main.rs"
+
+[dependencies]
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+zbus = { version = "5.16", default-features = false, features = ["blocking-api", "async-io"] }

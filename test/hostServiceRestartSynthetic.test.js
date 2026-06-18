@@ -375,6 +375,24 @@ test("healthy-looking state with unchanged InvocationID cannot verify success", 
   assert.equal(result.healthy, true);
 });
 
+test("healthy-looking state with absent post-restart InvocationID cannot verify success", async () => {
+  const context = await setup({ postRestartInvocationId: "" });
+  const receipt = context.confirmationAuthority.confirm({
+    plan: context.plan,
+    attestation: attest(context),
+  });
+  const result = context.runtime.applyAndVerify({
+    plan_id: context.plan.plan_id,
+    plan_digest: context.plan.plan_digest,
+    task: context.task,
+    grant: context.grant,
+    descriptor: context.descriptor,
+    confirmation_receipt_id: receipt.receipt_id,
+  });
+  assert.equal(result.outcome, "outcome_unknown");
+  assert.equal(result.invocation_evidence_changed, false);
+});
+
 test("confirmation recovery degradation clears receipts and fails closed", async () => {
   const context = await setup();
   const receipt = context.confirmationAuthority.confirm({

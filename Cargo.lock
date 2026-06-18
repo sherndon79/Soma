@@ -2884,6 +2884,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "soma-systemd-provider"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zbus",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

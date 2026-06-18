@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "activation_status": "disabled",
+  "restart_enabled": true,
+  "controlled_testing": true,
+  "units": [
+    {
+      "inventory_id": "lab-restart-proof",
+      "unit_name": "soma-lab-restart-proof.service"
+    },
+    {
+      "inventory_id": "lab-denied-proof",
+      "unit_name": "soma-lab-denied-proof.service"
+    }
+  ]
+}

@@ -3,9 +3,9 @@
 - Date: 2026-06-18
 - Author: Codex (implementation/specification), from the converged
   `spec/host-management-capability` design thread with Claude and Seth
-- Status: **SYNTHETIC ACTIVATION EVIDENCE COMPLETE — Claude confirmed section 16 evidence
-  passes on 2026-06-18. Building a real operational provider, enabling operational routing,
-  selecting an exact lab unit, and any real restart remain separately unauthorized.**
+- Status: **REAL PROVIDER BUILD REVIEW-CLEAN — Claude approved the disabled-first DBus provider
+  and controlled systemd+polkit evidence. Operational installation/routing, exact-host packaging,
+  selecting a lab unit, and any host restart remain separately unauthorized.**
 - Parent design:
   `docs/reviews/2026-06-18_computer_use_capability_design.md`
 - Scope: the first proof slice for Soma's general computer-use architecture:

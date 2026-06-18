@@ -1,0 +1,29 @@
+FROM rust:1-bookworm AS build
+
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p soma-systemd-provider
+
+FROM ubuntu:26.04
+
+ENV container=docker
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      dbus \
+      jq \
+      polkitd \
+      systemd \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin soma-systemd-provider
+
+COPY --from=build /src/target/release/soma-systemd-provider /usr/local/bin/soma-systemd-provider
+COPY docker/systemd-provider-test/soma-lab-restart-proof.service /etc/systemd/system/
+COPY docker/systemd-provider-test/soma-lab-denied-proof.service /etc/systemd/system/
+COPY docker/systemd-provider-test/49-soma-systemd-provider-test.rules /etc/polkit-1/rules.d/
+COPY docker/systemd-provider-test/inventory.json /etc/soma/systemd-provider-inventory.json
+
+RUN systemctl enable soma-lab-restart-proof.service soma-lab-denied-proof.service polkit.service
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

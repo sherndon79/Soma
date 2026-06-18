@@ -146,12 +146,15 @@ export function renderLocalHostServicePlanPreviewFromHandle({
 }
 
 function assertPlanInput({ authorization, descriptor, observation }) {
+  const syntheticTesting = descriptor?.domain === "testing" && descriptor?.synthetic === true;
+  const controlledRealTesting = descriptor?.domain === "testing"
+    && descriptor?.synthetic === false
+    && descriptor?.provider_mode === "real_systemd_controlled_test";
   if (authorization?.capability !== "host.service.restart" || authorization?.consequence_class !== "C3") {
     throw hostServiceError("service_restart_classification_c3", "Restart planning requires C3 authorization context.", 403);
   }
   if (
-    descriptor?.domain !== "testing"
-    || descriptor?.synthetic !== true
+    (!syntheticTesting && !controlledRealTesting)
     || descriptor?.provider_id !== authorization.provider_id
     || descriptor?.task_id !== authorization.task_id
     || descriptor?.grant_id !== authorization.grant_id

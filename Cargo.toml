@@ -3,6 +3,7 @@ members = [
   "crates/soma-desktop-broker",
   "crates/soma-moonlight-broker",
   "crates/soma-notification-broker",
-  "crates/soma-sensor-broker"
+  "crates/soma-sensor-broker",
+  "crates/soma-systemd-provider"
 ]
 resolver = "2"

@@ -126,7 +126,9 @@ export function createHostServiceRestartRuntime({
         }
 
         const verification = provider.inspectForPlan(descriptor);
-        const invocationChanged = verification.invocation_id !== finalObservation.invocation_id;
+        const invocationChanged = String(finalObservation.invocation_id ?? "").length > 0
+          && String(verification.invocation_id ?? "").length > 0
+          && verification.invocation_id !== finalObservation.invocation_id;
         const healthy = verification.load_state === "loaded"
           && verification.active_state === "active"
           && verification.sub_state === "running"
@@ -217,6 +219,10 @@ function normalizedProviderError(error) {
 }
 
 function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, now }) {
+  const syntheticTesting = descriptor.domain === "testing" && descriptor.synthetic === true;
+  const controlledRealTesting = descriptor.domain === "testing"
+    && descriptor.synthetic === false
+    && descriptor.provider_mode === "real_systemd_controlled_test";
   if (
     !task
     || task.expires_at <= now()
@@ -236,8 +242,7 @@ function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, 
     throw hostServiceError("service_restart_grant_required", "Active unconsumed once restart grant is required.", 403);
   }
   if (
-    descriptor.domain !== "testing"
-    || descriptor.synthetic !== true
+    (!syntheticTesting && !controlledRealTesting)
     || descriptor.descriptor_digest !== plan.descriptor_digest
     || descriptor.service_handle !== plan.service_handle
     || descriptor.task_id !== plan.task_id

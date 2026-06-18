@@ -1,11 +1,14 @@
 import { authorizeHostServiceRequest } from "./hostServiceAuthority.js";
-import { hostServiceError } from "./hostServiceContracts.js";
+import { HOST_SERVICE_REFUSAL_CODES, hostServiceError } from "./hostServiceContracts.js";
 
 export function createHostServiceRestartRuntime({
   planStore,
   confirmationAuthority,
   provider,
   taskLedger,
+  operationState,
+  hostServiceAuthority,
+  finalBoundary = () => {},
   now = () => Date.now(),
 } = {}) {
   const consumedGrantIds = new Set();
@@ -13,6 +16,8 @@ export function createHostServiceRestartRuntime({
 
   return Object.freeze({
     applyAndVerify({ plan_id, plan_digest, task, grant, descriptor, confirmation_receipt_id } = {}) {
+      operationState.assertRecoveryHealthy();
+      operationState.assertTaskActive(task?.task_id);
       const plan = planStore.requireActive({
         plan_id,
         plan_digest,
@@ -33,56 +38,127 @@ export function createHostServiceRestartRuntime({
         receipt_id: confirmation_receipt_id,
         plan,
       });
-
-      const finalObservation = provider.inspectForPlan(descriptor);
-      if (finalObservation.unit_definition_digest !== plan.unit_definition_digest) {
-        planStore.invalidate(plan.plan_id, "service_unit_definition_drift");
-        throw hostServiceError("service_unit_definition_drift", "Service definition changed after confirmation.", 409);
-      }
-      if (finalObservation.affected_closure !== "target_only") {
-        planStore.invalidate(plan.plan_id, "service_unit_dependency_closure_unsafe");
-        throw hostServiceError("service_unit_dependency_closure_unsafe", "Service affected closure changed after confirmation.", 409);
-      }
-      if (finalObservation.runtime_state_digest !== plan.runtime_state_digest) {
-        planStore.invalidate(plan.plan_id, "service_restart_plan_stale");
-        throw hostServiceError("service_restart_plan_stale", "Service runtime state changed after planning.", 409);
-      }
-
-      // Acceptance consumes the outer restart budget even when the outcome is unknown.
-      taskLedger.recordRestartAcceptance(task);
-      consumedGrantIds.add(grant.id);
-      planStore.consume(plan.plan_id);
-      confirmationAuthority.consume(receipt.receipt_id);
-      applyAttempts.set(plan.plan_id, (applyAttempts.get(plan.plan_id) ?? 0) + 1);
-
-      let applyError = null;
+      const lockId = operationState.acquireLock(`${task.task_id}:${plan.plan_id}`);
       try {
-        provider.restart(descriptor);
-      } catch (error) {
-        applyError = error;
-        if (!error?.ambiguous) {
-          return outcome("verified_failure", error.code ?? "service_restart_provider_refused", plan);
-        }
-      }
+        finalBoundary();
+        operationState.assertRecoveryHealthy();
+        operationState.assertTaskActive(task.task_id);
+        planStore.requireActive({
+          plan_id,
+          plan_digest,
+          task_id: task.task_id,
+          grant_id: grant.id,
+        });
+        authorizeHostServiceRequest({
+          capability: "host.service.restart",
+          task,
+          grant,
+          inventory_id: descriptor.unit_inventory_id,
+          provider_id: descriptor.provider_id,
+          domain: descriptor.domain,
+          now,
+        });
+        confirmationAuthority.requireMatching({ receipt_id: confirmation_receipt_id, plan });
+        hostServiceAuthority.handles.resolve({
+          handle: descriptor.service_handle,
+          inventory: hostServiceAuthority.currentInventory(),
+          task_id: task.task_id,
+          grant_id: grant.id,
+          provider_id: descriptor.provider_id,
+          domain: descriptor.domain,
+        });
 
-      const verification = provider.inspectForPlan(descriptor);
-      const invocationChanged = verification.invocation_id !== finalObservation.invocation_id;
-      const healthy = verification.load_state === "loaded"
-        && verification.active_state === "active"
-        && verification.sub_state === "running"
-        && verification.healthy === true;
-      if (invocationChanged && healthy) {
-        return outcome("verified_success", "", plan, verification);
+        const finalObservation = provider.inspectForPlan(descriptor);
+        if (finalObservation.unit_definition_digest !== plan.unit_definition_digest) {
+          planStore.invalidate(plan.plan_id, "service_unit_definition_drift");
+          throw hostServiceError("service_unit_definition_drift", "Service definition changed after confirmation.", 409);
+        }
+        if (finalObservation.affected_closure !== "target_only") {
+          planStore.invalidate(plan.plan_id, "service_unit_dependency_closure_unsafe");
+          throw hostServiceError("service_unit_dependency_closure_unsafe", "Service affected closure changed after confirmation.", 409);
+        }
+        if (finalObservation.runtime_state_digest !== plan.runtime_state_digest) {
+          planStore.invalidate(plan.plan_id, "service_restart_plan_stale");
+          throw hostServiceError("service_restart_plan_stale", "Service runtime state changed after planning.", 409);
+        }
+
+        // Acceptance consumes the outer restart budget even when the outcome is unknown.
+        taskLedger.recordRestartAcceptance(task);
+        consumedGrantIds.add(grant.id);
+        planStore.consume(plan.plan_id);
+        confirmationAuthority.consume(receipt.receipt_id);
+        applyAttempts.set(plan.plan_id, (applyAttempts.get(plan.plan_id) ?? 0) + 1);
+
+        let applyError = null;
+        try {
+          provider.restart(descriptor);
+        } catch (error) {
+          applyError = normalizedProviderError(error);
+          if (!error?.ambiguous) {
+            return verificationOutcome({
+              operationState,
+              status: "verified_failure",
+              code: applyError.code,
+              plan,
+              possiblyApplied: false,
+            });
+          }
+        }
+
+        try {
+          operationState.appendProvenance({
+            event_type: "host.service.restart.provider_invoked",
+            capability: "host.service.restart",
+            provider: plan.provider_id,
+            domain: plan.domain,
+            task_id: plan.task_id,
+            grant_id: plan.grant_id,
+            plan_digest: plan.plan_digest,
+            outcome: applyError ? "outcome_unknown" : "invoked",
+            code: applyError?.code ?? "",
+            possibly_applied: true,
+          });
+        } catch {
+          return outcome("outcome_unknown", "service_recovery_degraded", plan, {}, {
+            possibly_applied: true,
+            reconciliation_required: true,
+          });
+        }
+
+        const verification = provider.inspectForPlan(descriptor);
+        const invocationChanged = verification.invocation_id !== finalObservation.invocation_id;
+        const healthy = verification.load_state === "loaded"
+          && verification.active_state === "active"
+          && verification.sub_state === "running"
+          && verification.healthy === true;
+        if (invocationChanged && healthy) {
+          return verificationOutcome({
+            operationState,
+            status: "verified_success",
+            code: "",
+            plan,
+            verification,
+          });
+        }
+        if (verification.active_state === "failed" || verification.sub_state === "failed") {
+          return verificationOutcome({
+            operationState,
+            status: "verified_failure",
+            code: "service_restart_verify_failed",
+            plan,
+            verification,
+          });
+        }
+        return verificationOutcome({
+          operationState,
+          status: "outcome_unknown",
+          code: applyError?.code ?? "service_restart_outcome_unknown",
+          plan,
+          verification,
+        });
+      } finally {
+        operationState.releaseLock(lockId);
       }
-      if (verification.active_state === "failed" || verification.sub_state === "failed") {
-        return outcome("verified_failure", "service_restart_verify_failed", plan, verification);
-      }
-      return outcome(
-        "outcome_unknown",
-        applyError?.code ?? "service_restart_outcome_unknown",
-        plan,
-        verification,
-      );
     },
     applyAttemptCount(planId) {
       return applyAttempts.get(String(planId ?? "")) ?? 0;
@@ -91,6 +167,53 @@ export function createHostServiceRestartRuntime({
       return consumedGrantIds.has(String(grantId ?? ""));
     },
   });
+}
+
+function verificationOutcome({
+  operationState,
+  status,
+  code,
+  plan,
+  verification = {},
+  possiblyApplied = true,
+}) {
+  try {
+    operationState.appendProvenance({
+      event_type: "host.service.restart.verification_result",
+      capability: "host.service.restart",
+      provider: plan.provider_id,
+      domain: plan.domain,
+      task_id: plan.task_id,
+      grant_id: plan.grant_id,
+      plan_digest: plan.plan_digest,
+      outcome: status,
+      code,
+      possibly_applied: possiblyApplied,
+      reconciliation_required: status === "outcome_unknown",
+    });
+  } catch {
+    return outcome("outcome_unknown", "service_recovery_degraded", plan, {}, {
+      possibly_applied: true,
+      reconciliation_required: true,
+    });
+  }
+  return outcome(status, code, plan, verification, {
+    possibly_applied: possiblyApplied,
+    reconciliation_required: status === "outcome_unknown",
+  });
+}
+
+function normalizedProviderError(error) {
+  const ambiguous = error?.ambiguous === true;
+  const rawCode = String(error?.code ?? "");
+  return {
+    ambiguous,
+    code: HOST_SERVICE_REFUSAL_CODES.includes(rawCode)
+      ? rawCode
+      : ambiguous
+        ? "service_restart_outcome_unknown"
+        : "service_restart_provider_refused",
+  };
 }
 
 function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, now }) {
@@ -124,7 +247,7 @@ function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, 
   }
 }
 
-function outcome(status, code, plan, verification = {}) {
+function outcome(status, code, plan, verification = {}, posture = {}) {
   return Object.freeze({
     outcome: status,
     code,
@@ -137,5 +260,7 @@ function outcome(status, code, plan, verification = {}) {
     content_included: false,
     identifiers_included: false,
     automatic_retry_performed: false,
+    possibly_applied: posture.possibly_applied === true,
+    reconciliation_required: posture.reconciliation_required === true,
   });
 }

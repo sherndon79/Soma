@@ -3,9 +3,9 @@
 - Date: 2026-06-18
 - Author: Codex (implementation/specification), from the converged
   `spec/host-management-capability` design thread with Claude and Seth
-- Status: **DISABLED-FIRST BUILD IN REVIEW — Seth approved the synthetic/refusal-bound
-  implementation slices on 2026-06-18. Operational routing, activation, and any real
-  service restart remain unauthorized pending separate approval of the exact lab unit set.**
+- Status: **SYNTHETIC ACTIVATION EVIDENCE COMPLETE — Claude confirmed section 16 evidence
+  passes on 2026-06-18. Building a real operational provider, enabling operational routing,
+  selecting an exact lab unit, and any real restart remain separately unauthorized.**
 - Parent design:
   `docs/reviews/2026-06-18_computer_use_capability_design.md`
 - Scope: the first proof slice for Soma's general computer-use architecture:

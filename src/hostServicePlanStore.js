@@ -125,6 +125,26 @@ export function renderLocalHostServicePlanPreview(plan = {}, { target_label = ""
   });
 }
 
+export function renderLocalHostServicePlanPreviewFromHandle({
+  plan,
+  handles,
+  inventory,
+  task_id,
+  grant_id,
+  provider_id,
+  domain,
+} = {}) {
+  const entry = handles.resolve({
+    handle: plan?.service_handle,
+    inventory,
+    task_id,
+    grant_id,
+    provider_id,
+    domain,
+  });
+  return renderLocalHostServicePlanPreview(plan, { target_label: entry.unit_name });
+}
+
 function assertPlanInput({ authorization, descriptor, observation }) {
   if (authorization?.capability !== "host.service.restart" || authorization?.consequence_class !== "C3") {
     throw hostServiceError("service_restart_classification_c3", "Restart planning requires C3 authorization context.", 403);

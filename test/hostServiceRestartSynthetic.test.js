@@ -12,6 +12,7 @@ import {
   HOST_SERVICE_SYNTHETIC_PROVIDER_ID,
 } from "../src/hostServiceContracts.js";
 import { createHostServiceHandleTable, createHostServiceInventory } from "../src/hostServiceInventory.js";
+import { createHostServiceOperationState } from "../src/hostServiceOperationState.js";
 import { createHostServicePlanStore, renderLocalHostServicePlanPreview } from "../src/hostServicePlanStore.js";
 import { createHostServiceRestartRuntime } from "../src/hostServiceRestartRuntime.js";
 import { createSyntheticHostServiceProvider } from "../src/hostServiceSyntheticProvider.js";
@@ -21,10 +22,16 @@ import {
 } from "../src/localConfirmationAuthority.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 
-async function setup({ applyMode = "success", postRestartStatus = {}, postRestartInvocationId = "invocation-2" } = {}) {
+async function setup({
+  applyMode = "success",
+  postRestartStatus = {},
+  postRestartInvocationId = "invocation-2",
+  onFinalBoundary = () => {},
+  confirmationTtlMs = 30_000,
+} = {}) {
   let clock = 1_000;
   const now = () => clock;
-  const inventory = createHostServiceInventory({
+  let currentInventory = createHostServiceInventory({
     domain: "testing",
     host_id: "host-fixture",
     inventory_generation: "host-gen-1",
@@ -38,6 +45,7 @@ async function setup({ applyMode = "success", postRestartStatus = {}, postRestar
       affected_closure: ["service-fixture"],
     }],
   });
+  const inventory = currentInventory;
   const handles = createHostServiceHandleTable({ now, random: () => "b".repeat(48) });
   const task = validateHostServiceTaskEnvelope({
     task_id: "task-restart",
@@ -135,13 +143,24 @@ async function setup({ applyMode = "success", postRestartStatus = {}, postRestar
       let count = 0;
       return () => `${++count}`.padStart(48, "d");
     })(),
+    ttlMs: confirmationTtlMs,
     verifyTrustedAttestation: confirmationAdapter.verifier,
   });
+  const operationState = createHostServiceOperationState();
+  operationState.registerTask(task);
+  const hostServiceAuthority = {
+    handles,
+    currentInventory: () => currentInventory,
+  };
+  let finalBoundaryAction = onFinalBoundary;
   const runtime = createHostServiceRestartRuntime({
     planStore,
     confirmationAuthority,
     provider,
     taskLedger,
+    operationState,
+    hostServiceAuthority,
+    finalBoundary: () => finalBoundaryAction(),
     now,
   });
   return {
@@ -161,7 +180,15 @@ async function setup({ applyMode = "success", postRestartStatus = {}, postRestar
     plan,
     confirmationAuthority,
     confirmationAdapter,
+    operationState,
+    hostServiceAuthority,
     runtime,
+    replaceInventory(next) {
+      currentInventory = next;
+    },
+    setFinalBoundary(action) {
+      finalBoundaryAction = action;
+    },
   };
 }
 

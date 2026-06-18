@@ -17,6 +17,34 @@ export const HOST_SERVICE_CONSEQUENCE_CLASS = Object.freeze({
   [HOST_SERVICE_RESTART_CAPABILITY]: "C3",
 });
 
+export const HOST_SERVICE_REFUSAL_CODES = Object.freeze([
+  "service_task_not_active",
+  "service_task_scope_denied",
+  "service_handle_invalid",
+  "service_handle_expired",
+  "service_inventory_drift",
+  "service_host_identity_drift",
+  "service_unit_not_allowlisted",
+  "service_unit_type_unsupported",
+  "service_unit_activation_unsupported",
+  "service_unit_dependency_closure_unsafe",
+  "service_unit_definition_drift",
+  "service_restart_prestate_unsupported",
+  "service_status_unavailable",
+  "service_status_output_invalid",
+  "service_restart_grant_required",
+  "service_restart_classification_c3",
+  "service_restart_plan_stale",
+  "service_restart_confirmation_required",
+  "service_restart_confirmation_mismatch",
+  "service_restart_concurrent_operation",
+  "service_restart_provider_refused",
+  "service_restart_outcome_unknown",
+  "service_restart_verify_failed",
+  "service_recovery_degraded",
+  "service_testing_live_fallthrough_denied",
+]);
+
 export function normalizeHostServiceStatus(raw = {}, { serviceHandle = "", observationGeneration = "" } = {}) {
   const normalized = {
     service_handle: boundedOpaqueValue(serviceHandle, "service_handle"),

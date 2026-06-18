@@ -1,0 +1,13 @@
+[Unit]
+Description=Soma systemd provider private control socket
+
+[Socket]
+ListenStream=/run/soma/systemd-provider.sock
+SocketUser=root
+SocketGroup=soma-harness
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=yes
+Service=soma-systemd-provider.service
+
+# Deliberately no [Install] section. Activation is an attended, separate step.

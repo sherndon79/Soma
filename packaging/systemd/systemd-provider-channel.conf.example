@@ -1,0 +1,2 @@
+# Resolve the dedicated, otherwise-unused soma-harness uid during attended activation.
+SOMA_SYSTEMD_PROVIDER_EXPECTED_UID=REPLACE_WITH_NUMERIC_SOMA_HARNESS_UID

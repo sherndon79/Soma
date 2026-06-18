@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createConnection } from "node:net";
 import { createInterface } from "node:readline";
 
 import {
@@ -26,6 +27,56 @@ const RESULT_KEYS = new Set([
   "activation_timestamp_monotonic",
   "dispatch_status",
 ]);
+
+export function createSystemdProviderSocketClient({
+  socketPath = "/run/soma/systemd-provider.sock",
+  enabled = false,
+  connectFn = createConnection,
+} = {}) {
+  let socket = null;
+  let lines = null;
+  let counter = 0;
+
+  return Object.freeze({
+    provider_id: HOST_SERVICE_OPERATIONAL_PROVIDER_ID,
+    activation_status: enabled ? "exact_host" : "disabled",
+    async request({ method, inventory_id } = {}) {
+      if (!enabled) {
+        throw hostServiceError(
+          "service_status_unavailable",
+          "Operational systemd provider socket is disabled.",
+          403,
+        );
+      }
+      if (!METHODS.has(method) || !validInventoryId(inventory_id)) {
+        throw hostServiceError("service_status_output_invalid", "Systemd provider request is invalid.", 400);
+      }
+      if (!socket) {
+        socket = connectFn({ path: socketPath });
+        await waitForConnect(socket);
+        lines = createInterface({ input: socket, crlfDelay: Infinity })[Symbol.asyncIterator]();
+      }
+      const requestId = `systemd-socket-${++counter}`;
+      socket.write(`${JSON.stringify({ request_id: requestId, method, inventory_id })}\n`);
+      const next = await lines.next();
+      if (next.done) {
+        throw hostServiceError("service_status_unavailable", "Systemd provider socket closed.", 503);
+      }
+      let response;
+      try {
+        response = JSON.parse(next.value);
+      } catch {
+        throw hostServiceError("service_status_output_invalid", "Systemd provider response is not JSON.", 502);
+      }
+      return validateProviderResponse(response, requestId);
+    },
+    stop() {
+      socket?.destroy();
+      socket = null;
+      lines = null;
+    },
+  });
+}
 
 export function createSystemdProviderProcess({
   binary = "./target/debug/soma-systemd-provider",
@@ -174,6 +225,16 @@ export function validateProviderResponse(response, requestId) {
 function validInventoryId(value) {
   return typeof value === "string"
     && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
+
+function waitForConnect(socket) {
+  if (socket.readyState === "open") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
 }
 
 function isPlainObject(value) {

@@ -5,6 +5,10 @@ use soma_systemd_provider::{
 use std::collections::BTreeMap;
 use std::fs::{read, read_to_string};
 use std::io::{self, BufRead, Write};
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+#[cfg(target_os = "linux")]
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
@@ -33,30 +37,196 @@ fn main() {
         }
     };
 
+    if std::env::args().any(|argument| argument == "--socket-activated") {
+        run_socket_activated(&inventory, &source);
+        return;
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
-    for line in stdin.lock().lines() {
+    serve_lines(stdin.lock(), &mut stdout, &inventory, &source);
+}
+
+fn serve_lines(
+    reader: impl BufRead,
+    writer: &mut impl Write,
+    inventory: &Inventory,
+    source: &impl SystemdSource,
+) {
+    for line in reader.lines() {
         let Ok(line) = line else {
             break;
         };
         if line.len() > 16 * 1024 {
-            write_protocol_error(&mut stdout, "", "provider_request_invalid");
+            write_protocol_error(writer, "", "provider_request_invalid");
             continue;
         }
         let request = match serde_json::from_str::<Request>(&line) {
             Ok(request) => request,
             Err(_) => {
-                write_protocol_error(&mut stdout, "", "provider_request_invalid");
+                write_protocol_error(writer, "", "provider_request_invalid");
                 continue;
             }
         };
-        let response = execute(&inventory, &request, &source);
-        if serde_json::to_writer(&mut stdout, &response).is_err()
-            || stdout.write_all(b"\n").is_err()
-            || stdout.flush().is_err()
+        let response = execute(inventory, &request, source);
+        if serde_json::to_writer(&mut *writer, &response).is_err()
+            || writer.write_all(b"\n").is_err()
+            || writer.flush().is_err()
         {
             break;
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_socket_activated(inventory: &Inventory, source: &impl SystemdSource) {
+    let expected_uid = match expected_harness_uid() {
+        Ok(uid) => uid,
+        Err(code) => {
+            eprintln!("{code}");
+            std::process::exit(78);
+        }
+    };
+    let listener = match activated_listener() {
+        Ok(listener) => listener,
+        Err(code) => {
+            eprintln!("{code}");
+            std::process::exit(78);
+        }
+    };
+    for connection in listener.incoming() {
+        let Ok(mut stream) = connection else {
+            continue;
+        };
+        if verify_peer(&stream, expected_uid).is_err() {
+            write_protocol_error(&mut stream, "", "provider_peer_unauthorized");
+            continue;
+        }
+        let Ok(reader_stream) = stream.try_clone() else {
+            continue;
+        };
+        serve_lines(
+            io::BufReader::new(reader_stream),
+            &mut stream,
+            inventory,
+            source,
+        );
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn run_socket_activated(_inventory: &Inventory, _source: &impl SystemdSource) {
+    eprintln!("provider_socket_activation_unsupported");
+    std::process::exit(78);
+}
+
+#[cfg(target_os = "linux")]
+fn expected_harness_uid() -> Result<libc::uid_t, &'static str> {
+    let raw = std::env::var("SOMA_SYSTEMD_PROVIDER_EXPECTED_UID")
+        .map_err(|_| "provider_expected_uid_missing")?;
+    let uid = raw
+        .parse::<libc::uid_t>()
+        .map_err(|_| "provider_expected_uid_invalid")?;
+    if uid == 0 {
+        return Err("provider_expected_uid_invalid");
+    }
+    Ok(uid)
+}
+
+#[cfg(target_os = "linux")]
+fn activated_listener() -> Result<UnixListener, &'static str> {
+    let listen_pid = std::env::var("LISTEN_PID")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or("provider_socket_activation_invalid")?;
+    let listen_fds = std::env::var("LISTEN_FDS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or("provider_socket_activation_invalid")?;
+    if listen_pid != std::process::id() || listen_fds != 1 {
+        return Err("provider_socket_activation_invalid");
+    }
+    // systemd's socket activation contract assigns the first descriptor as fd 3.
+    Ok(unsafe { UnixListener::from_raw_fd(3) })
+}
+
+#[cfg(target_os = "linux")]
+fn verify_peer(stream: &UnixStream, expected_uid: libc::uid_t) -> Result<(), &'static str> {
+    let fd = stream.as_raw_fd();
+    let mut credentials = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut credentials_len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut credentials as *mut libc::ucred).cast(),
+            &mut credentials_len,
+        )
+    };
+    if result != 0
+        || credentials_len as usize != std::mem::size_of::<libc::ucred>()
+        || credentials.uid != expected_uid
+        || credentials.pid <= 0
+    {
+        return Err("provider_peer_unauthorized");
+    }
+
+    // SO_PEERPIDFD (Linux >= 6.5) pins the peer against pid reuse. The dedicated uid remains the
+    // decisive gate, so kernels that return ENOPROTOOPT still fail neither open nor broader.
+    if let Some(peer_pidfd) = optional_peer_pidfd(fd)? {
+        unsafe {
+            libc::close(peer_pidfd);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn optional_peer_pidfd(fd: RawFd) -> Result<Option<RawFd>, &'static str> {
+    const SO_PEERPIDFD: libc::c_int = 77;
+    let mut peer_pidfd: libc::c_int = -1;
+    let mut peer_pidfd_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            SO_PEERPIDFD,
+            (&mut peer_pidfd as *mut libc::c_int).cast(),
+            &mut peer_pidfd_len,
+        )
+    };
+    if result == 0 {
+        if peer_pidfd < 0 || peer_pidfd_len as usize != std::mem::size_of::<libc::c_int>() {
+            return Err("provider_peer_unauthorized");
+        }
+        return Ok(Some(peer_pidfd));
+    }
+    let error = io::Error::last_os_error().raw_os_error();
+    if error == Some(libc::ENOPROTOOPT) || error == Some(libc::EINVAL) {
+        return Ok(None);
+    }
+    Err("provider_peer_unauthorized")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod socket_tests {
+    use super::verify_peer;
+    use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn peercred_accepts_only_the_decisive_expected_uid() {
+        let (client, server) = UnixStream::pair().expect("unix pair");
+        let current_uid = unsafe { libc::geteuid() };
+        verify_peer(&server, current_uid).expect("matching dedicated uid");
+        assert_eq!(
+            verify_peer(&client, current_uid.saturating_add(1)),
+            Err("provider_peer_unauthorized")
+        );
     }
 }
 

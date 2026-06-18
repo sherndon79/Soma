@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "activation_status": "disabled",
+  "artifacts": [
+    {
+      "source": "target/release/soma-systemd-provider",
+      "destination": "/usr/libexec/soma/soma-systemd-provider",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/systemd/soma-systemd-provider.service",
+      "destination": "/etc/systemd/system/soma-systemd-provider.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/systemd/soma-systemd-provider.socket",
+      "destination": "/etc/systemd/system/soma-systemd-provider.socket",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "config/systemd-provider-inventory.json",
+      "destination": "/etc/soma/systemd-provider-inventory.json",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "generated_artifacts": [
+    {
+      "template": "packaging/systemd/systemd-provider-channel.conf.example",
+      "destination": "/etc/soma/systemd-provider-channel.conf",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "generated_during_attended_activation": true
+    },
+    {
+      "template": "packaging/polkit/00-soma-systemd-provider.rules.in",
+      "generator": "scripts/generate-systemd-provider-polkit.mjs",
+      "destination": "/etc/polkit-1/rules.d/00-soma-systemd-provider.rules",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "generated_during_attended_activation": true
+    }
+  ],
+  "runbook": "docs/runbooks/systemd-provider-exact-host-activation.md",
+  "creates_identities": false,
+  "installs_artifacts": false,
+  "starts_units": false,
+  "enables_route": false,
+  "populates_inventory": false
+}

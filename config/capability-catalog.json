@@ -262,6 +262,49 @@
       "description": "Assess submitted text for non-diagnostic cognitive-load stewardship signals."
     },
     {
+      "key": "host.service.status.read",
+      "name": "Host Service Status Read",
+      "category": "host",
+      "risk_class": "sensitive",
+      "consequence_class": "C0",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "bounded normalized service state",
+        "opaque service and observation handles"
+      ],
+      "excluded_by_default": [
+        "hostnames and unit names",
+        "commands, paths, environment, process identifiers, logs, and status text",
+        "operational provider access"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.host.service.status.read.v1",
+      "description": "Read a minimized status projection for one inventory-resolved service. Operational routing remains disabled."
+    },
+    {
+      "key": "host.service.restart",
+      "name": "Host Service Restart",
+      "category": "host",
+      "risk_class": "high",
+      "consequence_class": "C3",
+      "default_status": "disabled",
+      "allowed_scopes": ["once"],
+      "data_exposed": [
+        "opaque restart plan and outcome metadata"
+      ],
+      "excluded_by_default": [
+        "autonomous restart",
+        "batch targets",
+        "raw host, unit, command, environment, log, and process identity"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.host.service.restart.apply.v1",
+      "description": "Plan and apply one exact service restart only after a separate trusted local C3 confirmation. No operational route is active."
+    },
+    {
       "key": "status.snapshot.read",
       "name": "Status Snapshot Read",
       "category": "status",

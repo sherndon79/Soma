@@ -147,6 +147,48 @@
       ]
     },
     {
+      "id": "soma.provider.synthetic-systemd",
+      "name": "Synthetic Systemd Service Provider",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "testing_only": true,
+      "capabilities": [
+        {
+          "key": "host.service.status.read",
+          "provider_contract": "soma.host.service.status.read.v1",
+          "output_schema": "soma.host.service.status.read.response.v1"
+        },
+        {
+          "key": "host.service.restart",
+          "provider_contract": "soma.host.service.restart.apply.v1",
+          "output_schema": "soma.host.service.restart.outcome.v1"
+        }
+      ]
+    },
+    {
+      "id": "soma.provider.systemd-local",
+      "name": "Local Systemd Service Provider",
+      "version": "0.1.0",
+      "runtime": "disabled-fixed-dbus-adapter",
+      "local_only": true,
+      "network_access": false,
+      "activation_status": "disabled",
+      "capabilities": [
+        {
+          "key": "host.service.status.read",
+          "provider_contract": "soma.host.service.status.read.v1",
+          "output_schema": "soma.host.service.status.read.response.v1"
+        },
+        {
+          "key": "host.service.restart",
+          "provider_contract": "soma.host.service.restart.apply.v1",
+          "output_schema": "soma.host.service.restart.outcome.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.status",
       "name": "In-Process Status Snapshot",
       "version": "0.1.0",

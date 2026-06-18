@@ -6,6 +6,13 @@ import {
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import {
+  HOST_SERVICE_RESTART_CAPABILITY,
+  HOST_SERVICE_STATUS_CAPABILITY,
+  HOST_SERVICE_SYNTHETIC_PROVIDER_ID,
+  hostServiceError,
+} from "./hostServiceContracts.js";
+import { hostServiceDescriptorDigest } from "./hostServiceInventory.js";
 
 const DEFAULT_PROVENANCE_SUMMARY_PROVIDER_ID = "soma.provider.provenance-summary";
 const DEFAULT_DESKTOP_BROKER_PROVIDER_ID = "soma.provider.desktop-broker";
@@ -27,6 +34,8 @@ export async function resolveResourceDescriptor({
   harness = {},
   baseDir = process.cwd(),
   providerRegistry = {},
+  hostServiceAuthority = null,
+  hostServiceAuthorization = null,
 } = {}) {
   if (capability === "tool.files.read") {
     return resolveFileResourceDescriptor({ domain, capability, ref, grant, harness, baseDir });
@@ -46,7 +55,88 @@ export async function resolveResourceDescriptor({
   if (capability === "desktop.act.invoke_action" || capability === "desktop.act.text_input") {
     return resolveDesktopActuationResourceDescriptor({ domain, capability, ref, grant, harness });
   }
+  if ([HOST_SERVICE_STATUS_CAPABILITY, HOST_SERVICE_RESTART_CAPABILITY].includes(capability)) {
+    return resolveHostServiceStatusResourceDescriptor({
+      domain,
+      capability,
+      ref,
+      grant,
+      hostServiceAuthority,
+      hostServiceAuthorization,
+    });
+  }
   throw resourceRouterError("resource_capability_unrouted", "No resource router is registered for this capability.", 400);
+}
+
+export function resolveHostServiceStatusResourceDescriptor({
+  domain = "operational",
+  capability = HOST_SERVICE_STATUS_CAPABILITY,
+  ref = {},
+  grant = null,
+  hostServiceAuthority = null,
+  hostServiceAuthorization = null,
+} = {}) {
+  const normalizedDomain = normalizeResourceDomain(domain);
+  if (normalizedDomain !== "testing") {
+    throw hostServiceError(
+      "service_status_unavailable",
+      "Operational service status remains disabled in this build slice.",
+      403,
+    );
+  }
+  if (!hostServiceAuthority?.inventory || !hostServiceAuthority?.handles) {
+    throw hostServiceError("service_recovery_degraded", "Service authority is unavailable.", 503);
+  }
+  const providerId = hostServiceAuthority.inventory.host.provider_id;
+  if (providerId !== HOST_SERVICE_SYNTHETIC_PROVIDER_ID) {
+    throw hostServiceError(
+      "service_testing_live_fallthrough_denied",
+      "Testing service resolution cannot select an operational provider.",
+      403,
+    );
+  }
+  if (
+    !hostServiceAuthorization
+    || hostServiceAuthorization.capability !== capability
+    || hostServiceAuthorization.task_id !== String(ref.task_id ?? "")
+    || hostServiceAuthorization.grant_id !== String(grant?.id ?? "")
+    || hostServiceAuthorization.provider_id !== providerId
+    || hostServiceAuthorization.domain !== "testing"
+    || grant?.status !== "active"
+  ) {
+    throw hostServiceError("service_task_scope_denied", "Service descriptor requires prior active authorization.", 403);
+  }
+  const entry = hostServiceAuthority.handles.resolve({
+    handle: ref.service_handle,
+    inventory: hostServiceAuthority.inventory,
+    task_id: ref.task_id,
+    grant_id: grant?.id,
+    provider_id: providerId,
+    domain: "testing",
+  });
+  const descriptor = {
+    domain: "testing",
+    capability,
+    provider_id: providerId,
+    resource_class: "systemd_service",
+    synthetic: true,
+    host_id: entry.host_id,
+    service_handle: entry.handle,
+    inventory_generation: entry.host_inventory_generation,
+    unit_inventory_generation: entry.unit_inventory_generation,
+    unit_inventory_id: entry.unit_inventory_id,
+    task_id: entry.task_id,
+    grant_id: entry.grant_id,
+    fixture_id: entry.fixture_id,
+    limits: {
+      max_properties: 12,
+      timeout_ms: 5000,
+    },
+  };
+  return Object.freeze({
+    ...descriptor,
+    descriptor_digest: hostServiceDescriptorDigest(descriptor),
+  });
 }
 
 export function resolveProvenanceSummaryResourceDescriptor({

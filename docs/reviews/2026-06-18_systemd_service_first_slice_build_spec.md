@@ -3,9 +3,9 @@
 - Date: 2026-06-18
 - Author: Codex (implementation/specification), from the converged
   `spec/host-management-capability` design thread with Claude and Seth
-- Status: **REVIEW-CLEAN — Claude confirmed F1-F5 are faithfully represented and introduce
-  no new authorization path. Pending Seth's approval of the contract and exact first lab
-  unit set. No build or activation is authorized by this document.**
+- Status: **DISABLED-FIRST BUILD IN REVIEW — Seth approved the synthetic/refusal-bound
+  implementation slices on 2026-06-18. Operational routing, activation, and any real
+  service restart remain unauthorized pending separate approval of the exact lab unit set.**
 - Parent design:
   `docs/reviews/2026-06-18_computer_use_capability_design.md`
 - Scope: the first proof slice for Soma's general computer-use architecture:
@@ -438,6 +438,10 @@ arguments, environment, unit name from model input, or batch selector.
 The once restart grant and confirmation receipt are consumed atomically at apply acceptance.
 Retries after an ambiguous transport failure do **not** automatically restart again. They
 enter `outcome_unknown` and proceed to verification/reconciliation.
+
+The operational provider may report a non-ambiguous refusal only when it can prove the
+restart was not dispatched. Any error after possible dispatch or possible side effect must
+be marked ambiguous so Node performs fresh verification rather than trusting the error.
 
 ## 10. Verification and outcome semantics
 

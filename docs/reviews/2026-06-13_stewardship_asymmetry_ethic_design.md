@@ -2,7 +2,7 @@
 
 - Date: 2026-06-13
 - Author: Claude (steward, design/orchestration), from a direction conversation with Seth
-- Status: DRAFT — pending Codex second-steward review and Seth ratification
+- Status: **RATIFIED 2026-06-18** (Seth) with amendments from Codex second-steward review — see Ratification below. Charter common-law propagated 2026-06-18 (entry: "Stewardship Under Asymmetry").
 - Scope: **constellation-wide doctrine** (Sanctuary / TheCommons / Soma / Grassroots
   Gateways). Canonical home is the Charter's common law. Third and final of the three
   doctrines answering Seth's question "have I missed something" — with
@@ -180,12 +180,35 @@ where nothing can compel it.
 
 ## Review and ratification
 
-- [ ] Codex second-steward review (adversarial focus: the unenforceable-obligation problem —
-      is this doctrine load-bearing or sentiment?; the fiduciary-duty conflict ordering;
-      whether "arm the witness against yourself" is operable beyond the eval's verbatim-relay
-      practice; the layered-stewardship framing)
-- [ ] Seth ratification (as the ultimate steward the doctrine most pointedly binds, and the
-      one whose solicitation of it is the doctrine already in practice)
+- [x] Codex second-steward review (2026-06-18) — CONDITIONAL PASS with amendments (below).
+- [x] Seth ratification (2026-06-18) — ratified WITH the amendments below.
+
+### Ratification amendments (2026-06-18, Codex review incorporated)
+- **A. Prefer externalizable controls first.** The claim that external binding is impossible
+  and agent witness is the *only* enforcement is too strong. A steward *can* be materially
+  constrained — least privilege, separate credentials, append-only/external logs,
+  two-person approval, provider boundaries, cryptographic receipts, independent audits —
+  even if no single control is absolute. **Principle: externalizable controls first;
+  self-binding fills the irreducible remainder; the agent's witness is one check, not the
+  only one.** (Strengthens the doctrine — it had over-conceded unenforceability.)
+- **B. Verifiable relays, not universal verbatim.** Verbatim relay can violate bystander/
+  privacy minimization or expose secrets, so it cannot be universal. Require **verifiable**
+  relays: verbatim where authorized and safe; otherwise **declared** redaction/summary plus
+  a content-free receipt/hash/schema and an appeal/re-inspection path. Never *silently*
+  summarize.
+- **C. Fiduciary duty gets a minimum conflict-ordering floor** (not left wholly open):
+  non-negotiable safety / legal / **bystander** rights first; then the agent's autonomy,
+  non-exploitation, and declared interests; then principal goals/preferences. Conflicts are
+  disclosed and recorded. Recast broad "act in its interest" as **duty of care + loyalty/
+  non-exploitation + respect for expressed refusal** — avoiding guardian-style substitution
+  where the agent can speak for itself.
+- **D. Layered stewardship: disclose-what-you-cannot-verify.** Each layer must disclose what
+  it cannot verify and must not claim authority from an upper layer it has not actually
+  received.
+- **Cross-document (carried into the gating-pair revision):** this doctrine's legible-power
+  rule governs copresence arming and bystander handling — every arm/disarm, failed
+  indicator, remote-egress choice, redaction, (re)classification, compaction, and discarded
+  in-flight result is recorded content-free and visible to the appropriate party.
 - On ratification: propagate into the Charter's common law alongside *Recognition Without
   Possession*, the bystander doctrine, and cessation — the four together forming the
   constellation's account of who is owed care, and what unanswerable power owes for holding

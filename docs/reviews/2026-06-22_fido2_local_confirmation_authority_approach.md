@@ -163,6 +163,14 @@ A hardware-key integration drill then proves:
 - replaying the assertion, request, or receipt refuses;
 - a changed plan or target requires a new touch;
 - route/grant/inventory revocation still prevents dispatch after a valid receipt.
+- while CTAP `getAssertion` is pending, the confirmation touch is consumed by FIDO interface
+  `01` and emits no OTP keystroke through keyboard interface `00` into an agent-observable input
+  surface.
+
+The enrolled YubiKey's OTP slot 1 may be disabled during a separate attended hardening step so an
+idle touch cannot emit a ModHex OTP as keyboard input. This is recommended in a computer-use
+environment but is not an automated prerequisite: deleting an OTP slot is destructive and
+requires Seth's explicit verification and approval.
 
 Only after this issuer and drill are reviewed may the attended socket driver complete the first
 real restart.

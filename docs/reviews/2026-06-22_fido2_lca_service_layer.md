@@ -47,3 +47,8 @@ ceremony remain unperformed.
 Enrollment policy is decided but not executed: the first credential is non-discoverable,
 ES256, RP id `lca.soma.local`, and `require_uv=false`; User Presence remains mandatory. UV would
 require an explicit later re-enrollment rather than changing implicitly when a key PIN is set.
+
+The YubiKey keyboard/OTP interface is interface `00`, separate from the isolated FIDO hidraw
+interface `01`. Before live use, a pending CTAP assertion drill must prove the confirmation touch
+does not emit an OTP keystroke into any agent-observable input surface. Disabling OTP slot 1 is
+recommended optional attended hardening, never an automated action.

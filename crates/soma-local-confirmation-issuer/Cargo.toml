@@ -9,6 +9,10 @@ license = "Apache-2.0"
 name = "soma-local-confirmation-issuer"
 path = "src/main.rs"
 
+[[bin]]
+name = "soma-local-confirmation-client"
+path = "src/client.rs"
+
 [dependencies]
 hex = "0.4"
 libc = "0.2"

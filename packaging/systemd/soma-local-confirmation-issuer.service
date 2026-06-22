@@ -1,7 +1,7 @@
 [Unit]
 Description=Soma FIDO2 local confirmation issuer
-Requires=soma-local-confirmation-issuer.socket
 After=systemd-udev-settle.service
+ConditionPathIsDirectory=/run/soma-lca
 StartLimitIntervalSec=60s
 StartLimitBurst=3
 
@@ -10,9 +10,11 @@ Type=simple
 User=soma-lca
 Group=soma-lca
 UMask=0077
-ExecStart=/usr/libexec/soma/soma-local-confirmation-issuer --socket-activated
+ExecStart=/usr/libexec/soma/soma-local-confirmation-issuer --serve
 Environment=SOMA_LCA_POLICY=/etc/soma/lca/policy.json
 Environment=SOMA_LCA_REPLAY_STATE=/var/lib/soma-lca/replay-state.json
+Environment=SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock
+EnvironmentFile=/etc/soma/lca/channel.conf
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=
@@ -42,6 +44,7 @@ ProtectProc=invisible
 DevicePolicy=closed
 ReadOnlyPaths=/etc/soma/lca/policy.json
 ReadWritePaths=/var/lib/soma-lca
+ReadWritePaths=/run/soma-lca
 
 Restart=on-failure
 RestartSec=5s

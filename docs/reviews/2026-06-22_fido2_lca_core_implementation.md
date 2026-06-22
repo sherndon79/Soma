@@ -30,7 +30,7 @@ authenticator-data/tampered challenge handling.
 
 The libfido2 ceremony/hidraw backend, attended attested enrollment, hardware/MDS validation,
 socket/peercred service, udev isolation, Node direct-assertion integration, durable-store recovery
-inspection, bounded nonce pruning, package/runbook artifacts, and hardware-key drill remain
-required before activation. A known-answer vector captured from a real authenticator must verify
-before live use; fake-generated signatures prove internal consistency but not device conformance.
-The existing Ed25519 attended-driver path remains interim and cannot authorize a real restart.
+inspection, bounded nonce pruning, and hardware-key drill remain required before activation. A
+known-answer vector captured from a real authenticator must verify before live use; fake-generated
+signatures prove internal consistency but not device conformance. The driver now uses a mutually
+peer-authenticated Unix socket seam, but the default issuer ceremony remains hardware-disabled.

@@ -88,22 +88,24 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
    claim `controlled_testing`.
 3. Enable only the attended driver route by invoking `npm run systemd-provider:attended-host`
    under the dedicated `soma-harness` uid with `SOMA_SYSTEMD_ATTENDED_HOST_DRIVER=1` and the exact
-   host identity, unit inventory generations, socket, request path, attestation path, and
-   root-owned LCA public-key path. With `SOMA_SYSTEMD_ATTENDED_HOST_RESTART` absent, it writes the
-   plan-bound request and exits `confirmation_required` without dispatch.
-4. A separately reviewed production LCA issuer displays that exact request and preview, captures
-   independent trusted-local human presence, and signs a single-use Ed25519 attestation. The
-   driver cannot issue or self-sign this attestation. Until that issuer exists, **stop here**:
-   there is no authorized first restart.
+   host identity, unit inventory generations, provider socket, LCA socket, and expected
+   `soma-lca` server uid. With `SOMA_SYSTEMD_ATTENDED_HOST_RESTART` absent, it writes the
+   plan-bound preview request and exits `confirmation_required` without contacting the issuer or
+   dispatching.
+4. Start the explicitly attended, non-enabled `soma-local-confirmation-issuer.service`. It binds
+   `/run/soma-lca/issuer.sock` itself. The issuer verifies the harness peer uid; the driver's
+   native helper verifies the server uid is exactly `soma-lca`.
 5. For the attended restart only, set `SOMA_SYSTEMD_ATTENDED_HOST_RESTART=1`; the same driver
-   instance writes its request, waits up to 30 seconds for the external attestation, verifies its
-   root-owned public key, exact plan/task/target binding, expiry, nonce, and signature, then
-   consumes the once grant.
+   instance sends the exact plan-bound request over that mutually peer-authenticated socket. The
+   issuer performs the FIDO ceremony and returns one `VerifiedConfirmation` only after durable
+   counter/nonce consumption. The driver checks exact plan/task/provider/target/expiry binding
+   before consuming the once grant.
 6. Dispatch once. Verify a changed nonempty `InvocationID`, expected active/sub state, unchanged
    definition/closure, content-free evidence, and no second dispatch.
 7. Disable the route immediately after the proof. Set `restart_enabled: false` and
    `attended_host_activation: false`, remove the one-unit mapping, and restore the checked-in empty
-   inventory. Any ambiguity enters reconciliation; never
+   inventory. Stop `soma-local-confirmation-issuer.service` and verify
+   `/run/soma-lca/issuer.sock` is absent. Any ambiguity enters reconciliation; never
    retry automatically.
 
 ## Revocation And Rollback
@@ -112,7 +114,8 @@ Rollback never depends on provider health:
 
 1. Disable the operational route and revoke grants/confirmations.
    Set both `restart_enabled` and `attended_host_activation` false before any other cleanup.
-2. Stop `soma-systemd-provider.socket`; verify the endpoint is absent.
+2. Stop `soma-local-confirmation-issuer.service` and `soma-systemd-provider.socket`; verify both
+   endpoints are absent.
 3. Remove the polkit rule and operational inventory entry, then reload polkit as appropriate.
 4. Stop, disable, and remove the lab service; run `systemctl daemon-reload`.
 5. Preserve content-free evidence and package hashes. Remove provider artifacts and static users

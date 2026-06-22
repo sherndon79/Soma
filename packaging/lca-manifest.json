@@ -12,15 +12,15 @@
       "group": "root"
     },
     {
-      "source": "packaging/systemd/soma-local-confirmation-issuer.service",
-      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.service",
-      "mode": "0644",
+      "source": "target/release/soma-local-confirmation-client",
+      "destination": "/usr/libexec/soma/soma-local-confirmation-client",
+      "mode": "0755",
       "owner": "root",
       "group": "root"
     },
     {
-      "source": "packaging/systemd/soma-local-confirmation-issuer.socket",
-      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.socket",
+      "source": "packaging/systemd/soma-local-confirmation-issuer.service",
+      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.service",
       "mode": "0644",
       "owner": "root",
       "group": "root"
@@ -48,6 +48,14 @@
     }
   ],
   "generated_artifacts": [
+    {
+      "template": "packaging/systemd/soma-local-confirmation-channel.conf.example",
+      "destination": "/etc/soma/lca/channel.conf",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "generated_during_attended_enrollment": true
+    },
     {
       "template": "packaging/systemd/soma-local-confirmation-issuer-device.conf.in",
       "destination": "/etc/systemd/system/soma-local-confirmation-issuer.service.d/10-enrolled-device.conf",

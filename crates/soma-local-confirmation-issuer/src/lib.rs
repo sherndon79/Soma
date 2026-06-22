@@ -81,6 +81,21 @@ pub struct VerifiedConfirmation {
     pub nonce: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProtocolResponse {
+    pub request_id: String,
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmation: Option<VerifiedConfirmation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ProtocolError>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProtocolError {
+    pub code: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct IssuerError {
     pub code: &'static str,
@@ -89,6 +104,43 @@ pub struct IssuerError {
 impl IssuerError {
     pub fn new(code: &'static str) -> Self {
         Self { code }
+    }
+}
+
+pub fn execute_request(
+    request_id: &str,
+    request: &ConfirmationRequest,
+    policy: &IssuerPolicy,
+    state_path: &Path,
+    limiter: &mut CeremonyLimiter,
+    ceremony: &mut impl FidoCeremony,
+    now: u64,
+    completed_at: impl FnOnce() -> u64,
+) -> ProtocolResponse {
+    let result = verify_confirmation_limited(
+        limiter,
+        request,
+        policy,
+        state_path,
+        ceremony,
+        now,
+        completed_at,
+    );
+    match result {
+        Ok(confirmation) => ProtocolResponse {
+            request_id: bounded_request_id(request_id),
+            ok: true,
+            confirmation: Some(confirmation),
+            error: None,
+        },
+        Err(error) => ProtocolResponse {
+            request_id: bounded_request_id(request_id),
+            ok: false,
+            confirmation: None,
+            error: Some(ProtocolError {
+                code: error.code.to_string(),
+            }),
+        },
     }
 }
 
@@ -367,6 +419,10 @@ fn stable_json(value: &serde_json::Value) -> Result<String, IssuerError> {
         )),
         _ => serde_json::to_string(value).map_err(|_| IssuerError::new("lca_encoding_failed")),
     }
+}
+
+fn bounded_request_id(value: &str) -> String {
+    value.chars().take(128).collect()
 }
 
 use std::os::unix::fs::OpenOptionsExt;

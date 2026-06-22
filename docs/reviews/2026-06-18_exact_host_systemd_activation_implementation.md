@@ -81,10 +81,9 @@ only when `restart_enabled` is true and exactly one of `controlled_testing` or
 `attended_host_activation` is true. A workstation inventory uses
 `controlled_testing=false`/`attended_host_activation=true`; both true fail closed.
 
-The attended Node driver uses the production Unix socket and the asynchronous plan/apply/verify
-runtime. It cannot produce confirmation. It writes a plan-bound request and requires an external,
-single-use Ed25519 attestation verified against a root-owned public key. Without that attestation
-it stops before grant consumption and provider dispatch. The production LCA issuer remains a
-separate design/build gate before the first real restart. The verifier's nonce memory is
-process-scoped; this one-shot driver also relies on short expiry plus single-use plan/grant
-consumption. A durable production issuer must own cross-process replay/counter state.
+The attended Node driver uses the production provider socket and asynchronous plan/apply/verify
+runtime. It cannot produce confirmation. A native client verifies the separate LCA server's
+`SO_PEERCRED` uid, and the issuer verifies the harness client uid. The driver accepts only an exact
+plan/task/provider/target-bound `VerifiedConfirmation` returned on that connection after durable
+FIDO counter/nonce consumption. Without it, the driver stops before grant consumption and provider
+dispatch.

@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { readFile, rename, stat, writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 
 import {
   authorizeHostServiceRequest,
@@ -24,7 +24,7 @@ import { createHostServicePlanStore, renderLocalHostServicePlanPreview } from ".
 import { createAsyncHostServiceRestartRuntime } from "../src/hostServiceAsyncRestartRuntime.js";
 import { createSystemdProviderSocketAdapter } from "../src/hostServiceSystemdProvider.js";
 import { createLocalConfirmationAuthority } from "../src/localConfirmationAuthority.js";
-import { createEd25519LocalConfirmationVerifier } from "../src/localConfirmationEd25519.js";
+import { createLocalConfirmationSocketClient } from "../src/localConfirmationSocketClient.js";
 
 if (process.env.SOMA_SYSTEMD_ATTENDED_HOST_DRIVER !== "1") {
   fail("Refusing: SOMA_SYSTEMD_ATTENDED_HOST_DRIVER=1 is required.", 2);
@@ -34,14 +34,12 @@ const hostId = required("SOMA_SYSTEMD_HOST_ID");
 const inventoryId = required("SOMA_SYSTEMD_UNIT_INVENTORY_ID");
 const unitName = required("SOMA_SYSTEMD_UNIT_NAME");
 const requestPath = required("SOMA_SYSTEMD_LCA_REQUEST_PATH");
-const attestationPath = required("SOMA_SYSTEMD_LCA_ATTESTATION_PATH");
-const publicKeyPath = required("SOMA_SYSTEMD_LCA_PUBLIC_KEY_PATH");
 const socketPath = process.env.SOMA_SYSTEMD_SOCKET_PATH ?? "/run/soma/systemd-provider.sock";
+const lcaSocketPath = process.env.SOMA_LCA_SOCKET_PATH ?? "/run/soma-lca/issuer.sock";
 const now = () => Date.now();
 
 const provider = createSystemdProviderSocketAdapter({ socketPath, enabled: true });
 try {
-  await assertTrustedPublicKey(publicKeyPath);
   const context = await buildContext();
   const preview = renderLocalHostServicePlanPreview(context.plan, { target_label: unitName });
   await writeJsonAtomic(requestPath, {
@@ -66,15 +64,41 @@ try {
     }));
     process.exitCode = 3;
   } else {
-    const attestation = await waitForJson(attestationPath, 30_000);
-    const publicKeyPem = await readFile(publicKeyPath, "utf8");
-    const externalVerifier = createEd25519LocalConfirmationVerifier({ publicKeyPem });
+    const lcaServerUid = Number(required("SOMA_LCA_EXPECTED_SERVER_UID"));
+    const requestNonce = randomBytes(24).toString("hex");
+    const issuedAt = now();
+    const lcaClient = createLocalConfirmationSocketClient({
+      socketPath: lcaSocketPath,
+      expectedServerUid: lcaServerUid,
+    });
+    const expected = {
+      plan_digest: context.plan.plan_digest,
+      target_binding_digest: context.plan.target_binding_digest,
+      task_id: context.plan.task_id,
+      provider_id: context.plan.provider_id,
+      exact_target: unitName,
+    };
+    const attestation = lcaClient.confirm({
+      request: {
+        schema_version: 1,
+        request_type: "soma.local-confirmation.request.v1",
+        ...expected,
+        inventory_id: inventoryId,
+        consequence_class: "C3",
+        rollback_posture: "not_reversible",
+        request_nonce: requestNonce,
+        issued_at: issuedAt,
+        expires_at: Math.min(context.plan.expires_at, issuedAt + 30_000),
+      },
+      expected,
+    });
     const confirmationAuthority = createLocalConfirmationAuthority({
       now,
-      verifyTrustedAttestation: (attestation, plan) => externalVerifier(
-        attestation,
-        { ...plan, exact_target: unitName },
-      ),
+      verifyTrustedAttestation: (candidate, plan) => candidate === attestation
+        && candidate.plan_digest === plan.plan_digest
+        && candidate.target_binding_digest === plan.target_binding_digest
+        && candidate.task_id === plan.task_id
+        && candidate.provider_id === plan.provider_id,
     });
     const receipt = confirmationAuthority.confirm({ plan: context.plan, attestation });
     const runtime = createAsyncHostServiceRestartRuntime({
@@ -207,32 +231,10 @@ async function buildContext() {
   };
 }
 
-async function waitForJson(path, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      return JSON.parse(await readFile(path, "utf8"));
-    } catch (error) {
-      if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) {
-        throw error;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  fail("Timed out waiting for external trusted-local attestation.", 3);
-}
-
 async function writeJsonAtomic(path, value) {
   const temporary = `${path}.tmp-${process.pid}`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, path);
-}
-
-async function assertTrustedPublicKey(path) {
-  const metadata = await stat(path);
-  if (!metadata.isFile() || metadata.uid !== 0 || (metadata.mode & 0o022) !== 0) {
-    fail("Refusing: LCA public key must be a root-owned file not writable by group or others.", 2);
-  }
 }
 
 function required(name) {

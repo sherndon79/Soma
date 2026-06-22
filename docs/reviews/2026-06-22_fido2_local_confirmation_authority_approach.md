@@ -117,10 +117,11 @@ durably commits counter+nonce state using temp-file/write/fsync/rename/fsync-dir
 before emitting verified confirmation. The verifier has no network, signing key, device access,
 or side authority; every parse or verification error refuses.
 
-The Ed25519 verifier in the current attended socket driver is an interim fail-closed transport
-proof and must be replaced by this direct assertion verifier before live restart. Raw FIDO
-assertions remain inside the verifier boundary; credential ids, AAGUIDs, device paths, PIN
-material, and attestation certificates never enter model-facing output or provenance.
+The attended driver receives `VerifiedConfirmation` over a mutually peer-authenticated Unix
+socket: the issuer checks the harness uid and the native client checks the issuer uid. No
+receipt-signing key exists. Raw FIDO assertions remain inside the verifier boundary; credential
+ids, AAGUIDs, device paths, PIN material, and attestation certificates never enter model-facing
+output or provenance.
 
 ## 5. Failure and recovery
 

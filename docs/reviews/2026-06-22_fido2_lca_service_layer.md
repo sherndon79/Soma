@@ -26,7 +26,7 @@ hardware access.
 - credential policy: root-owned and not group/other writable;
 - replay state: `0600 soma-lca:soma-lca`, non-symlink, issuer-owned, not group/other writable;
 - one outstanding ceremony plus cooldown is wired through `verify_confirmation_limited`;
-- service/socket units have no `[Install]` section;
+- the service has no `[Install]` section and binds its own socket as `soma-lca`;
 - package manifest records every install, trigger, start, enrollment, and restart action as false.
 
 ## Hardware drill
@@ -43,6 +43,20 @@ The guarded drill does not install rules. After separately reviewed installation
 
 Enrollment, MDS validation, counter baseline, real-authenticator known-answer vector, and live
 ceremony remain unperformed.
+
+The issuer deliberately does not use systemd socket activation. `SO_PEERCRED` reflects the
+credentials in effect at `listen/connect`; a systemd-created listener would authenticate to the
+client as root/systemd rather than `soma-lca`. The explicitly started hardened service binds
+`/run/soma-lca/issuer.sock` inside `0750 soma-lca:soma-harness`, allowing harness traversal but
+not parent-directory mutation. This makes client-side `SO_PEERCRED uid == soma-lca` decisive.
+The issuer removes a stale prior socket only when it is issuer-owned, and a listener guard unlinks
+the socket on orderly shutdown. The attended runbook starts the service only for confirmation and
+stops it immediately afterward.
+
+The attended Node driver invokes a root-installed native client helper because Node does not
+expose `SO_PEERCRED`. The helper validates the server uid before forwarding one bounded request;
+the issuer validates the harness uid before parsing. Node then validates every returned
+confirmation field against its live plan. The obsolete Ed25519/file confirmation path is removed.
 
 Enrollment policy is decided but not executed: the first credential is non-discoverable,
 ES256, RP id `lca.soma.local`, and `require_uv=false`; User Presence remains mandatory. UV would

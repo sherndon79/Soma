@@ -14,7 +14,7 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
 3. Confirm the Node harness will run as a dedicated static `soma-harness` uid used by no unrelated
    process. Confirm the provider will run as a distinct static `soma-systemd-provider` uid.
 4. Confirm the operational route is absent/disabled, the inventory is empty, and both
-   `restart_enabled` and `controlled_testing` are false.
+   `restart_enabled`, `controlled_testing`, and `attended_host_activation` are false.
 
 ## Stage Inert Artifacts
 
@@ -78,11 +78,32 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
 ## Attended First Restart
 
 1. Separately approve activation for this exact host, provider, unit, task, and one restart.
-2. Enable only the operational route needed for that one inventory id.
-3. Display the exact local preview and complete trusted local confirmation.
-4. Dispatch once. Verify a changed nonempty `InvocationID`, expected active/sub state, unchanged
+2. Install the one-unit provider inventory with exactly:
+   - `activation_status: "disabled"` (the provider's non-routing inventory posture);
+   - `restart_enabled: true`;
+   - `controlled_testing: false`;
+   - `attended_host_activation: true`;
+   - one reviewed `inventory_id` to exact `.service` mapping.
+   Both authorization modes true, or both false, refuse restart. The real workstation must never
+   claim `controlled_testing`.
+3. Enable only the attended driver route by invoking `npm run systemd-provider:attended-host`
+   under the dedicated `soma-harness` uid with `SOMA_SYSTEMD_ATTENDED_HOST_DRIVER=1` and the exact
+   host identity, unit inventory generations, socket, request path, attestation path, and
+   root-owned LCA public-key path. With `SOMA_SYSTEMD_ATTENDED_HOST_RESTART` absent, it writes the
+   plan-bound request and exits `confirmation_required` without dispatch.
+4. A separately reviewed production LCA issuer displays that exact request and preview, captures
+   independent trusted-local human presence, and signs a single-use Ed25519 attestation. The
+   driver cannot issue or self-sign this attestation. Until that issuer exists, **stop here**:
+   there is no authorized first restart.
+5. For the attended restart only, set `SOMA_SYSTEMD_ATTENDED_HOST_RESTART=1`; the same driver
+   instance writes its request, waits up to 30 seconds for the external attestation, verifies its
+   root-owned public key, exact plan/task/target binding, expiry, nonce, and signature, then
+   consumes the once grant.
+6. Dispatch once. Verify a changed nonempty `InvocationID`, expected active/sub state, unchanged
    definition/closure, content-free evidence, and no second dispatch.
-5. Disable the route immediately after the proof. Any ambiguity enters reconciliation; never
+7. Disable the route immediately after the proof. Set `restart_enabled: false` and
+   `attended_host_activation: false`, remove the one-unit mapping, and restore the checked-in empty
+   inventory. Any ambiguity enters reconciliation; never
    retry automatically.
 
 ## Revocation And Rollback
@@ -90,6 +111,7 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
 Rollback never depends on provider health:
 
 1. Disable the operational route and revoke grants/confirmations.
+   Set both `restart_enabled` and `attended_host_activation` false before any other cleanup.
 2. Stop `soma-systemd-provider.socket`; verify the endpoint is absent.
 3. Remove the polkit rule and operational inventory entry, then reload polkit as appropriate.
 4. Stop, disable, and remove the lab service; run `systemctl daemon-reload`.

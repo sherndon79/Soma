@@ -1,7 +1,7 @@
 # Exact-Host Systemd Activation Package - Implementation Evidence
 
 - Date: 2026-06-18
-- Status: **HOST FINDINGS CORRECTED AND REVIEW-CLEAN - approved for workstation re-run**
+- Status: **SOCKET DRIVER/AUTHORIZATION WIRING REVIEW-CLEAN - live restart still blocked on real LCA**
 - Activation posture: **INERT**. No files were installed, no identities were created, no unit was
   started, no policy was changed, no inventory entry was added, no route was enabled, and no host
   restart was attempted.
@@ -73,3 +73,18 @@ proves:
 - stopping the socket preserves the tmpfiles-owned parent, and restarting restores typed service;
 - the existing real-systemd digest, drift, policy, restart, ambiguity, and runtime-boundary drills
   still pass.
+
+## Restart authorization and remaining LCA gate
+
+Real-host restart authorization is distinct from controlled testing. The provider permits apply
+only when `restart_enabled` is true and exactly one of `controlled_testing` or
+`attended_host_activation` is true. A workstation inventory uses
+`controlled_testing=false`/`attended_host_activation=true`; both true fail closed.
+
+The attended Node driver uses the production Unix socket and the asynchronous plan/apply/verify
+runtime. It cannot produce confirmation. It writes a plan-bound request and requires an external,
+single-use Ed25519 attestation verified against a root-owned public key. Without that attestation
+it stops before grant consumption and provider dispatch. The production LCA issuer remains a
+separate design/build gate before the first real restart. The verifier's nonce memory is
+process-scoped; this one-shot driver also relies on short expiry plus single-use plan/grant
+consumption. A durable production issuer must own cross-process replay/counter state.

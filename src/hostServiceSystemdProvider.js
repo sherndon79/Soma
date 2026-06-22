@@ -78,6 +78,46 @@ export function createSystemdProviderSocketClient({
   });
 }
 
+export function createSystemdProviderSocketAdapter({
+  socketPath = "/run/soma/systemd-provider.sock",
+  enabled = false,
+  connectFn = createConnection,
+} = {}) {
+  const client = createSystemdProviderSocketClient({ socketPath, enabled, connectFn });
+  let restartCalls = 0;
+
+  return Object.freeze({
+    provider_id: HOST_SERVICE_OPERATIONAL_PROVIDER_ID,
+    provider_mode: "real_systemd_attended_host",
+    async readStatusRaw(descriptor = {}) {
+      return client.request({
+        method: "status_read",
+        inventory_id: descriptor.unit_inventory_id,
+      });
+    },
+    async inspectForPlan(descriptor = {}) {
+      const result = await client.request({
+        method: "restart_inspect",
+        inventory_id: descriptor.unit_inventory_id,
+      });
+      return observationFromResult(result, descriptor);
+    },
+    async restart(descriptor = {}) {
+      restartCalls += 1;
+      return client.request({
+        method: "restart_apply",
+        inventory_id: descriptor.unit_inventory_id,
+      });
+    },
+    restartCallCount() {
+      return restartCalls;
+    },
+    stop() {
+      client.stop();
+    },
+  });
+}
+
 export function createSystemdProviderProcess({
   binary = "./target/debug/soma-systemd-provider",
   inventoryPath = "./config/systemd-provider-inventory.json",

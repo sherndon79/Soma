@@ -107,6 +107,7 @@ for (const field of [
 assert.equal(inventory.activation_status, "disabled");
 assert.equal(inventory.restart_enabled, false);
 assert.equal(inventory.controlled_testing, false);
+assert.equal(inventory.attended_host_activation, false);
 assert.deepEqual(inventory.units, []);
 const operational = registry.providers.find((provider) => provider.id === "soma.provider.systemd-local");
 assert.equal(operational?.activation_status, "disabled");

@@ -1,21 +1,28 @@
 import { authorizeHostServiceRequest } from "./hostServiceAuthority.js";
 import { HOST_SERVICE_REFUSAL_CODES, hostServiceError } from "./hostServiceContracts.js";
 
-export function createHostServiceRestartRuntime({
+export function createAsyncHostServiceRestartRuntime({
   planStore,
   confirmationAuthority,
   provider,
   taskLedger,
   operationState,
   hostServiceAuthority,
-  finalBoundary = () => {},
+  finalBoundary = async () => {},
   now = () => Date.now(),
 } = {}) {
   const consumedGrantIds = new Set();
   const applyAttempts = new Map();
 
   return Object.freeze({
-    applyAndVerify({ plan_id, plan_digest, task, grant, descriptor, confirmation_receipt_id } = {}) {
+    async applyAndVerify({
+      plan_id,
+      plan_digest,
+      task,
+      grant,
+      descriptor,
+      confirmation_receipt_id,
+    } = {}) {
       operationState.assertRecoveryHealthy();
       operationState.assertTaskActive(task?.task_id);
       const plan = planStore.requireActive({
@@ -40,7 +47,7 @@ export function createHostServiceRestartRuntime({
       });
       const lockId = operationState.acquireLock(`${task.task_id}:${plan.plan_id}`);
       try {
-        finalBoundary();
+        await finalBoundary();
         operationState.assertRecoveryHealthy();
         operationState.assertTaskActive(task.task_id);
         planStore.requireActive({
@@ -68,21 +75,9 @@ export function createHostServiceRestartRuntime({
           domain: descriptor.domain,
         });
 
-        const finalObservation = provider.inspectForPlan(descriptor);
-        if (finalObservation.unit_definition_digest !== plan.unit_definition_digest) {
-          planStore.invalidate(plan.plan_id, "service_unit_definition_drift");
-          throw hostServiceError("service_unit_definition_drift", "Service definition changed after confirmation.", 409);
-        }
-        if (finalObservation.affected_closure !== "target_only") {
-          planStore.invalidate(plan.plan_id, "service_unit_dependency_closure_unsafe");
-          throw hostServiceError("service_unit_dependency_closure_unsafe", "Service affected closure changed after confirmation.", 409);
-        }
-        if (finalObservation.runtime_state_digest !== plan.runtime_state_digest) {
-          planStore.invalidate(plan.plan_id, "service_restart_plan_stale");
-          throw hostServiceError("service_restart_plan_stale", "Service runtime state changed after planning.", 409);
-        }
+        const finalObservation = await provider.inspectForPlan(descriptor);
+        assertFinalObservation({ finalObservation, plan, planStore });
 
-        // Acceptance consumes the outer restart budget even when the outcome is unknown.
         taskLedger.recordRestartAcceptance(task);
         consumedGrantIds.add(grant.id);
         planStore.consume(plan.plan_id);
@@ -91,7 +86,7 @@ export function createHostServiceRestartRuntime({
 
         let applyError = null;
         try {
-          provider.restart(descriptor);
+          await provider.restart(descriptor);
         } catch (error) {
           applyError = normalizedProviderError(error);
           if (!error?.ambiguous) {
@@ -125,7 +120,7 @@ export function createHostServiceRestartRuntime({
           });
         }
 
-        const verification = provider.inspectForPlan(descriptor);
+        const verification = await provider.inspectForPlan(descriptor);
         const invocationChanged = String(finalObservation.invocation_id ?? "").length > 0
           && String(verification.invocation_id ?? "").length > 0
           && verification.invocation_id !== finalObservation.invocation_id;
@@ -169,6 +164,21 @@ export function createHostServiceRestartRuntime({
       return consumedGrantIds.has(String(grantId ?? ""));
     },
   });
+}
+
+function assertFinalObservation({ finalObservation, plan, planStore }) {
+  if (finalObservation.unit_definition_digest !== plan.unit_definition_digest) {
+    planStore.invalidate(plan.plan_id, "service_unit_definition_drift");
+    throw hostServiceError("service_unit_definition_drift", "Service definition changed after confirmation.", 409);
+  }
+  if (finalObservation.affected_closure !== "target_only") {
+    planStore.invalidate(plan.plan_id, "service_unit_dependency_closure_unsafe");
+    throw hostServiceError("service_unit_dependency_closure_unsafe", "Service affected closure changed after confirmation.", 409);
+  }
+  if (finalObservation.runtime_state_digest !== plan.runtime_state_digest) {
+    planStore.invalidate(plan.plan_id, "service_restart_plan_stale");
+    throw hostServiceError("service_restart_plan_stale", "Service runtime state changed after planning.", 409);
+  }
 }
 
 function verificationOutcome({
@@ -219,13 +229,9 @@ function normalizedProviderError(error) {
 }
 
 function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, now }) {
-  const syntheticTesting = descriptor.domain === "testing" && descriptor.synthetic === true;
-  const controlledRealTesting = descriptor.domain === "testing"
-    && descriptor.synthetic === false
-    && descriptor.provider_mode === "real_systemd_controlled_test";
-  const attendedRealHost = descriptor.domain === "operational"
-    && descriptor.synthetic === false
-    && descriptor.provider_mode === "real_systemd_attended_host";
+  const attendedRealHost = descriptor?.domain === "operational"
+    && descriptor?.synthetic === false
+    && descriptor?.provider_mode === "real_systemd_attended_host";
   if (
     !task
     || task.expires_at <= now()
@@ -245,7 +251,7 @@ function assertApplyBindings({ plan, task, grant, descriptor, consumedGrantIds, 
     throw hostServiceError("service_restart_grant_required", "Active unconsumed once restart grant is required.", 403);
   }
   if (
-    (!syntheticTesting && !controlledRealTesting && !attendedRealHost)
+    !attendedRealHost
     || descriptor.descriptor_digest !== plan.descriptor_digest
     || descriptor.service_handle !== plan.service_handle
     || descriptor.task_id !== plan.task_id

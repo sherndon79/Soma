@@ -6,7 +6,10 @@ import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import test from "node:test";
 
-import { createSystemdProviderSocketClient } from "../src/hostServiceSystemdProvider.js";
+import {
+  createSystemdProviderSocketAdapter,
+  createSystemdProviderSocketClient,
+} from "../src/hostServiceSystemdProvider.js";
 
 test("operational socket client is disabled without opening a connection", async () => {
   let connections = 0;
@@ -61,6 +64,57 @@ test("operational socket client exchanges one bounded typed request when explici
     const result = await client.request({ method: "status_read", inventory_id: "lab" });
     assert.equal(result.active_state, "active");
     client.stop();
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("attended-host socket adapter uses the production channel and counts one restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "soma-provider-adapter-"));
+  const socketPath = join(directory, "provider.sock");
+  const server = createServer((socket) => {
+    socket.on("data", (data) => {
+      for (const line of String(data).trim().split("\n")) {
+        const request = JSON.parse(line);
+        socket.write(`${JSON.stringify({
+          request_id: request.request_id,
+          ok: true,
+          result: {
+            load_state: "loaded",
+            active_state: "active",
+            sub_state: "running",
+            unit_file_state_class: "enabled",
+            can_restart: true,
+            restart_policy_class: "no",
+            state_changed_at_bucket: "recent",
+            healthy: true,
+            unit_definition_digest: "a".repeat(64),
+            definition_digest_schema: "soma.systemd.effective-definition.v1",
+            affected_closure: "target_only",
+            closure_schema: "soma.systemd.affected-closure.v1",
+            invocation_id: "b".repeat(32),
+            activation_timestamp_monotonic: 1,
+            dispatch_status: request.method === "restart_apply" ? "dispatched" : "not_requested",
+          },
+        })}\n`);
+      }
+    });
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+    const adapter = createSystemdProviderSocketAdapter({ socketPath, enabled: true });
+    const descriptor = {
+      descriptor_digest: "descriptor",
+      unit_inventory_id: "lab",
+    };
+    assert.equal((await adapter.inspectForPlan(descriptor)).active_state, "active");
+    await adapter.restart(descriptor);
+    assert.equal(adapter.restartCallCount(), 1);
+    adapter.stop();
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(directory, { recursive: true, force: true });

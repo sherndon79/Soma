@@ -3,6 +3,7 @@
   "activation_status": "disabled",
   "restart_enabled": true,
   "controlled_testing": true,
+  "attended_host_activation": false,
   "units": [
     {
       "inventory_id": "lab-restart-proof",

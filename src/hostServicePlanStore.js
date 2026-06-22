@@ -150,11 +150,14 @@ function assertPlanInput({ authorization, descriptor, observation }) {
   const controlledRealTesting = descriptor?.domain === "testing"
     && descriptor?.synthetic === false
     && descriptor?.provider_mode === "real_systemd_controlled_test";
+  const attendedRealHost = descriptor?.domain === "operational"
+    && descriptor?.synthetic === false
+    && descriptor?.provider_mode === "real_systemd_attended_host";
   if (authorization?.capability !== "host.service.restart" || authorization?.consequence_class !== "C3") {
     throw hostServiceError("service_restart_classification_c3", "Restart planning requires C3 authorization context.", 403);
   }
   if (
-    (!syntheticTesting && !controlledRealTesting)
+    (!syntheticTesting && !controlledRealTesting && !attendedRealHost)
     || descriptor?.provider_id !== authorization.provider_id
     || descriptor?.task_id !== authorization.task_id
     || descriptor?.grant_id !== authorization.grant_id

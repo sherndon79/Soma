@@ -81,6 +81,8 @@ pub struct Inventory {
     pub restart_enabled: bool,
     #[serde(default)]
     pub controlled_testing: bool,
+    #[serde(default)]
+    pub attended_host_activation: bool,
     pub units: Vec<InventoryUnit>,
 }
 
@@ -230,9 +232,7 @@ fn execute_inner<S: SystemdSource>(
         return Err(ProviderError::new("provider_request_invalid", false));
     }
     let unit = inventory.resolve(&request.inventory_id)?;
-    if request.method == Method::RestartApply
-        && (!inventory.restart_enabled || !inventory.controlled_testing)
-    {
+    if request.method == Method::RestartApply && !restart_authorized(inventory) {
         return Err(ProviderError::new(
             "service_restart_provider_refused",
             false,
@@ -258,6 +258,10 @@ fn execute_inner<S: SystemdSource>(
             result_from_snapshot(&after, "dispatched").map_err(after_dispatch)
         }
     }
+}
+
+fn restart_authorized(inventory: &Inventory) -> bool {
+    inventory.restart_enabled && (inventory.controlled_testing ^ inventory.attended_host_activation)
 }
 
 pub fn result_from_snapshot(
@@ -570,6 +574,7 @@ mod tests {
             activation_status: "disabled".to_string(),
             restart_enabled: true,
             controlled_testing: true,
+            attended_host_activation: false,
             units: vec![InventoryUnit {
                 inventory_id: "lab-proof".to_string(),
                 unit_name: "soma-lab-restart-proof.service".to_string(),
@@ -592,6 +597,36 @@ mod tests {
             "service_restart_provider_refused"
         );
         assert_eq!(source.restarts.get(), 0);
+    }
+
+    #[test]
+    fn attended_host_activation_is_distinct_from_controlled_testing() {
+        let mut attended = inventory();
+        attended.controlled_testing = false;
+        attended.attended_host_activation = true;
+        let attended_source = FakeSource {
+            snapshot: safe_snapshot(),
+            restarts: Cell::new(0),
+        };
+        assert!(execute(&attended, &request(Method::RestartApply), &attended_source).ok);
+        assert_eq!(attended_source.restarts.get(), 1);
+
+        attended.controlled_testing = true;
+        let conflicting_source = FakeSource {
+            snapshot: safe_snapshot(),
+            restarts: Cell::new(0),
+        };
+        let response = execute(
+            &attended,
+            &request(Method::RestartApply),
+            &conflicting_source,
+        );
+        assert!(!response.ok);
+        assert_eq!(
+            response.error.unwrap().code,
+            "service_restart_provider_refused"
+        );
+        assert_eq!(conflicting_source.restarts.get(), 0);
     }
 
     #[test]

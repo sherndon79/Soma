@@ -3,5 +3,6 @@
   "activation_status": "disabled",
   "restart_enabled": false,
   "controlled_testing": false,
+  "attended_host_activation": false,
   "units": []
 }

@@ -1,0 +1,16 @@
+[Unit]
+Description=Soma local confirmation issuer private socket
+Requires=systemd-tmpfiles-setup.service
+After=systemd-tmpfiles-setup.service
+ConditionPathIsDirectory=/run/soma
+
+[Socket]
+ListenStream=/run/soma/lca.sock
+SocketUser=root
+SocketGroup=soma-harness
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=yes
+Service=soma-local-confirmation-issuer.service
+
+# Deliberately no [Install] section.

@@ -1,0 +1,53 @@
+[Unit]
+Description=Soma FIDO2 local confirmation issuer
+Requires=soma-local-confirmation-issuer.socket
+After=systemd-udev-settle.service
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=soma-lca
+Group=soma-lca
+UMask=0077
+ExecStart=/usr/libexec/soma/soma-local-confirmation-issuer --socket-activated
+Environment=SOMA_LCA_POLICY=/etc/soma/lca/policy.json
+Environment=SOMA_LCA_REPLAY_STATE=/var/lib/soma-lca/replay-state.json
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @module @raw-io @reboot @swap @keyring
+ProcSubset=pid
+ProtectProc=invisible
+DevicePolicy=closed
+ReadOnlyPaths=/etc/soma/lca/policy.json
+ReadWritePaths=/var/lib/soma-lca
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+LimitNOFILE=64
+MemoryMax=64M
+TasksMax=16
+
+# Deliberately no [Install] section. Hardware access is still gated by reviewed udev isolation.

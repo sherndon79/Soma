@@ -178,6 +178,21 @@ pub fn verify_confirmation(
     })
 }
 
+pub fn verify_confirmation_limited(
+    limiter: &mut CeremonyLimiter,
+    request: &ConfirmationRequest,
+    policy: &IssuerPolicy,
+    state_path: &Path,
+    ceremony: &mut impl FidoCeremony,
+    now: u64,
+    completed_at: impl FnOnce() -> u64,
+) -> Result<VerifiedConfirmation, IssuerError> {
+    let guard = limiter.begin(now)?;
+    let result = verify_confirmation(request, policy, state_path, ceremony, now);
+    guard.complete(completed_at());
+    result
+}
+
 pub fn verify_raw_assertion(
     assertion: &RawAssertion,
     challenge_hash: [u8; 32],
@@ -456,6 +471,46 @@ mod tests {
             })
         ));
         assert!(limiter.begin(7_000).is_ok());
+    }
+
+    #[test]
+    fn limited_request_path_enforces_cooldown() {
+        let directory = temp_directory();
+        let state_path = directory.join("state.json");
+        write_state(&state_path);
+        let key = SigningKey::random(&mut OsRng);
+        let policy = policy(&key);
+        let mut ceremony = FakeCeremony {
+            counter: 11,
+            flags: UP_FLAG,
+            key,
+        };
+        let mut limiter = CeremonyLimiter::new(5_000);
+        assert!(verify_confirmation_limited(
+            &mut limiter,
+            &request(),
+            &policy,
+            &state_path,
+            &mut ceremony,
+            1_000,
+            || 2_000,
+        )
+        .is_ok());
+        assert!(matches!(
+            verify_confirmation_limited(
+                &mut limiter,
+                &request(),
+                &policy,
+                &state_path,
+                &mut ceremony,
+                1_001,
+                || 2_001,
+            ),
+            Err(IssuerError {
+                code: "lca_rate_limited"
+            })
+        ));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

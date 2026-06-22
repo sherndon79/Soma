@@ -1,0 +1,3 @@
+[Service]
+# Generated only during attended enrollment for the exact enrolled FIDO hidraw path.
+DeviceAllow=@@FIDO_DEVICE@@ rw

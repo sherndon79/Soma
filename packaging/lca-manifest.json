@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "activation_status": "disabled",
+  "hardware_backend": "not_built",
+  "enrollment_status": "absent",
+  "artifacts": [
+    {
+      "source": "target/release/soma-local-confirmation-issuer",
+      "destination": "/usr/libexec/soma/soma-local-confirmation-issuer",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/systemd/soma-local-confirmation-issuer.service",
+      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/systemd/soma-local-confirmation-issuer.socket",
+      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.socket",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/udev/71-soma-lca-fido-isolation.rules",
+      "destination": "/etc/udev/rules.d/71-soma-lca-fido-isolation.rules",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/udev/99-soma-lca-fido-isolation.rules",
+      "destination": "/etc/udev/rules.d/99-soma-lca-fido-isolation.rules",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "packaging/tmpfiles/soma-local-confirmation-issuer.conf",
+      "destination": "/usr/lib/tmpfiles.d/soma-local-confirmation-issuer.conf",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "generated_artifacts": [
+    {
+      "template": "packaging/systemd/soma-local-confirmation-issuer-device.conf.in",
+      "destination": "/etc/systemd/system/soma-local-confirmation-issuer.service.d/10-enrolled-device.conf",
+      "generated_during_attended_enrollment": true
+    },
+    {
+      "destination": "/etc/soma/lca/policy.json",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root",
+      "generated_during_attended_enrollment": true
+    }
+  ],
+  "creates_identity": false,
+  "installs_artifacts": false,
+  "reloads_udev": false,
+  "triggers_device": false,
+  "starts_units": false,
+  "enrolls_credential": false,
+  "enables_restart": false
+}

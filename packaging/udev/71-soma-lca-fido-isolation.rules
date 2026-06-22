@@ -1,0 +1,2 @@
+# Remove logind seat access before 73-seat-late.rules applies uaccess ACLs.
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_FIDO_TOKEN}=="1", ENV{ID_VENDOR_ID}=="1050", ENV{ID_MODEL_ID}=="0407", ENV{ID_USB_INTERFACE_NUM}=="01", TAG-="uaccess"

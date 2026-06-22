@@ -1,0 +1,2 @@
+# Final ownership and ACL enforcement for the enrolled YubiKey 5 FIDO interface class.
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_FIDO_TOKEN}=="1", ENV{ID_VENDOR_ID}=="1050", ENV{ID_MODEL_ID}=="0407", ENV{ID_USB_INTERFACE_NUM}=="01", TAG-="uaccess", OWNER="root", GROUP="soma-lca", MODE="0660", RUN+="/usr/bin/setfacl -b $env{DEVNAME}"

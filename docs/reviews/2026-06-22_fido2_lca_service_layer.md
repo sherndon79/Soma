@@ -43,3 +43,7 @@ The guarded drill does not install rules. After separately reviewed installation
 
 Enrollment, MDS validation, counter baseline, real-authenticator known-answer vector, and live
 ceremony remain unperformed.
+
+Enrollment policy is decided but not executed: the first credential is non-discoverable,
+ES256, RP id `lca.soma.local`, and `require_uv=false`; User Presence remains mandatory. UV would
+require an explicit later re-enrollment rather than changing implicitly when a key PIN is set.

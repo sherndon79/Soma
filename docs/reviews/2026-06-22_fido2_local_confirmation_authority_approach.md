@@ -72,9 +72,14 @@ Enrollment is a separate root-operated command with the runtime issuer stopped.
 6. Seth verifies and signs off on the exact one-unit issuer policy and generated hashes before the
    root-owned store is installed.
 
-User Verification is required when the selected authenticator can provide built-in UV or a
-reviewed PIN flow. UP remains mandatory regardless: UV supplements identity assurance but never
-replaces the physical touch.
+The first-slice enrollment is explicitly **UP-only** with `require_uv=false`. A keyboard-entered
+YubiKey PIN is within Soma's computer-actuation surface, so it does not strengthen the
+anti-automation property supplied by physical touch. It would address a different
+physical-impostor-at-the-desk threat that is outside this slice. UP remains mandatory.
+
+If Seth later needs UV for a different environment or consequence tier, the credential must be
+deliberately re-enrolled with `require_uv=true` after configuring the authenticator. Setting a PIN
+for unrelated key uses does not silently change this LCA credential's policy.
 
 ## 4. Confirmation ceremony
 

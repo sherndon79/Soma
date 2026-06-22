@@ -24,11 +24,19 @@
       "group": "root"
     },
     {
-      "source": "config/systemd-provider-inventory.json",
-      "destination": "/etc/soma/systemd-provider-inventory.json",
-      "mode": "0600",
+      "source": "packaging/tmpfiles/soma-systemd-provider.conf",
+      "destination": "/usr/lib/tmpfiles.d/soma-systemd-provider.conf",
+      "mode": "0644",
       "owner": "root",
       "group": "root"
+    },
+    {
+      "source": "config/systemd-provider-inventory.json",
+      "destination": "/etc/soma/systemd-provider-inventory.json",
+      "mode": "0640",
+      "owner": "root",
+      "group": "soma-systemd-provider",
+      "access_reason": "The unprivileged provider reads this root-owned, provider-unwritable allowlist after privilege drop."
     }
   ],
   "generated_artifacts": [
@@ -38,6 +46,7 @@
       "mode": "0600",
       "owner": "root",
       "group": "root",
+      "access_reason": "systemd reads EnvironmentFile while manager-side and passes the value before applying User=.",
       "generated_during_attended_activation": true
     },
     {

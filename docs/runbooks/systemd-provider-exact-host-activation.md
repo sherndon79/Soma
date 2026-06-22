@@ -21,10 +21,18 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
 1. Create the two system identities and install the root-owned artifacts listed in
    `packaging/systemd-provider-manifest.json`. Do not start or enable either provider unit.
 2. Resolve the numeric `soma-harness` uid into
-   `/etc/soma/systemd-provider-channel.conf`. Its owner must be root and mode `0600`.
-3. Create the expendable service, run `systemctl daemon-reload`, and inspect its complete
+   `/etc/soma/systemd-provider-channel.conf`. Its owner must be `root:root` and mode `0600`.
+   This is intentionally unreadable by the provider: systemd reads `EnvironmentFile` before
+   applying `User=soma-systemd-provider`.
+3. Verify `/etc/soma/systemd-provider-inventory.json` is `0640
+   root:soma-systemd-provider`. The provider reads this allowlist after privilege drop, but cannot
+   write it. Stop if it is provider-unreadable or writable by the provider or other users.
+4. Run `systemd-tmpfiles --create /usr/lib/tmpfiles.d/soma-systemd-provider.conf`. Verify
+   `/run/soma` is exactly `0750 root:soma-harness`, so the dedicated harness can traverse it and
+   unrelated users cannot.
+5. Create the expendable service, run `systemctl daemon-reload`, and inspect its complete
    definition and dependency/propagation closure. Stop if the closure is not target-only.
-4. Generate `00-soma-systemd-provider.rules` for that exact service into a staging directory.
+6. Generate `00-soma-systemd-provider.rules` for that exact service into a staging directory.
    Compare its unit with the still-staged one-unit inventory. Do not install either file yet.
 
 ## Preflight Before Mutation Authority
@@ -34,8 +42,9 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
    surface.
 2. Start only `soma-systemd-provider.socket`; keep the operational route disabled and restart
    authority absent.
-3. Prove the socket mode admits `soma-harness` and rejects unrelated uids. Prove the provider
-   rejects a peer whose `SO_PEERCRED` uid is not the configured dedicated harness uid.
+3. Prove `/run/soma` is traversable by `soma-harness`, the socket mode admits that identity, and
+   unrelated uids cannot traverse or connect. As root, connect and prove the live provider returns
+   `provider_peer_unauthorized`; as `soma-harness`, prove a typed request is served.
 4. From the dedicated harness service, prove the provider starts under
    `soma-systemd-provider`, has no capabilities or network access, and can reach
    `/run/dbus/system_bus_socket` under the complete sandbox.
@@ -63,7 +72,8 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
 2. Attempt the complete restart flow. It must refuse before provider dispatch, with zero restart
    calls and unchanged `InvocationID`.
 3. Disable and stop the provider socket. Repeat the non-mutating reachability check and prove the
-   endpoint is unavailable. Restart the socket only after this kill-switch proof passes.
+   endpoint is unavailable. Verify `/run/soma` remains `0750 root:soma-harness`, restart the
+   socket, and repeat one typed status read before proceeding.
 
 ## Attended First Restart
 

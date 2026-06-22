@@ -1,7 +1,7 @@
 # Exact-Host Systemd Activation Package - Implementation Evidence
 
 - Date: 2026-06-18
-- Status: **REVIEW-CLEAN - Claude approved the inert package for commit**
+- Status: **HOST FINDINGS CORRECTED AND REVIEW-CLEAN - approved for workstation re-run**
 - Activation posture: **INERT**. No files were installed, no identities were created, no unit was
   started, no policy was changed, no inventory entry was added, no route was enabled, and no host
   restart was attempted.
@@ -45,3 +45,31 @@ reachability under the live sandbox, polkit action details/rule precedence, exac
 closure, or the kill-switch behavior. The runbook makes each a stop-on-failure precondition before
 route activation or the first real restart. The checked-in operational inventory remains empty
 and the provider registry remains disabled.
+
+## Workstation preflight findings
+
+The first workstation preflight stopped before policy installation, route activation, or restart:
+
+- F-HOST-1: `DirectoryMode=0750` created `/run/soma` as `root:root`, preventing the dedicated
+  harness from traversing to the correctly group-owned socket.
+- F-HOST-2: the manifest installed the inventory as `0600 root:root`, preventing the
+  post-privilege-drop provider from reading its allowlist.
+
+The corrected package creates `/run/soma` through tmpfiles as `0750 root:soma-harness` and installs
+the inventory as `0640 root:soma-systemd-provider`. `channel.conf` deliberately remains `0600
+root:root`: systemd reads `EnvironmentFile` before applying the service `User=`, so the provider
+does not need direct file access. The controlled container now installs these exact ownerships and
+exercises the socket-activated peer path live. The socket unit also refuses to start when
+`/run/soma` is absent instead of silently relying on a newly created, incorrectly owned parent.
+
+The revised privileged container drill now installs the package at those exact permissions and
+proves:
+
+- `soma-harness` can traverse `/run/soma`, while an unrelated uid cannot;
+- the provider can read but cannot write the inventory and cannot read `channel.conf`;
+- the real packaged socket and hardened service start successfully;
+- a root socket peer receives `provider_peer_unauthorized` before request parsing;
+- a `soma-harness` peer receives a typed status result through the socket;
+- stopping the socket preserves the tmpfiles-owned parent, and restarting restores typed service;
+- the existing real-systemd digest, drift, policy, restart, ambiguity, and runtime-boundary drills
+  still pass.

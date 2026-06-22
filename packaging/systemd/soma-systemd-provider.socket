@@ -1,5 +1,8 @@
 [Unit]
 Description=Soma systemd provider private control socket
+Requires=systemd-tmpfiles-setup.service
+After=systemd-tmpfiles-setup.service
+ConditionPathIsDirectory=/run/soma
 
 [Socket]
 ListenStream=/run/soma/systemd-provider.sock

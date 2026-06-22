@@ -9,6 +9,7 @@ import { join } from "node:path";
 const read = async (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const service = await read("packaging/systemd/soma-systemd-provider.service");
 const socket = await read("packaging/systemd/soma-systemd-provider.socket");
+const tmpfiles = await read("packaging/tmpfiles/soma-systemd-provider.conf");
 const template = await read("packaging/polkit/00-soma-systemd-provider.rules.in");
 const manifest = JSON.parse(await read("packaging/systemd-provider-manifest.json"));
 const inventory = JSON.parse(await read("config/systemd-provider-inventory.json"));
@@ -53,10 +54,47 @@ assert.doesNotMatch(service, /^\[Install\]$/m, "service must not be install-enab
 assert.doesNotMatch(socket, /^\[Install\]$/m, "socket must not be install-enabled");
 assert.match(socket, /SocketGroup=soma-harness/);
 assert.match(socket, /SocketMode=0660/);
+assert.match(socket, /Requires=systemd-tmpfiles-setup\.service/);
+assert.match(socket, /After=systemd-tmpfiles-setup\.service/);
+assert.match(socket, /ConditionPathIsDirectory=\/run\/soma/);
+assert.equal(tmpfiles.trim(), "d /run/soma 0750 root soma-harness -");
 assert.match(template, /subject\.user !== "soma-systemd-provider"/);
 assert.match(template, /verb === "restart"/);
 assert.match(template, /return polkit\.Result\.NO/);
 assert.equal(manifest.activation_status, "disabled");
+const inventoryArtifact = manifest.artifacts.find(
+  (artifact) => artifact.destination === "/etc/soma/systemd-provider-inventory.json",
+);
+assert.deepEqual(
+  {
+    mode: inventoryArtifact?.mode,
+    owner: inventoryArtifact?.owner,
+    group: inventoryArtifact?.group,
+  },
+  { mode: "0640", owner: "root", group: "soma-systemd-provider" },
+);
+const tmpfilesArtifact = manifest.artifacts.find(
+  (artifact) => artifact.destination === "/usr/lib/tmpfiles.d/soma-systemd-provider.conf",
+);
+assert.deepEqual(
+  {
+    mode: tmpfilesArtifact?.mode,
+    owner: tmpfilesArtifact?.owner,
+    group: tmpfilesArtifact?.group,
+  },
+  { mode: "0644", owner: "root", group: "root" },
+);
+const channelArtifact = manifest.generated_artifacts.find(
+  (artifact) => artifact.destination === "/etc/soma/systemd-provider-channel.conf",
+);
+assert.deepEqual(
+  {
+    mode: channelArtifact?.mode,
+    owner: channelArtifact?.owner,
+    group: channelArtifact?.group,
+  },
+  { mode: "0600", owner: "root", group: "root" },
+);
 for (const field of [
   "creates_identities",
   "installs_artifacts",

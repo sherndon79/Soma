@@ -39,7 +39,7 @@ const composeArgs = [
   "--",
   "env",
   "SOMA_SYSTEMD_PROVIDER_INVENTORY=/etc/soma/systemd-provider-inventory.json",
-  "/usr/local/bin/soma-systemd-provider",
+  "/usr/libexec/soma/soma-systemd-provider",
 ];
 
 const provider = createSystemdProviderAdapter({

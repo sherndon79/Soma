@@ -8,7 +8,7 @@ fi
 
 compose=(docker compose -f docker-compose.systemd-provider-test.yml)
 provider_env=(env SOMA_SYSTEMD_PROVIDER_INVENTORY=/etc/soma/systemd-provider-inventory.json)
-provider=(runuser -u soma-systemd-provider -- "${provider_env[@]}" /usr/local/bin/soma-systemd-provider)
+provider=(runuser -u soma-systemd-provider -- "${provider_env[@]}" /usr/libexec/soma/soma-systemd-provider)
 
 cleanup() {
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -27,6 +27,56 @@ done
 
 "${compose[@]}" exec -T systemd-provider-test systemctl is-active --quiet \
   soma-lab-restart-proof.service soma-lab-denied-proof.service
+
+socket_request() {
+  local user=$1
+  local method=$2
+  local inventory_id=$3
+  local request_id=$4
+  printf '{"request_id":"%s","method":"%s","inventory_id":"%s"}\n' \
+    "$request_id" "$method" "$inventory_id" \
+    | "${compose[@]}" exec -T systemd-provider-test runuser -u "$user" -- \
+      socat - UNIX-CONNECT:/run/soma/systemd-provider.sock
+}
+
+"${compose[@]}" exec -T systemd-provider-test systemd-tmpfiles --create \
+  /usr/lib/tmpfiles.d/soma-systemd-provider.conf
+[[ $("${compose[@]}" exec -T systemd-provider-test stat -c '%a:%U:%G' /run/soma) \
+  == "750:root:soma-harness" ]]
+[[ $("${compose[@]}" exec -T systemd-provider-test stat -c '%a:%U:%G' \
+  /etc/soma/systemd-provider-inventory.json) == "640:root:soma-systemd-provider" ]]
+[[ $("${compose[@]}" exec -T systemd-provider-test stat -c '%a:%U:%G' \
+  /etc/soma/systemd-provider-channel.conf) == "600:root:root" ]]
+"${compose[@]}" exec -T systemd-provider-test runuser -u soma-harness -- test -x /run/soma
+"${compose[@]}" exec -T systemd-provider-test runuser -u nobody -- test ! -x /run/soma
+"${compose[@]}" exec -T systemd-provider-test runuser -u soma-systemd-provider -- \
+  test -r /etc/soma/systemd-provider-inventory.json
+"${compose[@]}" exec -T systemd-provider-test runuser -u soma-systemd-provider -- \
+  test ! -w /etc/soma/systemd-provider-inventory.json
+"${compose[@]}" exec -T systemd-provider-test runuser -u soma-systemd-provider -- \
+  test ! -r /etc/soma/systemd-provider-channel.conf
+
+"${compose[@]}" exec -T systemd-provider-test systemctl start soma-systemd-provider.socket
+"${compose[@]}" exec -T systemd-provider-test systemctl is-active --quiet \
+  soma-systemd-provider.socket
+
+root_rejected=$("${compose[@]}" exec -T systemd-provider-test runuser -u root -- \
+  socat - UNIX-CONNECT:/run/soma/systemd-provider.sock </dev/null)
+[[ $(jq -er '.ok' <<<"$root_rejected") == "false" ]]
+[[ $(jq -er '.error.code' <<<"$root_rejected") == "provider_peer_unauthorized" ]]
+
+harness_served=$(socket_request soma-harness status_read lab-restart-proof harness-peer)
+[[ $(jq -er '.ok' <<<"$harness_served") == "true" ]]
+[[ $(jq -er '.result.affected_closure' <<<"$harness_served") == "target_only" ]]
+"${compose[@]}" exec -T systemd-provider-test systemctl is-active --quiet \
+  soma-systemd-provider.service
+
+"${compose[@]}" exec -T systemd-provider-test systemctl stop soma-systemd-provider.socket
+[[ $("${compose[@]}" exec -T systemd-provider-test stat -c '%a:%U:%G' /run/soma) \
+  == "750:root:soma-harness" ]]
+"${compose[@]}" exec -T systemd-provider-test systemctl start soma-systemd-provider.socket
+restarted_socket=$(socket_request soma-harness status_read lab-restart-proof restarted-socket)
+[[ $(jq -er '.ok' <<<"$restarted_socket") == "true" ]]
 
 request() {
   local method=$1

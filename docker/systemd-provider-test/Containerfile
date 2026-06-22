@@ -13,17 +13,29 @@ RUN apt-get update \
       dbus \
       jq \
       polkitd \
+      socat \
       systemd \
     && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin soma-harness \
     && useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin soma-systemd-provider
 
-COPY --from=build /src/target/release/soma-systemd-provider /usr/local/bin/soma-systemd-provider
+COPY --from=build /src/target/release/soma-systemd-provider /usr/libexec/soma/soma-systemd-provider
 COPY docker/systemd-provider-test/soma-lab-restart-proof.service /etc/systemd/system/
 COPY docker/systemd-provider-test/soma-lab-denied-proof.service /etc/systemd/system/
 COPY docker/systemd-provider-test/49-soma-systemd-provider-test.rules /etc/polkit-1/rules.d/
+COPY packaging/systemd/soma-systemd-provider.service /etc/systemd/system/
+COPY packaging/systemd/soma-systemd-provider.socket /etc/systemd/system/
+COPY packaging/tmpfiles/soma-systemd-provider.conf /usr/lib/tmpfiles.d/
 COPY docker/systemd-provider-test/inventory.json /etc/soma/systemd-provider-inventory.json
 
-RUN systemctl enable soma-lab-restart-proof.service soma-lab-denied-proof.service polkit.service
+RUN harness_uid="$(id -u soma-harness)" \
+    && printf 'SOMA_SYSTEMD_PROVIDER_EXPECTED_UID=%s\n' "$harness_uid" \
+      > /etc/soma/systemd-provider-channel.conf \
+    && chown root:root /etc/soma/systemd-provider-channel.conf \
+    && chmod 0600 /etc/soma/systemd-provider-channel.conf \
+    && chown root:soma-systemd-provider /etc/soma/systemd-provider-inventory.json \
+    && chmod 0640 /etc/soma/systemd-provider-inventory.json \
+    && systemctl enable soma-lab-restart-proof.service soma-lab-denied-proof.service polkit.service
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

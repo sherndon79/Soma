@@ -495,9 +495,14 @@ export PLAN_CREATED_AT_MS=$(date +%s%3N)
 2. Ensure the seat desktop, harness, and computer-use environment are otherwise idle.
 3. As root, start non-grabbing `evtest` capture for every matched event node, writing raw events to
    `$STAGE/otp-evtest/`. Also focus a canary text field visible to the computer-use observer and
-   record its exact before value:
+   record its exact before value. `CANARY_READ_COMMAND` must be a separately reviewed absolute
+   helper that emits only the exact focused canary value and does not mutate focus, input,
+   clipboard, or desktop state:
 
    ```bash
+   export CANARY_READ_COMMAND=/root/reviewed-read-focused-canary
+   test -x "$CANARY_READ_COMMAND"
+   "$CANARY_READ_COMMAND" >"$STAGE/otp-canary-before.txt"
    install -d -m 0700 -o root -g root "$STAGE/otp-evtest"
    OTP_PIDS=()
    for e in "${OTP_EVENTS[@]}"; do
@@ -552,11 +557,18 @@ export PLAN_CREATED_AT_MS=$(date +%s%3N)
    for p in "${OTP_PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
    wait "${OTP_PIDS[@]}" 2>/dev/null || true
    ! grep -R -E 'type 1 \\(EV_KEY\\)|Event: time .* type 1' "$STAGE/otp-evtest"
+   "$CANARY_READ_COMMAND" >"$STAGE/otp-canary-after.txt"
+   cmp -s "$STAGE/otp-canary-before.txt" "$STAGE/otp-canary-after.txt"
    ```
 
 Confirmation-only mode exits immediately after validating the issuer response. It does not create
 a confirmation receipt or construct the restart runtime. Do not use the first restart as the OTP
 experiment.
+
+The authenticator signature counter advances on every successful touch. The expected sequence is
+enrollment baseline, then Gate 6 confirmation-only OTP drill, then Gate 8 restart confirmation,
+with a strict increase at each step. The Gate 6 advance is intentional and must not be mistaken
+for replay-state drift.
 
 Stop the issuer immediately after the drill:
 

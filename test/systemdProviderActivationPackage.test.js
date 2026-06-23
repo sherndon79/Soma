@@ -179,6 +179,8 @@ test("attended host runbook preserves ordered isolation and rollback gates", asy
     "scripts/lca-hardware-isolation-drill.sh",
     "SOMA_SYSTEMD_ATTENDED_CONFIRM_ONLY=1",
     "SOMA_SYSTEMD_EXPECTED_PLAN_DIGEST",
+    "cmp -s \"$STAGE/otp-canary-before.txt\" \"$STAGE/otp-canary-after.txt\"",
+    "signature counter advances on every successful touch",
     "controlled_testing != .attended_host_activation",
     "systemctl stop soma-local-confirmation-issuer.service",
     "restart_dispatched == false",

@@ -34,6 +34,8 @@ const hostId = required("SOMA_SYSTEMD_HOST_ID");
 const inventoryId = required("SOMA_SYSTEMD_UNIT_INVENTORY_ID");
 const unitName = required("SOMA_SYSTEMD_UNIT_NAME");
 const requestPath = required("SOMA_SYSTEMD_LCA_REQUEST_PATH");
+const runId = requiredToken("SOMA_SYSTEMD_ATTENDED_RUN_ID");
+const planCreatedAt = requiredTimestamp("SOMA_SYSTEMD_PLAN_CREATED_AT_MS");
 const socketPath = process.env.SOMA_SYSTEMD_SOCKET_PATH ?? "/run/soma/systemd-provider.sock";
 const lcaSocketPath = process.env.SOMA_LCA_SOCKET_PATH ?? "/run/soma-lca/issuer.sock";
 const now = () => Date.now();
@@ -41,6 +43,13 @@ const now = () => Date.now();
 const provider = createSystemdProviderSocketAdapter({ socketPath, enabled: true });
 try {
   const context = await buildContext();
+  if (
+    process.env.SOMA_SYSTEMD_ATTENDED_HOST_RESTART === "1"
+    && process.env.SOMA_SYSTEMD_ATTENDED_CONFIRM_ONLY !== "1"
+    && context.plan.plan_digest !== required("SOMA_SYSTEMD_EXPECTED_PLAN_DIGEST")
+  ) {
+    fail("Refusing: live plan does not match the reviewed plan digest.", 2);
+  }
   const preview = renderLocalHostServicePlanPreview(context.plan, { target_label: unitName });
   await writeJsonAtomic(requestPath, {
     schema_version: 1,
@@ -92,39 +101,47 @@ try {
       },
       expected,
     });
-    const confirmationAuthority = createLocalConfirmationAuthority({
-      now,
-      verifyTrustedAttestation: (candidate, plan) => candidate === attestation
-        && candidate.plan_digest === plan.plan_digest
-        && candidate.target_binding_digest === plan.target_binding_digest
-        && candidate.task_id === plan.task_id
-        && candidate.provider_id === plan.provider_id,
-    });
-    const receipt = confirmationAuthority.confirm({ plan: context.plan, attestation });
-    const runtime = createAsyncHostServiceRestartRuntime({
-      planStore: context.planStore,
-      confirmationAuthority,
-      provider,
-      taskLedger: context.taskLedger,
-      operationState: context.operationState,
-      hostServiceAuthority: {
-        handles: context.handles,
-        currentInventory: () => context.inventory,
-      },
-      now,
-    });
-    const result = await runtime.applyAndVerify({
-      plan_id: context.plan.plan_id,
-      plan_digest: context.plan.plan_digest,
-      task: context.task,
-      grant: context.grant,
-      descriptor: context.descriptor,
-      confirmation_receipt_id: receipt.receipt_id,
-    });
-    assert.equal(provider.restartCallCount(), 1);
-    console.log(JSON.stringify(result));
-    if (result.outcome !== "verified_success") {
-      process.exitCode = 4;
+    if (process.env.SOMA_SYSTEMD_ATTENDED_CONFIRM_ONLY === "1") {
+      console.log(JSON.stringify({
+        outcome: "confirmation_verified",
+        restart_dispatched: false,
+      }));
+      process.exitCode = 5;
+    } else {
+      const confirmationAuthority = createLocalConfirmationAuthority({
+        now,
+        verifyTrustedAttestation: (candidate, plan) => candidate === attestation
+          && candidate.plan_digest === plan.plan_digest
+          && candidate.target_binding_digest === plan.target_binding_digest
+          && candidate.task_id === plan.task_id
+          && candidate.provider_id === plan.provider_id,
+      });
+      const receipt = confirmationAuthority.confirm({ plan: context.plan, attestation });
+      const runtime = createAsyncHostServiceRestartRuntime({
+        planStore: context.planStore,
+        confirmationAuthority,
+        provider,
+        taskLedger: context.taskLedger,
+        operationState: context.operationState,
+        hostServiceAuthority: {
+          handles: context.handles,
+          currentInventory: () => context.inventory,
+        },
+        now,
+      });
+      const result = await runtime.applyAndVerify({
+        plan_id: context.plan.plan_id,
+        plan_digest: context.plan.plan_digest,
+        task: context.task,
+        grant: context.grant,
+        descriptor: context.descriptor,
+        confirmation_receipt_id: receipt.receipt_id,
+      });
+      assert.equal(provider.restartCallCount(), 1);
+      console.log(JSON.stringify(result));
+      if (result.outcome !== "verified_success") {
+        process.exitCode = 4;
+      }
     }
   }
 } finally {
@@ -136,7 +153,7 @@ async function buildContext() {
     domain: "operational",
     provider_id: HOST_SERVICE_OPERATIONAL_PROVIDER_ID,
     host_id: hostId,
-    inventory_generation: `attended-${randomBytes(8).toString("hex")}`,
+    inventory_generation: `attended-${runId}`,
     identity_generation: required("SOMA_SYSTEMD_HOST_IDENTITY_GENERATION"),
     units: [{
       inventory_id: inventoryId,
@@ -147,13 +164,13 @@ async function buildContext() {
     }],
   });
   const task = validateHostServiceTaskEnvelope({
-    task_id: `attended-${randomBytes(12).toString("hex")}`,
+    task_id: `attended-${runId}`,
     objective: "One attended exact-host systemd restart proof.",
     host_id: hostId,
     allowed_service_inventory_ids: [inventoryId],
     allowed_capabilities: [HOST_SERVICE_STATUS_CAPABILITY, HOST_SERVICE_RESTART_CAPABILITY],
     consequence_ceiling: "C3",
-    expires_at: now() + 120_000,
+    expires_at: planCreatedAt + 120_000,
     max_status_reads: 5,
     max_restart_plans: 1,
     max_successful_restarts: 1,
@@ -183,7 +200,10 @@ async function buildContext() {
     domain: "operational",
     now,
   });
-  const handles = createHostServiceHandleTable({ now });
+  const handles = createHostServiceHandleTable({
+    now,
+    random: () => runId,
+  });
   const serviceHandle = handles.mint({
     inventory,
     inventory_id: inventoryId,
@@ -213,7 +233,10 @@ async function buildContext() {
     descriptor_digest: hostServiceDescriptorDigest(descriptorBase),
   });
   const taskLedger = createHostServiceTaskLedger();
-  const planStore = createHostServicePlanStore({ now });
+  const planStore = createHostServicePlanStore({
+    now: () => planCreatedAt,
+    random: () => runId,
+  });
   const observation = await provider.inspectForPlan(descriptor);
   const plan = planStore.create({ authorization, descriptor, observation, task, taskLedger });
   const operationState = createHostServiceOperationState();
@@ -241,6 +264,23 @@ function required(name) {
   const value = String(process.env[name] ?? "").trim();
   if (!value) {
     fail(`Refusing: ${name} is required.`, 2);
+  }
+  return value;
+}
+
+function requiredToken(name) {
+  const value = required(name);
+  if (!/^[a-z0-9][a-z0-9-]{7,63}$/.test(value)) {
+    fail(`Refusing: ${name} must be a reviewed lowercase token.`, 2);
+  }
+  return value;
+}
+
+function requiredTimestamp(name) {
+  const value = Number(required(name));
+  const current = Date.now();
+  if (!Number.isSafeInteger(value) || value > current || current - value > 120_000) {
+    fail(`Refusing: ${name} is outside the attended window.`, 2);
   }
   return value;
 }

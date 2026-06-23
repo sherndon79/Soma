@@ -121,6 +121,72 @@ test("attended-host socket adapter uses the production channel and counts one re
   }
 });
 
+test("attended confirmation-only mode exits before receipt or restart runtime creation", async () => {
+  const source = await readFile("scripts/systemd-provider-attended-host.mjs", "utf8");
+  const confirmationOnly = source.indexOf("SOMA_SYSTEMD_ATTENDED_CONFIRM_ONLY");
+  const confirmationAuthority = source.indexOf("createLocalConfirmationAuthority({", confirmationOnly);
+  const restartRuntime = source.indexOf("createAsyncHostServiceRestartRuntime({", confirmationOnly);
+  assert.ok(confirmationOnly > 0);
+  assert.ok(confirmationAuthority > confirmationOnly);
+  assert.ok(restartRuntime > confirmationOnly);
+  assert.match(
+    source.slice(confirmationOnly, confirmationAuthority),
+    /outcome:\s*"confirmation_verified"[\s\S]*restart_dispatched:\s*false[\s\S]*else \{/,
+  );
+});
+
+test("attended dispatch requires deterministic reviewed plan bindings", async () => {
+  const source = await readFile("scripts/systemd-provider-attended-host.mjs", "utf8");
+  for (const marker of [
+    "SOMA_SYSTEMD_ATTENDED_RUN_ID",
+    "SOMA_SYSTEMD_PLAN_CREATED_AT_MS",
+    "SOMA_SYSTEMD_EXPECTED_PLAN_DIGEST",
+    "live plan does not match the reviewed plan digest",
+    "random: () => runId",
+    "now: () => planCreatedAt",
+  ]) {
+    assert.ok(source.includes(marker), `missing attended binding: ${marker}`);
+  }
+});
+
+test("attended host runbook preserves ordered isolation and rollback gates", async () => {
+  const runbook = await readFile(
+    "docs/runbooks/systemd-provider-exact-host-activation.md",
+    "utf8",
+  );
+  const orderedMarkers = [
+    "## Emergency Off",
+    "## Gate 0: Preconditions",
+    "## Gate 1: Install Inert Packages",
+    "## Gate 2: Provider Read-Only Preflight",
+    "## Gate 3: Stage Exact Provider Authority",
+    "## Gate 4: Install Udev Isolation",
+    "## Gate 5: Two-Touch Enrollment",
+    "## Gate 6: Install Enrollment And Prove OTP Isolation",
+    "## Gate 7: Preview With All Restart Authority Off",
+    "## Gate 8: One Attended Restart",
+    "## Final Rollback",
+  ];
+  let previous = -1;
+  for (const marker of orderedMarkers) {
+    const index = runbook.indexOf(marker);
+    assert.ok(index > previous, `runbook marker out of order: ${marker}`);
+    previous = index;
+  }
+  for (const invariant of [
+    "ID_USB_INTERFACE_NUM=01",
+    "ID_USB_INTERFACE_NUM=00",
+    "scripts/lca-hardware-isolation-drill.sh",
+    "SOMA_SYSTEMD_ATTENDED_CONFIRM_ONLY=1",
+    "SOMA_SYSTEMD_EXPECTED_PLAN_DIGEST",
+    "controlled_testing != .attended_host_activation",
+    "systemctl stop soma-local-confirmation-issuer.service",
+    "restart_dispatched == false",
+  ]) {
+    assert.ok(runbook.includes(invariant), `runbook missing invariant: ${invariant}`);
+  }
+});
+
 test("polkit generator emits one exact restart grant and creates no host artifact", async () => {
   const directory = await mkdtemp(join(tmpdir(), "soma-polkit-"));
   const output = join(directory, "00-soma-systemd-provider.rules");

@@ -184,9 +184,19 @@ test("attended host runbook preserves ordered isolation and rollback gates", asy
     "controlled_testing != .attended_host_activation",
     "systemctl stop soma-local-confirmation-issuer.service",
     "restart_dispatched == false",
+    "/opt/soma-attended-driver/scripts/systemd-provider-attended-host.mjs",
+    "\"$ATTENDED_NODE\" \"$ATTENDED_DRIVER\"",
+    "--process \"$SUBJECT\" --detail unit \"$UNIT\" --detail verb restart",
+    "644:root:root",
+    "Error loading script",
+    "date +%s%N",
+    "^Event: time .*, type 1 \\(EV_KEY\\),",
   ]) {
     assert.ok(runbook.includes(invariant), `runbook missing invariant: ${invariant}`);
   }
+  assert.doesNotMatch(runbook, /date \+%s%3N/);
+  assert.doesNotMatch(runbook, /npm --silent --prefix/);
+  assert.ok(!runbook.includes("type 1 \\\\(EV_KEY\\\\)|Event:"));
 });
 
 test("polkit generator emits one exact restart grant and creates no host artifact", async () => {
@@ -204,7 +214,9 @@ test("polkit generator emits one exact restart grant and creates no host artifac
     assert.match(rule, /verb === "restart"/);
     assert.match(rule, /return polkit\.Result\.NO/);
     assert.doesNotMatch(rule, /@@/);
-    assert.equal((await stat(output)).mode & 0o777, 0o600);
+    const mode = (await stat(output)).mode & 0o777;
+    assert.equal(mode, 0o644);
+    assert.notEqual(mode & 0o004, 0, "polkitd must be able to read generated policy");
 
     const invalid = spawnSync(
       process.execPath,

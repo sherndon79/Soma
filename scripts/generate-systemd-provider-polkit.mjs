@@ -18,7 +18,7 @@ if (rendered.includes("@@")) {
 }
 
 if (output) {
-  await writeFile(output, rendered, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await writeFile(output, rendered, { encoding: "utf8", mode: 0o644, flag: "wx" });
 } else {
   process.stdout.write(rendered);
 }

@@ -20,6 +20,7 @@ export HOST_ID="reviewed-host-id"
 export SEAT_USER="reviewed-seat-user"
 export COMPUTER_USE_USER="reviewed-computer-use-uid-name"
 export STAGE="/root/soma-attended-$(date -u +%Y%m%dT%H%M%SZ)"
+export ATTENDED_DRIVER=/opt/soma-attended-driver/scripts/systemd-provider-attended-host.mjs
 install -d -m 0700 -o root -g root "$STAGE"
 test "$UNIT" = "soma-lab-${INVENTORY_ID}.service"
 ```
@@ -87,9 +88,17 @@ rules is a separate rollback step described at the end.
    used by no unrelated process. Resolve and record:
 
    ```bash
-   for command in jq socat pkcheck evtest udevadm runuser getfacl openssl npm cargo; do
+   for command in jq socat pkcheck pgrep evtest udevadm runuser getfacl openssl node npm cargo; do
      command -v "$command" >/dev/null
    done
+   export ATTENDED_NODE=$(command -v node)
+   case "$ATTENDED_NODE" in /usr/bin/node|/usr/local/bin/node) ;; *) exit 1;; esac
+   export ATTENDED_NODE_DIR=$(dirname -- "$ATTENDED_NODE")
+   test "$(stat -Lc '%U:%G' "$ATTENDED_NODE_DIR" "$ATTENDED_NODE")" = \
+     $'root:root\nroot:root'
+   test $(( 8#$(stat -Lc '%a' "$ATTENDED_NODE_DIR") & 8#022 )) -eq 0
+   test $(( 8#$(stat -Lc '%a' "$ATTENDED_NODE") & 8#022 )) -eq 0
+   test "$("$ATTENDED_NODE" -p 'Number(process.versions.node.split(".")[0]) >= 22')" = true
    id "$SEAT_USER"
    id "$COMPUTER_USE_USER"
    getent passwd soma-harness soma-systemd-provider soma-lca | tee "$STAGE/passwd.txt"
@@ -182,13 +191,31 @@ sha256sum \
   | tee "$STAGE/release-binary-sha256.txt"
 ```
 
-Install the binaries, systemd units, tmpfiles files, and empty provider inventory declared by
-`packaging/systemd-provider-manifest.json` and `packaging/lca-manifest.json`. Keep both LCA udev
-rules staged in the repository until Gate 4. Generate the root-readable channel files:
+Install the binaries, systemd units, tmpfiles files, empty provider inventory, and attended-driver
+bundle declared by `packaging/systemd-provider-manifest.json` and `packaging/lca-manifest.json`.
+The bundle is inert code, not authority. Keep both LCA udev rules staged in the repository until
+Gate 4; they are intentionally excluded from inert installation. Generate the root-readable
+channel files:
 
 ```bash
 install -d -m 0755 -o root -g root /usr/libexec/soma
 install -d -m 0755 -o root -g root /etc/soma/lca
+install -d -m 0755 -o root -g root \
+  /opt/soma-attended-driver /opt/soma-attended-driver/scripts /opt/soma-attended-driver/src
+while IFS=$'\t' read -r source destination mode; do
+  install -m "$mode" -o root -g root "$SOMA_REPO/$source" "$destination"
+done < <(
+  jq -r '
+    .artifacts[]
+    | select(.destination | startswith("/opt/soma-attended-driver/"))
+    | [.source, .destination, .mode]
+    | @tsv
+  ' "$SOMA_REPO/packaging/systemd-provider-manifest.json"
+)
+test -r "$ATTENDED_DRIVER"
+test "$(stat -Lc '%a:%U:%G' /opt/soma-attended-driver "$ATTENDED_DRIVER")" = \
+  $'755:root:root\n644:root:root'
+"$ATTENDED_NODE" --check "$ATTENDED_DRIVER"
 install -m 0600 -o root -g root /dev/null /etc/soma/systemd-provider-channel.conf
 printf 'SOMA_SYSTEMD_PROVIDER_EXPECTED_UID=%s\n' "$HARNESS_UID" \
   > /etc/soma/systemd-provider-channel.conf
@@ -229,9 +256,13 @@ code:
 
 ```bash
 ROOT_RESPONSE=$(
+  set +e
   printf '%s\n' \
     '{"request_id":"root-probe","method":"status_read","inventory_id":"restart-proof"}' \
     | socat - UNIX-CONNECT:/run/soma/systemd-provider.sock
+  ROOT_SOCAT_RC=$?
+  set -e
+  test "$ROOT_SOCAT_RC" -eq 0
 )
 HARNESS_RESPONSE=$(
   runuser -u soma-harness -- sh -c \
@@ -271,9 +302,9 @@ jq -n --arg id "$INVENTORY_ID" --arg unit "$UNIT" '{
   units: [{inventory_id: $id, unit_name: $unit}]
 }' >"$STAGE/provider-inventory-off.json"
 
-node "$SOMA_REPO/scripts/generate-systemd-provider-polkit.mjs" \
+"$ATTENDED_NODE" "$SOMA_REPO/scripts/generate-systemd-provider-polkit.mjs" \
   "$UNIT" "$STAGE/00-soma-systemd-provider.rules"
-chmod 0600 "$STAGE/00-soma-systemd-provider.rules"
+chmod 0644 "$STAGE/00-soma-systemd-provider.rules"
 ```
 
 Review both files and require exactly one identical `UNIT`. Install them while restart remains
@@ -282,35 +313,60 @@ disabled:
 ```bash
 install -m 0640 -o root -g soma-systemd-provider \
   "$STAGE/provider-inventory-off.json" /etc/soma/systemd-provider-inventory.json
-install -m 0600 -o root -g root \
+export POLKIT_INSTALL_SINCE=$(date --iso-8601=seconds)
+install -m 0644 -o root -g root \
   "$STAGE/00-soma-systemd-provider.rules" \
   /etc/polkit-1/rules.d/00-soma-systemd-provider.rules
+test "$(stat -Lc '%a:%U:%G' \
+  /etc/polkit-1/rules.d/00-soma-systemd-provider.rules)" = "644:root:root"
+sleep 1
+journalctl -u polkit --since "$POLKIT_INSTALL_SINCE" --no-pager \
+  | tee "$STAGE/polkit-rule-load-journal.txt"
+! grep -F 'Error loading script' "$STAGE/polkit-rule-load-journal.txt"
 systemctl restart soma-systemd-provider.socket
 ```
 
-Prove the polkit matrix without invoking systemd. `pkcheck` evaluates policy only:
+Prove the polkit matrix without invoking systemd. A root caller asks `pkcheck` about one live,
+unprivileged `soma-systemd-provider` subject. This is required because an untrusted caller cannot
+supply `--detail` fields:
 
 ```bash
-runuser -u soma-systemd-provider -- env UNIT="$UNIT" sh -c '
-  pkcheck --action-id org.freedesktop.systemd1.manage-units \
-    --process $$ --detail unit "$UNIT" --detail verb restart
-'
+export PROVIDER_UID=$(id -u soma-systemd-provider)
+runuser -u soma-systemd-provider -- sleep 300 &
+SUBJECT_LAUNCH_PID=$!
+sleep 1
+if test "$(stat -Lc '%u' "/proc/$SUBJECT_LAUNCH_PID")" -eq "$PROVIDER_UID"; then
+  SUBJECT_PID=$SUBJECT_LAUNCH_PID
+else
+  mapfile -t SUBJECT_CHILDREN < <(
+    pgrep -P "$SUBJECT_LAUNCH_PID" -u "$PROVIDER_UID" -x sleep
+  )
+  test "${#SUBJECT_CHILDREN[@]}" -eq 1
+  SUBJECT_PID=${SUBJECT_CHILDREN[0]}
+fi
+SUBJECT_START_TIME=$(awk '{print $22}' "/proc/$SUBJECT_PID/stat")
+SUBJECT="$SUBJECT_PID,$SUBJECT_START_TIME,$PROVIDER_UID"
+trap 'kill "$SUBJECT_LAUNCH_PID" "$SUBJECT_PID" 2>/dev/null || true' EXIT
+
+pkcheck --action-id org.freedesktop.systemd1.manage-units \
+  --process "$SUBJECT" --detail unit "$UNIT" --detail verb restart
 for denied in \
   "soma-lab-denied-proof.service restart" \
   "$UNIT start" "$UNIT stop" "$UNIT reload"; do
   read -r denied_unit denied_verb <<<"$denied"
-  if runuser -u soma-systemd-provider -- \
-    env DENIED_UNIT="$denied_unit" DENIED_VERB="$denied_verb" sh -c '
-      pkcheck --action-id org.freedesktop.systemd1.manage-units \
-        --process $$ --detail unit "$DENIED_UNIT" --detail verb "$DENIED_VERB"
-    '; then
+  if pkcheck --action-id org.freedesktop.systemd1.manage-units \
+    --process "$SUBJECT" --detail unit "$denied_unit" --detail verb "$denied_verb"; then
     echo "Unexpected polkit authorization: $denied" >&2
     exit 1
   fi
 done
+kill "$SUBJECT_LAUNCH_PID" "$SUBJECT_PID" 2>/dev/null || true
+wait "$SUBJECT_LAUNCH_PID" 2>/dev/null || true
+trap - EXIT
 ```
 
-No case may prompt. `InvocationID` must remain `INVOCATION_BEFORE`.
+No case may prompt. The exact positive and negative matrix is the positive proof that polkit loaded
+the readable rule. `InvocationID` must remain `INVOCATION_BEFORE`.
 
 Emergency Off if a negative case succeeds, any case prompts, or the invocation changes.
 
@@ -472,7 +528,7 @@ export UNIT_INVENTORY_GENERATION=$(
   } | sha256sum | cut -d' ' -f1
 )
 export ATTENDED_RUN_ID="otp-$(openssl rand -hex 8)"
-export PLAN_CREATED_AT_MS=$(date +%s%3N)
+export PLAN_CREATED_AT_MS=$(( $(date +%s%N) / 1000000 ))
 ```
 
 1. Dynamically identify every `/dev/input/event*` descended from the same physical USB key's
@@ -538,7 +594,7 @@ export PLAN_CREATED_AT_MS=$(date +%s%3N)
      SOMA_SYSTEMD_SOCKET_PATH=/run/soma/systemd-provider.sock \
      SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock \
      SOMA_LCA_EXPECTED_SERVER_UID="$LCA_UID" \
-     npm --silent --prefix "$SOMA_REPO" run systemd-provider:attended-host \
+     "$ATTENDED_NODE" "$ATTENDED_DRIVER" \
      | tee "$STAGE/otp-confirmation-result.json"
    OTP_CONFIRM_RC=${PIPESTATUS[0]}
    set -e
@@ -556,7 +612,7 @@ export PLAN_CREATED_AT_MS=$(date +%s%3N)
    ```bash
    for p in "${OTP_PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
    wait "${OTP_PIDS[@]}" 2>/dev/null || true
-   ! grep -R -E 'type 1 \\(EV_KEY\\)|Event: time .* type 1' "$STAGE/otp-evtest"
+   ! grep -R -E '^Event: time .*, type 1 \(EV_KEY\),' "$STAGE/otp-evtest"
    "$CANARY_READ_COMMAND" >"$STAGE/otp-canary-after.txt"
    cmp -s "$STAGE/otp-canary-before.txt" "$STAGE/otp-canary-after.txt"
    ```
@@ -586,7 +642,7 @@ Create a new final-run binding. Preview and dispatch must complete inside its tw
 
 ```bash
 export ATTENDED_RUN_ID="restart-$(openssl rand -hex 8)"
-export PLAN_CREATED_AT_MS=$(date +%s%3N)
+export PLAN_CREATED_AT_MS=$(( $(date +%s%N) / 1000000 ))
 export LCA_REQUEST_PATH=/run/soma-attended/restart-preview.json
 ```
 
@@ -609,7 +665,7 @@ runuser -u soma-harness -- env -i \
   SOMA_SYSTEMD_LCA_REQUEST_PATH="$LCA_REQUEST_PATH" \
   SOMA_SYSTEMD_SOCKET_PATH=/run/soma/systemd-provider.sock \
   SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock \
-  npm --silent --prefix "$SOMA_REPO" run systemd-provider:attended-host \
+  "$ATTENDED_NODE" "$ATTENDED_DRIVER" \
   | tee "$STAGE/restart-preview-result.json"
 PREVIEW_RC=${PIPESTATUS[0]}
 set -e
@@ -692,7 +748,7 @@ runuser -u soma-harness -- env -i \
   SOMA_SYSTEMD_SOCKET_PATH=/run/soma/systemd-provider.sock \
   SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock \
   SOMA_LCA_EXPECTED_SERVER_UID="$LCA_UID" \
-  npm --silent --prefix "$SOMA_REPO" run systemd-provider:attended-host \
+  "$ATTENDED_NODE" "$ATTENDED_DRIVER" \
   | tee "$STAGE/restart-result.json"
 RESTART_RC=${PIPESTATUS[0]}
 set -e

@@ -4,12 +4,18 @@ use soma_systemd_provider::{
 };
 use std::collections::BTreeMap;
 use std::fs::{read, read_to_string};
+#[cfg(target_os = "linux")]
+use std::io::Read;
 use std::io::{self, BufRead, Write};
+#[cfg(target_os = "linux")]
+use std::net::Shutdown;
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 #[cfg(target_os = "linux")]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::time::Duration;
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
@@ -99,7 +105,7 @@ fn run_socket_activated(inventory: &Inventory, source: &impl SystemdSource) {
             continue;
         };
         if verify_peer(&stream, expected_uid).is_err() {
-            write_protocol_error(&mut stream, "", "provider_peer_unauthorized");
+            reject_unauthorized_peer(&mut stream);
             continue;
         }
         let Ok(reader_stream) = stream.try_clone() else {
@@ -118,6 +124,36 @@ fn run_socket_activated(inventory: &Inventory, source: &impl SystemdSource) {
 fn run_socket_activated(_inventory: &Inventory, _source: &impl SystemdSource) {
     eprintln!("provider_socket_activation_unsupported");
     std::process::exit(78);
+}
+
+#[cfg(target_os = "linux")]
+fn reject_unauthorized_peer(stream: &mut UnixStream) {
+    // Consume one bounded request without parsing it so a normal one-shot client receives a FIN
+    // rather than an RST caused by closing with unread socket data.
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+    let mut remaining = 16 * 1024;
+    let mut buffer = [0_u8; 1024];
+    while remaining > 0 {
+        let length = buffer.len().min(remaining);
+        match stream.read(&mut buffer[..length]) {
+            Ok(0) => break,
+            Ok(read) => {
+                remaining -= read;
+                if buffer[..read].contains(&b'\n') {
+                    break;
+                }
+            }
+            Err(error)
+                if error.kind() == io::ErrorKind::WouldBlock
+                    || error.kind() == io::ErrorKind::TimedOut =>
+            {
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+    write_protocol_error(stream, "", "provider_peer_unauthorized");
+    let _ = stream.shutdown(Shutdown::Write);
 }
 
 #[cfg(target_os = "linux")]
@@ -215,8 +251,11 @@ fn optional_peer_pidfd(fd: RawFd) -> Result<Option<RawFd>, &'static str> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod socket_tests {
-    use super::verify_peer;
+    use super::{reject_unauthorized_peer, verify_peer};
+    use std::io::{Read, Write};
+    use std::net::Shutdown;
     use std::os::unix::net::UnixStream;
+    use std::thread;
 
     #[test]
     fn peercred_accepts_only_the_decisive_expected_uid() {
@@ -227,6 +266,25 @@ mod socket_tests {
             verify_peer(&client, current_uid.saturating_add(1)),
             Err("provider_peer_unauthorized")
         );
+    }
+
+    #[test]
+    fn rejected_peer_receives_protocol_error_and_clean_eof() {
+        let (mut client, mut server) = UnixStream::pair().expect("unix pair");
+        let worker = thread::spawn(move || reject_unauthorized_peer(&mut server));
+        client
+            .write_all(b"{\"request_id\":\"root-probe\"}\n")
+            .expect("write request");
+        client
+            .shutdown(Shutdown::Write)
+            .expect("half close request");
+        let mut response = String::new();
+        client
+            .read_to_string(&mut response)
+            .expect("clean response eof");
+        worker.join().expect("reject worker");
+        assert!(response.ends_with('\n'));
+        assert!(response.contains("\"code\":\"provider_peer_unauthorized\""));
     }
 }
 

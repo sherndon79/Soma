@@ -37,6 +37,83 @@
       "owner": "root",
       "group": "soma-systemd-provider",
       "access_reason": "The unprivileged provider reads this root-owned, provider-unwritable allowlist after privilege drop."
+    },
+    {
+      "source": "packaging/attended-driver/package.json",
+      "destination": "/opt/soma-attended-driver/package.json",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "scripts/systemd-provider-attended-host.mjs",
+      "destination": "/opt/soma-attended-driver/scripts/systemd-provider-attended-host.mjs",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceAuthority.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceAuthority.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceContracts.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceContracts.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceInventory.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceInventory.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceOperationState.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceOperationState.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServicePlanStore.js",
+      "destination": "/opt/soma-attended-driver/src/hostServicePlanStore.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceAsyncRestartRuntime.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceAsyncRestartRuntime.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/hostServiceSystemdProvider.js",
+      "destination": "/opt/soma-attended-driver/src/hostServiceSystemdProvider.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/localConfirmationAuthority.js",
+      "destination": "/opt/soma-attended-driver/src/localConfirmationAuthority.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "source": "src/localConfirmationSocketClient.js",
+      "destination": "/opt/soma-attended-driver/src/localConfirmationSocketClient.js",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
     }
   ],
   "generated_artifacts": [
@@ -53,9 +130,10 @@
       "template": "packaging/polkit/00-soma-systemd-provider.rules.in",
       "generator": "scripts/generate-systemd-provider-polkit.mjs",
       "destination": "/etc/polkit-1/rules.d/00-soma-systemd-provider.rules",
-      "mode": "0600",
+      "mode": "0644",
       "owner": "root",
       "group": "root",
+      "access_reason": "polkitd runs unprivileged and must be able to read this non-secret policy.",
       "generated_during_attended_activation": true
     }
   ],

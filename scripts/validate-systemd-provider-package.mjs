@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 
 const read = async (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const service = await read("packaging/systemd/soma-systemd-provider.service");
@@ -95,6 +95,54 @@ assert.deepEqual(
   },
   { mode: "0600", owner: "root", group: "root" },
 );
+const polkitArtifact = manifest.generated_artifacts.find(
+  (artifact) => artifact.destination === "/etc/polkit-1/rules.d/00-soma-systemd-provider.rules",
+);
+assert.deepEqual(
+  {
+    mode: polkitArtifact?.mode,
+    owner: polkitArtifact?.owner,
+    group: polkitArtifact?.group,
+  },
+  { mode: "0644", owner: "root", group: "root" },
+  "polkit policy must be readable by the unprivileged polkitd process",
+);
+const attendedBundleSources = [
+  "packaging/attended-driver/package.json",
+  "scripts/systemd-provider-attended-host.mjs",
+  "src/hostServiceAuthority.js",
+  "src/hostServiceContracts.js",
+  "src/hostServiceInventory.js",
+  "src/hostServiceOperationState.js",
+  "src/hostServicePlanStore.js",
+  "src/hostServiceAsyncRestartRuntime.js",
+  "src/hostServiceSystemdProvider.js",
+  "src/localConfirmationAuthority.js",
+  "src/localConfirmationSocketClient.js",
+];
+for (const source of attendedBundleSources) {
+  const artifact = manifest.artifacts.find((candidate) => candidate.source === source);
+  assert.ok(artifact, `attended driver bundle omits ${source}`);
+  assert.equal(artifact.destination, `/opt/soma-attended-driver/${source.replace(
+    "packaging/attended-driver/",
+    "",
+  )}`);
+  assert.deepEqual(
+    { mode: artifact.mode, owner: artifact.owner, group: artifact.group },
+    { mode: "0644", owner: "root", group: "root" },
+  );
+}
+const localImportPattern = /from\s+["'](\.\.?\/[^"']+)["']/g;
+for (const source of attendedBundleSources.filter((path) => /\.(?:mjs|js)$/.test(path))) {
+  const contents = await read(source);
+  for (const match of contents.matchAll(localImportPattern)) {
+    const resolved = normalize(join(dirname(source), match[1])).replaceAll("\\", "/");
+    assert.ok(
+      attendedBundleSources.includes(resolved),
+      `attended driver bundle omits transitive import ${resolved}`,
+    );
+  }
+}
 for (const field of [
   "creates_identities",
   "installs_artifacts",

@@ -15,7 +15,8 @@
 //                           constraints. No counters yet.
 //
 //   subscription_ended    — emitted when a subscription terminates
-//                           (clean stop, timeout, revocation, error).
+//                           (clean stop, timeout, revocation, runtime
+//                           shutdown, error).
 //                           Includes aggregate counters describing
 //                           the shape of what flowed, never the
 //                           content itself.
@@ -29,6 +30,7 @@ const ALLOWED_TERMINATION_REASONS = new Set([
   "clean_stop",        // operator or agent stopped the subscription
   "timeout",           // max_seconds elapsed
   "revoked",           // the underlying grant was revoked
+  "runtime_shutdown",  // Soma runtime/session ended
   "error",             // helper or transport error
   "schema_mismatch",   // observed schema_version unexpected, refused
   "channel_closed",    // upstream Sensorium peer disconnected

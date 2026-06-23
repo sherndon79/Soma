@@ -62,12 +62,18 @@ test("createSensoriumRuntime starts helper and constructs subscriber when enable
     },
     subscriberFactory({ manager, zenohConfigPath }) {
       events.push(["subscriber", Boolean(manager), zenohConfigPath]);
-      return { kind: "fake-subscriber" };
+      return {
+        kind: "fake-subscriber",
+        async stopAll(options) {
+          events.push(["stopAll", options.terminationReason]);
+          return { stopped_count: 0, failed_count: 0 };
+        },
+      };
     },
   });
 
   assert.equal(runtime.enabled, true);
-  assert.deepEqual(runtime.subscriber, { kind: "fake-subscriber" });
+  assert.equal(runtime.subscriber.kind, "fake-subscriber");
   assert.equal(runtime.helper_path, "/tmp/test-soma-sensor-broker");
   assert.equal(runtime.zenoh_config_path, "/tmp/test-zenoh.json5");
   await runtime.stop();
@@ -76,6 +82,7 @@ test("createSensoriumRuntime starts helper and constructs subscriber when enable
     ["start", "/tmp/test-soma-sensor-broker"],
     ["info", "Sensorium runtime enabled with helper /tmp/test-soma-sensor-broker"],
     ["subscriber", true, "/tmp/test-zenoh.json5"],
+    ["stopAll", "runtime_shutdown"],
     ["stop", "/tmp/test-soma-sensor-broker"],
   ]);
 });

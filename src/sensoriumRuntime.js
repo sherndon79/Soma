@@ -50,6 +50,9 @@ export async function createSensoriumRuntime({
     helper_path: helperPath,
     zenoh_config_path: zenohConfigPath,
     async stop() {
+      if (typeof this.subscriber?.stopAll === "function") {
+        await this.subscriber.stopAll({ terminationReason: "runtime_shutdown" });
+      }
       await manager.stop();
     },
   };

@@ -388,6 +388,7 @@ test("subscription provenance publishes its allowed termination reason set", () 
     "clean_stop",
     "error",
     "revoked",
+    "runtime_shutdown",
     "schema_mismatch",
     "timeout",
   ]);

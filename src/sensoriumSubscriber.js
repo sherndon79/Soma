@@ -33,6 +33,7 @@ import {
 import { summarizeSensoriumColorPayload } from "./sensoriumColorPayload.js";
 import { summarizeSensoriumDepthPayload } from "./sensoriumDepthPayload.js";
 import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
+import { createSensoriumStreamAnchor } from "./sensoriumStreamAnchor.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 
@@ -230,6 +231,45 @@ export class SensoriumSubscriber {
     };
   }
 
+  async stopAll({ terminationReason = "runtime_shutdown", errorClass = "" } = {}) {
+    const ids = Array.from(this.#active.keys());
+    const stopped = [];
+    const failed = [];
+
+    for (const subscriptionId of ids) {
+      try {
+        const result = await this.stop(subscriptionId, {
+          terminationReason,
+          errorClass,
+        });
+        stopped.push({
+          subscription_id: subscriptionId,
+          endSummary: result.endSummary,
+        });
+      } catch (error) {
+        failed.push({
+          subscription_id: subscriptionId,
+          error_class: sanitizeHelperErrorClass(error.code_name || error.code || error.message),
+        });
+      }
+    }
+
+    return {
+      stopped,
+      stopped_count: stopped.length,
+      failed,
+      failed_count: failed.length,
+    };
+  }
+
+  async helperStatusAnchor() {
+    const helperStatus = await this.#manager.send("sensorium.subscribe.status");
+    return createSensoriumStreamAnchor({
+      helperStatus,
+      nodeSubscriptions: this.#nodeSubscriptionSnapshot(),
+    });
+  }
+
   /**
    * Render the disclosure shape for active subscriptions, suitable
    * for the operator/participant-facing surface.
@@ -356,6 +396,15 @@ export class SensoriumSubscriber {
       subscription_id: subscriptionId,
       endSummary,
     });
+  }
+
+  #nodeSubscriptionSnapshot() {
+    return Array.from(this.#active.values()).map((record) => ({
+      subscription_id: record.subscription_id,
+      topic: record.topic,
+      started_at: record.started_at,
+      active: true,
+    }));
   }
 
   #recordStatusSample(sub, payloadBytes) {

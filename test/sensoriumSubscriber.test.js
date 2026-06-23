@@ -16,6 +16,7 @@ class FakeManager extends EventEmitter {
     this.calls = [];
     this.nextStartId = 1;
     this.startResponses = []; // queue
+    this.statusResponse = { subscriptions: [], count: 0 };
     this.failNext = null;
   }
 
@@ -29,6 +30,10 @@ class FakeManager extends EventEmitter {
 
   failNextSend(err) {
     this.failNext = err;
+  }
+
+  setStatusResponse(response) {
+    this.statusResponse = response;
   }
 
   async send(method, params = {}) {
@@ -59,7 +64,7 @@ class FakeManager extends EventEmitter {
       };
     }
     if (method === "sensorium.subscribe.status") {
-      return { subscriptions: [], count: 0 };
+      return this.statusResponse;
     }
     throw new Error(`fake manager has no handler for method ${method}`);
   }
@@ -252,6 +257,62 @@ test("subscriber.start passes depth transform constraints to the helper", async 
   assert.equal(manager.calls[0].method, "sensorium.subscribe.start");
   assert.deepEqual(manager.calls[0].params.downsample_to, [320, 240]);
   assert.equal(manager.calls[0].params.format_required, "png");
+});
+
+test("helperStatusAnchor uses helper-owned status rather than the Node mirror", async () => {
+  const manager = new FakeManager();
+  const subscriber = new SensoriumSubscriber({ manager });
+  await subscriber.start(COMMON_START);
+  manager.setStatusResponse({
+    count: 1,
+    subscriptions: [
+      {
+        subscription_id: "helper-depth",
+        topic: "sensor/jetsorano/realsense/depth",
+        started_at: 1_700_000_100,
+        active: true,
+      },
+    ],
+  });
+
+  const anchor = await subscriber.helperStatusAnchor();
+
+  assert.equal(anchor.source, "helper_status");
+  assert.equal(anchor.depth_active, true);
+  assert.equal(anchor.color_active, false);
+  assert.deepEqual(anchor.active_streams.map((stream) => stream.subscription_id), [
+    "helper-depth",
+  ]);
+  assert.equal(anchor.node_reconciliation.matched, false);
+  assert.deepEqual(anchor.node_reconciliation.missing_in_node, ["helper-depth"]);
+  assert.deepEqual(anchor.node_reconciliation.missing_in_helper, ["sub-1"]);
+  assert.equal(manager.calls.at(-1).method, "sensorium.subscribe.status");
+});
+
+test("stopAll stops every tracked subscription for runtime shutdown", async () => {
+  const manager = new FakeManager();
+  const subscriber = new SensoriumSubscriber({ manager });
+  await subscriber.start(COMMON_START);
+  await subscriber.start({
+    ...COMMON_START,
+    capability: "perception.sensorium.status.subscribe",
+    body: {
+      topic: "sensor/jetsorano/status",
+      constraints: { max_seconds: 30 },
+    },
+  });
+
+  const result = await subscriber.stopAll({ terminationReason: "runtime_shutdown" });
+
+  assert.equal(result.stopped_count, 2);
+  assert.equal(result.failed_count, 0);
+  assert.equal(subscriber.activeCount, 0);
+  assert.deepEqual(
+    manager.calls
+      .filter((call) => call.method === "sensorium.subscribe.stop")
+      .map((call) => call.params.subscription_id),
+    ["sub-1", "sub-2"],
+  );
 });
 
 // ── stop ───────────────────────────────────────────────────────────────────

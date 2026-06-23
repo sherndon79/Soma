@@ -613,6 +613,55 @@
       "description": "Insert or set bounded text through an approved semantic act_ref in the synthetic desktop container."
     },
     {
+      "key": "sensorium.semantic_events.read",
+      "name": "Sensorium Semantic Event Read",
+      "category": "sensorium",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "short-lived minimized semantic desktop structure events",
+        "presence/audience posture buckets"
+      ],
+      "excluded_by_default": [
+        "screenshots",
+        "raw audio",
+        "raw video",
+        "desktop text content",
+        "ambient semantic event persistence",
+        "occupant memory writes"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.sensorium.semantic_events.read.v1",
+      "description": "Read short-lived local sensorium semantic events derived from existing authorized desktop inspection without raw sensory egress."
+    },
+    {
+      "key": "desktop.visual_cue.present",
+      "name": "Occupant-Owned Desktop Visual Cue",
+      "category": "desktop",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "occupant-marked visual cue metadata",
+        "locally derived output-act consequence class",
+        "copresence reconciliation result"
+      ],
+      "excluded_by_default": [
+        "OS chrome mimicry",
+        "Seth-app mutation",
+        "keyboard or pointer input",
+        "speaker output",
+        "network egress",
+        "cue content in provenance"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.desktop.visual_cue.present.v1",
+      "description": "Render an occupant-owned, visibly marked desktop cue through the local sensorium gate. The local tier derives consequence class and reconciles audience before rendering."
+    },
+    {
       "key": "desktop.remote.input.pointer",
       "name": "Remote Desktop Pointer Input",
       "category": "desktop",

@@ -127,6 +127,18 @@
       "description": "Send bounded semantic text input by opaque act_ref in a synthetic desktop container."
     },
     {
+      "key": "sensorium.semantic_events.read",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Read short-lived local sensorium semantic events derived from already authorized desktop inspection."
+    },
+    {
+      "key": "desktop.visual_cue.present",
+      "status": "allowed",
+      "revocable": true,
+      "description": "Present occupant-owned visual cues through the local sensorium gate without desktop actuation."
+    },
+    {
       "key": "tool.files.read",
       "status": "allowed",
       "revocable": true,

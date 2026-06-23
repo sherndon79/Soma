@@ -368,6 +368,26 @@
       ]
     },
     {
+      "id": "soma.provider.sensorium-tier",
+      "name": "Local Sensorium Tier",
+      "version": "0.1.0",
+      "runtime": "node-in-process",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "sensorium.semantic_events.read",
+          "provider_contract": "soma.sensorium.semantic_events.read.v1",
+          "output_schema": "soma.sensorium.semantic_event.v1"
+        },
+        {
+          "key": "desktop.visual_cue.present",
+          "provider_contract": "soma.desktop.visual_cue.present.v1",
+          "output_schema": "soma.desktop.visual_cue.present.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.remote_desktop.sunshine",
       "name": "Remote Desktop Sunshine/Moonlight Transport",
       "version": "0.1.0",

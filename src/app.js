@@ -146,6 +146,17 @@ import {
 import { validateModelVisualAttachRequest } from "./modelVisualAttachRequest.js";
 import { createModelVisualAttachmentProvenanceSummary } from "./modelVisualAttachmentProvenance.js";
 import { SessionMemory } from "./sessionMemory.js";
+import {
+  DESKTOP_VISUAL_CUE_CAPABILITY,
+  SENSORIUM_SEMANTIC_EVENT_CAPABILITY,
+  SENSORIUM_TIER_PROVIDER_ID,
+  createScreenStructureSemanticEvent,
+  createSensoriumOutputActProvenance,
+  createSensoriumSemanticEventProvenance,
+  localAudienceContext,
+  scoreSensoriumOutputAct,
+  visualCueRenderResult,
+} from "./sensoriumTier.js";
 
 export function createApp({
   harness,
@@ -2766,6 +2777,159 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/sensorium/semantic-events/screen-structure") {
+        const body = await readJson(req);
+        const semanticRequest = validateSensoriumScreenStructureRequest(body);
+        semanticRequest.provider ||= providerForCapability(providerRegistry, SENSORIUM_SEMANTIC_EVENT_CAPABILITY)
+          || SENSORIUM_TIER_PROVIDER_ID;
+        semanticRequest.source_provider ||= providerForCapability(providerRegistry, "desktop.inspect.focus");
+        const semanticAuthorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: semanticRequest.grant_id,
+          capability: SENSORIUM_SEMANTIC_EVENT_CAPABILITY,
+          provider: semanticRequest.provider,
+          scope: semanticRequest.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!semanticAuthorization.allowed) {
+          writeJson(res, 403, {
+            error: "sensorium_semantic_event_grant_not_authorized",
+            message: "Sensorium semantic event read requires an active, matching runtime grant.",
+            authorization_code: semanticAuthorization.code,
+            recovery_required: semanticAuthorization.recovery_required,
+            findings: semanticAuthorization.findings,
+          });
+          return;
+        }
+        const sourceAuthorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: semanticRequest.source_grant_id,
+          capability: "desktop.inspect.focus",
+          provider: semanticRequest.source_provider,
+          scope: semanticRequest.source_scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!sourceAuthorization.allowed) {
+          writeJson(res, 403, {
+            error: "sensorium_semantic_event_source_not_authorized",
+            message: "Screen-structure semantic events require an active focused-desktop source grant.",
+            authorization_code: sourceAuthorization.code,
+            recovery_required: sourceAuthorization.recovery_required,
+            findings: sourceAuthorization.findings,
+          });
+          return;
+        }
+        const inspection = await inspectFocusedDesktopObject();
+        const semanticEvent = createScreenStructureSemanticEvent({
+          inspection,
+          grant: semanticAuthorization.grant,
+          sourceGrant: sourceAuthorization.grant,
+          audienceContext: localAudienceContext(),
+        });
+        const provenance = provenanceLog.append(createSensoriumSemanticEventProvenance({
+          semanticEvent,
+          grant: semanticAuthorization.grant,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", provenance);
+        writeJson(res, 200, {
+          capability: SENSORIUM_SEMANTIC_EVENT_CAPABILITY,
+          grant_id: semanticAuthorization.grant.id,
+          source_capability: "desktop.inspect.focus",
+          source_grant_id: sourceAuthorization.grant.id,
+          semantic_event: semanticEvent,
+          provenance_id: provenance.id,
+          raw_retained: false,
+          raw_egressed: false,
+          content_included: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/desktop/visual-cues") {
+        const body = await readJson(req);
+        const visualRequest = validateDesktopVisualCueRequest(body);
+        visualRequest.provider ||= providerForCapability(providerRegistry, DESKTOP_VISUAL_CUE_CAPABILITY)
+          || SENSORIUM_TIER_PROVIDER_ID;
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: visualRequest.grant_id,
+          capability: DESKTOP_VISUAL_CUE_CAPABILITY,
+          provider: visualRequest.provider,
+          scope: visualRequest.scope,
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          catalog: capabilityCatalog,
+          providerRegistry,
+        });
+        if (!authorization.allowed) {
+          writeJson(res, 403, {
+            error: "desktop_visual_cue_grant_not_authorized",
+            message: "Desktop visual cue presentation requires an active, matching runtime grant.",
+            authorization_code: authorization.code,
+            recovery_required: authorization.recovery_required,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        const scoredAct = scoreSensoriumOutputAct({
+          proposal: visualRequest.proposal,
+          grant: authorization.grant,
+          liveAudienceContext: localAudienceContext(),
+        });
+        const proposed = provenanceLog.append(createSensoriumOutputActProvenance({
+          eventType: "sensorium.output_act.proposed",
+          scoredAct,
+          grant: authorization.grant,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", proposed);
+        if (!scoredAct.allowed) {
+          const refused = provenanceLog.append(createSensoriumOutputActProvenance({
+            eventType: "sensorium.output_act.refused",
+            scoredAct,
+            grant: authorization.grant,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          logger.info?.("soma.provenance", refused);
+          writeJson(res, 403, {
+            error: scoredAct.refusal_reason || "desktop_visual_cue_refused",
+            message: "Local sensorium gate refused the requested output act.",
+            scored_act: scoredAct,
+            proposed_provenance_id: proposed.id,
+            refusal_provenance_id: refused.id,
+            rendered: false,
+          });
+          return;
+        }
+        const rendered = visualCueRenderResult({
+          scoredAct,
+          cue: visualRequest.cue,
+        });
+        const renderedProvenance = provenanceLog.append(createSensoriumOutputActProvenance({
+          eventType: "sensorium.output_act.rendered",
+          scoredAct,
+          grant: authorization.grant,
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", renderedProvenance);
+        writeJson(res, 200, {
+          capability: DESKTOP_VISUAL_CUE_CAPABILITY,
+          grant_id: authorization.grant.id,
+          scored_act: scoredAct,
+          rendered,
+          proposed_provenance_id: proposed.id,
+          rendered_provenance_id: renderedProvenance.id,
+          activation_performed: false,
+          desktop_actuation_performed: false,
+          content_recorded_in_provenance: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/desktop/inspect/windows") {
         const body = await readJson(req);
         const windowsRequest = validateDesktopWindowsInspectionRequest(body);
@@ -3909,6 +4073,125 @@ function validateFocusedDesktopInspectionRequest(body) {
     grant_id: String(body.grant_id ?? "").trim(),
     provider: String(body.provider ?? "").trim(),
     scope: String(body.scope ?? "session").trim() || "session",
+  };
+}
+
+function validateSensoriumScreenStructureRequest(body) {
+  const allowedKeys = new Set([
+    "grant_id",
+    "provider",
+    "scope",
+    "source_grant_id",
+    "source_provider",
+    "source_scope",
+  ]);
+  const errors = [];
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    for (const key of allowedKeys) {
+      if (body[key] !== undefined && typeof body[key] !== "string") {
+        errors.push(`request.${key} must be a string when provided`);
+      }
+    }
+    if (!String(body.grant_id ?? "").trim()) {
+      errors.push("request.grant_id is required");
+    }
+    if (!String(body.source_grant_id ?? "").trim()) {
+      errors.push("request.source_grant_id is required");
+    }
+  }
+  if (errors.length > 0) {
+    const error = new Error(`Sensorium screen-structure request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "sensorium_screen_structure_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+  return {
+    grant_id: String(body.grant_id).trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    source_grant_id: String(body.source_grant_id).trim(),
+    source_provider: String(body.source_provider ?? "").trim(),
+    source_scope: String(body.source_scope ?? "session").trim() || "session",
+  };
+}
+
+function validateDesktopVisualCueRequest(body) {
+  const allowedKeys = new Set(["grant_id", "provider", "scope", "proposal", "cue"]);
+  const proposalKeys = new Set([
+    "act_kind",
+    "substrate",
+    "principal",
+    "audience_scope",
+    "output_mode",
+    "communicative_intent",
+    "reversibility",
+    "external_reach",
+    "foreground_intrusion",
+    "consequence_class",
+  ]);
+  const cueKeys = new Set(["variant", "priority", "text"]);
+  const errors = [];
+  if (!isPlainObject(body)) {
+    errors.push("request must be an object");
+  } else {
+    for (const key of Object.keys(body)) {
+      if (!allowedKeys.has(key)) {
+        errors.push(`request.${key} is not allowed`);
+      }
+    }
+    for (const key of ["grant_id", "provider", "scope"]) {
+      if (body[key] !== undefined && typeof body[key] !== "string") {
+        errors.push(`request.${key} must be a string when provided`);
+      }
+    }
+    if (!String(body.grant_id ?? "").trim()) {
+      errors.push("request.grant_id is required");
+    }
+    if (body.proposal !== undefined && !isPlainObject(body.proposal)) {
+      errors.push("request.proposal must be an object when provided");
+    }
+    if (isPlainObject(body.proposal)) {
+      for (const key of Object.keys(body.proposal)) {
+        if (!proposalKeys.has(key)) {
+          errors.push(`request.proposal.${key} is not allowed`);
+        }
+      }
+    }
+    if (body.cue !== undefined && !isPlainObject(body.cue)) {
+      errors.push("request.cue must be an object when provided");
+    }
+    if (isPlainObject(body.cue)) {
+      for (const key of Object.keys(body.cue)) {
+        if (!cueKeys.has(key)) {
+          errors.push(`request.cue.${key} is not allowed`);
+        }
+      }
+      if (body.cue.text !== undefined && typeof body.cue.text !== "string") {
+        errors.push("request.cue.text must be a string when provided");
+      }
+    }
+  }
+  if (errors.length > 0) {
+    const error = new Error(`Desktop visual cue request is invalid: ${errors.join("; ")}`);
+    error.statusCode = 400;
+    error.code = "desktop_visual_cue_request_invalid";
+    error.validation_errors = errors;
+    throw error;
+  }
+  return {
+    grant_id: String(body.grant_id).trim(),
+    provider: String(body.provider ?? "").trim(),
+    scope: String(body.scope ?? "session").trim() || "session",
+    proposal: isPlainObject(body.proposal) ? body.proposal : {},
+    cue: isPlainObject(body.cue) ? body.cue : {},
   };
 }
 

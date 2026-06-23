@@ -120,6 +120,15 @@ const desktopActuationHarness = {
   desktop: syntheticContainerDesktopHarness.desktop,
 };
 
+const sensoriumTierHarness = {
+  ...focusedInspectionHarness,
+  capabilities: [
+    ...focusedInspectionHarness.capabilities,
+    { key: "sensorium.semantic_events.read", status: "allowed" },
+    { key: "desktop.visual_cue.present", status: "allowed" },
+  ],
+};
+
 const runtimeProfiles = {
   schema_version: 1,
   default_profile: "local-test",
@@ -282,6 +291,22 @@ const capabilityCatalog = {
       name: "Desktop Semantic Text Input",
       category: "desktop",
       risk_class: "high",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "sensorium.semantic_events.read",
+      name: "Sensorium Semantic Event Read",
+      category: "sensorium",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+    },
+    {
+      key: "desktop.visual_cue.present",
+      name: "Occupant-Owned Desktop Visual Cue",
+      category: "desktop",
+      risk_class: "low",
       default_status: "disabled",
       activation_policy: "explicit_grant",
     },
@@ -524,6 +549,14 @@ const providerRegistry = {
       local_only: true,
       network_access: false,
       capabilities: ["desktop.inspect.focus"],
+    },
+    {
+      id: "soma.provider.sensorium-tier",
+      name: "Local Sensorium Tier",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: ["sensorium.semantic_events.read", "desktop.visual_cue.present"],
     },
     {
       id: "soma.provider.occupant-memory",
@@ -775,11 +808,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 22);
+  assert.equal(response.body.summary.total, 24);
   assert.equal(response.body.summary.by_status.active, 3);
-  assert.equal(response.body.summary.by_status.requestable, 19);
+  assert.equal(response.body.summary.by_status.requestable, 21);
   assert.equal(Object.hasOwn(response.body.summary.by_status, "unsupported"), false);
-  assert.equal(response.body.grouped.desktop.total, 9);
+  assert.equal(response.body.grouped.desktop.total, 10);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
   assert.equal(response.body.grouped["occupant-memory"].total, 2);
@@ -788,6 +821,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(response.body.grouped.provenance.total, 1);
   assert.equal(response.body.grouped.space.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
+  assert.equal(response.body.grouped.sensorium.total, 1);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const windows = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.windows");
@@ -800,6 +834,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const provenanceSummary = response.body.capabilities.find((capability) => capability.key === "provenance.summary.read");
   const spaceHistory = response.body.capabilities.find((capability) => capability.key === "space.history.read");
   const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
+  const semanticEvents = response.body.capabilities.find((capability) => capability.key === "sensorium.semantic_events.read");
+  const visualCue = response.body.capabilities.find((capability) => capability.key === "desktop.visual_cue.present");
   assert.equal(localToolCalls.status, "requestable");
   assert.equal(localToolCalls.providers[0].id, "local-model");
   assert.equal(remoteChat.status, "requestable");
@@ -821,6 +857,10 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(provenanceSummary.providers[0].id, "soma.provider.provenance-summary");
   assert.equal(spaceHistory.status, "requestable");
   assert.equal(spaceHistory.providers[0].id, "soma.provider.history-projection");
+  assert.equal(semanticEvents.status, "requestable");
+  assert.equal(semanticEvents.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(visualCue.status, "requestable");
+  assert.equal(visualCue.providers[0].id, "soma.provider.sensorium-tier");
 });
 
 test("POST /model-visual/review-text formats proposal review without activation", async () => {
@@ -10550,6 +10590,139 @@ printf '%s\\n' '{"mode":"read_only_focused_object_probe","broker_source":"rust_h
   }
 });
 
+test("sensorium screen structure event projects focused desktop metadata without raw content", async () => {
+  await withFakeFocusedDesktopBroker(async () => {
+    const handler = makeHandler({
+      harness: sensoriumTierHarness,
+      grantStore: sensoriumTierGrantStore(),
+    });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/sensorium/semantic-events/screen-structure",
+      body: {
+        grant_id: "grant-semantic-events",
+        source_grant_id: "grant-focus",
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability, "sensorium.semantic_events.read");
+    assert.equal(response.body.raw_retained, false);
+    assert.equal(response.body.raw_egressed, false);
+    assert.equal(response.body.content_included, false);
+    assert.equal(response.body.semantic_event.event_type, "screen.structure");
+    assert.equal(response.body.semantic_event.minimization.content_included, false);
+    assert.equal(response.body.semantic_event.payload.focus.role, "entry");
+    assert.equal("name" in response.body.semantic_event.payload.focus, false);
+    assert.equal(response.body.semantic_event.audience_context.additional_person_present, "unknown");
+
+    const provenance = await invokeHandler(handler, {
+      method: "GET",
+      url: "/provenance?event_type=sensorium.semantic_event.observed",
+    });
+    assert.equal(provenance.statusCode, 200);
+    assert.equal(provenance.body.entries.length, 1);
+    assert.equal(provenance.body.entries[0].id, response.body.provenance_id);
+    assert.equal(provenance.body.entries[0].capability, "sensorium.semantic_events.read");
+    assert.equal(provenance.body.entries[0].source_capability, "desktop.inspect.focus");
+    assert.equal(provenance.body.entries[0].raw_egressed, false);
+    assert.equal(provenance.body.entries[0].content_included, false);
+    assert.equal("payload" in provenance.body.entries[0], false);
+  });
+});
+
+test("desktop visual cue route locally derives consequence and records proposed plus rendered provenance", async () => {
+  const handler = makeHandler({
+    harness: sensoriumTierHarness,
+    grantStore: sensoriumTierGrantStore(),
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/desktop/visual-cues",
+    body: {
+      grant_id: "grant-visual-cue",
+      proposal: {
+        act_kind: "surface.present",
+        substrate: "occupant_panel",
+        principal: "occupant",
+        audience_scope: "seth_only",
+        output_mode: "visual.occupant_owned",
+        communicative_intent: "high",
+        consequence_class: "C4",
+      },
+      cue: {
+        variant: "note",
+        text: "I can show this as an occupant-marked cue.",
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.capability, "desktop.visual_cue.present");
+  assert.equal(response.body.scored_act.consequence_class, "C0");
+  assert.equal(response.body.scored_act.consequence_class_source, "local_gate_derived");
+  assert.equal(response.body.scored_act.caller_supplied_consequence_class_ignored, true);
+  assert.equal(response.body.scored_act.audience_context.additional_person_present, "unknown");
+  assert.equal(response.body.rendered.surface_owner, "occupant");
+  assert.equal(response.body.rendered.occupant_marked, true);
+  assert.equal(response.body.desktop_actuation_performed, false);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?capability=desktop.visual_cue.present",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 2);
+  assert.deepEqual(
+    provenance.body.entries.map((entry) => entry.event_type),
+    ["sensorium.output_act.proposed", "sensorium.output_act.rendered"],
+  );
+  assert.equal(provenance.body.entries[0].consequence_class, "C0");
+  assert.equal(provenance.body.entries[0].caller_supplied_consequence_class_ignored, true);
+  assert.equal(provenance.body.entries[1].occupant_marked, true);
+  assert.equal(provenance.body.entries[1].content_recorded, false);
+  assert.equal("text" in provenance.body.entries[1], false);
+});
+
+test("desktop visual cue route refuses private audio under unknown copresence", async () => {
+  const handler = makeHandler({
+    harness: sensoriumTierHarness,
+    grantStore: sensoriumTierGrantStore(),
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/desktop/visual-cues",
+    body: {
+      grant_id: "grant-visual-cue",
+      proposal: {
+        act_kind: "visual_cue.show",
+        substrate: "occupant_panel",
+        principal: "occupant",
+        audience_scope: "seth_only",
+        output_mode: "audio.private_content",
+      },
+      cue: { text: "private content" },
+    },
+  });
+
+  assert.equal(response.statusCode, 403, JSON.stringify(response.body));
+  assert.equal(response.body.error, "audio_private_content_requires_exclusive_audience");
+  assert.equal(response.body.scored_act.reconciled_output_mode, "visual.occupant_owned");
+  assert.equal(response.body.rendered, false);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?capability=desktop.visual_cue.present",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.deepEqual(
+    provenance.body.entries.map((entry) => entry.event_type),
+    ["sensorium.output_act.proposed", "sensorium.output_act.refused"],
+  );
+  assert.equal(provenance.body.entries[1].allowed, false);
+  assert.equal(provenance.body.entries[1].refusal_reason, "audio_private_content_requires_exclusive_audience");
+});
+
 test("desktop window inspection requires an active runtime grant", async () => {
   const response = await invoke({
     method: "POST",
@@ -14884,6 +15057,52 @@ function focusGrantStore(overrides = {}) {
         replacement_grant_id: "",
         activation_performed: false,
         ...overrides,
+      },
+    ],
+    examples: [],
+  };
+}
+
+function sensoriumTierGrantStore() {
+  return {
+    schema_version: 1,
+    grants: [
+      focusGrantStore().grants[0],
+      {
+        id: "grant-semantic-events",
+        status: "active",
+        capability: "sensorium.semantic_events.read",
+        provider: "soma.provider.sensorium-tier",
+        scope: "session",
+        constraints: { source_capabilities: ["desktop.inspect.focus"] },
+        approved_by: "user",
+        approval_provenance_id: "prov-semantic-events-approval",
+        reason: "Read minimized local screen-structure semantic events.",
+        created_at: "2026-06-23T18:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
+      },
+      {
+        id: "grant-visual-cue",
+        status: "active",
+        capability: "desktop.visual_cue.present",
+        provider: "soma.provider.sensorium-tier",
+        scope: "session",
+        constraints: { substrate: "occupant_panel" },
+        approved_by: "user",
+        approval_provenance_id: "prov-visual-cue-approval",
+        reason: "Present occupant-owned desktop visual cues.",
+        created_at: "2026-06-23T18:00:00.000Z",
+        review_required: false,
+        revoked_at: null,
+        revoked_by: "",
+        revocation_reason: "",
+        replacement_grant_id: "",
+        activation_performed: false,
       },
     ],
     examples: [],

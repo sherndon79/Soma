@@ -260,6 +260,41 @@ test("Sensorium provider registry claim makes capabilities requestable without a
   }
 });
 
+test("local sensorium tier exposes semantic events and visual cues as explicit-grant capabilities", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const semanticEvents = view.capabilities.find(
+    (capability) => capability.key === "sensorium.semantic_events.read",
+  );
+  assert.equal(semanticEvents.category, "sensorium");
+  assert.equal(semanticEvents.status, "requestable");
+  assert.equal(semanticEvents.activation_policy, "explicit_grant");
+  assert.equal(semanticEvents.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(
+    semanticEvents.providers[0].provider_contract,
+    "soma.sensorium.semantic_events.read.v1",
+  );
+  assert.ok(semanticEvents.excluded_by_default.includes("screenshots"));
+  assert.ok(semanticEvents.excluded_by_default.includes("ambient semantic event persistence"));
+
+  const visualCue = view.capabilities.find(
+    (capability) => capability.key === "desktop.visual_cue.present",
+  );
+  assert.equal(visualCue.category, "desktop");
+  assert.equal(visualCue.risk_class, "low");
+  assert.equal(visualCue.status, "requestable");
+  assert.equal(visualCue.activation_policy, "explicit_grant");
+  assert.equal(visualCue.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(
+    visualCue.providers[0].provider_contract,
+    "soma.desktop.visual_cue.present.v1",
+  );
+  assert.ok(visualCue.excluded_by_default.includes("OS chrome mimicry"));
+  assert.ok(visualCue.excluded_by_default.includes("cue content in provenance"));
+});
+
 test("Sensorium catalog exposes subscriptions without model-facing visual delivery", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();

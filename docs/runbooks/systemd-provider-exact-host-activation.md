@@ -75,6 +75,32 @@ unit directive, widening policy, adding another unit, or retrying a possibly dis
    endpoint is unavailable. Verify `/run/soma` remains `0750 root:soma-harness`, restart the
    socket, and repeat one typed status read before proceeding.
 
+## Attended LCA Enrollment
+
+1. Build the issuer and enrollment tool from the reviewed commit with
+   `cargo build --release -p soma-local-confirmation-issuer --features hardware-fido`. Default
+   Cargo builds do not contain the backend or enrollment binary.
+2. Stop the issuer. Install and verify the reviewed udev isolation package, then identify exactly
+   one `/dev/hidrawN` matching FIDO interface `01`, vendor `1050`, model `0407`, and the expected
+   physical key. The node must be a non-symlink character device exactly `0660 root:soma-lca`.
+3. Stage a current FIDO MDS JWT and its separately reviewed signing root as root-owned,
+   non-group/world-writable files. Record their hashes and source dates. Do not permit the issuer
+   network access to refresh them.
+4. Run the absolute enrollment binary as root through
+   `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin`, with exact `--device`, `--mds-blob`, `--mds-root`,
+   `--inventory-id`, `--exact-target`, and a new empty absolute `--output` path. Do not carry
+   `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, or other caller environment into enrollment. This
+   is an attended, two-touch operation: one touch creates the non-discoverable ES256 credential
+   and one establishes a nonzero counter baseline. Stop on any extra prompt, token, touch, or
+   output.
+5. Independently review the generated `policy.json`, `replay-state.json`,
+   `enrollment-evidence.json`, and `10-enrolled-device.conf`. Require RP `lca.soma.local`,
+   `require_uv=false`, one exact expendable unit, pinned AAGUID
+   `d7781e5d-e353-46aa-afe2-3ca49f13332a`, the expected MDS entry and hashes, and identical exact
+   hidraw paths in `Environment=SOMA_LCA_FIDO_DEVICE=` and `DeviceAllow=`.
+6. Only after signoff, install the policy/evidence/drop-in root-owned and the replay state
+   `0600 soma-lca:soma-lca`. Run `systemd-analyze verify` again. Do not start the issuer yet.
+
 ## Attended First Restart
 
 1. Separately approve activation for this exact host, provider, unit, task, and one restart.

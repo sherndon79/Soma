@@ -2,8 +2,9 @@
 
 - Date: 2026-06-22
 - Status: **CORE REVIEW-CLEAN - approved as an inert implementation slice**
-- Activation posture: **INERT**. No hardware backend, enrollment command, socket service, udev
-  rule, credential store, or host action is enabled. The binary exits configuration-refused.
+- Activation posture: **INERT BY DEFAULT**. The hardware backend and enrollment command require
+  Cargo feature `hardware-fido`; the service additionally requires an attended exact-device
+  drop-in. No credential, policy store, host action, or live ceremony exists.
 
 ## Implemented
 
@@ -24,13 +25,14 @@
 
 Pure Rust tests prove valid assertion verification, missing-UP refusal, nonce replay/counter
 refusal, durable state before confirmation return, ceremony cooldown, and fail-closed malformed
-authenticator-data/tampered challenge handling.
+authenticator-data/tampered challenge handling. N5 verifies Yubico's published libfido2 ES256
+assertion vector at the cryptographic boundary and proves its intentionally absent UP flag remains
+rejected by Soma policy.
 
-## Intentionally not yet implemented
+## Subsequent slices
 
-The libfido2 ceremony/hidraw backend, attended attested enrollment, hardware/MDS validation,
-socket/peercred service, udev isolation, Node direct-assertion integration, durable-store recovery
-inspection, bounded nonce pruning, and hardware-key drill remain required before activation. A
-known-answer vector captured from a real authenticator must verify before live use; fake-generated
-signatures prove internal consistency but not device conformance. The driver now uses a mutually
-peer-authenticated Unix socket seam, but the default issuer ceremony remains hardware-disabled.
+The feature-gated direct libfido2 ceremony, attended attested enrollment/MDS validation, socket
+peer authentication, udev isolation package, and Node integration are implemented but remain
+unactivated. Durable-store recovery inspection and bounded nonce pruning remain future hardening.
+Attended enrollment, a YubiKey-specific assertion capture, access/OTP drills, the live ceremony,
+and the first restart remain required. The default issuer ceremony remains hardware-disabled.

@@ -10,6 +10,11 @@ pub const RP_ID: &str = "lca.soma.local";
 const UP_FLAG: u8 = 0x01;
 const UV_FLAG: u8 = 0x04;
 
+#[cfg(feature = "hardware-fido")]
+pub mod fido;
+#[cfg(feature = "hardware-fido")]
+pub mod hardware;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfirmationRequest {
@@ -28,7 +33,7 @@ pub struct ConfirmationRequest {
     pub expires_at: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IssuerPolicy {
     pub schema_version: u32,
@@ -49,7 +54,8 @@ pub struct ReplayState {
     pub consumed_nonces: BTreeSet<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawAssertion {
     pub credential_id: String,
     pub authenticator_data: Vec<u8>,
@@ -266,19 +272,33 @@ pub fn verify_raw_assertion(
             .try_into()
             .map_err(|_| IssuerError::new("lca_assertion_invalid"))?,
     );
-    let public_key_bytes = hex::decode(&policy.credential_public_key_sec1)
+    verify_assertion_signature(
+        &assertion.authenticator_data,
+        challenge_hash,
+        &policy.credential_public_key_sec1,
+        &assertion.signature_der,
+    )?;
+    Ok(counter)
+}
+
+pub fn verify_assertion_signature(
+    authenticator_data: &[u8],
+    challenge_hash: [u8; 32],
+    credential_public_key_sec1: &str,
+    signature_der: &[u8],
+) -> Result<(), IssuerError> {
+    let public_key_bytes = hex::decode(credential_public_key_sec1)
         .map_err(|_| IssuerError::new("lca_credential_store_invalid"))?;
     let verifying_key = VerifyingKey::from_sec1_bytes(&public_key_bytes)
         .map_err(|_| IssuerError::new("lca_credential_store_invalid"))?;
-    let signature = Signature::from_der(&assertion.signature_der)
+    let signature = Signature::from_der(signature_der)
         .map_err(|_| IssuerError::new("lca_assertion_invalid"))?;
-    let mut signed = assertion.authenticator_data.clone();
+    let mut signed = authenticator_data.to_vec();
     signed.extend_from_slice(&challenge_hash);
     // p256's high-level Verifier hashes this FIDO signature base with SHA-256 internally.
     verifying_key
         .verify(&signed, &signature)
-        .map_err(|_| IssuerError::new("lca_assertion_invalid"))?;
-    Ok(counter)
+        .map_err(|_| IssuerError::new("lca_assertion_invalid"))
 }
 
 pub fn challenge_hash(request: &ConfirmationRequest) -> Result<[u8; 32], IssuerError> {

@@ -1,3 +1,4 @@
 [Service]
 # Generated only during attended enrollment for the exact enrolled FIDO hidraw path.
+Environment=SOMA_LCA_FIDO_DEVICE=@@FIDO_DEVICE@@
 DeviceAllow=@@FIDO_DEVICE@@ rw

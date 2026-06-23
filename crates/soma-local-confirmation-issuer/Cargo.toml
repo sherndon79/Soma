@@ -13,10 +13,30 @@ path = "src/main.rs"
 name = "soma-local-confirmation-client"
 path = "src/client.rs"
 
+[[bin]]
+name = "soma-local-confirmation-enroll"
+path = "src/enroll.rs"
+required-features = ["hardware-fido"]
+
+[features]
+default = []
+hardware-fido = [
+  "dep:base64",
+  "dep:libloading",
+  "dep:openssl",
+  "dep:rand",
+  "dep:time",
+]
+
 [dependencies]
+base64 = { version = "0.22", optional = true }
 hex = "0.4"
 libc = "0.2"
+libloading = { version = "0.8", optional = true }
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 p256 = { version = "0.13", features = ["ecdsa"] }
+rand = { version = "0.8", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "parsing"], optional = true }

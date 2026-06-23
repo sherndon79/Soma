@@ -15,6 +15,7 @@ Environment=SOMA_LCA_POLICY=/etc/soma/lca/policy.json
 Environment=SOMA_LCA_REPLAY_STATE=/var/lib/soma-lca/replay-state.json
 Environment=SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock
 EnvironmentFile=/etc/soma/lca/channel.conf
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=

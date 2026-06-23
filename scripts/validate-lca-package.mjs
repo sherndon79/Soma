@@ -11,6 +11,9 @@ const service = await read("packaging/systemd/soma-local-confirmation-issuer.ser
 const tmpfiles = await read("packaging/tmpfiles/soma-local-confirmation-issuer.conf");
 const deviceDropIn = await read("packaging/systemd/soma-local-confirmation-issuer-device.conf.in");
 const manifest = JSON.parse(await read("packaging/lca-manifest.json"));
+const lcaCargo = await read("crates/soma-local-confirmation-issuer/Cargo.toml");
+const lcaMain = await read("crates/soma-local-confirmation-issuer/src/main.rs");
+const lcaEnrollment = await read("crates/soma-local-confirmation-issuer/src/enroll.rs");
 
 for (const rule of [earlyRule, finalRule]) {
   assert.match(rule, /SUBSYSTEM=="hidraw"/);
@@ -40,6 +43,7 @@ for (const directive of [
   "ReadWritePaths=/run/soma-lca",
   "ConditionPathIsDirectory=/run/soma-lca",
   "Environment=SOMA_LCA_SOCKET_PATH=/run/soma-lca/issuer.sock",
+  "UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT",
 ]) {
   assert.ok(service.includes(directive), `missing service directive: ${directive}`);
 }
@@ -48,14 +52,28 @@ assert.equal(
   deviceDropIn.trim().split("\n").at(-1),
   "DeviceAllow=@@FIDO_DEVICE@@ rw",
 );
+assert.match(deviceDropIn, /Environment=SOMA_LCA_FIDO_DEVICE=@@FIDO_DEVICE@@/);
+assert.match(lcaCargo, /^hardware-fido = \[/m);
+assert.match(lcaCargo, /required-features = \["hardware-fido"\]/);
+assert.match(lcaMain, /SOMA_LCA_FIDO_DEVICE/);
+assert.match(await read("crates/soma-local-confirmation-issuer/src/hardware.rs"), /\.env_clear\(\)/);
+assert.match(lcaEnrollment, /EXPECTED_AAGUID.*d7781e5de35346aaafe23ca49f13332a/);
+assert.match(lcaEnrollment, /value == "external"/);
+assert.match(lcaEnrollment, /value == "wired"/);
+assert.match(lcaEnrollment, /verify_attestation_trust/);
+assert.match(lcaEnrollment, /minimum_counter = baseline_counter/);
 assert.doesNotMatch(service, /^\[Install\]$/m);
 assert.match(tmpfiles, /d \/var\/lib\/soma-lca 0700 soma-lca soma-lca/);
 assert.match(tmpfiles, /d \/run\/soma-lca 0750 soma-lca soma-harness/);
 assert.match(tmpfiles, /f \/var\/lib\/soma-lca\/replay-state\.json 0600 soma-lca soma-lca/);
 
 assert.equal(manifest.activation_status, "disabled");
-assert.equal(manifest.hardware_backend, "not_built");
-assert.equal(manifest.enrollment_status, "absent");
+assert.equal(manifest.hardware_backend, "feature_gated");
+assert.equal(manifest.enrollment_status, "tool_available_not_run");
+const enrollmentTool = manifest.artifacts.find(
+  (artifact) => artifact.destination === "/usr/libexec/soma/soma-local-confirmation-enroll",
+);
+assert.deepEqual(enrollmentTool.required_cargo_features, ["hardware-fido"]);
 for (const field of [
   "creates_identity",
   "installs_artifacts",

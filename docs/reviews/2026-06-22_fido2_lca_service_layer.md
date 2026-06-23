@@ -18,8 +18,9 @@ may cover another YubiKey of the same model, but only the enrolled credential id
 verify an assertion. No rule is installed by the build.
 
 The service uses `DevicePolicy=closed`. Its base unit contains no `DeviceAllow`; attended
-enrollment must generate an exact hidraw-path drop-in. Thus udev ownership alone cannot activate
-hardware access.
+enrollment must generate an exact hidraw-path drop-in carrying both `DeviceAllow` and the matching
+`SOMA_LCA_FIDO_DEVICE`. The service backend is also absent unless Cargo feature `hardware-fido`
+was selected. Thus udev ownership alone cannot activate hardware access.
 
 ## Store and request boundaries
 
@@ -41,8 +42,18 @@ The guarded drill does not install rules. After separately reviewed installation
 - only `soma-lca` can open it;
 - final node is exactly `0660 root:soma-lca` with no forbidden ACL entry.
 
-Enrollment, MDS validation, counter baseline, real-authenticator known-answer vector, and live
-ceremony remain unperformed.
+The hardware-free implementation now includes the feature-gated direct libfido2 adapter and
+attended enrollment command. The command verifies the cached MDS JWT against a separately reviewed
+root, rejects disqualifying status reports, requires an external wired Basic/AttCA metadata entry,
+validates the attestation certificate against that entry's roots, pins AAGUID
+`d7781e5d-e353-46aa-afe2-3ca49f13332a`, creates only a non-discoverable ES256 UP-only credential,
+and requires a nonzero assertion counter baseline. It writes review artifacts to a new directory;
+it never installs them.
+
+N5 now verifies Yubico's published libfido2 ES256 assertion vector against its real public key.
+That vector intentionally has UP unset: the cryptographic verifier accepts its signature while
+the Soma policy verifier proves it still refuses confirmation. YubiKey-specific capture, attended
+enrollment, live ceremony, OTP isolation observation, and restart remain unperformed.
 
 The issuer deliberately does not use systemd socket activation. `SO_PEERCRED` reflects the
 credentials in effect at `listen/connect`; a systemd-created listener would authenticate to the
@@ -58,7 +69,7 @@ expose `SO_PEERCRED`. The helper validates the server uid before forwarding one 
 the issuer validates the harness uid before parsing. Node then validates every returned
 confirmation field against its live plan. The obsolete Ed25519/file confirmation path is removed.
 
-Enrollment policy is decided but not executed: the first credential is non-discoverable,
+Enrollment policy is implemented but not executed: the first credential is non-discoverable,
 ES256, RP id `lca.soma.local`, and `require_uv=false`; User Presence remains mandatory. UV would
 require an explicit later re-enrollment rather than changing implicitly when a key PIN is set.
 

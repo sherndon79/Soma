@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "activation_status": "disabled",
-  "hardware_backend": "not_built",
-  "enrollment_status": "absent",
+  "hardware_backend": "feature_gated",
+  "enrollment_status": "tool_available_not_run",
   "artifacts": [
     {
       "source": "target/release/soma-local-confirmation-issuer",
@@ -17,6 +17,16 @@
       "mode": "0755",
       "owner": "root",
       "group": "root"
+    },
+    {
+      "source": "target/release/soma-local-confirmation-enroll",
+      "destination": "/usr/libexec/soma/soma-local-confirmation-enroll",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root",
+      "required_cargo_features": [
+        "hardware-fido"
+      ]
     },
     {
       "source": "packaging/systemd/soma-local-confirmation-issuer.service",
@@ -66,6 +76,20 @@
       "mode": "0644",
       "owner": "root",
       "group": "root",
+      "generated_during_attended_enrollment": true
+    },
+    {
+      "destination": "/etc/soma/lca/enrollment-evidence.json",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "generated_during_attended_enrollment": true
+    },
+    {
+      "destination": "/var/lib/soma-lca/replay-state.json",
+      "mode": "0600",
+      "owner": "soma-lca",
+      "group": "soma-lca",
       "generated_during_attended_enrollment": true
     }
   ],

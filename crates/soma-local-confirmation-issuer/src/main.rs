@@ -30,7 +30,33 @@ impl FidoCeremony for DisabledCeremony {
     }
 }
 
+enum ConfiguredCeremony {
+    Disabled(DisabledCeremony),
+    #[cfg(feature = "hardware-fido")]
+    Hardware(soma_local_confirmation_issuer::hardware::HardwareCeremony),
+}
+
+impl FidoCeremony for ConfiguredCeremony {
+    fn get_assertion(
+        &mut self,
+        challenge_hash: [u8; 32],
+        policy: &IssuerPolicy,
+    ) -> Result<RawAssertion, IssuerError> {
+        match self {
+            Self::Disabled(ceremony) => ceremony.get_assertion(challenge_hash, policy),
+            #[cfg(feature = "hardware-fido")]
+            Self::Hardware(ceremony) => ceremony.get_assertion(challenge_hash, policy),
+        }
+    }
+}
+
 fn main() {
+    #[cfg(feature = "hardware-fido")]
+    if std::env::args().any(|argument| argument == "--fido-assert-worker") {
+        soma_local_confirmation_issuer::hardware::run_assertion_worker()
+            .unwrap_or_else(|error| fail(error.code));
+        return;
+    }
     if !std::env::args().any(|argument| argument == "--serve") {
         eprintln!("lca_serve_mode_required");
         std::process::exit(78);
@@ -46,9 +72,9 @@ fn main() {
         .ok()
         .and_then(|raw| serde_json::from_slice(&raw).ok())
         .unwrap_or_else(|| fail("lca_policy_invalid"));
+    let mut ceremony = configured_ceremony();
     let bound = bind_listener(&socket_path, expected_gid).unwrap_or_else(|code| fail(code));
     let mut limiter = CeremonyLimiter::new(5_000);
-    let mut ceremony = DisabledCeremony;
 
     for connection in bound.listener.incoming() {
         let Ok(mut stream) = connection else {
@@ -66,6 +92,17 @@ fn main() {
             &mut ceremony,
         );
     }
+}
+
+fn configured_ceremony() -> ConfiguredCeremony {
+    #[cfg(feature = "hardware-fido")]
+    if std::env::var_os("SOMA_LCA_FIDO_DEVICE").is_some() {
+        return ConfiguredCeremony::Hardware(
+            soma_local_confirmation_issuer::hardware::HardwareCeremony::from_environment()
+                .unwrap_or_else(|error| fail(error.code)),
+        );
+    }
+    ConfiguredCeremony::Disabled(DisabledCeremony)
 }
 
 fn serve_connection(

@@ -3,20 +3,18 @@ const DEFAULT_GROUP = "soma-sensorium";
 const DEFAULT_RUNTIME_DIRECTORY = "soma/sensorium";
 
 export function buildSensoriumHelperSandboxPlan({
-  binaryPath = "/usr/libexec/soma/soma-sensor-broker",
+  binaryPath = "/usr/local/libexec/soma-sensor-broker",
   user = DEFAULT_USER,
   group = DEFAULT_GROUP,
-  devicePaths = [],
-  usbDevicePaths,
+  usbDevicePaths = [],
   runtimeDirectory = DEFAULT_RUNTIME_DIRECTORY,
 } = {}) {
   const normalizedBinaryPath = requireAbsolutePath(binaryPath, "binaryPath");
   const normalizedUser = requireName(user, "user");
   const normalizedGroup = requireName(group, "group");
   const normalizedRuntimeDirectory = requireRuntimeDirectory(runtimeDirectory);
-  const requestedDevicePaths = usbDevicePaths ?? devicePaths;
-  const normalizedDevices = requestedDevicePaths.map((devicePath) =>
-    requireDevicePath(devicePath, "devicePaths"),
+  const normalizedDevices = usbDevicePaths.map((devicePath) =>
+    requireDevicePath(devicePath, "usbDevicePaths"),
   );
 
   return Object.freeze({
@@ -30,37 +28,20 @@ export function buildSensoriumHelperSandboxPlan({
     systemd_unit: Object.freeze({
       Unit: Object.freeze({
         Description: "Soma Sensorium helper sandbox",
-        After: "systemd-udev-settle.service",
-        StartLimitIntervalSec: "60s",
-        StartLimitBurst: 3,
       }),
       Service: Object.freeze({
         Type: "simple",
         ExecStart: normalizedBinaryPath,
         User: normalizedUser,
         Group: normalizedGroup,
-        UMask: "0077",
-        Environment: "SOMA_SENSORIUM_LIVE_DEPTH_PRESENCE_ALLOWED=false",
-        UnsetEnvironment: "LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT",
         NoNewPrivileges: "yes",
-        CapabilityBoundingSet: "",
-        AmbientCapabilities: "",
         PrivateNetwork: "yes",
         IPAddressDeny: "any",
         PrivateTmp: "yes",
         ProtectSystem: "strict",
         ProtectHome: "yes",
-        ProtectKernelTunables: "yes",
-        ProtectKernelModules: "yes",
-        ProtectKernelLogs: "yes",
-        ProtectControlGroups: "yes",
-        ProtectHostname: "yes",
-        ProtectClock: "yes",
-        RestrictNamespaces: "yes",
-        RestrictSUIDSGID: "yes",
         ReadWritePaths: [`/run/${normalizedRuntimeDirectory}`],
         RuntimeDirectory: normalizedRuntimeDirectory,
-        RuntimeDirectoryMode: "0700",
         DevicePolicy: "closed",
         DeviceAllow: normalizedDevices,
         RestrictAddressFamilies: ["AF_UNIX"],
@@ -68,16 +49,6 @@ export function buildSensoriumHelperSandboxPlan({
         MemoryDenyWriteExecute: "yes",
         RestrictRealtime: "yes",
         SystemCallArchitectures: "native",
-        SystemCallFilter: ["@system-service", "~@mount @module @raw-io @reboot @swap @keyring"],
-        ProcSubset: "pid",
-        ProtectProc: "invisible",
-        RemoveIPC: "yes",
-        Restart: "on-failure",
-        RestartSec: "5s",
-        TimeoutStopSec: "10s",
-        LimitNOFILE: 128,
-        MemoryMax: "256M",
-        TasksMax: 32,
       }),
     }),
   });
@@ -114,15 +85,6 @@ export function assertSensoriumHelperSandboxPlan(plan = {}) {
   if (service.NoNewPrivileges !== "yes") {
     findings.push("Service.NoNewPrivileges must be yes");
   }
-  if (service.Environment !== "SOMA_SENSORIUM_LIVE_DEPTH_PRESENCE_ALLOWED=false") {
-    findings.push("Service.Environment must keep live depth presence disabled");
-  }
-  if (service.RuntimeDirectoryMode !== "0700") {
-    findings.push("Service.RuntimeDirectoryMode must be 0700");
-  }
-  if (service.Restart !== "on-failure") {
-    findings.push("Service.Restart must be on-failure");
-  }
   const writePaths = Array.isArray(service.ReadWritePaths) ? service.ReadWritePaths : [];
   if (writePaths.some((entry) => entry !== `/run/${service.RuntimeDirectory}`)) {
     findings.push("Service.ReadWritePaths must be limited to the runtime directory");
@@ -148,11 +110,8 @@ function requireAbsolutePath(value, label) {
 
 function requireDevicePath(value, label) {
   const text = requireAbsolutePath(value, label);
-  const allowedPrefixes = ["/dev/bus/usb/", "/dev/video", "/dev/media", "/dev/hidraw"];
-  if (!allowedPrefixes.some((prefix) => text.startsWith(prefix))) {
-    throw new TypeError(
-      `${label} must point under /dev/bus/usb, /dev/video, /dev/media, or /dev/hidraw`,
-    );
+  if (!text.startsWith("/dev/bus/usb/")) {
+    throw new TypeError(`${label} must point under /dev/bus/usb`);
   }
   return text;
 }

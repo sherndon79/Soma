@@ -732,4 +732,97 @@ replay mode requires the local expected anchor, missing artifact ⇒ replay_stat
 freezes + assembles (no unpinned); replay with supplied frozen artifact reproduces bundle_digest; replay
 mode without artifact ⇒ replay_state_unpinned (no live substitution); unmapped + context.assembly.* self
 events skipped (no raw pass-through); projection emits NO forbidden field; frontier coarse. **Status:
-build-ready, GREENLIT.**
+BUILT + COMMITTED 2026-06-25 (866097d); design committed 84d70b8. Context-assembly CORE complete (9
+slices): persistent + durable-provenance + ephemeral sources, all with replay discipline + the floor.**
+
+---
+
+## 14. Slice 4 — make it real: first entry point + live reads (DESIGN, 2026-06-25)
+
+Everything built so far operates on INJECTED stores — `assembleContextBundle` has NO caller yet (pure
+module). Slice 4 gives the layer its first entry point and its first read of Soma's REAL local state
+(occupant memory, durable provenance, the in-memory ring), closing the deferred live-read + the
+§12.8-F1(b) malformed→source_degraded gaps. This is the "passes tests → actually works on the machine"
+step. Still NO live frontier, NO live reasoner — the bundle is produced from real local state and
+consumed by nothing yet (the "demonstrably assembles real context" milestone). NOT floor-crossing:
+occupant memory + provenance are LOCAL, content-free-at-the-floor sources.
+
+### 14.1 Async-at-the-edge — keep the assembler SYNC + PURE
+`assembleContextBundle` stays sync/pure (injected stores, fully testable). Add a THIN async entry point
+(e.g. `assembleContextFromLiveSources`) that: (a) does the async reads (durable provenance files via
+`readFile`), (b) gathers the ring (`provenanceLog.list()`) + the occupant memory store, (c) calls the
+sync assembler with the read stores. I/O isolated at the edge; the deterministic core is unchanged. (For
+the ephemeral ring this is also the FREEZE point — read live → frozen snapshot per §13.)
+
+### 14.2 Per-source authorization (the design question — no new authority plane)
+Reuse the existing discipline (§9.6): occupant_memory read under `occupant.memory.read` grant OR an
+internal steward/system path; durable provenance + the ring are the AGENT'S OWN audit trail → an
+internal/steward read. NO new USER-FACING capability yet (the entry point is an internal service, since
+there is no external requester until the reasoner). Confirm the right per-source read-authority + whether
+an internal-read path exists or must be added.
+
+### 14.3 F1(b) — malformed/unreadable real source ⇒ graceful source_degraded
+Real reads can fail (missing/corrupt file, parse error, a record the adapter's strict normalize rejects).
+WRAP each source's read+snapshot at the entry point (or adapter): on failure, emit a
+`sourceRecoveryReports[source]={degraded:true}` → the EXISTING source_degraded path handles it
+(required⇒abstain, optional⇒omit+record). NEVER an uncaught throw, NEVER assemble from a suspect source
+(§12.5). This realizes the §12.8-F1(b) note.
+
+### 14.4 What slice 4 BUILDS vs DEFERS
+- BUILD: the async `assembleContextFromLiveSources` entry point; live reads of occupant memory + one
+  durable provenance domain + the ring (the freeze); per-source authorization (reuse); F1(b)
+  read-failure⇒source_degraded; an end-to-end test exercising a real-shaped 3-source recipe → bundle
+  (+ a replay round-trip with the returned frozen artifact).
+- DEFER: the reasoner CONSUMER (no model yet); frontier curation; frozen-artifact RETENTION (harness);
+  multi-domain unified provenance; a user-facing capability (until an external requester exists).
+
+### 14.5 For Codex — pressure-test before build
+1. PER-SOURCE AUTHORIZATION (§14.2): the right read-authority for each source — occupant.memory.read
+   grant vs steward path; provenance/ring internal-or-steward. Does an internal-read path exist, or must
+   one be added? Keep it NO-new-authority-plane.
+2. ENTRY POINT SHAPE (§14.1): async wrapper calling the sync assembler — confirm that preserves the pure
+   core; where does it live (a service module, not a route/capability yet)?
+3. F1(b) WRAP LOCATION (§14.3): at the entry point (catch read failures → sourceRecoveryReports) vs
+   inside each adapter? Which keeps the adapter contract cleanest?
+4. REAL-SHAPE DRIFT: do the real durable-provenance / ring records differ from the injected fixture
+   shapes (field names, extra fields, schema variance) in ways the adapters' normalize must tolerate
+   (filter/coerce) rather than throw?
+
+This is design — pressure-test before any code, especially #1 (authorization) and #4 (real-shape drift).
+Role division holds: I design/review, you build/commit.
+
+### 14.6 Codex pressure-test ACCEPTED + refinement (2026-06-25) — build-ready
+All four accepted; grounded in real infra. One Claude refinement completing F1(b).
+
+- **#1 authorization (grounded):** reuse the EXISTING `loadOccupantMemoryAuthority()` (loads store +
+  occupant-memory provenance + recovery report); treat degraded recovery as source_degraded. Durable
+  provenance + ring = agent's own audit → internal/steward read. `assembleContextFromLiveSources` is an
+  INTERNAL service accepting an internal/steward auth context OR already-authorized stores. NO new
+  user-facing capability/route (a future external-exposure slice would wrap it in a grant). No new plane.
+- **#2 entry point: a SEPARATE `src/contextAssemblyLive.js`** (imports assembleContextBundle + live
+  loaders) — keeps the core module pure/sync and free of filesystem defaults. Explicit deps: recipe,
+  provenanceLog, occupantMemoryStorePath, occupantMemoryProvenancePath, durableProvenance path/adapter,
+  replay/replayArtifacts, internal-auth flag, now, idFactory. Calls assembleContextBundle ONCE.
+- **#3 F1(b) wrap at the LIVE EDGE, not in adapters** (adapters stay strict/deterministic for injected
+  stores). The edge PREFLIGHTS each source with adapter.snapshot AND select in try/catch; any I/O /
+  read / normalize / snapshot / select failure ⇒ `sourceRecoveryReports[source]={degraded:true}`.
+  **CLAUDE REFINEMENT (completes F1(b)): `assembleContextBundle`'s degraded branch ITSELF re-snapshots
+  the store (to build the refusal source_state) — so a store malformed enough to throw on snapshot would
+  RE-THROW there, uncaught, even after being flagged degraded.** Fix: for any degraded source the live
+  edge passes a SAFE-EMPTY store ({records:[]}/{entries:[]}) alongside the degraded report, so the core's
+  degraded path snapshots harmlessly and emits source_degraded; the real malformed store never reaches
+  the core. Keeps the strict core untouched; F1(b) becomes robust even against unsnapshotable stores.
+- **#4 real-shape drift:** durable occupant-memory provenance is strict JSONL matching the 2c shape →
+  read via `createOccupantMemoryProvenanceFile(path).read()`; read/parse/validate fail ⇒ source_degraded
+  (do NOT salvage a partially-corrupt durable file in slice 4). The RING is broad/varied (app.js writes
+  many families w/ extra+missing fields) → pass as `{ entries: provenanceLog.list() }` and let the ring
+  adapter's existing coerce + unmapped/self-filter handle drift. Adapters stay strict; the edge tolerates.
+
+**Build-ready slice 4:** `src/contextAssemblyLive.js` → `assembleContextFromLiveSources(...)`; reuse
+loadOccupantMemoryAuthority() (degraded⇒source_degraded); durable provenance via
+createOccupantMemoryProvenanceFile.read(); ring as {entries: provenanceLog.list()}; per-source
+preflight(snapshot+select) try/catch ⇒ degraded + SAFE-EMPTY store substitution; assembleContextBundle
+called once; no route/capability/frontier. Tests (temp real files + a ProvenanceLog instance): real
+3-source assembly → bundle; replay round-trip with the returned frozen artifact; corrupt durable ⇒
+optional omission / required refusal; corrupt/unreadable memory authority ⇒ required source_degraded
+refusal; ring real-shape extras tolerated/filtered; degraded source does NOT re-throw (safe-empty path).

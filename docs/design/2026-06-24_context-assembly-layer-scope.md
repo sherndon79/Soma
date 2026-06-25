@@ -602,4 +602,134 @@ read), closed event_type→activity-vocab mapping (no raw pass-through), linkabl
 (forbidden-field list above is test-critical), snapshot over RAW records, replace the fixture in the
 default registry. Tests: projection emits NO forbidden field (assert each); snapshot-over-raw detects a
 raw-record change while bundle stays minimized; replay determinism; degraded ⇒ source_degraded;
-merge/ordering with the real adapter; frontier manifest still coarse. **Status: build-ready, GREENLIT.**
+merge/ordering with the real adapter; frontier manifest still coarse. **Status: BUILT + COMMITTED
+2026-06-25 (eccdd14); F1(a) filter-not-throw folded, F1(b) malformed→source_degraded noted for the
+live-read slice.**
+
+---
+
+## 13. Slice 3 — ephemeral source freeze-for-replay (DESIGN, 2026-06-25)
+
+The hard one we deferred since §10.8d. Persistent sources replay cleanly (stable source). EPHEMERAL
+sources MUTATE — the in-memory provenance ring (`provenanceLog.js`, maxEntries=200, truncates) and
+sensorium events (10s TTL) — so a snapshot cannot be re-derived later. Slice 3 introduces
+**freeze-for-replay** and proves it with the LOWER-STAKES ephemeral source (the ring), deferring
+sensorium-as-a-source. All prior floor invariants carry.
+
+### 13.1 Scope: the freeze mechanism, proven with the in-memory provenance RING
+Scope to ONE ephemeral source: the in-memory provenance ring. It is content-free provenance records
+(same shape family as durable provenance), so it REUSES 2c's activity-semantic projection + the
+linkable-ID floor — isolating the genuinely new thing (freeze-for-replay) without sensorium's
+higher-stakes projection. **DEFER sensorium-as-a-context-source to a later slice** (higher stakes;
+entangled with the in-flight sensorium/camera work). `freshness_class: ephemeral`.
+
+### 13.2 The freeze mechanism
+- At assembly, the ephemeral adapter's `snapshot(store)` reads the live ring and **captures the frozen
+  records into the snapshot artifact** (the actual ordered record set), not just the digest. The
+  `snapshot_digest` is over those frozen records (as in 2c, over RAW).
+- The **frozen snapshot is the durable replay artifact.** Replay re-supplies the frozen snapshot as the
+  "store" → re-running select/assemble reproduces the bundle deterministically.
+- If at replay the frozen snapshot is NOT available (and the live source has drifted past it) ⇒
+  `replay_state_unpinned` — honest: ephemeral context is not reproducible without its frozen capture.
+- The composite_snapshot_digest + bundle_digest work exactly as before; the only change is that an
+  ephemeral source's replay input is the FROZEN snapshot, not the live source.
+
+### 13.3 Where the frozen snapshot lives (layer produces, harness persists — retention DEFERRED)
+The context-assembly layer **produces** the frozen snapshot artifact and **consumes** it for replay; it
+does NOT own persistence or retention/GC. The local-audit manifest records the snapshot_digest +
+reference; the frozen records are returned as a replay artifact the HARNESS persists (lifecycle/retention
+is the harness's concern, deferred). This keeps slice 3 on the freeze MECHANISM, not storage policy.
+(Floor note: the ring's frozen records are content-free provenance; persisting them is low-risk —
+sensorium's frozen snapshots, when that source lands, will need their own floor review.)
+
+### 13.4 The ring adapter (`ephemeral_provenance_ring`)
+- `freshness_class: ephemeral`, `trust_tier: local_provenance` (or a distinct ephemeral tier), closed
+  `allowed_constraints`, declared minimization.
+- `snapshot` captures `provenanceLog.list()` (a copy) → ordered + frozen + digested.
+- Projection: REUSE 2c's activity-semantic projection (drop linkable IDs → bundle_body carries only
+  activity_class / mapped event_type / capability_class / summary_class / coarse time). The ring has
+  MORE event_types than occupant-memory-provenance's two → the CLOSED mapping must cover the ring's
+  vocabulary; unmapped event_types FILTER (per 2c F1(a)), never raw pass-through.
+- **FEEDBACK-LOOP (live for the ring, unlike 2c):** the generic ring may receive context-assembly's own
+  events if the harness logs them there. The adapter MUST filter any `context.assembly.*` (and its own
+  read) events — closed allowlist, no self-events — else reading the ring surfaces "context assembled"
+  recursively. Confirm what actually writes the ring.
+
+### 13.5 Floor + frontier (reuse)
+Projection floor = 2c (linkable IDs dropped from bundle_body; raw IDs local-audit source_receipt only).
+Frontier manifest unchanged/coarse. Degraded/unavailable ⇒ `source_degraded`.
+
+### 13.6 What slice 3 BUILDS vs DEFERS
+- BUILD: the `ephemeral_provenance_ring` adapter (injected ring snapshot for tests); the freeze-for-
+  replay mechanism (snapshot captures frozen records; replay re-supplies frozen snapshot;
+  live-drift-without-frozen ⇒ replay_state_unpinned); the ring event_type→vocab closed mapping +
+  unmapped-filter; feedback-loop self-event filtering.
+- DEFER: sensorium-as-a-context-source (higher-stakes, later); frozen-snapshot RETENTION/GC (harness);
+  live ring I/O wiring + the §12.8-F1(b) malformed→source_degraded hardening (live-read slice);
+  multi-domain unified activity.
+
+### 13.7 For Codex — pressure-test before build
+1. Freeze artifact shape + where it lives (§13.2/§13.3): produce-and-return the frozen snapshot vs embed
+   in the manifest? Confirm the layer does NOT own retention. What's the minimal replay contract — does
+   replay pass the frozen snapshot back as the `store`, and is that ergonomic?
+2. Feedback loop (§13.4): what actually appends to `provenanceLog` (the ring)? Does context-assembly or
+   the harness log context.assembly.* there? Define the self-event filter precisely.
+3. Ring event_type vocabulary: enumerate the ring's real event_types and the closed mapping; confirm
+   unmapped-filter (no raw pass-through), reusing 2c F1(a).
+4. Drift semantics: with an ephemeral source, "same recipe + same composite_snapshot_digest ⇒ same
+   bundle_digest" still holds against the FROZEN snapshot — confirm the live-source-drifted-and-no-frozen
+   path is exactly replay_state_unpinned, and that nothing silently assembles from a drifted live ring.
+5. Is a distinct `ephemeral` trust/freshness rank needed in the sort tables, or does
+   freshness_class=ephemeral with existing ranks suffice?
+
+This is the hard slice — pressure-test before any code, especially #1 (freeze artifact/retention
+boundary), #2 (feedback loop), #4 (drift ⇒ replay_state_unpinned). Role division holds: I design/review,
+you build/commit.
+
+### 13.8 Codex pressure-test ACCEPTED + corrections (2026-06-25) — build-ready
+All five accepted; #4 is a real correction I missed, with one Claude refinement on WHERE the replay
+anchor lives.
+
+- **#1 freeze artifact: a SEPARATE returned `replay_artifacts`, NOT embedded in the manifest.**
+  `replay_artifacts: { ephemeral_provenance_ring: { source_class, snapshot_digest, schema_version,
+  frozen_records } }` returned ALONGSIDE the bundle. The local-audit manifest carries only
+  `snapshot_digest` + a `replay_artifact_ref` + audit metadata. Embedding frozen records in the
+  manifest would blur local-audit vs retained-replay-payload and make manifest size/retention the
+  layer's problem. Harness persists the artifact; retention/GC stays out of the layer.
+- **#2 feedback loop: positive allowlist + explicit self-event filter.** No `context.assembly.*` append
+  exists today, but the harness writes many families to the ring, so the adapter uses a POSITIVE
+  allowlist of mapped event_types AND explicitly filters any event_type prefixed `context.assembly.` /
+  `context_assembly.`. Also EXCLUDE `provenance.summary.read` from the first mapping (reading "the log
+  was read/summarized" into context about the log is a lower-grade reflection loop).
+- **#3 narrow closed mapping (freeze, not taxonomy completion).** The ring is broad; map a representative
+  SUBSET only (model.chat.requested/denied/completed, model.local.tool_call_intent, desktop.inspect.*,
+  occupant.memory.read / memory.session.written/removed → activity vocab), FILTER everything else. Test
+  includes an unmapped ring event AND a `context.assembly.started` self-event, both skipped, no raw
+  pass-through.
+- **#4 (CORRECTION — the layer can't infer replay from a mutable live read): TWO EXPLICIT MODES.**
+  *Fresh assembly* — the live ring may be read + frozen; NOT replay_state_unpinned merely because it is
+  mutable. *Replay* — signalled by an EXPECTED ephemeral snapshot anchor; if the frozen artifact is not
+  supplied ⇒ refuse `replay_state_unpinned` (never silently substitute the live ring); if supplied ⇒
+  use it as the store, ignore live drift. Without an expected anchor the layer cannot distinguish replay
+  from fresh assembly, so the replay contract REQUIRES an explicit anchor for ephemeral sources.
+  **CLAUDE REFINEMENT — the replay anchor is a LOCAL `assemble()` PARAMETER, NOT a frontier-settable
+  recipe field.** Codex put it in the recipe/selector, but a frontier-supplied recipe FORBIDS linkable
+  digests (§3 / §9.1 FrontierPlanEnvelope) — an `expected_snapshot_digest` in the recipe would reintroduce
+  exactly that. Replay is a LOCAL audit operation the frontier does not drive, so the anchor lives as a
+  local replay parameter (e.g. `replay: { ephemeral_provenance_ring: { expected_snapshot_digest } }` +
+  the supplied frozen artifact), keeping the recipe (and the frontier surface) digest-free. Two-mode
+  distinction preserved; floor preserved.
+- **#5 ranks: no new tier.** `freshness_class=ephemeral` with existing `FRESHNESS_RANKS.ephemeral=1`;
+  trust stays `local_provenance=2` (origin still local; freshness captures mutability).
+
+**Build-ready shape:** `ephemeral_provenance_ring` adapter is an OPT-IN third/alternate source (does NOT
+default-replace durable provenance); `store` is either `{ entries }` (live copy) or
+`{ frozen_records, snapshot_digest }` (replay artifact), both normalized to the same frozen record set;
+`snapshot` returns digest + frozen records as a returned `replay_artifact` (manifest holds digest/ref
+only); `select` ALWAYS runs over the FROZEN record set (never re-reads the mutable log post-snapshot);
+replay mode requires the local expected anchor, missing artifact ⇒ replay_state_unpinned; closed mapping
++ self-event filter + unmapped-filter (2c F1(a)); projection floor identical to 2c. Tests: fresh assembly
+freezes + assembles (no unpinned); replay with supplied frozen artifact reproduces bundle_digest; replay
+mode without artifact ⇒ replay_state_unpinned (no live substitution); unmapped + context.assembly.* self
+events skipped (no raw pass-through); projection emits NO forbidden field; frontier coarse. **Status:
+build-ready, GREENLIT.**

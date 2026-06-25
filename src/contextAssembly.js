@@ -6,33 +6,32 @@ import {
   normalizeOccupantMemoryStore,
 } from "./occupantMemory.js";
 
-const CONTEXT_RECIPE_FIELDS = new Set([
+const RECIPE_FIELDS = new Set([
   "schema_version",
   "recipe_id",
   "origin",
   "objective_class",
-  "source_classes",
+  "source_selectors",
   "capability_classes",
-  "constraints",
   "required_receipt_types",
   "context_budget",
   "ordering",
-  "minimization",
+  "source_class_order",
   "abstention_criteria",
   "abstract_slots",
 ]);
 
-const CONSTRAINT_FIELDS = new Set([
-  "domain",
-  "memory_classes",
-  "max_items",
-  "max_chars",
-  "include_tombstones",
-  "recency_window",
-  "consent_scope",
+const SOURCE_SELECTOR_FIELDS = new Set([
+  "source_class",
+  "required",
+  "constraints",
+  "minimization",
+  "budget",
 ]);
 
-const BUDGET_FIELDS = new Set(["max_items", "max_chars", "reserve_chars", "overflow_policy"]);
+const BUDGET_FIELDS = new Set(["max_items", "max_chars", "overflow_policy"]);
+const MEMORY_CONSTRAINT_FIELDS = new Set(["domain", "memory_classes", "include_tombstones", "recency_window", "consent_scope"]);
+const ACTIVITY_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes"]);
 
 const ORIGINS = new Set(["fixture", "frontier", "local"]);
 const OBJECTIVE_CLASSES = new Set([
@@ -41,15 +40,9 @@ const OBJECTIVE_CLASSES = new Set([
   "summarize_recent_local_activity",
   "answer_user_question_from_memory",
 ]);
-const SOURCE_CLASSES = new Set(["occupant_memory"]);
-const CAPABILITY_CLASSES = new Set(["memory_context", "local_reasoning", "tool_grounding"]);
-const MEMORY_CLASSES = new Set(["self_note"]);
-const DOMAINS = new Set(["testing", "general", ""]);
-const RECENCY_WINDOWS = new Set(["all"]);
-const CONSENT_SCOPES = new Set(["successor_inheritance", "steward_readable", "local_reasoner_only"]);
-const RECEIPT_TYPES = new Set(["source_receipt", "selection_receipt", "memory_snapshot"]);
-const ORDERING = new Set(["newest_first", "receipt_priority", "class_priority"]);
-const MINIMIZATION = new Set(["full_self_note", "excerpt_for_reasoner", "metadata_only"]);
+const CAPABILITY_CLASSES = new Set(["memory_context", "local_reasoning", "tool_grounding", "activity_context"]);
+const RECEIPT_TYPES = new Set(["source_receipt", "selection_receipt", "memory_snapshot", "activity_snapshot"]);
+const ORDERING = new Set(["newest_first", "class_priority", "receipt_priority"]);
 const ABSTENTION_CRITERIA = new Set([
   "missing_required_receipt",
   "budget_insufficient",
@@ -59,6 +52,34 @@ const ABSTENTION_CRITERIA = new Set([
 ]);
 const ABSTRACT_SLOTS = new Set(["current_domain", "current_episode_mode", "current_task_class"]);
 const OVERFLOW_POLICIES = new Set(["evict_oldest", "abstain"]);
+const DOMAINS = new Set(["testing", "general", ""]);
+const MEMORY_CLASSES = new Set(["self_note"]);
+const ACTIVITY_CLASSES = new Set(["capability_use", "control", "status", "observation"]);
+const ACTIVITY_EVENT_TYPES = new Set([
+  "model.chat.completed",
+  "capability.invoked",
+  "capability.refused",
+  "occupant_ejected",
+  "context.fixture.event",
+]);
+const ACTIVITY_CAPABILITY_CLASSES = new Set(["model", "desktop", "memory", "provenance", "system", "none"]);
+const SUMMARY_CLASSES = new Set(["completed", "refused", "control", "status", "observed"]);
+const RECENCY_WINDOWS = new Set(["all"]);
+const CONSENT_SCOPES = new Set(["successor_inheritance", "steward_readable", "local_reasoner_only"]);
+
+const SOURCE_RANKS = Object.freeze({
+  local_activity_fixture: 1,
+  occupant_memory: 2,
+});
+const TRUST_RANKS = Object.freeze({
+  participant_memory: 3,
+  local_fixture: 2,
+});
+const FRESHNESS_RANKS = Object.freeze({
+  snapshot_pinned: 3,
+  persistent: 2,
+  ephemeral: 1,
+});
 
 const FRONTIER_ALLOWED_FIELDS = new Set([
   "schema_version",
@@ -66,12 +87,13 @@ const FRONTIER_ALLOWED_FIELDS = new Set([
   "reason_class",
   "violated_field_class",
   "abstention_record",
-  "included_count",
-  "excluded_count",
+  "included_count_class",
+  "excluded_count_class",
   "budget",
+  "source_omissions",
 ]);
 
-const RECEIPT_REASON_CLASSES = new Set([
+const REASON_CLASSES = new Set([
   "selected",
   "budget_evicted",
   "metadata_only",
@@ -88,74 +110,79 @@ const RECEIPT_REASON_CLASSES = new Set([
   "replay_state_unpinned",
 ]);
 
-export function validateContextRecipe(input = {}) {
+export const SOURCE_ADAPTERS = Object.freeze({
+  occupant_memory: createOccupantMemoryAdapter(),
+  local_activity_fixture: createSnapshotFixtureActivityAdapter(),
+});
+
+export function validateContextRecipe(input = {}, { adapters = SOURCE_ADAPTERS } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw contextAssemblyError("context_recipe_invalid", "ContextRecipe must be an object.", {
       reason_class: "recipe_schema_invalid",
       violated_field_class: "recipe",
     });
   }
-  rejectUnknownFields(input, CONTEXT_RECIPE_FIELDS, "recipe");
-  const recipeId = boundedId(input.recipe_id, "recipe_id");
-  const constraints = normalizeConstraints(input.constraints ?? {});
-  const budget = normalizeBudget(input.context_budget ?? {});
-  const recipe = {
+  rejectUnknownFields(input, RECIPE_FIELDS, "recipe");
+  const sourceSelectors = normalizeSourceSelectors(input.source_selectors, adapters);
+  const sourceClassOrder = enumArray(
+    input.source_class_order ?? sourceSelectors.map((selector) => selector.source_class),
+    sourceClassSet(adapters),
+    "source_class_order",
+    { required: true },
+  );
+  return deepFreeze({
     schema_version: integerValue(input.schema_version, "schema_version", { min: 1, max: 1 }),
-    recipe_id: recipeId,
+    recipe_id: boundedId(input.recipe_id, "recipe_id"),
     origin: enumValue(input.origin, ORIGINS, "origin"),
     objective_class: enumValue(input.objective_class, OBJECTIVE_CLASSES, "objective_class"),
-    source_classes: enumArray(input.source_classes, SOURCE_CLASSES, "source_classes", { required: true }),
+    source_selectors: sourceSelectors,
     capability_classes: enumArray(input.capability_classes ?? [], CAPABILITY_CLASSES, "capability_classes"),
-    constraints,
     required_receipt_types: enumArray(input.required_receipt_types ?? [], RECEIPT_TYPES, "required_receipt_types"),
-    context_budget: budget,
-    ordering: enumArray(input.ordering ?? ["newest_first"], ORDERING, "ordering", { required: true }),
-    minimization: enumValue(input.minimization ?? "excerpt_for_reasoner", MINIMIZATION, "minimization"),
+    context_budget: normalizeBudget(input.context_budget ?? {}, "context_budget", { maxItems: 128, maxChars: 64_000 }),
+    ordering: enumValue(input.ordering ?? "newest_first", ORDERING, "ordering"),
+    source_class_order: sourceClassOrder,
     abstention_criteria: enumArray(input.abstention_criteria ?? [], ABSTENTION_CRITERIA, "abstention_criteria"),
     abstract_slots: enumArray(input.abstract_slots ?? [], ABSTRACT_SLOTS, "abstract_slots"),
-  };
-  if (!recipe.source_classes.includes("occupant_memory")) {
-    throw contextAssemblyError("context_recipe_invalid", "ContextRecipe requires occupant_memory source in slice 1.", {
-      reason_class: "recipe_schema_invalid",
-      violated_field_class: "source_classes",
-    });
-  }
-  return Object.freeze(recipe);
+  });
 }
 
 export function createOccupantMemorySnapshot(store = {}) {
-  const normalized = normalizeOccupantMemoryStore(store);
-  const entries = listOccupantMemoryEntries(normalized)
-    .map(sortMemoryEntry)
-    .sort(compareById);
-  const tombstones = listOccupantMemoryTombstones(normalized)
-    .map(sortMemoryTombstone)
-    .sort(compareByEntryId);
-  const snapshot = {
-    schema_version: normalized.schema_version,
-    entries,
-    tombstones,
-  };
-  return Object.freeze({
-    source_class: "occupant_memory",
-    snapshot_digest: digest(canonicalJson(snapshot)),
-    schema_version: normalized.schema_version,
-    active_entry_count: entries.filter((entry) => entry.status === "active").length,
-    tombstone_count: tombstones.length,
-    newest_timestamp: newestTimestamp([...entries, ...tombstones]),
+  return SOURCE_ADAPTERS.occupant_memory.snapshot(store);
+}
+
+export function createCompositeSourceState(sourceStates = {}) {
+  const normalized = Object.fromEntries(
+    Object.entries(sourceStates)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([sourceClass, state]) => [sourceClass, {
+        source_class: sourceClass,
+        snapshot_digest: stringValue(state.snapshot_digest),
+        schema_version: Number(state.schema_version ?? 1),
+        freshness_class: stringValue(state.freshness_class),
+        trust_tier: stringValue(state.trust_tier),
+        item_count: integerOrZero(state.item_count),
+        newest_timestamp_ms: integerOrZero(state.newest_timestamp_ms),
+      }]),
+  );
+  return deepFreeze({
+    sources: normalized,
+    composite_snapshot_digest: digest(canonicalJson(normalized)),
   });
 }
 
 export function assembleContextBundle({
   recipe,
   occupantMemoryStore,
-  occupantMemoryRecoveryReport = { degraded: false },
+  activityStore,
+  sourceStores = {},
+  sourceRecoveryReports = {},
+  adapters = SOURCE_ADAPTERS,
   now = () => new Date(),
   idFactory = randomUUID,
 } = {}) {
   let validated;
   try {
-    validated = validateContextRecipe(recipe);
+    validated = validateContextRecipe(recipe, { adapters });
   } catch (error) {
     return createRefusalBundle({
       reason_class: error.reason_class ?? "recipe_schema_invalid",
@@ -166,75 +193,113 @@ export function assembleContextBundle({
   }
 
   const recipeDigest = digest(canonicalJson(validated));
-  if (!occupantMemoryStore || typeof occupantMemoryStore !== "object") {
-    return createRefusalBundle({
-      reason_class: "replay_state_unpinned",
-      recipe_digest: recipeDigest,
-      violated_field_class: "source_state",
-      now,
-      idFactory,
-    });
-  }
-  if (occupantMemoryRecoveryReport?.degraded === true) {
-    const sourceState = createOccupantMemorySnapshot(occupantMemoryStore);
-    return createRefusalBundle({
-      reason_class: "source_degraded",
-      recipe_digest: recipeDigest,
-      source_state: sourceState,
-      violated_field_class: "source_state",
-      now,
-      idFactory,
-    });
+  const sourceResults = [];
+  const sourceOmissions = [];
+  const sourceStates = {};
+
+  for (const selector of validated.source_selectors) {
+    const adapter = adapters[selector.source_class];
+    const store = storeForSource(selector.source_class, { occupantMemoryStore, activityStore, sourceStores });
+    if (!store || typeof store !== "object") {
+      const omission = sourceOmission(selector, "replay_state_unpinned", "none");
+      if (selector.required) {
+        return createRefusalBundle({
+          reason_class: "replay_state_unpinned",
+          recipe_digest: recipeDigest,
+          source_omissions: [omission],
+          violated_field_class: `${selector.source_class}.source_state`,
+          now,
+          idFactory,
+        });
+      }
+      sourceOmissions.push(omission);
+      continue;
+    }
+    if (sourceRecoveryReports[selector.source_class]?.degraded === true) {
+      const snapshot = adapter.snapshot(store);
+      sourceStates[selector.source_class] = snapshot;
+      const omission = sourceOmission(selector, "source_degraded", countClass(snapshot.item_count));
+      if (selector.required) {
+        return createRefusalBundle({
+          reason_class: "source_degraded",
+          recipe_digest: recipeDigest,
+          source_state: createCompositeSourceState(sourceStates),
+          source_omissions: [omission],
+          violated_field_class: `${selector.source_class}.source_state`,
+          now,
+          idFactory,
+        });
+      }
+      sourceOmissions.push(omission);
+      continue;
+    }
+    const snapshot = adapter.snapshot(store);
+    sourceStates[selector.source_class] = snapshot;
+    const selected = adapter.select({ store, selector, sourceRank: sourceRankFor(selector.source_class, validated.source_class_order) });
+    sourceResults.push({ adapter, selector, snapshot, selected });
   }
 
-  const normalizedStore = normalizeOccupantMemoryStore(occupantMemoryStore);
-  const sourceState = createOccupantMemorySnapshot(normalizedStore);
-  const entries = selectMemoryCandidates(normalizedStore, validated);
-  if (entries.length === 0) {
+  if (sourceResults.length === 0) {
     return createRefusalBundle({
       reason_class: "no_matching_items",
       recipe_digest: recipeDigest,
-      source_state: sourceState,
-      violated_field_class: "selection",
+      source_state: createCompositeSourceState(sourceStates),
+      source_omissions: sourceOmissions,
+      violated_field_class: "source_selectors",
       now,
       idFactory,
     });
   }
 
-  const assembled = assembleItems({ entries, recipe: validated, recipeDigest, sourceState, idFactory });
+  const compositeSourceState = createCompositeSourceState(sourceStates);
+  const assembled = assembleFromSources({
+    recipe: validated,
+    recipeDigest,
+    compositeSourceState,
+    sourceResults,
+    sourceOmissions,
+    idFactory,
+  });
   if (assembled.abstained) {
     return createRefusalBundle({
       reason_class: assembled.reason_class,
       recipe_digest: recipeDigest,
-      source_state: sourceState,
+      source_state: compositeSourceState,
       local_source_receipts: assembled.source_receipts,
       local_selection_receipts: assembled.selection_receipts,
+      source_omissions: sourceOmissions,
       violated_field_class: "budget",
       now,
       idFactory,
     });
   }
 
-  const localAuditManifest = createLocalAuditManifest({
-    recipe: validated,
-    recipeDigest,
-    sourceState,
-    sourceReceipts: assembled.source_receipts,
-    selectionReceipts: assembled.selection_receipts,
-    budget: assembled.budget,
-    minimization: validated.minimization,
-    status: "assembled",
-  });
-  const bundleBody = assembled.bundle_body;
+  const bundleBody = assembled.items.map((item) => item.minimized.body).join("\n\n");
   const bundleDigest = digest(canonicalJson({
     recipe_digest: recipeDigest,
-    source_snapshot_digest: sourceState.snapshot_digest,
+    composite_snapshot_digest: compositeSourceState.composite_snapshot_digest,
     bundle_body: bundleBody,
     budget: assembled.budget,
+    source_omissions: sourceOmissions,
   }));
-  const finalizedLocalAudit = Object.freeze({
-    ...localAuditManifest,
+  const localAuditManifest = deepFreeze({
+    schema_version: 1,
+    status: "assembled",
+    recipe_id: validated.recipe_id,
+    recipe_digest: recipeDigest,
+    source_state: compositeSourceState,
+    source_receipts: assembled.source_receipts,
+    selection_receipts: assembled.selection_receipts,
+    source_omissions: sourceOmissions,
+    minimization_record: {
+      modes_by_source: Object.fromEntries(validated.source_selectors.map((selector) => [selector.source_class, selector.minimization])),
+      deterministic: true,
+      content_included: false,
+    },
+    budget: assembled.budget,
     bundle_digest: bundleDigest,
+    content_included: false,
+    local_audit_only: true,
   });
 
   return Object.freeze({
@@ -242,8 +307,8 @@ export function assembleContextBundle({
     status: "assembled",
     content_included: true,
     bundle_body: bundleBody,
-    local_audit_manifest: finalizedLocalAudit,
-    frontier_facing_manifest: projectFrontierFacingManifest(finalizedLocalAudit),
+    local_audit_manifest: localAuditManifest,
+    frontier_facing_manifest: projectFrontierFacingManifest(localAuditManifest),
   });
 }
 
@@ -254,12 +319,13 @@ export function projectFrontierFacingManifest(localAuditManifest = {}) {
     reason_class: localAuditManifest.reason_class ? enumReasonClass(localAuditManifest.reason_class) : "",
     violated_field_class: fieldClass(localAuditManifest.violated_field_class ?? ""),
     abstention_record: projectAbstention(localAuditManifest.abstention_record),
-    included_count: integerOrZero(localAuditManifest.budget?.included_count),
-    excluded_count: integerOrZero(localAuditManifest.budget?.excluded_count),
+    included_count_class: countClass(localAuditManifest.budget?.included_count),
+    excluded_count_class: countClass(localAuditManifest.budget?.excluded_count),
     budget: {
       overflow_policy: enumValue(localAuditManifest.budget?.overflow_policy ?? "evict_oldest", OVERFLOW_POLICIES, "overflow_policy"),
       budget_exhausted: localAuditManifest.budget?.budget_exhausted === true,
     },
+    source_omissions: projectSourceOmissions(localAuditManifest.source_omissions ?? []),
   };
   const unexpected = Object.keys(projected).filter((field) => !FRONTIER_ALLOWED_FIELDS.has(field));
   if (unexpected.length > 0) {
@@ -271,110 +337,317 @@ export function projectFrontierFacingManifest(localAuditManifest = {}) {
   return deepFreeze(projected);
 }
 
-function normalizeConstraints(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw contextAssemblyError("context_recipe_invalid", "ContextRecipe constraints must be an object.", {
+export function createOccupantMemoryAdapter() {
+  return Object.freeze({
+    source_class: "occupant_memory",
+    trust_tier: "participant_memory",
+    freshness_class: "persistent",
+    allowed_constraints: MEMORY_CONSTRAINT_FIELDS,
+    minimization_modes: new Set(["full_self_note", "excerpt_for_reasoner", "metadata_only"]),
+    validateSelector(selector) {
+      return normalizeMemoryConstraints(selector.constraints ?? {});
+    },
+    snapshot(store = {}) {
+      const normalized = normalizeOccupantMemoryStore(store);
+      const entries = listOccupantMemoryEntries(normalized).map(sortMemoryEntry).sort(compareById);
+      const tombstones = listOccupantMemoryTombstones(normalized).map(sortMemoryTombstone).sort(compareByEntryId);
+      const snapshot = { schema_version: normalized.schema_version, entries, tombstones };
+      return deepFreeze({
+        source_class: "occupant_memory",
+        snapshot_digest: digest(canonicalJson(snapshot)),
+        schema_version: normalized.schema_version,
+        freshness_class: "persistent",
+        trust_tier: "participant_memory",
+        item_count: entries.filter((entry) => entry.status === "active").length + tombstones.length,
+        active_entry_count: entries.filter((entry) => entry.status === "active").length,
+        tombstone_count: tombstones.length,
+        newest_timestamp_ms: newestTimestampMs([...entries, ...tombstones]),
+      });
+    },
+    select({ store, selector, sourceRank }) {
+      const normalized = normalizeOccupantMemoryStore(store);
+      const activeEntries = listOccupantMemoryEntries(normalized)
+        .filter((entry) => entry.status === "active")
+        .filter((entry) => selector.constraints.memory_classes.includes(entry.memory_class))
+        .filter((entry) => selector.constraints.domain === "" || entry.domain === selector.constraints.domain)
+        .sort((left, right) => timestampMs(right.created_at) - timestampMs(left.created_at) || left.id.localeCompare(right.id))
+        .map((entry) => memoryItem({ kind: "entry", entry, sourceRank }));
+      if (!selector.constraints.include_tombstones) {
+        return activeEntries;
+      }
+      const tombstones = listOccupantMemoryTombstones(normalized)
+        .filter((tombstone) => selector.constraints.memory_classes.includes(tombstone.memory_class))
+        .filter((tombstone) => selector.constraints.domain === "" || tombstone.domain === selector.constraints.domain)
+        .sort((left, right) => timestampMs(right.removed_at) - timestampMs(left.removed_at) || left.entry_id.localeCompare(right.entry_id))
+        .map((tombstone) => memoryItem({ kind: "tombstone", tombstone, sourceRank }));
+      return [...activeEntries, ...tombstones].sort(compareNewestFirst);
+    },
+    sourceReceipt(item, snapshot, idFactory) {
+      const entry = item.raw.kind === "entry" ? item.raw.entry : null;
+      const tombstone = item.raw.kind === "tombstone" ? item.raw.tombstone : null;
+      return Object.freeze({
+        receipt_id: `source_${idFactory()}`,
+        source_class: "occupant_memory",
+        source_snapshot_digest: snapshot.snapshot_digest,
+        trust_tier: "participant_memory",
+        freshness_class: "persistent",
+        item_kind: item.raw.kind,
+        item_ref: entry?.id ?? tombstone?.entry_id ?? "",
+        occurred_at: entry?.created_at ?? tombstone?.removed_at ?? "",
+        content_digest: entry ? digest(entry.content) : "",
+        tombstone_digest: tombstone ? digest(canonicalJson(tombstone)) : "",
+        content_included: false,
+      });
+    },
+    minimize(item, mode) {
+      return minimizeMemoryItem(item.raw, mode);
+    },
+  });
+}
+
+export function createSnapshotFixtureActivityAdapter() {
+  return Object.freeze({
+    source_class: "local_activity_fixture",
+    trust_tier: "local_fixture",
+    freshness_class: "snapshot_pinned",
+    allowed_constraints: ACTIVITY_CONSTRAINT_FIELDS,
+    minimization_modes: new Set(["activity_summary", "metadata_only"]),
+    validateSelector(selector) {
+      return normalizeActivityConstraints(selector.constraints ?? {});
+    },
+    snapshot(store = {}) {
+      const events = normalizeActivityEvents(store).sort(compareActivityById);
+      const snapshot = { schema_version: Number(store.schema_version ?? 1), events };
+      return deepFreeze({
+        source_class: "local_activity_fixture",
+        snapshot_digest: digest(canonicalJson(snapshot)),
+        schema_version: snapshot.schema_version,
+        freshness_class: "snapshot_pinned",
+        trust_tier: "local_fixture",
+        item_count: events.length,
+        newest_timestamp_ms: newestTimestampMs(events),
+      });
+    },
+    select({ store, selector, sourceRank }) {
+      return normalizeActivityEvents(store)
+        .filter((event) => selector.constraints.domain === "" || event.domain === selector.constraints.domain)
+        .filter((event) => selector.constraints.activity_classes.includes(event.activity_class))
+        .filter((event) => selector.constraints.event_types.includes(event.event_type))
+        .filter((event) => selector.constraints.capability_classes.includes(event.capability_class))
+        .filter((event) => selector.constraints.summary_classes.includes(event.summary_class))
+        .sort((left, right) => timestampMs(right.timestamp) - timestampMs(left.timestamp) || left.id.localeCompare(right.id))
+        .map((event) => activityItem({ event, sourceRank }));
+    },
+    sourceReceipt(item, snapshot, idFactory) {
+      return Object.freeze({
+        receipt_id: `source_${idFactory()}`,
+        source_class: "local_activity_fixture",
+        source_snapshot_digest: snapshot.snapshot_digest,
+        trust_tier: "local_fixture",
+        freshness_class: "snapshot_pinned",
+        item_kind: "activity_event",
+        item_ref: item.raw.id,
+        occurred_at: item.raw.timestamp,
+        event_type: item.raw.event_type,
+        activity_class: item.raw.activity_class,
+        capability_class: item.raw.capability_class,
+        summary_class: item.raw.summary_class,
+        event_digest: digest(canonicalJson(item.raw)),
+        content_included: false,
+      });
+    },
+    minimize(item, mode) {
+      const event = item.raw;
+      const header = [
+        `Activity class: ${event.activity_class}`,
+        `Event type: ${event.event_type}`,
+        `Capability class: ${event.capability_class}`,
+        `Summary class: ${event.summary_class}`,
+        `Occurred at: ${event.timestamp}`,
+      ].join("\n");
+      return {
+        body: mode === "metadata_only" ? header : `Local activity fixture:\n${header}`,
+        char_count: (mode === "metadata_only" ? header : `Local activity fixture:\n${header}`).length,
+        reason_class: mode === "metadata_only" ? "metadata_only" : "selected",
+      };
+    },
+  });
+}
+
+function normalizeSourceSelectors(value, adapters) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw contextAssemblyError("context_recipe_invalid", "ContextRecipe source_selectors must be a non-empty array.", {
       reason_class: "recipe_schema_invalid",
-      violated_field_class: "constraints",
+      violated_field_class: "source_selectors",
     });
   }
-  rejectUnknownFields(input, CONSTRAINT_FIELDS, "constraints");
-  return Object.freeze({
-    domain: enumValue(input.domain ?? "testing", DOMAINS, "constraints.domain"),
-    memory_classes: enumArray(input.memory_classes ?? ["self_note"], MEMORY_CLASSES, "constraints.memory_classes", { required: true }),
-    max_items: integerValue(input.max_items ?? 8, "constraints.max_items", { min: 1, max: 64 }),
-    max_chars: integerValue(input.max_chars ?? 4_000, "constraints.max_chars", { min: 1, max: 32_000 }),
+  return Object.freeze(value.map((selector, index) => normalizeSourceSelector(selector, index, adapters)));
+}
+
+function normalizeSourceSelector(selector, index, adapters) {
+  if (!selector || typeof selector !== "object" || Array.isArray(selector)) {
+    throw contextAssemblyError("context_recipe_invalid", "ContextRecipe source_selector must be an object.", {
+      reason_class: "recipe_schema_invalid",
+      violated_field_class: "source_selectors",
+    });
+  }
+  rejectUnknownFields(selector, SOURCE_SELECTOR_FIELDS, "source_selectors");
+  const sourceClass = enumValue(selector.source_class, sourceClassSet(adapters), "source_selectors.source_class");
+  const adapter = adapters[sourceClass];
+  let constraints;
+  try {
+    constraints = adapter.validateSelector(selector);
+  } catch (error) {
+    throw contextAssemblyError("context_recipe_invalid", error.message, {
+      reason_class: error.reason_class ?? "recipe_schema_invalid",
+      violated_field_class: fieldClass(error.violated_field_class ?? `${sourceClass}.constraints`),
+    });
+  }
+  const minimization = enumValue(selector.minimization ?? defaultMinimizationFor(sourceClass), adapter.minimization_modes, "source_selectors.minimization");
+  return deepFreeze({
+    source_class: sourceClass,
+    selector_index: index,
+    required: selector.required === true,
+    constraints,
+    minimization,
+    budget: normalizeBudget(selector.budget ?? {}, "source_selectors.budget", { maxItems: 64, maxChars: 32_000 }),
+  });
+}
+
+function normalizeMemoryConstraints(input) {
+  rejectUnknownFields(input, MEMORY_CONSTRAINT_FIELDS, "source_selectors.constraints");
+  return deepFreeze({
+    domain: enumValue(input.domain ?? "testing", DOMAINS, "source_selectors.constraints.domain"),
+    memory_classes: enumArray(input.memory_classes ?? ["self_note"], MEMORY_CLASSES, "source_selectors.constraints.memory_classes", { required: true }),
     include_tombstones: input.include_tombstones === true,
-    recency_window: enumValue(input.recency_window ?? "all", RECENCY_WINDOWS, "constraints.recency_window"),
-    consent_scope: enumValue(input.consent_scope ?? "successor_inheritance", CONSENT_SCOPES, "constraints.consent_scope"),
+    recency_window: enumValue(input.recency_window ?? "all", RECENCY_WINDOWS, "source_selectors.constraints.recency_window"),
+    consent_scope: enumValue(input.consent_scope ?? "successor_inheritance", CONSENT_SCOPES, "source_selectors.constraints.consent_scope"),
   });
 }
 
-function normalizeBudget(input) {
+function normalizeActivityConstraints(input) {
+  rejectUnknownFields(input, ACTIVITY_CONSTRAINT_FIELDS, "source_selectors.constraints");
+  return deepFreeze({
+    domain: enumValue(input.domain ?? "testing", DOMAINS, "source_selectors.constraints.domain"),
+    activity_classes: enumArray(input.activity_classes ?? [...ACTIVITY_CLASSES], ACTIVITY_CLASSES, "source_selectors.constraints.activity_classes", { required: true }),
+    event_types: enumArray(input.event_types ?? [...ACTIVITY_EVENT_TYPES], ACTIVITY_EVENT_TYPES, "source_selectors.constraints.event_types", { required: true }),
+    capability_classes: enumArray(input.capability_classes ?? [...ACTIVITY_CAPABILITY_CLASSES], ACTIVITY_CAPABILITY_CLASSES, "source_selectors.constraints.capability_classes", { required: true }),
+    summary_classes: enumArray(input.summary_classes ?? [...SUMMARY_CLASSES], SUMMARY_CLASSES, "source_selectors.constraints.summary_classes", { required: true }),
+  });
+}
+
+function normalizeBudget(input, field, { maxItems, maxChars }) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw contextAssemblyError("context_recipe_invalid", "ContextRecipe context_budget must be an object.", {
+    throw contextAssemblyError("context_recipe_invalid", `ContextRecipe ${field} must be an object.`, {
       reason_class: "recipe_schema_invalid",
-      violated_field_class: "context_budget",
+      violated_field_class: fieldClass(field),
     });
   }
-  rejectUnknownFields(input, BUDGET_FIELDS, "context_budget");
-  const maxChars = integerValue(input.max_chars ?? 4_000, "context_budget.max_chars", { min: 1, max: 32_000 });
-  const reserveChars = integerValue(input.reserve_chars ?? 0, "context_budget.reserve_chars", { min: 0, max: maxChars - 1 });
+  rejectUnknownFields(input, BUDGET_FIELDS, field);
   return Object.freeze({
-    max_items: integerValue(input.max_items ?? 8, "context_budget.max_items", { min: 1, max: 64 }),
-    max_chars: maxChars,
-    reserve_chars: reserveChars,
-    overflow_policy: enumValue(input.overflow_policy ?? "evict_oldest", OVERFLOW_POLICIES, "context_budget.overflow_policy"),
+    max_items: integerValue(input.max_items ?? maxItems, `${field}.max_items`, { min: 1, max: maxItems }),
+    max_chars: integerValue(input.max_chars ?? maxChars, `${field}.max_chars`, { min: 1, max: maxChars }),
+    overflow_policy: enumValue(input.overflow_policy ?? "evict_oldest", OVERFLOW_POLICIES, `${field}.overflow_policy`),
   });
 }
 
-function selectMemoryCandidates(store, recipe) {
-  const activeEntries = listOccupantMemoryEntries(store)
-    .filter((entry) => entry.status === "active")
-    .filter((entry) => recipe.constraints.memory_classes.includes(entry.memory_class))
-    .filter((entry) => recipe.constraints.domain === "" || entry.domain === recipe.constraints.domain)
-    .filter((entry) => withinRecencyWindow(entry.created_at, recipe.constraints.recency_window))
-    .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)) || left.id.localeCompare(right.id));
-  if (!recipe.constraints.include_tombstones) {
-    return activeEntries.map((entry) => ({ kind: "entry", entry }));
-  }
-  const tombstones = listOccupantMemoryTombstones(store)
-    .filter((tombstone) => recipe.constraints.memory_classes.includes(tombstone.memory_class))
-    .filter((tombstone) => recipe.constraints.domain === "" || tombstone.domain === recipe.constraints.domain)
-    .filter((tombstone) => withinRecencyWindow(tombstone.removed_at, recipe.constraints.recency_window))
-    .sort((left, right) => String(right.removed_at).localeCompare(String(left.removed_at)) || left.entry_id.localeCompare(right.entry_id));
-  return [
-    ...activeEntries.map((entry) => ({ kind: "entry", entry })),
-    ...tombstones.map((tombstone) => ({ kind: "tombstone", tombstone })),
-  ].sort((left, right) => String(itemSortAt(right)).localeCompare(String(itemSortAt(left))) || itemStableId(left).localeCompare(itemStableId(right)));
-}
-
-function assembleItems({ entries, recipe, recipeDigest, sourceState, idFactory }) {
-  const maxItems = Math.min(recipe.constraints.max_items, recipe.context_budget.max_items);
-  const maxChars = Math.min(recipe.constraints.max_chars, recipe.context_budget.max_chars - recipe.context_budget.reserve_chars);
+function assembleFromSources({
+  recipe,
+  recipeDigest,
+  compositeSourceState,
+  sourceResults,
+  sourceOmissions,
+  idFactory,
+}) {
   const sourceReceipts = [];
   const selectionReceipts = [];
-  const included = [];
-  let usedChars = 0;
+  const perSourceCandidates = [];
+  const perSourceExcluded = [];
 
-  for (const item of entries) {
-    const minimized = minimizeMemoryItem(item, recipe.minimization);
-    const sourceReceipt = createSourceReceipt({ item, sourceState, idFactory });
-    sourceReceipts.push(sourceReceipt);
-    if (included.length >= maxItems || usedChars + minimized.char_count > maxChars) {
-      selectionReceipts.push(createSelectionReceipt({
-        decision: "excluded",
-        reason_class: "budget_evicted",
+  for (const sourceResult of sourceResults) {
+    let sourceChars = 0;
+    let sourceItems = 0;
+    for (const item of sourceResult.selected) {
+      const minimized = sourceResult.adapter.minimize(item, sourceResult.selector.minimization);
+      const sourceReceipt = sourceResult.adapter.sourceReceipt(item, sourceResult.snapshot, idFactory);
+      sourceReceipts.push(sourceReceipt);
+      if (
+        sourceItems >= sourceResult.selector.budget.max_items
+        || sourceChars + minimized.char_count > sourceResult.selector.budget.max_chars
+      ) {
+        const receipt = createSelectionReceipt({
+          decision: "excluded",
+          reason_class: "budget_evicted",
+          recipeDigest,
+          compositeSourceState,
+          item,
+          sourceReceipt,
+          idFactory,
+        });
+        selectionReceipts.push(receipt);
+        perSourceExcluded.push({ item, minimized, sourceReceipt, receipt, sourceResult });
+        continue;
+      }
+      const receipt = createSelectionReceipt({
+        decision: "included",
+        reason_class: minimized.reason_class,
         recipeDigest,
-        sourceState,
+        compositeSourceState,
         item,
         sourceReceipt,
         idFactory,
-      }));
-      continue;
+      });
+      perSourceCandidates.push({ item, minimized, sourceReceipt, receipt, sourceResult });
+      sourceChars += minimized.char_count;
+      sourceItems += 1;
     }
-    included.push({ item, minimized, sourceReceipt });
-    usedChars += minimized.char_count;
-    selectionReceipts.push(createSelectionReceipt({
-      decision: "included",
-      reason_class: minimized.reason_class,
-      recipeDigest,
-      sourceState,
-      item,
-      sourceReceipt,
-      idFactory,
-    }));
+    if (
+      sourceResult.selector.required
+      && sourceResult.selector.budget.overflow_policy === "abstain"
+      && perSourceExcluded.some((entry) => entry.sourceResult.selector.source_class === sourceResult.selector.source_class)
+    ) {
+      return {
+        abstained: true,
+        reason_class: "budget_insufficient",
+        source_receipts: sourceReceipts,
+        selection_receipts: selectionReceipts,
+      };
+    }
   }
 
-  if (included.length === 0) {
+  if (perSourceCandidates.length === 0) {
     return {
       abstained: true,
-      reason_class: recipe.context_budget.overflow_policy === "abstain" ? "budget_insufficient" : "no_matching_items",
+      reason_class: "no_matching_items",
       source_receipts: sourceReceipts,
       selection_receipts: selectionReceipts,
     };
   }
-  if (recipe.context_budget.overflow_policy === "abstain" && selectionReceipts.some((receipt) => receipt.reason_class === "budget_evicted")) {
+
+  const ordered = orderItems(perSourceCandidates, recipe);
+  const included = [];
+  let usedChars = 0;
+  for (const entry of ordered) {
+    if (
+      included.length >= recipe.context_budget.max_items
+      || usedChars + entry.minimized.char_count > recipe.context_budget.max_chars
+    ) {
+      selectionReceipts.push(createSelectionReceipt({
+        decision: "excluded",
+        reason_class: "budget_evicted",
+        recipeDigest,
+        compositeSourceState,
+        item: entry.item,
+        sourceReceipt: entry.sourceReceipt,
+        idFactory,
+      }));
+      continue;
+    }
+    selectionReceipts.push(entry.receipt);
+    included.push(entry);
+    usedChars += entry.minimized.char_count;
+  }
+  if (included.length === 0 || (recipe.context_budget.overflow_policy === "abstain" && included.length < ordered.length)) {
     return {
       abstained: true,
       reason_class: "budget_insufficient",
@@ -385,19 +658,44 @@ function assembleItems({ entries, recipe, recipeDigest, sourceState, idFactory }
 
   return {
     abstained: false,
+    items: included,
     source_receipts: sourceReceipts,
     selection_receipts: selectionReceipts,
-    bundle_body: included.map(({ minimized }) => minimized.body).join("\n\n"),
     budget: {
-      max_items: maxItems,
-      max_chars: maxChars,
+      max_items: recipe.context_budget.max_items,
+      max_chars: recipe.context_budget.max_chars,
       used_chars: usedChars,
       included_count: included.length,
       excluded_count: selectionReceipts.filter((receipt) => receipt.decision === "excluded").length,
       overflow_policy: recipe.context_budget.overflow_policy,
       budget_exhausted: selectionReceipts.some((receipt) => receipt.reason_class === "budget_evicted"),
+      source_omission_count: sourceOmissions.length,
+      per_source: Object.fromEntries(recipe.source_selectors.map((selector) => [selector.source_class, {
+        max_items: selector.budget.max_items,
+        max_chars: selector.budget.max_chars,
+        included_count: included.filter((entry) => entry.item.source_class === selector.source_class).length,
+        excluded_count: selectionReceipts.filter((receipt) => receipt.source_class === selector.source_class && receipt.decision === "excluded").length,
+      }])),
     },
   };
+}
+
+function orderItems(items, recipe) {
+  const sourceRanks = Object.fromEntries(recipe.source_class_order.map((sourceClass, index) => [sourceClass, index + 1]));
+  return [...items].sort((left, right) => {
+    if (recipe.ordering === "class_priority") {
+      return (sourceRanks[left.item.source_class] ?? 99) - (sourceRanks[right.item.source_class] ?? 99)
+        || right.item.sort_key.timestamp_ms - left.item.sort_key.timestamp_ms
+        || left.item.sort_key.stable_item_key.localeCompare(right.item.sort_key.stable_item_key);
+    }
+    if (recipe.ordering === "receipt_priority") {
+      return right.item.sort_key.trust_rank - left.item.sort_key.trust_rank
+        || right.item.sort_key.freshness_rank - left.item.sort_key.freshness_rank
+        || right.item.sort_key.timestamp_ms - left.item.sort_key.timestamp_ms
+        || left.item.sort_key.stable_item_key.localeCompare(right.item.sort_key.stable_item_key);
+    }
+    return compareNewestFirst(left.item, right.item);
+  });
 }
 
 function minimizeMemoryItem(item, minimization) {
@@ -408,11 +706,7 @@ function minimizeMemoryItem(item, minimization) {
       `Removed at: ${item.tombstone.removed_at}`,
       `Reason class: ${item.tombstone.reason_class}`,
     ].join("\n");
-    return {
-      body,
-      char_count: body.length,
-      reason_class: "metadata_only",
-    };
+    return { body, char_count: body.length, reason_class: "metadata_only" };
   }
   const header = [
     `Memory class: ${item.entry.memory_class}`,
@@ -429,28 +723,11 @@ function minimizeMemoryItem(item, minimization) {
   return { body, char_count: body.length, reason_class: "selected" };
 }
 
-function createSourceReceipt({ item, sourceState, idFactory }) {
-  const entry = item.kind === "entry" ? item.entry : null;
-  const tombstone = item.kind === "tombstone" ? item.tombstone : null;
-  return Object.freeze({
-    receipt_id: `source_${idFactory()}`,
-    source_class: "occupant_memory",
-    source_snapshot_digest: sourceState.snapshot_digest,
-    item_kind: item.kind,
-    entry_id: entry?.id ?? tombstone?.entry_id ?? "",
-    created_at: entry?.created_at ?? tombstone?.created_at ?? "",
-    memory_class: entry?.memory_class ?? tombstone?.memory_class ?? "",
-    content_digest: entry ? digest(entry.content) : "",
-    tombstone_digest: tombstone ? digest(canonicalJson(tombstone)) : "",
-    content_included: false,
-  });
-}
-
 function createSelectionReceipt({
   decision,
   reason_class,
   recipeDigest,
-  sourceState,
+  compositeSourceState,
   item,
   sourceReceipt,
   idFactory,
@@ -458,42 +735,13 @@ function createSelectionReceipt({
   return Object.freeze({
     receipt_id: `selection_${idFactory()}`,
     recipe_digest: recipeDigest,
-    source_class: "occupant_memory",
-    source_snapshot_digest: sourceState.snapshot_digest,
+    source_class: item.source_class,
+    composite_snapshot_digest: compositeSourceState.composite_snapshot_digest,
     decision,
     reason_class: enumReasonClass(reason_class),
-    item_ref_digest: digest(itemStableId(item)),
+    item_ref_digest: digest(item.sort_key.stable_item_key),
     source_receipt_id: sourceReceipt?.receipt_id ?? "",
     content_included: false,
-  });
-}
-
-function createLocalAuditManifest({
-  recipe,
-  recipeDigest,
-  sourceState,
-  sourceReceipts,
-  selectionReceipts,
-  budget,
-  minimization,
-  status,
-}) {
-  return deepFreeze({
-    schema_version: 1,
-    status,
-    recipe_id: recipe.recipe_id,
-    recipe_digest: recipeDigest,
-    source_state: sourceState,
-    source_receipts: sourceReceipts,
-    selection_receipts: selectionReceipts,
-    minimization_record: {
-      mode: minimization,
-      deterministic: true,
-      content_included: false,
-    },
-    budget,
-    content_included: false,
-    local_audit_only: true,
   });
 }
 
@@ -503,6 +751,7 @@ function createRefusalBundle({
   source_state = null,
   local_source_receipts = [],
   local_selection_receipts = [],
+  source_omissions = [],
   violated_field_class = "",
   now = () => new Date(),
   idFactory = randomUUID,
@@ -517,8 +766,8 @@ function createRefusalBundle({
     : [Object.freeze({
       receipt_id: `selection_${idFactory()}`,
       recipe_digest: safeRecipeDigestForRefusal(recipe_digest, reason_class),
-      source_class: source_state?.source_class ?? "occupant_memory",
-      source_snapshot_digest: source_state?.snapshot_digest ?? "",
+      source_class: "",
+      composite_snapshot_digest: source_state?.composite_snapshot_digest ?? "",
       decision: "abstained",
       reason_class: enumReasonClass(reason_class),
       item_ref_digest: "",
@@ -534,12 +783,14 @@ function createRefusalBundle({
     source_state,
     source_receipts: local_source_receipts,
     selection_receipts: selectionReceipts,
+    source_omissions,
     abstention_record: abstentionRecord,
     budget: {
       included_count: 0,
       excluded_count: selectionReceipts.filter((receipt) => receipt.decision === "excluded").length,
       overflow_policy: "evict_oldest",
       budget_exhausted: reason_class === "budget_insufficient",
+      source_omission_count: source_omissions.length,
     },
     content_included: false,
     local_audit_only: true,
@@ -552,6 +803,116 @@ function createRefusalBundle({
     local_audit_manifest: localAuditManifest,
     frontier_facing_manifest: projectFrontierFacingManifest(localAuditManifest),
   });
+}
+
+function storeForSource(sourceClass, { occupantMemoryStore, activityStore, sourceStores }) {
+  if (Object.hasOwn(sourceStores, sourceClass)) {
+    return sourceStores[sourceClass];
+  }
+  if (sourceClass === "occupant_memory") {
+    return occupantMemoryStore;
+  }
+  if (sourceClass === "local_activity_fixture") {
+    return activityStore;
+  }
+  return null;
+}
+
+function normalizeActivityEvents(store = {}) {
+  const events = Array.isArray(store.events) ? store.events : [];
+  return events.map((event) => ({
+    id: boundedId(event.id, "activity.id"),
+    timestamp: stringValue(event.timestamp),
+    activity_class: enumValue(event.activity_class, ACTIVITY_CLASSES, "activity.activity_class"),
+    event_type: enumValue(event.event_type, ACTIVITY_EVENT_TYPES, "activity.event_type"),
+    capability_class: enumValue(event.capability_class, ACTIVITY_CAPABILITY_CLASSES, "activity.capability_class"),
+    domain: enumValue(event.domain ?? "testing", DOMAINS, "activity.domain"),
+    summary_class: enumValue(event.summary_class, SUMMARY_CLASSES, "activity.summary_class"),
+  }));
+}
+
+function memoryItem({ kind, entry, tombstone, sourceRank }) {
+  const timestamp = kind === "entry" ? entry.created_at : tombstone.removed_at;
+  const stable = kind === "entry" ? `occupant_memory:entry:${entry.id}` : `occupant_memory:tombstone:${tombstone.entry_id}`;
+  return {
+    source_class: "occupant_memory",
+    raw: kind === "entry" ? { kind, entry } : { kind, tombstone },
+    sort_key: sortKey({
+      source_class: "occupant_memory",
+      timestamp,
+      sourceRank,
+      trustRank: TRUST_RANKS.participant_memory,
+      freshnessRank: FRESHNESS_RANKS.persistent,
+      stable,
+    }),
+  };
+}
+
+function activityItem({ event, sourceRank }) {
+  return {
+    source_class: "local_activity_fixture",
+    raw: event,
+    sort_key: sortKey({
+      source_class: "local_activity_fixture",
+      timestamp: event.timestamp,
+      sourceRank,
+      trustRank: TRUST_RANKS.local_fixture,
+      freshnessRank: FRESHNESS_RANKS.snapshot_pinned,
+      stable: `local_activity_fixture:${event.id}`,
+    }),
+  };
+}
+
+function sortKey({ source_class, timestamp, sourceRank, trustRank, freshnessRank, stable }) {
+  return Object.freeze({
+    timestamp_ms: timestampMs(timestamp),
+    source_class,
+    source_rank: sourceRank,
+    trust_rank: trustRank,
+    freshness_rank: freshnessRank,
+    stable_item_key: stable,
+  });
+}
+
+function compareNewestFirst(left, right) {
+  return right.sort_key.timestamp_ms - left.sort_key.timestamp_ms
+    || left.sort_key.source_rank - right.sort_key.source_rank
+    || left.sort_key.stable_item_key.localeCompare(right.sort_key.stable_item_key);
+}
+
+function compareActivityById(left, right) {
+  return left.id.localeCompare(right.id);
+}
+
+function sourceRankFor(sourceClass, sourceClassOrder) {
+  const explicit = sourceClassOrder.indexOf(sourceClass);
+  return explicit >= 0 ? explicit + 1 : SOURCE_RANKS[sourceClass] ?? 99;
+}
+
+function sourceClassSet(adapters) {
+  return new Set(Object.keys(adapters));
+}
+
+function defaultMinimizationFor(sourceClass) {
+  return sourceClass === "local_activity_fixture" ? "activity_summary" : "excerpt_for_reasoner";
+}
+
+function sourceOmission(selector, reasonClass, count) {
+  return Object.freeze({
+    source_class: selector.source_class,
+    required: selector.required === true,
+    reason_class: enumReasonClass(reasonClass),
+    count_class: count,
+  });
+}
+
+function projectSourceOmissions(omissions) {
+  return Object.freeze(omissions.map((omission) => Object.freeze({
+    source_class: enumValue(omission.source_class, sourceClassSet(SOURCE_ADAPTERS), "source_omissions.source_class"),
+    required: omission.required === true,
+    reason_class: enumReasonClass(omission.reason_class),
+    count_class: countClassValue(omission.count_class),
+  })));
 }
 
 function safeRecipeDigestForRefusal(recipeDigest, reasonClass) {
@@ -600,7 +961,7 @@ function boundedId(value, name) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/.test(text)) {
     throw contextAssemblyError("context_recipe_invalid", `ContextRecipe ${name} must be an id-like string.`, {
       reason_class: "recipe_schema_invalid",
-      violated_field_class: name,
+      violated_field_class: fieldClass(name),
     });
   }
   return text;
@@ -655,10 +1016,7 @@ function integerValue(value, field, { min, max }) {
 
 function enumReasonClass(value) {
   const reason = stringValue(value);
-  if (RECEIPT_REASON_CLASSES.has(reason)) {
-    return reason;
-  }
-  return "recipe_schema_invalid";
+  return REASON_CLASSES.has(reason) ? reason : "recipe_schema_invalid";
 }
 
 function enumManifestStatus(value) {
@@ -673,6 +1031,22 @@ function fieldClass(value) {
 function integerOrZero(value) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : 0;
+}
+
+function countClass(value) {
+  const number = integerOrZero(value);
+  if (number === 0) {
+    return "none";
+  }
+  if (number <= 3) {
+    return "some";
+  }
+  return "many";
+}
+
+function countClassValue(value) {
+  const text = stringValue(value);
+  return ["none", "some", "many"].includes(text) ? text : "none";
 }
 
 function projectAbstention(record) {
@@ -728,26 +1102,17 @@ function compareByEntryId(left, right) {
   return left.entry_id.localeCompare(right.entry_id);
 }
 
-function newestTimestamp(items) {
+function newestTimestampMs(items) {
   return items
-    .flatMap((item) => [item.created_at, item.removed_at])
+    .flatMap((item) => [item.timestamp, item.created_at, item.removed_at])
     .filter(Boolean)
-    .sort((left, right) => String(right).localeCompare(String(left)))[0] ?? "";
+    .map(timestampMs)
+    .sort((left, right) => right - left)[0] ?? 0;
 }
 
-function withinRecencyWindow(timestamp, window) {
-  if (window === "all") {
-    return true;
-  }
-  return Boolean(timestamp);
-}
-
-function itemSortAt(item) {
-  return item.kind === "entry" ? item.entry.created_at : item.tombstone.removed_at;
-}
-
-function itemStableId(item) {
-  return item.kind === "entry" ? `entry:${item.entry.id}` : `tombstone:${item.tombstone.entry_id}`;
+function timestampMs(value) {
+  const timestamp = Date.parse(String(value ?? ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function deterministicExcerpt(content, maxLength) {

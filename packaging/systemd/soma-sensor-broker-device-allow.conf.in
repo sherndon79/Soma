@@ -1,0 +1,6 @@
+[Service]
+# Generated during attended sensorium deployment from the live RealSense udev graph.
+# Prefer the minimal depth/IR/IMU/control node set and exclude color nodes when separable.
+Environment=SOMA_SENSORIUM_LIVE_DEPTH_PRESENCE_ALLOWED=false
+@@DEVICE_ALLOW_LINES@@
+@@DEVICE_ALLOW_REVIEW_NOTES@@

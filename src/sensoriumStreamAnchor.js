@@ -25,7 +25,8 @@ export function createSensoriumStreamAnchor({
   helperStatus,
   nodeSubscriptions = [],
 } = {}) {
-  const helperStreams = normalizeHelperStatus(helperStatus);
+  const helperStatusState = normalizeHelperStatus(helperStatus);
+  const helperStreams = helperStatusState.active_streams;
   const nodeStreams = normalizeNodeSubscriptions(nodeSubscriptions);
   const helperIds = new Set(helperStreams.map((stream) => stream.subscription_id));
   const nodeIds = new Set(nodeStreams.map((stream) => stream.subscription_id));
@@ -40,14 +41,21 @@ export function createSensoriumStreamAnchor({
     schema_version: 1,
     source: "helper_status",
     authority_anchor: "sensorium.subscribe.status",
+    status_known: helperStatusState.status_known,
     active_streams: helperStreams,
     depth_active: helperStreams.some((stream) => stream.stream_type === "depth"),
     color_active: helperStreams.some((stream) => stream.stream_type === "color"),
-    color_inactive_confirmed: !helperStreams.some((stream) => stream.stream_type === "color"),
+    color_inactive_confirmed:
+      helperStatusState.status_known &&
+      !helperStreams.some((stream) => stream.stream_type === "color"),
     raw_payload_included: false,
     node_reconciliation: {
       checked: true,
-      matched: missingInNode.length === 0 && missingInHelper.length === 0,
+      helper_status_known: helperStatusState.status_known,
+      matched:
+        helperStatusState.status_known &&
+        missingInNode.length === 0 &&
+        missingInHelper.length === 0,
       helper_count: helperStreams.length,
       node_count: nodeStreams.length,
       missing_in_node: missingInNode,
@@ -58,10 +66,21 @@ export function createSensoriumStreamAnchor({
 
 export function normalizeHelperStatus(status = {}) {
   if (!isPlainObject(status)) {
-    throw new TypeError("helper status must be an object");
+    return {
+      status_known: false,
+      active_streams: [],
+    };
   }
-  const subscriptions = Array.isArray(status.subscriptions) ? status.subscriptions : [];
-  return subscriptions.map(normalizeSubscription).filter(Boolean);
+  if (!Array.isArray(status.subscriptions)) {
+    return {
+      status_known: false,
+      active_streams: [],
+    };
+  }
+  return {
+    status_known: true,
+    active_streams: status.subscriptions.map(normalizeSubscription).filter(Boolean),
+  };
 }
 
 export function classifySensoriumTopic(topic = "") {

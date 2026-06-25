@@ -1,0 +1,6 @@
+# Template for attended RealSense isolation. Replace @@REALSENSE_PRODUCT_ID@@
+# with Seth's observed lsusb product id for Intel vendor 8086.
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="@@REALSENSE_PRODUCT_ID@@", TAG-="uaccess", OWNER="root", GROUP="soma-sensorium", MODE="0660"
+ACTION=="add|change", SUBSYSTEM=="video4linux", ENV{ID_VENDOR_ID}=="8086", ENV{ID_MODEL_ID}=="@@REALSENSE_PRODUCT_ID@@", TAG-="uaccess", OWNER="root", GROUP="soma-sensorium", MODE="0660"
+ACTION=="add|change", SUBSYSTEM=="media", ENV{ID_VENDOR_ID}=="8086", ENV{ID_MODEL_ID}=="@@REALSENSE_PRODUCT_ID@@", TAG-="uaccess", OWNER="root", GROUP="soma-sensorium", MODE="0660"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="8086", ENV{ID_MODEL_ID}=="@@REALSENSE_PRODUCT_ID@@", TAG-="uaccess", OWNER="root", GROUP="soma-sensorium", MODE="0660"

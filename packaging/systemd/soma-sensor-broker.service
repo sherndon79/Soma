@@ -1,0 +1,56 @@
+[Unit]
+Description=Soma Sensorium helper sandbox
+After=systemd-udev-settle.service
+ConditionPathIsDirectory=/run/soma/sensorium
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=soma-sensorium
+Group=soma-sensorium
+UMask=0077
+ExecStart=/usr/libexec/soma/soma-sensor-broker
+Environment=SOMA_SENSORIUM_LIVE_DEPTH_PRESENCE_ALLOWED=false
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @module @raw-io @reboot @swap @keyring
+ProcSubset=pid
+ProtectProc=invisible
+DevicePolicy=closed
+RemoveIPC=yes
+RuntimeDirectory=soma/sensorium
+RuntimeDirectoryMode=0700
+ReadWritePaths=/run/soma/sensorium
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+LimitNOFILE=128
+MemoryMax=256M
+TasksMax=32
+
+# Deliberately no [Install] section. RealSense access is added only by attended
+# deployment after live udev graph resolution writes a reviewed DeviceAllow drop-in.

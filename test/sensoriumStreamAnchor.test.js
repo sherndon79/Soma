@@ -31,6 +31,7 @@ test("stream anchor derives depth active and color inactive from helper status",
 
   assert.equal(anchor.source, "helper_status");
   assert.equal(anchor.authority_anchor, "sensorium.subscribe.status");
+  assert.equal(anchor.status_known, true);
   assert.equal(anchor.depth_active, true);
   assert.equal(anchor.color_active, false);
   assert.equal(anchor.color_inactive_confirmed, true);
@@ -40,7 +41,63 @@ test("stream anchor derives depth active and color inactive from helper status",
     ["depth"],
   );
   assert.equal(anchor.node_reconciliation.matched, false);
+  assert.equal(anchor.node_reconciliation.helper_status_known, true);
   assert.deepEqual(anchor.node_reconciliation.missing_in_helper, ["sub-color-node-only"]);
+});
+
+test("stream anchor does not confirm color inactive when helper status envelope is unknown", () => {
+  const anchor = createSensoriumStreamAnchor({
+    helperStatus: {
+      count: 0,
+    },
+    nodeSubscriptions: [
+      {
+        subscription_id: "sub-color-node",
+        topic: "sensor/jetsorano/realsense/color",
+        started_at: 1_700_000_001,
+        active: true,
+      },
+    ],
+  });
+
+  assert.equal(anchor.status_known, false);
+  assert.equal(anchor.color_active, false);
+  assert.equal(anchor.color_inactive_confirmed, false);
+  assert.equal(anchor.node_reconciliation.helper_status_known, false);
+  assert.equal(anchor.node_reconciliation.matched, false);
+  assert.equal(anchor.node_reconciliation.helper_count, 0);
+  assert.deepEqual(anchor.node_reconciliation.missing_in_helper, ["sub-color-node"]);
+});
+
+test("stream anchor treats array-present helper status as known after filtering bad entries", () => {
+  const anchor = createSensoriumStreamAnchor({
+    helperStatus: {
+      subscriptions: [
+        null,
+        {
+          subscription_id: "inactive-color",
+          topic: "sensor/jetsorano/realsense/color",
+          active: false,
+        },
+      ],
+    },
+  });
+
+  assert.equal(anchor.status_known, true);
+  assert.equal(anchor.color_active, false);
+  assert.equal(anchor.color_inactive_confirmed, true);
+  assert.deepEqual(anchor.active_streams, []);
+  assert.equal(anchor.node_reconciliation.matched, true);
+});
+
+test("stream anchor marks non-object helper status unknown", () => {
+  const anchor = createSensoriumStreamAnchor({
+    helperStatus: "unavailable",
+  });
+
+  assert.equal(anchor.status_known, false);
+  assert.equal(anchor.color_inactive_confirmed, false);
+  assert.equal(anchor.node_reconciliation.matched, false);
 });
 
 test("stream anchor classifies realsense and status topics without payloads", () => {

@@ -38,7 +38,7 @@ function baseRecipe(overrides = {}) {
       overflow_policy: "evict_oldest",
     },
     ordering: "newest_first",
-    source_class_order: ["local_activity_fixture", "occupant_memory"],
+    source_class_order: ["durable_provenance_activity", "occupant_memory"],
     abstention_criteria: ["missing_required_receipt", "source_degraded", "replay_state_unpinned"],
     abstract_slots: ["current_domain", "current_task_class"],
     ...overrides,
@@ -68,14 +68,15 @@ function memorySelector(overrides = {}) {
 
 function activitySelector(overrides = {}) {
   return {
-    source_class: "local_activity_fixture",
+    source_class: "durable_provenance_activity",
     required: false,
     constraints: {
       domain: "testing",
-      activity_classes: ["capability_use", "control", "status"],
-      event_types: ["model.chat.completed", "capability.invoked", "capability.refused", "occupant_ejected"],
-      capability_classes: ["model", "memory", "desktop", "system"],
-      summary_classes: ["completed", "refused", "control", "status"],
+      activity_classes: ["capability_use", "control"],
+      event_types: ["memory.provenance.written", "memory.provenance.revoked"],
+      capability_classes: ["memory"],
+      summary_classes: ["completed", "control"],
+      coarse_time_buckets: ["recent", "older", "unknown"],
     },
     minimization: "activity_summary",
     budget: {
@@ -154,33 +155,31 @@ function memoryEntry(overrides = {}) {
 function activityStore() {
   return {
     schema_version: 1,
-    events: [
-      activityEvent({
-        id: "act-chat",
+    records: [
+      provenanceRecord({
+        entry_id: "prov-new",
         timestamp: "2026-06-25T03:00:00.000Z",
-        activity_class: "capability_use",
-        event_type: "model.chat.completed",
-        capability_class: "model",
-        summary_class: "completed",
+        event_type: "occupant.memory.written",
+        actor: "claude-private-actor",
+        model_id: "provenance-private-model",
+        episode_id: "episode-private-alpha",
+        grant_id: "grant-secret-new",
+        provider: "soma.provider.occupant-memory",
       }),
-      activityEvent({
-        id: "act-memory",
+      provenanceRecord({
+        entry_id: "prov-revoked",
         timestamp: "2026-06-25T02:00:00.000Z",
-        activity_class: "capability_use",
-        event_type: "capability.invoked",
-        capability_class: "memory",
-        summary_class: "completed",
+        event_type: "occupant.memory.revoked",
+        reason_class: "occupant_revoke",
+        grant_id: "grant-secret-revoked",
       }),
-      activityEvent({
-        id: "act-control",
+      provenanceRecord({
+        entry_id: "prov-old",
         timestamp: "2026-06-24T22:00:00.000Z",
-        activity_class: "control",
-        event_type: "occupant_ejected",
-        capability_class: "system",
-        summary_class: "control",
+        event_type: "occupant.memory.written",
       }),
-      activityEvent({
-        id: "act-other-domain",
+      provenanceRecord({
+        entry_id: "prov-other-domain",
         timestamp: "2026-06-25T01:00:00.000Z",
         domain: "general",
       }),
@@ -188,15 +187,21 @@ function activityStore() {
   };
 }
 
-function activityEvent(overrides = {}) {
+function provenanceRecord(overrides = {}) {
   return {
-    id: "act-event",
+    event_type: "occupant.memory.written",
+    entry_id: "prov-entry",
+    memory_class: "self_note",
+    actor: "occupant",
+    reason_class: "",
     timestamp: "2026-06-25T00:00:00.000Z",
-    activity_class: "status",
-    event_type: "capability.refused",
-    capability_class: "desktop",
+    model_id: "claude-fable-5",
+    episode_id: "drawer-a",
     domain: "testing",
-    summary_class: "refused",
+    grant_id: "grant-memory",
+    provider: "soma.provider.occupant-memory",
+    scope: "session",
+    activation_performed: false,
     ...overrides,
   };
 }
@@ -264,8 +269,22 @@ test("ContextRecipe validator accepts per-adapter source selectors", () => {
 
   assert.equal(recipe.source_selectors.length, 2);
   assert.equal(recipe.source_selectors[0].source_class, "occupant_memory");
-  assert.equal(recipe.source_selectors[1].source_class, "local_activity_fixture");
+  assert.equal(recipe.source_selectors[1].source_class, "durable_provenance_activity");
   assert.equal(recipe.source_selectors[1].constraints.activity_classes.includes("capability_use"), true);
+});
+
+test("default source registry no longer accepts the synthetic activity fixture", () => {
+  const result = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector(),
+      activitySelector({ source_class: "local_activity_fixture" }),
+    ],
+    source_class_order: ["local_activity_fixture", "occupant_memory"],
+  }));
+
+  assert.equal(result.status, "refused");
+  assert.equal(result.local_audit_manifest.reason_class, "recipe_schema_invalid");
+  assert.equal(result.frontier_facing_manifest.violated_field_class, "source_selectors.source_class");
 });
 
 test("per-adapter validation rejects payload-vector and arbitrary unknown keys without value echo", () => {
@@ -306,13 +325,13 @@ test("composite source state is deterministic over reordered multi-source state"
   const result = assemble();
   const sourceState = result.local_audit_manifest.source_state;
   const reversed = createCompositeSourceState({
-    local_activity_fixture: sourceState.sources.local_activity_fixture,
+    durable_provenance_activity: sourceState.sources.durable_provenance_activity,
     occupant_memory: memory,
   });
 
   assert.equal(sourceState.composite_snapshot_digest, reversed.composite_snapshot_digest);
   assert.equal(sourceState.sources.occupant_memory.snapshot_digest, memory.snapshot_digest);
-  assert.equal(sourceState.sources.local_activity_fixture.snapshot_digest.length, 64);
+  assert.equal(sourceState.sources.durable_provenance_activity.snapshot_digest.length, 64);
 });
 
 test("assembler creates deterministic multi-source bundle and content-free local receipts", () => {
@@ -320,8 +339,9 @@ test("assembler creates deterministic multi-source bundle and content-free local
   const second = assemble();
 
   assert.equal(first.status, "assembled");
-  assert.equal(first.bundle_body.includes("Local activity fixture"), true);
+  assert.equal(first.bundle_body.includes("Durable provenance activity"), true);
   assert.equal(first.bundle_body.includes("Newest note"), true);
+  assert.equal(first.local_audit_manifest.source_state.sources.durable_provenance_activity.trust_tier, "local_provenance");
   assert.equal(first.local_audit_manifest.bundle_digest, second.local_audit_manifest.bundle_digest);
   assert.equal(
     first.local_audit_manifest.source_state.composite_snapshot_digest,
@@ -332,13 +352,77 @@ test("assembler creates deterministic multi-source bundle and content-free local
   assert.equal(JSON.stringify(first.local_audit_manifest).includes("Newest note"), false);
 });
 
+test("durable provenance projection drops linkable raw identifiers from bundle body", () => {
+  const result = assemble();
+  const body = result.bundle_body;
+  const audit = JSON.stringify(result.local_audit_manifest.source_receipts);
+
+  assert.equal(body.includes("Durable provenance activity"), true);
+  for (const forbidden of [
+    "prov-new",
+    "grant-secret-new",
+    "soma.provider.occupant-memory",
+    "claude-private-actor",
+    "provenance-private-model",
+    "episode-private-alpha",
+    "2026-06-25T03:00:00.000Z",
+    "content_digest",
+    "tombstone_digest",
+    "approval_provenance_id",
+    "source_proposal_id",
+    "replacement_grant_id",
+  ]) {
+    assert.equal(body.includes(forbidden), false, `${forbidden} leaked into bundle_body`);
+  }
+  assert.equal(audit.includes("prov-new"), true);
+  assert.equal(audit.includes("grant-secret-new"), true);
+  assert.equal(audit.includes("episode-private-alpha"), true);
+});
+
+test("durable provenance snapshot covers raw records while projection stays minimized", () => {
+  const first = assemble();
+  const changed = activityStore();
+  changed.records[0] = {
+    ...changed.records[0],
+    actor: "different-linkable-actor",
+    grant_id: "different-grant-id",
+  };
+  const second = assemble(baseRecipe(), { activityStore: changed });
+
+  assert.equal(second.status, "assembled");
+  assert.equal(first.bundle_body, second.bundle_body);
+  assert.notEqual(
+    first.local_audit_manifest.source_state.sources.durable_provenance_activity.snapshot_digest,
+    second.local_audit_manifest.source_state.sources.durable_provenance_activity.snapshot_digest,
+  );
+  assert.notEqual(first.local_audit_manifest.bundle_digest, second.local_audit_manifest.bundle_digest);
+});
+
+test("durable provenance skips unknown event types without raw pass-through", () => {
+  const store = activityStore();
+  store.records.unshift({
+    ...provenanceRecord({
+      event_type: "occupant.memory.renamed",
+      entry_id: "private-rename-event",
+      timestamp: "2026-06-25T04:00:00.000Z",
+    }),
+  });
+  const result = assemble(baseRecipe(), { activityStore: store });
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.bundle_body.includes("occupant.memory.renamed"), false);
+  assert.equal(result.bundle_body.includes("private-rename-event"), false);
+  assert.equal(JSON.stringify(result.local_audit_manifest.source_receipts).includes("private-rename-event"), false);
+  assert.equal(result.bundle_body.includes("Durable provenance activity"), true);
+});
+
 test("cross-source ordering supports newest_first class_priority and receipt_priority", () => {
   const newest = assemble(baseRecipe({ ordering: "newest_first" }));
-  assert.match(newest.bundle_body.split("\n")[0], /Local activity fixture/);
+  assert.match(newest.bundle_body.split("\n")[0], /Durable provenance activity/);
 
   const classPriority = assemble(baseRecipe({
     ordering: "class_priority",
-    source_class_order: ["occupant_memory", "local_activity_fixture"],
+    source_class_order: ["occupant_memory", "durable_provenance_activity"],
   }));
   assert.match(classPriority.bundle_body.split("\n")[0], /Memory class/);
 
@@ -377,7 +461,7 @@ test("per-source budgets are maximums not final bundle reservations", () => {
   }));
 
   assert.equal(result.status, "assembled");
-  assert.equal(result.bundle_body.includes("Local activity fixture"), true);
+  assert.equal(result.bundle_body.includes("Durable provenance activity"), true);
   assert.equal(result.bundle_body.includes("Memory class"), false);
   assert.equal(
     result.local_audit_manifest.selection_receipts.some((receipt) => (
@@ -401,7 +485,7 @@ test("reserve-share fixes starvation when a source reserves an item", () => {
 
   assert.equal(result.status, "assembled");
   assert.equal(result.local_audit_manifest.budget.budget_mode, "reserve_share");
-  assert.equal(result.bundle_body.includes("Local activity fixture"), true);
+  assert.equal(result.bundle_body.includes("Durable provenance activity"), true);
   assert.equal(result.bundle_body.includes("Memory class"), true);
   assert.equal(
     result.local_audit_manifest.selection_receipts.some((receipt) => (
@@ -429,12 +513,12 @@ test("reserve-share rejects nominal reserves that exceed the global budget", () 
 
 test("unused actual reserve returns to the share pool", () => {
   const result = assemble(baseRecipe({
-    source_class_order: ["local_activity_fixture", "occupant_memory"],
+    source_class_order: ["durable_provenance_activity", "occupant_memory"],
     source_selectors: [
       activitySelector({
         constraints: {
           ...activitySelector().constraints,
-          event_types: ["occupant_ejected"],
+          event_types: ["memory.provenance.revoked"],
         },
         budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 3, min_chars: 0 }, share: 0 },
       }),
@@ -445,13 +529,13 @@ test("unused actual reserve returns to the share pool", () => {
 
   assert.equal(result.status, "assembled");
   assert.equal(result.local_audit_manifest.budget.included_count, 3);
-  assert.equal(result.local_audit_manifest.budget.per_source.local_activity_fixture.included_count, 1);
+  assert.equal(result.local_audit_manifest.budget.per_source.durable_provenance_activity.included_count, 1);
   assert.equal(result.local_audit_manifest.budget.per_source.occupant_memory.included_count, 2);
 });
 
 test("reserve-share rounding allocates leftovers by source_class_order", () => {
   const result = assemble(baseRecipe({
-    source_class_order: ["local_activity_fixture", "occupant_memory"],
+    source_class_order: ["durable_provenance_activity", "occupant_memory"],
     source_selectors: [
       activitySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", share: 1 } }),
       memorySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", share: 1 } }),
@@ -460,7 +544,7 @@ test("reserve-share rounding allocates leftovers by source_class_order", () => {
   }));
 
   assert.equal(result.status, "assembled");
-  assert.equal(result.local_audit_manifest.budget.per_source.local_activity_fixture.included_count, 2);
+  assert.equal(result.local_audit_manifest.budget.per_source.durable_provenance_activity.included_count, 2);
   assert.equal(result.local_audit_manifest.budget.per_source.occupant_memory.included_count, 1);
 });
 
@@ -526,19 +610,30 @@ test("required degraded source abstains and optional degraded source skips with 
   ]);
 
   const optional = assemble(baseRecipe(), {
-    sourceRecoveryReports: { local_activity_fixture: { degraded: true } },
+    sourceRecoveryReports: { durable_provenance_activity: { degraded: true } },
   });
   assert.equal(optional.status, "assembled");
   assert.equal(optional.bundle_body.includes("Newest note"), true);
-  assert.equal(optional.bundle_body.includes("Local activity fixture"), false);
+  assert.equal(optional.bundle_body.includes("Durable provenance activity"), false);
   assert.deepEqual(optional.frontier_facing_manifest.source_omissions, [
     {
-      source_class: "local_activity_fixture",
+      source_class: "durable_provenance_activity",
       required: false,
       reason_class: "source_degraded",
       count_class: "many",
     },
   ]);
+
+  const requiredProvenance = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector(),
+      activitySelector({ required: true }),
+    ],
+  }), {
+    sourceRecoveryReports: { durable_provenance_activity: { degraded: true } },
+  });
+  assert.equal(requiredProvenance.status, "refused");
+  assert.equal(requiredProvenance.local_audit_manifest.reason_class, "source_degraded");
 });
 
 test("frontier-facing manifest carries only coarse counts and no ids digests or timestamps", () => {
@@ -556,7 +651,7 @@ test("frontier-facing manifest carries only coarse counts and no ids digests or 
   assert.equal(projectedJson.includes("bundle_digest"), false);
   assert.equal(projectedJson.includes("content_digest"), false);
   assert.equal(projectedJson.includes("mem-new"), false);
-  assert.equal(projectedJson.includes("act-chat"), false);
+  assert.equal(projectedJson.includes("prov-new"), false);
   assert.equal(projectedJson.includes("2026-06-25T03:00:00.000Z"), false);
 });
 

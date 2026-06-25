@@ -34,6 +34,7 @@ const SOURCE_BUDGET_FIELDS = new Set(["max_items", "max_chars", "overflow_policy
 const RESERVE_FIELDS = new Set(["min_items", "min_chars"]);
 const MEMORY_CONSTRAINT_FIELDS = new Set(["domain", "memory_classes", "include_tombstones", "recency_window", "consent_scope"]);
 const ACTIVITY_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes"]);
+const DURABLE_PROVENANCE_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes", "coarse_time_buckets"]);
 
 const ORIGINS = new Set(["fixture", "frontier", "local"]);
 const OBJECTIVE_CLASSES = new Set([
@@ -63,19 +64,24 @@ const ACTIVITY_EVENT_TYPES = new Set([
   "capability.refused",
   "occupant_ejected",
   "context.fixture.event",
+  "memory.provenance.written",
+  "memory.provenance.revoked",
 ]);
 const ACTIVITY_CAPABILITY_CLASSES = new Set(["model", "desktop", "memory", "provenance", "system", "none"]);
 const SUMMARY_CLASSES = new Set(["completed", "refused", "control", "status", "observed"]);
+const COARSE_TIME_BUCKETS = new Set(["recent", "older", "unknown"]);
 const RECENCY_WINDOWS = new Set(["all"]);
 const CONSENT_SCOPES = new Set(["successor_inheritance", "steward_readable", "local_reasoner_only"]);
 
 const SOURCE_RANKS = Object.freeze({
-  local_activity_fixture: 1,
+  durable_provenance_activity: 1,
+  local_activity_fixture: 3,
   occupant_memory: 2,
 });
 const TRUST_RANKS = Object.freeze({
   participant_memory: 3,
-  local_fixture: 2,
+  local_provenance: 2,
+  local_fixture: 1,
 });
 const FRESHNESS_RANKS = Object.freeze({
   snapshot_pinned: 3,
@@ -115,7 +121,7 @@ const REASON_CLASSES = new Set([
 
 export const SOURCE_ADAPTERS = Object.freeze({
   occupant_memory: createOccupantMemoryAdapter(),
-  local_activity_fixture: createSnapshotFixtureActivityAdapter(),
+  durable_provenance_activity: createDurableProvenanceActivityAdapter(),
 });
 
 export function validateContextRecipe(input = {}, { adapters = SOURCE_ADAPTERS } = {}) {
@@ -410,6 +416,70 @@ export function createOccupantMemoryAdapter() {
   });
 }
 
+export function createDurableProvenanceActivityAdapter() {
+  return Object.freeze({
+    source_class: "durable_provenance_activity",
+    trust_tier: "local_provenance",
+    freshness_class: "persistent",
+    allowed_constraints: DURABLE_PROVENANCE_CONSTRAINT_FIELDS,
+    minimization_modes: new Set(["activity_summary", "metadata_only"]),
+    validateSelector(selector) {
+      return normalizeDurableProvenanceConstraints(selector.constraints ?? {});
+    },
+    snapshot(store = {}) {
+      const records = normalizeDurableProvenanceRecords(store).sort(compareDurableProvenanceRecord);
+      const snapshot = { schema_version: Number(store.schema_version ?? 1), records };
+      return deepFreeze({
+        source_class: "durable_provenance_activity",
+        snapshot_digest: digest(canonicalJson(snapshot)),
+        schema_version: snapshot.schema_version,
+        freshness_class: "persistent",
+        trust_tier: "local_provenance",
+        item_count: records.length,
+        newest_timestamp_ms: newestTimestampMs(records),
+      });
+    },
+    select({ store, selector, sourceRank }) {
+      return normalizeDurableProvenanceRecords(store)
+        .map(projectDurableProvenanceRecord)
+        .filter(Boolean)
+        .filter((record) => selector.constraints.domain === "" || record.domain === selector.constraints.domain)
+        .filter((record) => selector.constraints.activity_classes.includes(record.activity_class))
+        .filter((record) => selector.constraints.event_types.includes(record.event_type))
+        .filter((record) => selector.constraints.capability_classes.includes(record.capability_class))
+        .filter((record) => selector.constraints.summary_classes.includes(record.summary_class))
+        .filter((record) => selector.constraints.coarse_time_buckets.includes(record.coarse_time_bucket))
+        .sort((left, right) => timestampMs(right.raw.timestamp) - timestampMs(left.raw.timestamp) || left.stable_id.localeCompare(right.stable_id))
+        .map((record) => durableProvenanceActivityItem({ record, sourceRank }));
+    },
+    sourceReceipt(item, snapshot, idFactory) {
+      const raw = item.raw.raw;
+      return Object.freeze({
+        receipt_id: `source_${idFactory()}`,
+        source_class: "durable_provenance_activity",
+        source_snapshot_digest: snapshot.snapshot_digest,
+        trust_tier: "local_provenance",
+        freshness_class: "persistent",
+        item_kind: "durable_provenance_record",
+        item_ref: raw.entry_id,
+        occurred_at: raw.timestamp,
+        raw_event_type: raw.event_type,
+        actor: raw.actor,
+        model_id: raw.model_id,
+        episode_id: raw.episode_id,
+        grant_id: raw.grant_id,
+        provider: raw.provider,
+        scope: raw.scope,
+        raw_record_digest: digest(canonicalJson(raw)),
+        content_included: false,
+      });
+    },
+    minimize(item, mode) {
+      return minimizeDurableProvenanceActivity(item.raw, mode);
+    },
+  });
+}
+
 export function createSnapshotFixtureActivityAdapter() {
   return Object.freeze({
     source_class: "local_activity_fixture",
@@ -538,6 +608,18 @@ function normalizeActivityConstraints(input) {
     event_types: enumArray(input.event_types ?? [...ACTIVITY_EVENT_TYPES], ACTIVITY_EVENT_TYPES, "source_selectors.constraints.event_types", { required: true }),
     capability_classes: enumArray(input.capability_classes ?? [...ACTIVITY_CAPABILITY_CLASSES], ACTIVITY_CAPABILITY_CLASSES, "source_selectors.constraints.capability_classes", { required: true }),
     summary_classes: enumArray(input.summary_classes ?? [...SUMMARY_CLASSES], SUMMARY_CLASSES, "source_selectors.constraints.summary_classes", { required: true }),
+  });
+}
+
+function normalizeDurableProvenanceConstraints(input) {
+  rejectUnknownFields(input, DURABLE_PROVENANCE_CONSTRAINT_FIELDS, "source_selectors.constraints");
+  return deepFreeze({
+    domain: enumValue(input.domain ?? "testing", DOMAINS, "source_selectors.constraints.domain"),
+    activity_classes: enumArray(input.activity_classes ?? ["capability_use", "control"], ACTIVITY_CLASSES, "source_selectors.constraints.activity_classes", { required: true }),
+    event_types: enumArray(input.event_types ?? ["memory.provenance.written", "memory.provenance.revoked"], ACTIVITY_EVENT_TYPES, "source_selectors.constraints.event_types", { required: true }),
+    capability_classes: enumArray(input.capability_classes ?? ["memory"], ACTIVITY_CAPABILITY_CLASSES, "source_selectors.constraints.capability_classes", { required: true }),
+    summary_classes: enumArray(input.summary_classes ?? ["completed", "control"], SUMMARY_CLASSES, "source_selectors.constraints.summary_classes", { required: true }),
+    coarse_time_buckets: enumArray(input.coarse_time_buckets ?? [...COARSE_TIME_BUCKETS], COARSE_TIME_BUCKETS, "source_selectors.constraints.coarse_time_buckets", { required: true }),
   });
 }
 
@@ -1126,6 +1208,24 @@ function minimizeMemoryItem(item, minimization) {
   return { body, char_count: body.length, reason_class: "selected" };
 }
 
+function minimizeDurableProvenanceActivity(record, minimization) {
+  const header = [
+    `Activity class: ${record.activity_class}`,
+    `Event type: ${record.event_type}`,
+    `Capability class: ${record.capability_class}`,
+    `Summary class: ${record.summary_class}`,
+    `Coarse time: ${record.coarse_time_bucket}`,
+  ].join("\n");
+  const body = minimization === "metadata_only"
+    ? header
+    : `Durable provenance activity:\n${header}`;
+  return {
+    body,
+    char_count: body.length,
+    reason_class: minimization === "metadata_only" ? "metadata_only" : "selected",
+  };
+}
+
 function createSelectionReceipt({
   decision,
   reason_class,
@@ -1223,6 +1323,9 @@ function storeForSource(sourceClass, { occupantMemoryStore, activityStore, sourc
   if (sourceClass === "local_activity_fixture") {
     return activityStore;
   }
+  if (sourceClass === "durable_provenance_activity") {
+    return activityStore;
+  }
   return null;
 }
 
@@ -1237,6 +1340,55 @@ function normalizeActivityEvents(store = {}) {
     domain: enumValue(event.domain ?? "testing", DOMAINS, "activity.domain"),
     summary_class: enumValue(event.summary_class, SUMMARY_CLASSES, "activity.summary_class"),
   }));
+}
+
+function normalizeDurableProvenanceRecords(store = {}) {
+  const records = Array.isArray(store.records) ? store.records : Array.isArray(store.events) ? store.events : [];
+  return records
+    .filter((record) => record.event_type === "occupant.memory.written" || record.event_type === "occupant.memory.revoked")
+    .map((record) => ({
+      event_type: record.event_type,
+      entry_id: boundedId(record.entry_id, "durable_provenance.entry_id"),
+      memory_class: enumValue(record.memory_class ?? "self_note", MEMORY_CLASSES, "durable_provenance.memory_class"),
+      actor: stringValue(record.actor),
+      reason_class: stringValue(record.reason_class),
+      timestamp: stringValue(record.timestamp),
+      model_id: stringValue(record.model_id),
+      episode_id: stringValue(record.episode_id),
+      domain: enumValue(record.domain ?? "testing", DOMAINS, "durable_provenance.domain"),
+      grant_id: stringValue(record.grant_id),
+      provider: stringValue(record.provider),
+      scope: stringValue(record.scope),
+      activation_performed: record.activation_performed === true,
+    }));
+}
+
+function projectDurableProvenanceRecord(raw) {
+  if (raw.event_type === "occupant.memory.written") {
+    return {
+      raw,
+      stable_id: `durable_provenance_activity:${raw.event_type}:${raw.entry_id}:${raw.timestamp}`,
+      domain: raw.domain,
+      activity_class: "capability_use",
+      event_type: "memory.provenance.written",
+      capability_class: "memory",
+      summary_class: "completed",
+      coarse_time_bucket: coarseTimeBucket(raw.timestamp),
+    };
+  }
+  if (raw.event_type === "occupant.memory.revoked") {
+    return {
+      raw,
+      stable_id: `durable_provenance_activity:${raw.event_type}:${raw.entry_id}:${raw.timestamp}`,
+      domain: raw.domain,
+      activity_class: "control",
+      event_type: "memory.provenance.revoked",
+      capability_class: "memory",
+      summary_class: "control",
+      coarse_time_bucket: coarseTimeBucket(raw.timestamp),
+    };
+  }
+  return null;
 }
 
 function memoryItem({ kind, entry, tombstone, sourceRank }) {
@@ -1271,6 +1423,21 @@ function activityItem({ event, sourceRank }) {
   };
 }
 
+function durableProvenanceActivityItem({ record, sourceRank }) {
+  return {
+    source_class: "durable_provenance_activity",
+    raw: record,
+    sort_key: sortKey({
+      source_class: "durable_provenance_activity",
+      timestamp: record.raw.timestamp,
+      sourceRank,
+      trustRank: TRUST_RANKS.local_provenance,
+      freshnessRank: FRESHNESS_RANKS.persistent,
+      stable: record.stable_id,
+    }),
+  };
+}
+
 function sortKey({ source_class, timestamp, sourceRank, trustRank, freshnessRank, stable }) {
   return Object.freeze({
     timestamp_ms: timestampMs(timestamp),
@@ -1292,6 +1459,12 @@ function compareActivityById(left, right) {
   return left.id.localeCompare(right.id);
 }
 
+function compareDurableProvenanceRecord(left, right) {
+  return left.event_type.localeCompare(right.event_type)
+    || left.entry_id.localeCompare(right.entry_id)
+    || left.timestamp.localeCompare(right.timestamp);
+}
+
 function sourceRankFor(sourceClass, sourceClassOrder) {
   const explicit = sourceClassOrder.indexOf(sourceClass);
   return explicit >= 0 ? explicit + 1 : SOURCE_RANKS[sourceClass] ?? 99;
@@ -1302,7 +1475,7 @@ function sourceClassSet(adapters) {
 }
 
 function defaultMinimizationFor(sourceClass) {
-  return sourceClass === "local_activity_fixture" ? "activity_summary" : "excerpt_for_reasoner";
+  return sourceClass === "local_activity_fixture" || sourceClass === "durable_provenance_activity" ? "activity_summary" : "excerpt_for_reasoner";
 }
 
 function sourceOmission(selector, reasonClass, count) {
@@ -1521,6 +1694,14 @@ function newestTimestampMs(items) {
 function timestampMs(value) {
   const timestamp = Date.parse(String(value ?? ""));
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function coarseTimeBucket(value) {
+  const timestamp = timestampMs(value);
+  if (timestamp === 0) {
+    return "unknown";
+  }
+  return timestamp >= Date.parse("2026-01-01T00:00:00.000Z") ? "recent" : "older";
 }
 
 function deterministicExcerpt(content, maxLength) {

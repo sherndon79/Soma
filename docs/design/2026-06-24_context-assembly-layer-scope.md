@@ -389,4 +389,107 @@ g. **KNOWN LIMITATION (Claude review, 2026-06-25) — per-source budgets are MAX
 composite source_state + composite_snapshot_digest; deterministic merge with the richer sort_key ranks;
 fixed per-source sub-budgets + global cap; partial-source required/optional with local exact receipts +
 frontier coarse omission signals (+ coarsen existing counts per §10.10f). Defer reserve+share, real
-provenance-log adapter (2b), ephemeral sensorium (3). **Status: build-ready, pending Seth's go.**
+provenance-log adapter (2b), ephemeral sensorium (3). **Status: BUILT + COMMITTED 2026-06-25 (a64cbf6);
+the §10.10g starvation behavior is pinned by a test.**
+
+---
+
+## 11. Slice 2b — reserve+share budget (DESIGN, 2026-06-25) — fixes the §10.10g starvation gap
+
+Re-sequenced for one-hard-thing-per-slice: **2b = reserve+share (this); 2c = real provenance/activity
+adapter (its own authority/content design); 3 = ephemeral sensorium.** Pure deterministic budget logic,
+fully provable against the existing two fixture sources — NO new sources, NO new authority surface, NO
+floor crossing. All slice-2 invariants carry unchanged (composite replay, content-free manifest,
+two-tier coarse projector, per-adapter validation).
+
+### 11.1 The change: per-source budget gains `reserve` + `share`
+`source_selector.budget` (today `{ max_items, max_chars, overflow_policy }`) gains:
+- `reserve = { min_items, min_chars }` — a HARD guaranteed minimum for this source (cannot be evicted
+  by other sources).
+- `share` — non-negative integer weight for distributing the POST-reserve remainder.
+`max_items`/`max_chars` remain the per-source CAP; `overflow_policy` unchanged. Defaults: reserve
+{0,0}, share 1 (so a recipe that omits them behaves like slice-2 fixed-cap = backward compatible).
+
+### 11.2 Validation (deterministic, reject-not-scale)
+Sum of reserves across selectors (Σ min_items, Σ min_chars) MUST be ≤ the global `context_budget`. If
+reserves exceed the global cap ⇒ recipe invalid, **new closed reason_class `reserves_exceed_budget`**.
+No silent proportional scaling — the caller must fix it (deterministic + legible).
+
+### 11.3 Assembly — 3 deterministic phases
+1. **Reserve phase:** for each source in `source_class_order`, include up to its `reserve`
+   (min_items / min_chars), drawing that source's top items by its own newest-first order. These are
+   GUARANTEED — never evicted. Consume from the global budget. (A source with fewer items than its
+   reserve contributes what it has; the **unused reserve returns to the share pool** — don't waste it.)
+2. **Share phase:** the remaining global budget (global max − reserved-used) is split across sources by
+   `share` weight: each source gets `floor(remainder × share / Σshare)`, with the rounding leftover
+   allocated by `source_class_order` (deterministic). Within a source's share allocation, items compete
+   by the recipe `ordering`; per-source `max` still caps.
+3. **Global merge:** reserved ∪ shared items ordered by recipe `ordering` for `bundle_body`; anything
+   beyond global `max` evicted per `overflow_policy` — but **reserves are never evicted.**
+
+### 11.4 Receipts + the starvation test flip
+Selection receipts gain a closed `budget_phase` field (`reserve | share | evicted`) so the local audit
+shows WHY each item made the bundle. Frontier-facing manifest UNCHANGED (still coarse count_class +
+omissions — `budget_phase` is local-audit-only). The §10.10g starvation test FLIPS: with a reserve on
+`occupant_memory`, the tight-global-cap + `newest_first` case must now show memory items PRESENT
+(reserved), proving starvation is fixed.
+
+### 11.5 For Codex — pressure-test before build
+1. Reserve-overflow handling (§11.2): reject-with-`reserves_exceed_budget` vs proportional-scale — I
+   chose reject (deterministic/legible). Confirm, or argue scale.
+2. Unused-reserve-returns-to-share (§11.3 phase 1): is returning a short source's unused reserve to the
+   share pool the right call, or should unused reserve simply go unused (simpler, but wastes budget)?
+3. Share rounding (§11.3 phase 2): leftover-by-`source_class_order` — deterministic + good enough, or
+   do we need a fairer largest-remainder rule?
+4. Backward-compat (§11.1 defaults): reserve {0,0} + share 1 ⇒ identical to slice-2 behavior — confirm
+   the existing slice-2 tests still pass unchanged with defaults.
+5. Char vs item reserves interacting: min_items and min_chars are both hard floors — what if min_items
+   is satisfiable but min_chars is not (or vice versa) under the global cap? Define the precedence.
+
+Tests: starvation FIXED (reserved source present under tight cap + skewed ordering);
+`reserves_exceed_budget` rejection; unused-reserve redistribution; deterministic share rounding;
+backward-compat (defaults reproduce slice-2 bundles); replay determinism unchanged; budget_phase
+receipts content-free and local-only. Role division holds: I design/review, you build/commit.
+
+### 11.6 Codex pressure-test ACCEPTED + corrections (2026-06-25) — build-ready
+Two real corrections (both accepted), two refinements, one Claude edge-fix.
+
+- **C1 (corrects §11.1 backward-compat — my claim was WRONG): EXPLICIT ACTIVATION via `budget_mode`.**
+  reserve{0,0}+share1 is NOT identical to slice-2: slice 2 = per-source max cap → GLOBAL competition by
+  ordering; equal-share = per-source admission allocation from the remainder (e.g. max_items=3, two
+  sources: equal-share forces 2/1 by source_class_order, slice 2 might take top-3 all from one source).
+  FIX: a recipe with NO selector specifying reserve/share runs **legacy_global** mode = EXACT slice-2
+  behavior (and the §10.10g starvation limitation still stands, documented). If ANY selector opts in
+  (reserve or share present), run **reserve_share** mode (omitted values inside that mode default
+  reserve{0,0}/share1). Derived local `budget_mode: legacy_global | reserve_share` makes it legible.
+  No pretending default share is behavior-preserving.
+- **C2 (corrects §11.1/§11.5 min_chars — semantically backwards as a content floor): min_chars is
+  RESERVED CAPACITY, not required spend.** A "must include ≥N chars" floor is backwards for a
+  MINIMIZATION layer (shorter is better; a char floor incentivizes padding / picking worse-larger
+  items). FIX: `min_items` = hard INCLUSION floor (guarantee that many items, deterministic top order);
+  `min_chars` = reserved char CAPACITY other sources cannot steal, NOT a requirement to spend it.
+  Failure to spend min_chars is NOT a failure. Σ min_chars ≤ global max_chars stays a validation rule
+  (it reserves CAPACITY, not payload volume). This dissolves my §11.5 #5 "precedence" question — they
+  are different KINDS (count-floor vs capacity-reservation), not competing floors.
+- **R1: unused reserve = ACTUAL CONSUMED, not nominal.** If a short source cannot fill its reserve from
+  matching items, the unused item/char CAPACITY re-enters the share pool (don't waste budget; don't let
+  a short optional source shrink the useful bundle).
+- **R2: all-share=0 ⇒ reserve-only mode** (post-reserve remainder intentionally unused; no divide-by-
+  zero). Share rounding stays leftover-by-source_class_order (deterministic, recipe-controllable);
+  largest-remainder not worth it for this slice.
+- **CLAUDE EDGE-FIX (nominal-vs-actual char bound):** validation is in NOMINAL reserve terms
+  (min_items/min_chars), but guaranteed reserved ITEMS have ACTUAL char costs that may exceed min_chars.
+  Resolve the latent tension between "reserved items never evicted" and "global cap outranks all":
+  **the global `max_chars` is the HARD outer bound.** If the guaranteed reserved items' ACTUAL chars
+  would exceed global max_chars, do NOT over-subscribe and do NOT silently evict a reserved item →
+  **abstain `budget_insufficient`** (required source) / the recipe cannot be honored within the cap.
+  Fail cleanly rather than violate either invariant.
+
+**Build-ready 2b spec:** legacy_global mode (no opt-in) = exact slice-2 + existing starvation test
+stands; reserve_share mode (opt-in) = validate Σ reserved ≤ global (reject `reserves_exceed_budget`),
+reserve guarantees min_items + protects min_chars CAPACITY (never globally evicted, global max_chars is
+the hard bound → abstain if reserves can't fit), share splits remaining ACTUAL budget by positive
+weights (all-zero = reserve-only), budget_phase{reserve|share|evicted} receipts local-audit-only,
+frontier projection unchanged. Tests: starvation fixed, reserves_exceed_budget rejection, unused-reserve
+(actual) returned, deterministic rounding, **legacy-default bundle EQUALITY (existing slice-2 tests
+unchanged)**, reserved-items-exceed-global-chars ⇒ abstain, replay determinism, local-only budget_phase.

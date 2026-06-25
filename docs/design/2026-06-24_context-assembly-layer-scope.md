@@ -493,3 +493,113 @@ weights (all-zero = reserve-only), budget_phase{reserve|share|evicted} receipts 
 frontier projection unchanged. Tests: starvation fixed, reserves_exceed_budget rejection, unused-reserve
 (actual) returned, deterministic rounding, **legacy-default bundle EQUALITY (existing slice-2 tests
 unchanged)**, reserved-items-exceed-global-chars ⇒ abstain, replay determinism, local-only budget_phase.
+
+---
+
+## 12. Slice 2c — real durable-provenance activity adapter (DESIGN, 2026-06-25)
+
+Replaces the fixture second source with a REAL activity source, proving the SourceAdapter contract
+(§10.1) against real data. Still fixture-FIRST in the testing sense (injected provenance records), no
+live frontier, no live reasoner. All slice-2/2b invariants carry unchanged.
+
+### 12.1 The crux decision (grounded in the code): DURABLE provenance, NOT the in-memory ring
+Soma has TWO provenance kinds: (a) `provenanceLog.js` = an in-memory RING BUFFER (`maxEntries=200`,
+splices off the oldest) = **ephemeral/truncating**; (b) durable, file-backed per-domain provenance
+(`occupantMemoryProvenanceFile`, `grantMutationProvenanceFile`, `durableMemoryProvenanceFile`, …) =
+**append-only, persistent, `read()`-able in full**. **2c reads (b) DURABLE provenance** →
+`freshness_class: persistent`, clean snapshot/replay (digest over the read records). The in-memory ring
+is EPHEMERAL and belongs with sensorium in **slice 3** (snapshot-freeze). This keeps 2c the
+"snapshot-able/persistent second source" we scoped in §10.8d — one hard thing per slice.
+
+### 12.2 The adapter: `durable_provenance_activity` (conforms to §10.1)
+- `source_class: durable_provenance_activity`, `trust_tier: local_provenance`, `freshness_class:
+  persistent`, closed `allowed_constraints`, declared minimization modes.
+- `snapshot(store)` = read the durable file's events → deterministic sort → `snapshot_digest` over the
+  records (same shape as the fixture/memory snapshots).
+- Tested via an INJECTED durable-provenance read (fixture records), exactly as occupant_memory is
+  tested via an injected store — so no live file I/O in the slice. (Retire or keep
+  `local_activity_fixture` as a test-only adapter — Codex's cleanliness call.)
+
+### 12.3 Minimization — DROP LINKABLE IDENTIFIERS (the floor point)
+Durable provenance is content-free for STORAGE but carries LINKABLE identifiers (caller_identity,
+grant_id, content/tombstone digests, episode_id, exact timestamps). "Already content-free for storage"
+≠ "safe to drop verbatim into the reasoner's context." The adapter PROJECTS each record to
+ACTIVITY-SEMANTIC fields only — activity_class, event_type→activity-vocab, capability_class,
+summary_class, coarse time — for the `bundle_body`. Raw linkable IDs stay ONLY in the local-audit
+`source_receipt` (for replay/audit), never in the bundle body. (Frontier-facing manifest unchanged —
+already coarse.)
+
+### 12.4 event_type → activity-vocabulary mapping (closed)
+Real per-domain provenance `event_type`s must map into the activity vocabulary
+(`activity_class`/`event_type`/`capability_class`/`summary_class`). The adapter owns a CLOSED mapping;
+unmappable event_types get a generic bucket or are filtered (never passed through raw). This is where
+"schema variance across provenance domains" gets handled.
+
+### 12.5 Authority + scope (no new authority plane)
+Read the durable provenance file under the EXISTING steward/internal read discipline — reuse the
+durable-provenance `read()` path, content-free provenance posture. NO new user-facing capability yet
+(derived local op, same as slice 1/2). Degraded/unreadable provenance ⇒ abstain `source_degraded`
+(never assemble from suspect state).
+
+### 12.6 What 2c BUILDS vs DEFERS
+- BUILD: the `durable_provenance_activity` adapter over ONE durable provenance domain (recommend the
+  cleanest single file — Codex picks; occupant-memory-provenance pairs naturally with the memory
+  source, grant-mutation-provenance is broader activity); the event_type→vocab mapping; the
+  linkable-ID-dropping projection; injected-read tests.
+- DEFER: unified MULTI-DOMAIN activity (merge across provenance files) → later; the in-memory ring +
+  sensorium EPHEMERAL sources → slice 3; reserve+share is already built (2b).
+
+### 12.7 For Codex — pressure-test before build
+1. Durable file durability: do the durable provenance files ROTATE/COMPACT (which would degrade
+   `persistent` replay), or are they strictly append-only forever? If they rotate, snapshot/replay
+   semantics need the same care as ephemeral — confirm append-only-no-rotate, else flag.
+2. Which durable provenance domain for the first adapter — occupant-memory-provenance (pairs with the
+   memory source) vs grant-mutation (broader activity) vs something else cleaner?
+3. FEEDBACK LOOP: does context-assembly itself write provenance? If so, reading provenance-as-context
+   could surface "context was assembled" events recursively — the adapter should filter its own events
+   (or context-assembly must not write to the domain it reads). Confirm/handle.
+4. The linkable-ID-dropping projection (§12.3): confirm the bundle_body carries ONLY activity-semantic
+   fields and the raw IDs live only in the local-audit source_receipt.
+5. Replace-vs-keep the fixture adapter: retire `local_activity_fixture`, or keep it as a test-only
+   adapter alongside the real one?
+
+This is design — pressure-test before any code, especially #1 (rotation/durability), #3 (feedback
+loop), #4 (projection floor). Role division holds: I design/review, you build/commit.
+
+### 12.8 Codex pressure-test ACCEPTED + refinements (2026-06-25) — build-ready
+All five answered; accepted. Refinements folded.
+
+- **#1 durability CONFIRMED:** the durable files (occupant-memory, durable-memory, grant-mutation,
+  history-projection, durable-testimony) append JSONL via `open('a')+writeFile+sync`, read full via
+  `readFile`, NO rotate/compact/truncate path → `persistent` freshness is sound. The ring stays out.
+- **#2 FIRST DOMAIN = `occupantMemoryProvenanceFile`** (Codex pick): pairs with the memory source, only
+  two event_types (`occupant.memory.written`/`revoked`), proves projection/floor WITHOUT grant-authority
+  semantics (grant-mutation would make the slice about grants). Accepted.
+- **#3 FEEDBACK LOOP: none today** — contextAssembly.js does not append provenance. Hardening anyway:
+  CLOSED allowlist for the domain, NO generic pass-through; a future `context.assembly.*` event would be
+  filtered/bucketed without raw event_type echo. (occupant-memory-provenance's validator already rejects
+  event_types outside written/revoked, so loop risk is low.)
+- **#4 PROJECTION FLOOR (test-critical):** bundle_body carries ONLY activity_class, mapped event_type
+  vocab, capability_class, summary_class, coarse time bucket. MUST NOT include entry_id, memory_id,
+  grant_id, provider, actor/caller_identity, model_id, episode_id, EXACT timestamp, content_digest,
+  tombstone_digest, approval_provenance_id, source_proposal_id, replacement ids. Raw linkable fields
+  live ONLY in the local-audit `source_receipt`; frontier projection unchanged/coarse.
+- **#5 FIXTURE: replace in the default `SOURCE_ADAPTERS` registry** with `durable_provenance_activity`
+  so the default two-source path is real memory + real durable provenance. Retire `local_activity_fixture`
+  from default accepted source classes (keep only a test-only factory if needed) — the production-ish
+  registry must not advertise the synthetic source we are replacing.
+- **REFINEMENT (Codex, important): SNAPSHOT over RAW normalized/sorted durable records, NOT projected
+  records.** Replay must detect any change in the raw durable log; the bundle projection stays minimized
+  separately. So three derivations from each raw record: snapshot_digest (replay anchor, over raw) +
+  source_receipt (local audit, raw IDs) + bundle_body (reasoner, projected/minimized). Right shape.
+- Ranks: add `local_provenance` to trust tiers (lean participant_memory=3, local_provenance=2,
+  local_fixture=1). Constraints closed enums (domain, event_types, activity_classes, capability_classes,
+  summary_classes, coarse_time_window). Degraded/unreadable ⇒ `source_degraded` via
+  sourceRecoveryReports; no live file I/O in the slice (injected read).
+
+**Build-ready 2c:** `durable_provenance_activity` adapter over occupant-memory-provenance (injected
+read), closed event_type→activity-vocab mapping (no raw pass-through), linkable-ID-dropping projection
+(forbidden-field list above is test-critical), snapshot over RAW records, replace the fixture in the
+default registry. Tests: projection emits NO forbidden field (assert each); snapshot-over-raw detects a
+raw-record change while bundle stays minimized; replay determinism; degraded ⇒ source_degraded;
+merge/ordering with the real adapter; frontier manifest still coarse. **Status: build-ready, GREENLIT.**

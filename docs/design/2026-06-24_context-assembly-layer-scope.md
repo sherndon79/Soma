@@ -213,5 +213,180 @@ entries that trip minimization/exclusion; degraded-recovery. Multi-source = slic
 ### 9.9 BUILD-READY CHECKLIST (Codex). Approve slice 1 if it includes: (A) closed positive ContextRecipe
 schema; (B) memory snapshot digest / source_state in manifest; (C) deterministic assembler over an
 injected occupant-memory store; (D) content-free selection/source receipts; (E) refusal/abstention as a
-manifestable outcome. No live frontier, no live reasoner, memory-only. **Status: build-ready, pending
-Seth's prioritization (vs camera 1b / egress slice-2).**
+manifestable outcome. No live frontier, no live reasoner, memory-only. **Status: BUILT + REVIEWED +
+COMMITTED 2026-06-25 (commit 93b3ec6, src/contextAssembly.js). Review folded F1 (arbitrary unknown JSON
+keys project as `parent.unknown_field` so no private key residue reaches the frontier-facing manifest —
+same indirection class as the egress digest-echo) + F2 (tombstone body counts against the char budget).
+`recency_window=all`-only affirmed as the replayability-preserving choice.**
+
+---
+
+## 10. Slice 2 — multi-source assembly (DESIGN, 2026-06-25)
+
+Slice 1 proved the governed core against ONE source (occupant memory). Slice 2 adds the thing that
+makes "context assembly" worth the name: **assembling across heterogeneous local sources** (memory is
+the *past*; live perception/activity is the *present* — a reasoner wants both). The new mechanism is a
+uniform **SourceAdapter** contract + a **source-merge** policy. Still fixture-first: no live frontier,
+no live reasoner. All slice-1 floor invariants carry unchanged (local-only payload fill, content-free
+manifest, two-tier projector, allow-list validation, abstain-not-fabricate, no caller-asserted claims).
+
+### 10.1 The core new piece: the SourceAdapter contract
+Slice 1 hardcoded occupant-memory logic; slice 2 refactors it behind a uniform interface every local
+source implements, so sources plug in without the assembler knowing their internals:
+- `source_class` (enum), `trust_tier` (enum), `freshness_class` (enum: persistent | snapshot_pinned |
+  ephemeral), `allowed_constraints` (the closed constraint keys THIS adapter accepts), supported
+  `minimization` modes.
+- `snapshot(store) → { source_class, snapshot_digest, counts, freshness_descriptor }` (pure,
+  deterministic — the per-source replay anchor).
+- `select(snapshot, source_constraints) → items[]` (each item exposes a uniform comparable
+  `sort_key`: {timestamp, source_class} so cross-source ordering works).
+- `sourceReceipt(item, snapshot) → content-free receipt` (carries trust_tier + freshness).
+- `minimize(item, mode) → { body, char_count, reason_class }` (per-source; sensorium events are
+  already-minimized semantic events, memory has full/excerpt/metadata — the adapter owns this).
+The occupant-memory logic from slice 1 becomes the first `OccupantMemoryAdapter` conforming to this.
+
+### 10.2 Recipe schema extension: PER-SOURCE selectors (still closed/allow-list)
+`source_classes` (flat in slice 1) becomes `source_selectors`: a closed array, each entry =
+`{ source_class (enum), required (bool), constraints (validated against THAT adapter's
+allowed_constraints), minimization (enum from adapter's supported set), budget (per-source reserve +
+share) }`. The validator validates each selector against the named adapter's declared contract — so
+the allow-list floor becomes **per-adapter** (unknown constraint key for that adapter → reject;
+payload-vector key → `selector_payload_bearing`, parent-class echo only). No global free-form fields.
+
+### 10.3 Composite source_state + replayability (extends §9.3)
+`source_state` becomes a map: per-source `{ snapshot_digest, counts, freshness_class }`, plus a
+`composite_snapshot_digest` = digest over the sorted per-source states. Invariant: **same recipe_digest
++ same composite_snapshot_digest ⇒ same bundle_digest.** A source missing its snapshot ⇒
+`replay_state_unpinned` (named per-source). `freshness_class` matters here: `persistent` /
+`snapshot_pinned` sources replay cleanly; **`ephemeral` sources (e.g. sensorium events, 10s TTL) do
+NOT replay across their TTL** — see §10.7 (deferred to slice 3 with the snapshot-freeze design).
+
+### 10.4 Source-merge: ordering + budget allocation (the genuinely new policy)
+- **Ordering** (recipe `ordering` enum, now cross-source): `newest_first` (global, by each item's
+  uniform `sort_key.timestamp`), `class_priority` (group by a declared source-class order — e.g. live
+  activity before memory), `receipt_priority` (by trust_tier/freshness). Adapters MUST expose a
+  comparable `sort_key` or the merge is undefined.
+- **Budget allocation** (new): with multiple sources a single global budget can starve one source.
+  Proposed policy: each `source_selector.budget` carries a `reserve` (guaranteed minimum) + a `share`
+  (weight for the remaining budget); the gate fills reserves first, then distributes the remainder by
+  share, then global eviction by `ordering`. This is a real decision — alternatives are pure-global-
+  compete (simpler, can starve) or fixed-per-source sub-budgets (rigid). **Recommend reserve+share.**
+
+### 10.5 Per-source minimization, receipts, trust/freshness (operationalizes Codex tension #2)
+Each adapter owns its minimization; receipts carry `trust_tier` + `freshness` per source — so the
+manifest records, honestly, that a live-screen item is fresh-but-ephemeral while a memory note is
+persistent-but-possibly-stale. This is where "receipts are only as good as source contracts" stops
+being a slogan: the adapter's declared contract IS the receipt's trust basis.
+
+### 10.6 Partial-source failure policy (new floor decision)
+If ONE source is degraded/unavailable: a `required` source degraded ⇒ **whole-assembly abstains**
+(`source_degraded`, names the source); an `optional` source degraded ⇒ **skip it, assemble from the
+healthy sources, record the omission** in the manifest (the reasoner/audit sees the source was
+dropped, not silently absent). Default conservative: a source is `required:false` unless the recipe
+says otherwise. Never assemble from a *suspect* source (slice-1 rule, now per-source).
+
+### 10.7 Projector boundary — unchanged, multi-source manifest
+The two-tier projector (§9.7) is unchanged in principle: the frontier-facing manifest still carries
+only status / closed reason_class / aggregate counts / abstention classes — now possibly **per-source
+aggregate counts** (fine: a count of items from `occupant_memory` vs `live_activity` is aggregate, not
+linkable). NO per-source ids/digests/timestamps/snapshot-digests upstream. Re-run the projector's
+self-guard with the multi-source fields.
+
+### 10.8 What slice 2 BUILDS vs DEFERS
+- **BUILD:** the SourceAdapter contract; refactor slice-1 logic into `OccupantMemoryAdapter`; add a
+  SECOND adapter to prove merge; per-source recipe selectors + per-adapter validation; composite
+  source_state + replayability; reserve+share budget; cross-source ordering; per-source receipts/
+  minimization/trust; partial-source policy; multi-source projector self-guard. Fixture-first.
+- **The second source for slice 2:** recommend it be a **snapshot-able / persistent** second source so
+  merge is proven WITHOUT the ephemeral-replay problem. Candidates: a content-free **activity/provenance
+  log** view (snapshot-able, low-risk), or an **injected fixture source adapter** (proves the contract
+  generically). **DEFER the first EPHEMERAL real source (sensorium semantic events) to slice 3**, where
+  the new work is *snapshot-freeze-for-replay* (pin events as-of assembly; persist the frozen snapshot
+  or report `replay_state_unpinned`). One hard thing per slice — adapter+merge here, ephemerality next.
+- **Also deferred (unchanged):** external retrieval (governed egress), live frontier curation, live
+  reasoner consumption / model-specific serialization.
+
+### 10.9 For Codex — pressure-test before build
+1. **Budget allocation (§10.4):** is reserve+share the right policy, or does it over-complicate slice
+   2? Would fixed per-source sub-budgets be enough to prove merge, deferring reserve+share?
+2. **Per-adapter validation (§10.2):** confirm the allow-list floor cleanly generalizes to
+   per-adapter `allowed_constraints` without reintroducing a global free-form surface.
+3. **`sort_key` contract (§10.4):** is a {timestamp, source_class} uniform key sufficient for
+   `newest_first` / `class_priority` / `receipt_priority`, or do heterogeneous sources need a richer
+   comparable?
+4. **Second source choice (§10.8):** activity/provenance-log adapter vs injected-fixture adapter for
+   slice 2 — which proves merge most honestly without taking on ephemerality?
+5. **Partial-source policy (§10.6):** required⇒abstain / optional⇒skip+record — right default, and
+   does "skip+record" need a frontier-facing signal (so the conductor learns a source was dropped)?
+
+This is design — pressure-test the shape, especially #1 (budget policy) and #4 (second source), before
+any code. Role division holds: I design/review, you build/commit.
+
+### 10.10 Codex pressure-test ACCEPTED — build-ready slice-2 spec (2026-06-25)
+All five tightenings accepted; they simplify slice 2 and harden the floor. Plus one Claude extension
+(§10.10f) that carries Codex's count-leak point back onto slice-1's existing code.
+
+a. **Budget → fixed per-source sub-budgets + global cap (NOT reserve+share).** Reserve+share combines
+   two new problems (merge + proportional allocation) and has no validation target until a real
+   reasoner creates context pressure — it's a model-specific optimization, so DEFER it (slice 2b/3).
+   Slice 2: `source_selector.budget = { max_items, max_chars, overflow_policy }`; top-level
+   `context_budget` stays global. Enforce per-source caps first, then merge under the global cap +
+   ordering. Required source overflow w/ overflow_policy=abstain ⇒ whole `budget_insufficient`;
+   optional ⇒ skip/record or evict-within-source. Proves starvation-prevention + per-source accounting
+   + cross-source eviction without weight math.
+b. **Per-adapter validation via a CLOSED ADAPTER REGISTRY.** Top-level recipe validates only the
+   `source_selectors` ARRAY SHAPE; `source_class` resolves to a registered adapter from a closed
+   registry; `adapter.validateSelector(constraints)` returns normalized constraints OR a refusal
+   (reason_class + sanitized violated_field_class). Unknown keys use the slice-1 F1 rule (recognized
+   payload-vector → field-class echo; arbitrary → `source_selectors.constraints.unknown_field`).
+   **The adapter registry IS the closed vocabulary** — no global `constraints` schema with per-source
+   optional fields, no free-form expansion.
+c. **Richer CLOSED sort_key** ({timestamp, source_class} was insufficient — only newest_first, and
+   only if timestamp normalized+present). Use
+   `sort_key = { timestamp_ms, source_class, source_rank, trust_rank, freshness_rank, stable_item_key }`.
+   Rules: newest_first = timestamp_ms desc, source_rank asc, stable_item_key asc; class_priority =
+   source_rank asc (explicit rank map, NOT lexicographic), timestamp_ms desc, stable_item_key asc;
+   receipt_priority = trust_rank desc, freshness_rank desc, timestamp_ms desc, stable_item_key asc.
+   Recipe chooses `ordering` enum + optional `source_class_order` (enum list of registered classes);
+   assembler DERIVES ranks from adapter contracts + recipe order. No custom comparator. Missing
+   timestamp ⇒ normalize to 0 + receipt reason, OR adapter validation failure (per source contract).
+d. **Second source = injected FIXTURE adapter (NOT the real provenance/activity log yet).** The hard
+   thing is adapter+merge, not provenance-as-a-source semantics (which raises its own authority +
+   content + durability + schema-variance questions = a separate source-contract design). The fixture
+   is NOT a toy — give it a real declared contract: `source_class=local_activity_fixture`,
+   `trust_tier=local_fixture`, `freshness_class=snapshot_pinned`, closed constraints, deterministic
+   snapshot, receipts, minimization. Populate with event-like records (timestamp, activity_class enum,
+   event_type enum, capability_class enum, domain, summary_class enum — NO payload). **NEW SEQUENCING:
+   slice 2 = adapter+merge (fixture 2nd source); slice 2b = real provenance/activity adapter (its own
+   source-contract + authority design); slice 3 = ephemeral sensorium snapshot-freeze.**
+e. **Partial-source frontier signal — COARSE only.** required⇒whole-abstain, optional⇒skip+record
+   stands. skip+record needs a frontier-facing signal so the conductor can revise:
+   `source_omissions: [{ source_class (public registered enum), required:false, reason_class (closed),
+   count_class (none|some|many | omitted) }]`. NO ids/digests/timestamps/snapshot-hashes upstream.
+f. **§10.7 NARROWED + Claude extension: exact counts leak over repeated calls.** Codex: exact
+   per-source counts, even aggregate, are a side-channel — a frontier observing how counts change
+   across repeated calls infers private state deltas. So frontier-facing = COARSE `count_class`
+   (none/some/many); exact counts LOCAL-AUDIT-ONLY. **Claude extension: this applies to slice-1's
+   EXISTING `included_count`/`excluded_count`** — they are currently exact integers in
+   `projectFrontierFacingManifest`. There is no live frontier yet so nothing is exploited, but the
+   live-frontier consumer is coming and the side-channel is real → coarsen ALL frontier-facing counts
+   to buckets (do it in slice 2 for consistency, or at the latest before any live frontier curation).
+   Same generalization pattern as digest-echo → field-name-echo: the discipline extends to every
+   count, not just the new per-source ones.
+
+g. **KNOWN LIMITATION (Claude review, 2026-06-25) — per-source budgets are MAXIMUMS, not
+   RESERVATIONS.** Fixed per-source sub-budgets + global cap prevent one source from *dominating the
+   candidate pool*, but do NOT guarantee each source a *minimum in the final bundle*. Under a tight
+   global `context_budget` + skewed ordering (e.g. `newest_first` when one source holds all the newest
+   items), a source can pass its per-source cap yet have all its items globally evicted — i.e. STARVED
+   in the final set. This is the EXPECTED consequence of deferring guaranteed minimums; **reserve+share
+   (slice 2b/3) is what introduces per-source reservations.** Until then, "I selected both sources" does
+   not guarantee "both appear in the bundle" under budget pressure. Behavior should be pinned by a test
+   so it is intended-not-accidental.
+
+**Build-ready slice-2 shape (Codex):** refactor slice-1 memory → `OccupantMemoryAdapter`; add
+`SnapshotFixtureActivityAdapter` (real contract); adapter registry + per-adapter selector validation;
+composite source_state + composite_snapshot_digest; deterministic merge with the richer sort_key ranks;
+fixed per-source sub-budgets + global cap; partial-source required/optional with local exact receipts +
+frontier coarse omission signals (+ coarsen existing counts per §10.10f). Defer reserve+share, real
+provenance-log adapter (2b), ephemeral sensorium (3). **Status: build-ready, pending Seth's go.**

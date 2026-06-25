@@ -374,6 +374,40 @@ plumbing. Three corrections, all accepted:
 7. Verify runtime shutdown actually stops/cleans active sensorium subscriptions before treating
    session/harness-end disarm (§8.4) as built.
 
+### 8.9 TOPOLOGY CORRECTION (2026-06-25) — the camera is REMOTE; minimization is subscriber-side
+§8.1–8.8 above were written assuming the RealSense is LOCAL to the Soma host with a local-USB sandbox
+(udev/DeviceAllow/network-denied helper). **That is WRONG. Corrected by Seth + a read-only SSH look at
+the device:**
+- The RealSense **D435i (USB 8086:0b3a)** lives on **jetsorano** (a Jetson Orin Nano), running Seth's
+  SEPARATE stack `~/project-repos/Sensorium` (always-on docker `sensorium-node`). **Sensorium is a
+  deliberately-dumb RAW publisher** — its README: it does NO inference/policy/minimization, "those
+  concerns belong to whatever subscribes." It publishes raw color (JPEG) + depth (PNG-16 848×480) + IMU
+  over **Zenoh** (tcp/192.168.20.179:7447). **Soma is purely the SUBSCRIBER** (`soma-sensor-broker` =
+  the Zenoh client).
+- **So minimization is SOMA's job, by Sensorium's design** — the inverse of §8.1's edge-minimization
+  assumption. (Seth chose Soma-side minimization, 2026-06-25; edge-minimization would require Sensorium
+  Phase 4, his roadmap, deferred.)
+- **CONTAINMENT MOVES (supersedes §8.3 / §8.8-C3):** the §8.3 "raw depth processing in a dedicated
+  unprivileged, NETWORK-DENIED, local-USB sandbox (FIDO-udev analogue)" is WRONG for a Soma broker that
+  is a NETWORK CLIENT (a network-denied sandbox would block the Zenoh peer; there is no local USB
+  device to isolate). The real containment is a **subscriber-side semantic transform IN the
+  `soma-sensor-broker` BEFORE Node**: the broker decodes PNG-16 depth and derives PRESENCE, emitting
+  ONLY a presence event (structurally type-split: a `PresenceEvent` variant that CANNOT carry raw
+  bytes) — raw depth payload_bytes NEVER reach Node. The boundary is the broker, not a network hop or a
+  USB sandbox.
+- **COLOR-OFF (supersedes §8.1's stream-grant framing, refined):** Soma simply never SUBSCRIBES to the
+  color topic for presence; the anchor confirms `color_active=false`. (Device-level color-deny would be
+  Sensorium's concern, not Soma's.)
+- **Local-device isolation packaging is REMOVED from Soma** (it belonged in Sensorium); the
+  fail-indeterminate **anchor fix is the keeper** (it is correctly subscriber-side: which Zenoh streams
+  are open).
+- **V1 PRESENCE FLOOR POSTURE:** depth-only body-counting without calibration confuses furniture with
+  people, so v1 is NOT a confident "room empty / no bystander" oracle. Under-confidence ⇒ `unknown` ⇒
+  H2 treats unknown as COPRESENT ⇒ over-downgrade discretion. Better to over-downgrade than under-detect
+  a bystander. (count buckets only; identity=not_performed; no Seth-identity from depth.)
+- **TURN-ON:** Sensorium is always-on on the LAN, so live validation uses the real stream — the
+  floor-crossing is enabling Soma's depth-presence subscription (Seth-gated), not a hardware session.
+
 ---
 
 ## 9. Network-egress gate (Seth steer, 2026-06-23) — the floor-heaviest output

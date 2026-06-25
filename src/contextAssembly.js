@@ -35,6 +35,7 @@ const RESERVE_FIELDS = new Set(["min_items", "min_chars"]);
 const MEMORY_CONSTRAINT_FIELDS = new Set(["domain", "memory_classes", "include_tombstones", "recency_window", "consent_scope"]);
 const ACTIVITY_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes"]);
 const DURABLE_PROVENANCE_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes", "coarse_time_buckets"]);
+const EPHEMERAL_RING_CONSTRAINT_FIELDS = new Set(["activity_classes", "event_types", "capability_classes", "summary_classes", "coarse_time_buckets"]);
 
 const ORIGINS = new Set(["fixture", "frontier", "local"]);
 const OBJECTIVE_CLASSES = new Set([
@@ -66,6 +67,14 @@ const ACTIVITY_EVENT_TYPES = new Set([
   "context.fixture.event",
   "memory.provenance.written",
   "memory.provenance.revoked",
+  "ring.model.chat.completed",
+  "ring.model.chat.denied",
+  "ring.model.chat.requested",
+  "ring.model.tool_call_intent",
+  "ring.desktop.inspected",
+  "ring.memory.read",
+  "ring.memory.session_written",
+  "ring.memory.session_removed",
 ]);
 const ACTIVITY_CAPABILITY_CLASSES = new Set(["model", "desktop", "memory", "provenance", "system", "none"]);
 const SUMMARY_CLASSES = new Set(["completed", "refused", "control", "status", "observed"]);
@@ -75,8 +84,9 @@ const CONSENT_SCOPES = new Set(["successor_inheritance", "steward_readable", "lo
 
 const SOURCE_RANKS = Object.freeze({
   durable_provenance_activity: 1,
+  ephemeral_provenance_ring: 2,
   local_activity_fixture: 3,
-  occupant_memory: 2,
+  occupant_memory: 4,
 });
 const TRUST_RANKS = Object.freeze({
   participant_memory: 3,
@@ -122,6 +132,7 @@ const REASON_CLASSES = new Set([
 export const SOURCE_ADAPTERS = Object.freeze({
   occupant_memory: createOccupantMemoryAdapter(),
   durable_provenance_activity: createDurableProvenanceActivityAdapter(),
+  ephemeral_provenance_ring: createEphemeralProvenanceRingAdapter(),
 });
 
 export function validateContextRecipe(input = {}, { adapters = SOURCE_ADAPTERS } = {}) {
@@ -165,15 +176,21 @@ export function createCompositeSourceState(sourceStates = {}) {
   const normalized = Object.fromEntries(
     Object.entries(sourceStates)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([sourceClass, state]) => [sourceClass, {
-        source_class: sourceClass,
-        snapshot_digest: stringValue(state.snapshot_digest),
-        schema_version: Number(state.schema_version ?? 1),
-        freshness_class: stringValue(state.freshness_class),
-        trust_tier: stringValue(state.trust_tier),
-        item_count: integerOrZero(state.item_count),
-        newest_timestamp_ms: integerOrZero(state.newest_timestamp_ms),
-      }]),
+      .map(([sourceClass, state]) => {
+        const normalizedState = {
+          source_class: sourceClass,
+          snapshot_digest: stringValue(state.snapshot_digest),
+          schema_version: Number(state.schema_version ?? 1),
+          freshness_class: stringValue(state.freshness_class),
+          trust_tier: stringValue(state.trust_tier),
+          item_count: integerOrZero(state.item_count),
+          newest_timestamp_ms: integerOrZero(state.newest_timestamp_ms),
+        };
+        if (state.replay_artifact_ref) {
+          normalizedState.replay_artifact_ref = stringValue(state.replay_artifact_ref);
+        }
+        return [sourceClass, normalizedState];
+      }),
   );
   return deepFreeze({
     sources: normalized,
@@ -187,6 +204,8 @@ export function assembleContextBundle({
   activityStore,
   sourceStores = {},
   sourceRecoveryReports = {},
+  replay = {},
+  replayArtifacts = {},
   adapters = SOURCE_ADAPTERS,
   now = () => new Date(),
   idFactory = randomUUID,
@@ -207,10 +226,34 @@ export function assembleContextBundle({
   const sourceResults = [];
   const sourceOmissions = [];
   const sourceStates = {};
+  const replayArtifactOutputs = {};
 
   for (const selector of validated.source_selectors) {
     const adapter = adapters[selector.source_class];
-    const store = storeForSource(selector.source_class, { occupantMemoryStore, activityStore, sourceStores });
+    const replayExpectation = replay?.[selector.source_class] ?? null;
+    const suppliedReplayArtifact = replayArtifacts?.[selector.source_class] ?? null;
+    const store = storeForSource(selector.source_class, {
+      occupantMemoryStore,
+      activityStore,
+      sourceStores,
+      replayArtifact: suppliedReplayArtifact,
+      sourceClass: selector.source_class,
+    });
+    if (adapter.freshness_class === "ephemeral" && replayExpectation?.expected_snapshot_digest && !suppliedReplayArtifact) {
+      const omission = sourceOmission(selector, "replay_state_unpinned", "none");
+      if (selector.required) {
+        return createRefusalBundle({
+          reason_class: "replay_state_unpinned",
+          recipe_digest: recipeDigest,
+          source_omissions: [omission],
+          violated_field_class: `${selector.source_class}.source_state`,
+          now,
+          idFactory,
+        });
+      }
+      sourceOmissions.push(omission);
+      continue;
+    }
     if (!store || typeof store !== "object") {
       const omission = sourceOmission(selector, "replay_state_unpinned", "none");
       if (selector.required) {
@@ -245,8 +288,33 @@ export function assembleContextBundle({
       continue;
     }
     const snapshot = adapter.snapshot(store);
+    if (
+      adapter.freshness_class === "ephemeral"
+      && replayExpectation?.expected_snapshot_digest
+      && replayExpectation.expected_snapshot_digest !== snapshot.snapshot_digest
+    ) {
+      const omission = sourceOmission(selector, "replay_state_unpinned", countClass(snapshot.item_count));
+      if (selector.required) {
+        return createRefusalBundle({
+          reason_class: "replay_state_unpinned",
+          recipe_digest: recipeDigest,
+          source_state: createCompositeSourceState({ ...sourceStates, [selector.source_class]: snapshot }),
+          source_omissions: [omission],
+          violated_field_class: `${selector.source_class}.source_state`,
+          now,
+          idFactory,
+        });
+      }
+      sourceOmissions.push(omission);
+      continue;
+    }
     sourceStates[selector.source_class] = snapshot;
-    const selected = adapter.select({ store, selector, sourceRank: sourceRankFor(selector.source_class, validated.source_class_order) });
+    let selectStore = store;
+    if (adapter.freshness_class === "ephemeral" && typeof adapter.replayArtifact === "function") {
+      replayArtifactOutputs[selector.source_class] = adapter.replayArtifact(snapshot);
+      selectStore = replayArtifactOutputs[selector.source_class];
+    }
+    const selected = adapter.select({ store: selectStore, selector, sourceRank: sourceRankFor(selector.source_class, validated.source_class_order) });
     sourceResults.push({ adapter, selector, snapshot, selected });
   }
 
@@ -318,6 +386,7 @@ export function assembleContextBundle({
     status: "assembled",
     content_included: true,
     bundle_body: bundleBody,
+    replay_artifacts: deepFreeze(replayArtifactOutputs),
     local_audit_manifest: localAuditManifest,
     frontier_facing_manifest: projectFrontierFacingManifest(localAuditManifest),
   });
@@ -480,6 +549,85 @@ export function createDurableProvenanceActivityAdapter() {
   });
 }
 
+export function createEphemeralProvenanceRingAdapter() {
+  return Object.freeze({
+    source_class: "ephemeral_provenance_ring",
+    trust_tier: "local_provenance",
+    freshness_class: "ephemeral",
+    allowed_constraints: EPHEMERAL_RING_CONSTRAINT_FIELDS,
+    minimization_modes: new Set(["activity_summary", "metadata_only"]),
+    validateSelector(selector) {
+      return normalizeEphemeralRingConstraints(selector.constraints ?? {});
+    },
+    snapshot(store = {}) {
+      const frozen_records = normalizeEphemeralRingRecords(store).sort(compareEphemeralRingRecord);
+      const snapshotMaterial = {
+        schema_version: Number(store.schema_version ?? 1),
+        frozen_records,
+      };
+      return deepFreeze({
+        source_class: "ephemeral_provenance_ring",
+        snapshot_digest: digest(canonicalJson(snapshotMaterial)),
+        schema_version: snapshotMaterial.schema_version,
+        freshness_class: "ephemeral",
+        trust_tier: "local_provenance",
+        item_count: frozen_records.length,
+        newest_timestamp_ms: newestTimestampMs(frozen_records),
+        replay_artifact_ref: `ephemeral_provenance_ring:${digest(canonicalJson({
+          source_class: "ephemeral_provenance_ring",
+          snapshot_digest: digest(canonicalJson(snapshotMaterial)),
+        }))}`,
+        frozen_records,
+      });
+    },
+    replayArtifact(snapshot) {
+      return deepFreeze({
+        source_class: "ephemeral_provenance_ring",
+        schema_version: snapshot.schema_version,
+        snapshot_digest: snapshot.snapshot_digest,
+        frozen_records: snapshot.frozen_records ?? [],
+      });
+    },
+    select({ store, selector, sourceRank }) {
+      return normalizeEphemeralRingRecords(store)
+        .map(projectEphemeralRingRecord)
+        .filter(Boolean)
+        .filter((record) => selector.constraints.activity_classes.includes(record.activity_class))
+        .filter((record) => selector.constraints.event_types.includes(record.event_type))
+        .filter((record) => selector.constraints.capability_classes.includes(record.capability_class))
+        .filter((record) => selector.constraints.summary_classes.includes(record.summary_class))
+        .filter((record) => selector.constraints.coarse_time_buckets.includes(record.coarse_time_bucket))
+        .sort((left, right) => timestampMs(right.raw.timestamp) - timestampMs(left.raw.timestamp) || left.stable_id.localeCompare(right.stable_id))
+        .map((record) => ephemeralRingItem({ record, sourceRank }));
+    },
+    sourceReceipt(item, snapshot, idFactory) {
+      const raw = item.raw.raw;
+      return Object.freeze({
+        receipt_id: `source_${idFactory()}`,
+        source_class: "ephemeral_provenance_ring",
+        source_snapshot_digest: snapshot.snapshot_digest,
+        replay_artifact_ref: snapshot.replay_artifact_ref,
+        trust_tier: "local_provenance",
+        freshness_class: "ephemeral",
+        item_kind: "ephemeral_ring_record",
+        item_ref: raw.id,
+        occurred_at: raw.timestamp,
+        raw_event_type: raw.event_type,
+        capability: raw.capability,
+        caller_identity: raw.caller_identity,
+        grant_id: raw.grant_id,
+        provider: raw.provider,
+        episode_id: raw.episode_id,
+        raw_record_digest: digest(canonicalJson(raw)),
+        content_included: false,
+      });
+    },
+    minimize(item, mode) {
+      return minimizeEphemeralRingActivity(item.raw, mode);
+    },
+  });
+}
+
 export function createSnapshotFixtureActivityAdapter() {
   return Object.freeze({
     source_class: "local_activity_fixture",
@@ -619,6 +767,26 @@ function normalizeDurableProvenanceConstraints(input) {
     event_types: enumArray(input.event_types ?? ["memory.provenance.written", "memory.provenance.revoked"], ACTIVITY_EVENT_TYPES, "source_selectors.constraints.event_types", { required: true }),
     capability_classes: enumArray(input.capability_classes ?? ["memory"], ACTIVITY_CAPABILITY_CLASSES, "source_selectors.constraints.capability_classes", { required: true }),
     summary_classes: enumArray(input.summary_classes ?? ["completed", "control"], SUMMARY_CLASSES, "source_selectors.constraints.summary_classes", { required: true }),
+    coarse_time_buckets: enumArray(input.coarse_time_buckets ?? [...COARSE_TIME_BUCKETS], COARSE_TIME_BUCKETS, "source_selectors.constraints.coarse_time_buckets", { required: true }),
+  });
+}
+
+function normalizeEphemeralRingConstraints(input) {
+  rejectUnknownFields(input, EPHEMERAL_RING_CONSTRAINT_FIELDS, "source_selectors.constraints");
+  return deepFreeze({
+    activity_classes: enumArray(input.activity_classes ?? ["capability_use", "observation", "status", "control"], ACTIVITY_CLASSES, "source_selectors.constraints.activity_classes", { required: true }),
+    event_types: enumArray(input.event_types ?? [
+      "ring.model.chat.completed",
+      "ring.model.chat.denied",
+      "ring.model.chat.requested",
+      "ring.model.tool_call_intent",
+      "ring.desktop.inspected",
+      "ring.memory.read",
+      "ring.memory.session_written",
+      "ring.memory.session_removed",
+    ], ACTIVITY_EVENT_TYPES, "source_selectors.constraints.event_types", { required: true }),
+    capability_classes: enumArray(input.capability_classes ?? ["model", "desktop", "memory"], ACTIVITY_CAPABILITY_CLASSES, "source_selectors.constraints.capability_classes", { required: true }),
+    summary_classes: enumArray(input.summary_classes ?? ["completed", "refused", "status", "observed", "control"], SUMMARY_CLASSES, "source_selectors.constraints.summary_classes", { required: true }),
     coarse_time_buckets: enumArray(input.coarse_time_buckets ?? [...COARSE_TIME_BUCKETS], COARSE_TIME_BUCKETS, "source_selectors.constraints.coarse_time_buckets", { required: true }),
   });
 }
@@ -1226,6 +1394,24 @@ function minimizeDurableProvenanceActivity(record, minimization) {
   };
 }
 
+function minimizeEphemeralRingActivity(record, minimization) {
+  const header = [
+    `Activity class: ${record.activity_class}`,
+    `Event type: ${record.event_type}`,
+    `Capability class: ${record.capability_class}`,
+    `Summary class: ${record.summary_class}`,
+    `Coarse time: ${record.coarse_time_bucket}`,
+  ].join("\n");
+  const body = minimization === "metadata_only"
+    ? header
+    : `Ephemeral provenance ring activity:\n${header}`;
+  return {
+    body,
+    char_count: body.length,
+    reason_class: minimization === "metadata_only" ? "metadata_only" : "selected",
+  };
+}
+
 function createSelectionReceipt({
   decision,
   reason_class,
@@ -1313,7 +1499,10 @@ function createRefusalBundle({
   });
 }
 
-function storeForSource(sourceClass, { occupantMemoryStore, activityStore, sourceStores }) {
+function storeForSource(sourceClass, { occupantMemoryStore, activityStore, sourceStores, replayArtifact = null }) {
+  if (replayArtifact && typeof replayArtifact === "object") {
+    return replayArtifact;
+  }
   if (Object.hasOwn(sourceStores, sourceClass)) {
     return sourceStores[sourceClass];
   }
@@ -1363,6 +1552,44 @@ function normalizeDurableProvenanceRecords(store = {}) {
     }));
 }
 
+function normalizeEphemeralRingRecords(store = {}) {
+  const records = Array.isArray(store.frozen_records)
+    ? store.frozen_records
+    : Array.isArray(store.entries)
+      ? store.entries
+      : Array.isArray(store.records)
+        ? store.records
+        : Array.isArray(store.events)
+          ? store.events
+          : typeof store.list === "function"
+            ? store.list()
+            : [];
+  return records
+    .filter((record) => !selfReferentialRingEvent(record.event_type))
+    .map((record, index) => ({
+      id: boundedId(record.id ?? `ring-${index + 1}`, "ephemeral_ring.id"),
+      event_type: stringValue(record.event_type),
+      timestamp: stringValue(record.timestamp),
+      capability: stringValue(record.capability),
+      caller_identity: stringValue(record.caller_identity),
+      grant_id: stringValue(record.grant_id),
+      provider: stringValue(record.provider),
+      scope: stringValue(record.scope),
+      episode_id: stringValue(record.episode_id),
+      allowed: record.allowed === true,
+      disposition: stringValue(record.disposition),
+      memory_written: record.memory_written === true,
+      memory_read: record.memory_read === true,
+      remote_service_used: record.remote_service_used === true,
+      activation_performed: record.activation_performed === true,
+    }));
+}
+
+function selfReferentialRingEvent(eventType) {
+  const value = String(eventType ?? "");
+  return value.startsWith("context.assembly.") || value.startsWith("context_assembly.");
+}
+
 function projectDurableProvenanceRecord(raw) {
   if (raw.event_type === "occupant.memory.written") {
     return {
@@ -1389,6 +1616,83 @@ function projectDurableProvenanceRecord(raw) {
     };
   }
   return null;
+}
+
+function projectEphemeralRingRecord(raw) {
+  if (raw.event_type === "model.chat.completed") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.model.chat.completed",
+      activity_class: "capability_use",
+      capability_class: "model",
+      summary_class: "completed",
+    });
+  }
+  if (raw.event_type === "model.chat.denied") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.model.chat.denied",
+      activity_class: "control",
+      capability_class: "model",
+      summary_class: "refused",
+    });
+  }
+  if (raw.event_type === "model.chat.requested") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.model.chat.requested",
+      activity_class: "status",
+      capability_class: "model",
+      summary_class: "status",
+    });
+  }
+  if (raw.event_type === "model.local.tool_call_intent") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.model.tool_call_intent",
+      activity_class: "capability_use",
+      capability_class: "model",
+      summary_class: raw.allowed ? "completed" : "refused",
+    });
+  }
+  if (["desktop.inspect.accessibility_tree", "desktop.inspect.focus", "desktop.inspect.windows", "desktop.inspect.text"].includes(raw.event_type)) {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.desktop.inspected",
+      activity_class: "observation",
+      capability_class: "desktop",
+      summary_class: "observed",
+    });
+  }
+  if (raw.event_type === "occupant.memory.read") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.memory.read",
+      activity_class: "capability_use",
+      capability_class: "memory",
+      summary_class: "completed",
+    });
+  }
+  if (raw.event_type === "memory.session.written") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.memory.session_written",
+      activity_class: "capability_use",
+      capability_class: "memory",
+      summary_class: "completed",
+    });
+  }
+  if (raw.event_type === "memory.session.removed") {
+    return ephemeralRingProjection(raw, {
+      event_type: "ring.memory.session_removed",
+      activity_class: "control",
+      capability_class: "memory",
+      summary_class: "control",
+    });
+  }
+  return null;
+}
+
+function ephemeralRingProjection(raw, projected) {
+  return {
+    raw,
+    stable_id: `ephemeral_provenance_ring:${raw.id}:${raw.event_type}:${raw.timestamp}`,
+    ...projected,
+    coarse_time_bucket: coarseTimeBucket(raw.timestamp),
+  };
 }
 
 function memoryItem({ kind, entry, tombstone, sourceRank }) {
@@ -1438,6 +1742,21 @@ function durableProvenanceActivityItem({ record, sourceRank }) {
   };
 }
 
+function ephemeralRingItem({ record, sourceRank }) {
+  return {
+    source_class: "ephemeral_provenance_ring",
+    raw: record,
+    sort_key: sortKey({
+      source_class: "ephemeral_provenance_ring",
+      timestamp: record.raw.timestamp,
+      sourceRank,
+      trustRank: TRUST_RANKS.local_provenance,
+      freshnessRank: FRESHNESS_RANKS.ephemeral,
+      stable: record.stable_id,
+    }),
+  };
+}
+
 function sortKey({ source_class, timestamp, sourceRank, trustRank, freshnessRank, stable }) {
   return Object.freeze({
     timestamp_ms: timestampMs(timestamp),
@@ -1462,6 +1781,12 @@ function compareActivityById(left, right) {
 function compareDurableProvenanceRecord(left, right) {
   return left.event_type.localeCompare(right.event_type)
     || left.entry_id.localeCompare(right.entry_id)
+    || left.timestamp.localeCompare(right.timestamp);
+}
+
+function compareEphemeralRingRecord(left, right) {
+  return left.event_type.localeCompare(right.event_type)
+    || left.id.localeCompare(right.id)
     || left.timestamp.localeCompare(right.timestamp);
 }
 

@@ -88,6 +88,53 @@ function activitySelector(overrides = {}) {
   };
 }
 
+function ringSelector(overrides = {}) {
+  return {
+    source_class: "ephemeral_provenance_ring",
+    required: true,
+    constraints: {
+      activity_classes: ["capability_use", "observation", "status", "control"],
+      event_types: [
+        "ring.model.chat.completed",
+        "ring.model.chat.denied",
+        "ring.model.chat.requested",
+        "ring.model.tool_call_intent",
+        "ring.desktop.inspected",
+        "ring.memory.read",
+        "ring.memory.session_written",
+        "ring.memory.session_removed",
+      ],
+      capability_classes: ["model", "desktop", "memory"],
+      summary_classes: ["completed", "refused", "status", "observed", "control"],
+      coarse_time_buckets: ["recent", "older", "unknown"],
+    },
+    minimization: "activity_summary",
+    budget: {
+      max_items: 4,
+      max_chars: 2_000,
+      overflow_policy: "evict_oldest",
+    },
+    ...overrides,
+  };
+}
+
+function ringRecipe(overrides = {}) {
+  return baseRecipe({
+    source_selectors: [
+      memorySelector(),
+      activitySelector(),
+      ringSelector(),
+    ],
+    source_class_order: ["ephemeral_provenance_ring", "durable_provenance_activity", "occupant_memory"],
+    context_budget: {
+      max_items: 10,
+      max_chars: 6_000,
+      overflow_policy: "evict_oldest",
+    },
+    ...overrides,
+  });
+}
+
 function memoryStore() {
   return {
     schema_version: 1,
@@ -184,6 +231,60 @@ function activityStore() {
         domain: "general",
       }),
     ],
+  };
+}
+
+function ringStore() {
+  return {
+    schema_version: 1,
+    entries: [
+      ringEvent({
+        id: "ring-model-complete",
+        event_type: "model.chat.completed",
+        timestamp: "2026-06-25T03:20:00.000Z",
+        capability: "model.local.chat",
+        caller_identity: "frontier-private-caller",
+        episode_id: "episode-ring-private",
+      }),
+      ringEvent({
+        id: "ring-desktop",
+        event_type: "desktop.inspect.focus",
+        timestamp: "2026-06-25T03:10:00.000Z",
+        capability: "desktop.inspect.focus",
+        grant_id: "grant-ring-desktop",
+        provider: "soma.provider.desktop",
+      }),
+      ringEvent({
+        id: "ring-self",
+        event_type: "context.assembly.started",
+        timestamp: "2026-06-25T03:30:00.000Z",
+      }),
+      ringEvent({
+        id: "ring-unmapped",
+        event_type: "provenance.summary.read",
+        timestamp: "2026-06-25T03:25:00.000Z",
+      }),
+    ],
+  };
+}
+
+function ringEvent(overrides = {}) {
+  return {
+    id: "ring-event",
+    event_type: "model.chat.requested",
+    timestamp: "2026-06-25T03:00:00.000Z",
+    capability: "model.local.chat",
+    caller_identity: "ring-caller",
+    grant_id: "ring-grant",
+    provider: "ring-provider",
+    scope: "session",
+    episode_id: "ring-episode",
+    allowed: true,
+    memory_written: false,
+    memory_read: false,
+    remote_service_used: false,
+    activation_performed: false,
+    ...overrides,
   };
 }
 
@@ -414,6 +515,103 @@ test("durable provenance skips unknown event types without raw pass-through", ()
   assert.equal(result.bundle_body.includes("private-rename-event"), false);
   assert.equal(JSON.stringify(result.local_audit_manifest.source_receipts).includes("private-rename-event"), false);
   assert.equal(result.bundle_body.includes("Durable provenance activity"), true);
+});
+
+test("fresh ephemeral ring assembly freezes and returns replay artifact", () => {
+  const result = assemble(ringRecipe(), {
+    sourceStores: { ephemeral_provenance_ring: ringStore() },
+  });
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.bundle_body.includes("Ephemeral provenance ring activity"), true);
+  assert.equal(result.local_audit_manifest.source_state.sources.ephemeral_provenance_ring.freshness_class, "ephemeral");
+  assert.equal(result.local_audit_manifest.source_state.sources.ephemeral_provenance_ring.replay_artifact_ref.length > 0, true);
+  assert.equal(result.replay_artifacts.ephemeral_provenance_ring.source_class, "ephemeral_provenance_ring");
+  assert.equal(
+    result.replay_artifacts.ephemeral_provenance_ring.snapshot_digest,
+    result.local_audit_manifest.source_state.sources.ephemeral_provenance_ring.snapshot_digest,
+  );
+  assert.equal(Array.isArray(result.replay_artifacts.ephemeral_provenance_ring.frozen_records), true);
+});
+
+test("ephemeral ring replay uses supplied frozen artifact and ignores live drift", () => {
+  const recipe = ringRecipe();
+  const first = assemble(recipe, {
+    sourceStores: { ephemeral_provenance_ring: ringStore() },
+  });
+  const expected = first.replay_artifacts.ephemeral_provenance_ring.snapshot_digest;
+  const drifted = ringStore();
+  drifted.entries.unshift(ringEvent({
+    id: "ring-newer-drift",
+    event_type: "model.chat.denied",
+    timestamp: "2026-06-25T04:00:00.000Z",
+  }));
+
+  const replayed = assemble(recipe, {
+    sourceStores: { ephemeral_provenance_ring: drifted },
+    replay: { ephemeral_provenance_ring: { expected_snapshot_digest: expected } },
+    replayArtifacts: { ephemeral_provenance_ring: first.replay_artifacts.ephemeral_provenance_ring },
+  });
+
+  assert.equal(replayed.status, "assembled");
+  assert.equal(replayed.bundle_body, first.bundle_body);
+  assert.equal(replayed.local_audit_manifest.bundle_digest, first.local_audit_manifest.bundle_digest);
+});
+
+test("ephemeral ring replay without frozen artifact refuses instead of reading live ring", () => {
+  const first = assemble(ringRecipe(), {
+    sourceStores: { ephemeral_provenance_ring: ringStore() },
+  });
+  const drifted = ringStore();
+  drifted.entries.unshift(ringEvent({
+    id: "ring-newer-drift",
+    event_type: "model.chat.denied",
+    timestamp: "2026-06-25T04:00:00.000Z",
+  }));
+
+  const replayed = assemble(ringRecipe(), {
+    sourceStores: { ephemeral_provenance_ring: drifted },
+    replay: { ephemeral_provenance_ring: { expected_snapshot_digest: first.replay_artifacts.ephemeral_provenance_ring.snapshot_digest } },
+  });
+
+  assert.equal(replayed.status, "refused");
+  assert.equal(replayed.local_audit_manifest.reason_class, "replay_state_unpinned");
+  assert.equal(replayed.bundle_body, "");
+});
+
+test("ephemeral ring filters self and unmapped events without raw pass-through", () => {
+  const result = assemble(ringRecipe(), {
+    sourceStores: { ephemeral_provenance_ring: ringStore() },
+  });
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.bundle_body.includes("context.assembly.started"), false);
+  assert.equal(result.bundle_body.includes("provenance.summary.read"), false);
+  assert.equal(result.bundle_body.includes("ring-self"), false);
+  assert.equal(result.bundle_body.includes("ring-unmapped"), false);
+  assert.equal(JSON.stringify(result.local_audit_manifest.source_receipts).includes("ring-self"), false);
+  assert.equal(JSON.stringify(result.local_audit_manifest.source_receipts).includes("ring-unmapped"), false);
+});
+
+test("ephemeral ring projection keeps raw identifiers local-audit-only", () => {
+  const result = assemble(ringRecipe(), {
+    sourceStores: { ephemeral_provenance_ring: ringStore() },
+  });
+  const body = result.bundle_body;
+  const audit = JSON.stringify(result.local_audit_manifest.source_receipts);
+
+  for (const forbidden of [
+    "ring-model-complete",
+    "frontier-private-caller",
+    "episode-ring-private",
+    "grant-ring-desktop",
+    "soma.provider.desktop",
+    "2026-06-25T03:20:00.000Z",
+  ]) {
+    assert.equal(body.includes(forbidden), false, `${forbidden} leaked into bundle_body`);
+  }
+  assert.equal(audit.includes("ring-model-complete"), true);
+  assert.equal(audit.includes("grant-ring-desktop"), true);
 });
 
 test("cross-source ordering supports newest_first class_priority and receipt_priority", () => {

@@ -438,3 +438,26 @@ test("remote graphical provider claim does not collapse view input and disconnec
   assert.ok(disconnect.excluded_by_default.includes("remote desktop video access"));
   assert.ok(disconnect.excluded_by_default.includes("keyboard input"));
 });
+
+test("comms fixture send is explicit-grant and fixture-only", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const comms = view.capabilities.find((capability) => capability.key === "comms.fixture.send");
+  assert.ok(comms, "expected comms.fixture.send to be present in catalog");
+  assert.equal(comms.category, "comms");
+  assert.equal(comms.risk_class, "high");
+  assert.equal(comms.harness_status, "disabled");
+  assert.equal(comms.status, "requestable");
+  assert.equal(comms.activation_policy, "explicit_grant");
+  assert.equal(comms.reversible, false);
+  assert.equal(comms.provider_contract, "soma.comms.fixture.send.v1");
+  assert.ok(comms.excluded_by_default.includes("real external transmission"));
+  assert.ok(comms.excluded_by_default.includes("Tier-0 no-touch sending"));
+  assert.equal(comms.providers.length, 1);
+  assert.equal(comms.providers[0].id, "soma.provider.comms-fixture");
+  assert.equal(comms.providers[0].local_only, true);
+  assert.equal(comms.providers[0].network_access, false);
+  assert.equal(comms.providers[0].provider_contract, "soma.comms.fixture.send.v1");
+});

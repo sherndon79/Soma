@@ -662,6 +662,31 @@
       "description": "Render an occupant-owned, visibly marked desktop cue through the local sensorium gate. The local tier derives consequence class and reconciles audience before rendering."
     },
     {
+      "key": "comms.fixture.send",
+      "name": "Fixture Communication Send",
+      "category": "comms",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once", "session"],
+      "data_exposed": [
+        "fixture recipient identifiers",
+        "draft and target binding digests",
+        "recipient-visible agent assistance mark metadata",
+        "trusted local confirmation receipt id"
+      ],
+      "excluded_by_default": [
+        "real external transmission",
+        "unmarked outbound messages",
+        "message body content in provenance",
+        "caller-supplied relationship trust",
+        "Tier-0 no-touch sending"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.comms.fixture.send.v1",
+      "description": "Send a reviewed draft through a local fixture-only communication provider. The gate applies a recipient-visible agent-assisted mark, derives C3/Tier-1 locally, and requires trusted local confirmation before fixture transmission."
+    },
+    {
       "key": "desktop.remote.input.pointer",
       "name": "Remote Desktop Pointer Input",
       "category": "desktop",

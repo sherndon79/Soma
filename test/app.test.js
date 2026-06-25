@@ -442,6 +442,19 @@ const capabilityCatalog = {
       provider_contract: "soma.provenance.summary.read.v1",
     },
     {
+      key: "comms.fixture.send",
+      name: "Fixture Communication Send",
+      category: "comms",
+      risk_class: "high",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: ["fixture recipient identifiers", "draft and target binding digests"],
+      excluded_by_default: ["real external transmission", "unmarked outbound messages", "message body content in provenance"],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.comms.fixture.send.v1",
+    },
+    {
       key: "tool.files.read",
       name: "Scoped File Read",
       category: "files",
@@ -679,6 +692,19 @@ const providerRegistry = {
       ],
     },
     {
+      id: "soma.provider.comms-fixture",
+      name: "Fixture Communication Provider",
+      runtime: "test",
+      local_only: true,
+      network_access: false,
+      capabilities: [
+        {
+          key: "comms.fixture.send",
+          provider_contract: "soma.comms.fixture.send.v1",
+        },
+      ],
+    },
+    {
       id: "soma.provider.scoped-files",
       name: "Scoped File Reader",
       runtime: "test",
@@ -808,10 +834,11 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 24);
+  assert.equal(response.body.summary.total, 25);
   assert.equal(response.body.summary.by_status.active, 3);
-  assert.equal(response.body.summary.by_status.requestable, 21);
+  assert.equal(response.body.summary.by_status.requestable, 22);
   assert.equal(Object.hasOwn(response.body.summary.by_status, "unsupported"), false);
+  assert.equal(response.body.grouped.comms.total, 1);
   assert.equal(response.body.grouped.desktop.total, 10);
   assert.equal(response.body.grouped.files.total, 1);
   assert.equal(response.body.grouped.memory.total, 1);
@@ -836,6 +863,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
   const semanticEvents = response.body.capabilities.find((capability) => capability.key === "sensorium.semantic_events.read");
   const visualCue = response.body.capabilities.find((capability) => capability.key === "desktop.visual_cue.present");
+  const commsFixture = response.body.capabilities.find((capability) => capability.key === "comms.fixture.send");
   assert.equal(localToolCalls.status, "requestable");
   assert.equal(localToolCalls.providers[0].id, "local-model");
   assert.equal(remoteChat.status, "requestable");
@@ -861,6 +889,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(semanticEvents.providers[0].id, "soma.provider.sensorium-tier");
   assert.equal(visualCue.status, "requestable");
   assert.equal(visualCue.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(commsFixture.status, "requestable");
+  assert.equal(commsFixture.providers[0].id, "soma.provider.comms-fixture");
 });
 
 test("POST /model-visual/review-text formats proposal review without activation", async () => {

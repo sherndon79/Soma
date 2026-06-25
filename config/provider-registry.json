@@ -388,6 +388,21 @@
       ]
     },
     {
+      "id": "soma.provider.comms-fixture",
+      "name": "Fixture Communication Provider",
+      "version": "0.1.0",
+      "runtime": "node-in-process-fixture",
+      "local_only": true,
+      "network_access": false,
+      "capabilities": [
+        {
+          "key": "comms.fixture.send",
+          "provider_contract": "soma.comms.fixture.send.v1",
+          "output_schema": "soma.comms.fixture.send.response.v1"
+        }
+      ]
+    },
+    {
       "id": "soma.provider.remote_desktop.sunshine",
       "name": "Remote Desktop Sunshine/Moonlight Transport",
       "version": "0.1.0",

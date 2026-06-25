@@ -28,13 +28,14 @@
 //! stdout.
 
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use image::{GenericImageView, ImageFormat};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -80,6 +81,26 @@ struct DepthTransformConfig {
 enum SampleTransformConfig {
     Color(ColorTransformConfig),
     Depth(DepthTransformConfig),
+    DepthPresence,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct PresenceDepthEvent {
+    schema_version: u32,
+    event_type: &'static str,
+    count_bucket: &'static str,
+    additional_person_present: &'static str,
+    confidence_bucket: &'static str,
+    identity: &'static str,
+    seth_present: &'static str,
+    copresence_source: &'static str,
+    raw_payload_included: bool,
+    raw_payload_allowed_to_node: bool,
+}
+
+enum TransformResult {
+    PayloadBytes(Vec<u8>),
+    PresenceEvent(PresenceDepthEvent),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -434,38 +455,61 @@ async fn handle_subscribe_start(
                         last_delivered = Some(Instant::now());
                     }
                     let original = sample.payload().to_bytes().to_vec();
-                    let bytes = match transform_sample_payload(&original, sample_transform.as_ref())
-                    {
-                        Ok(bytes) => bytes,
-                        Err(error_class) => {
-                            let notification = json!({
-                                "jsonrpc": "2.0",
-                                "method": "sensorium.subscription.error",
-                                "params": {
-                                    "subscription_id": sub_id_for_task,
-                                    "topic": topic_for_task,
-                                    "error_class": error_class,
-                                }
-                            });
-                            let _ = output_tx.send(notification.to_string());
-                            break;
-                        }
+                    let transform_result =
+                        match transform_sample_payload(&original, sample_transform.as_ref()) {
+                            Ok(transform_result) => transform_result,
+                            Err(error_class) => {
+                                let notification = json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "sensorium.subscription.error",
+                                    "params": {
+                                        "subscription_id": sub_id_for_task,
+                                        "topic": topic_for_task,
+                                        "error_class": error_class,
+                                    }
+                                });
+                                let _ = output_tx.send(notification.to_string());
+                                break;
+                            }
+                        };
+                    let notification = match transform_result {
+                        TransformResult::PayloadBytes(bytes) => json!({
+                            "jsonrpc": "2.0",
+                            "method": "sensorium.subscription.sample",
+                            "params": {
+                                "subscription_id": sub_id_for_task,
+                                "topic": topic_for_task,
+                                "payload_bytes": bytes,
+                                "payload_size": bytes.len(),
+                            }
+                        }),
+                        TransformResult::PresenceEvent(event) => json!({
+                            "jsonrpc": "2.0",
+                            "method": "sensorium.presence.depth.event",
+                            "params": {
+                                "subscription_id": sub_id_for_task,
+                                "topic": topic_for_task,
+                                "event": event,
+                            }
+                        }),
                     };
-                    let notification = json!({
-                        "jsonrpc": "2.0",
-                        "method": "sensorium.subscription.sample",
-                        "params": {
-                            "subscription_id": sub_id_for_task,
-                            "topic": topic_for_task,
-                            "payload_bytes": bytes,
-                            "payload_size": bytes.len(),
-                        }
-                    });
                     if output_tx.send(notification.to_string()).is_err() {
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(_) => {
+                    let notification = json!({
+                        "jsonrpc": "2.0",
+                        "method": "sensorium.subscription.error",
+                        "params": {
+                            "subscription_id": sub_id_for_task,
+                            "topic": topic_for_task,
+                            "error_class": "zenoh_recv_failed",
+                        }
+                    });
+                    let _ = output_tx.send(notification.to_string());
+                    break;
+                }
             }
         }
     });
@@ -512,6 +556,44 @@ fn parse_optional_sample_transform(
     params: &Value,
     topic: &str,
 ) -> Result<Option<SampleTransformConfig>, String> {
+    let presence_transform = match params.get("presence_transform") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => {
+            return Err(
+                "subscribe.start params.presence_transform must be a boolean when provided"
+                    .to_string(),
+            )
+        }
+    };
+    if presence_transform {
+        if !topic.ends_with("/realsense/depth") {
+            return Err(
+                "subscribe.start params.presence_transform requires a realsense depth topic"
+                    .to_string(),
+            );
+        }
+        if params
+            .get("downsample_to")
+            .is_some_and(|value| !value.is_null())
+        {
+            return Err(
+                "subscribe.start params.downsample_to is not allowed with presence_transform"
+                    .to_string(),
+            );
+        }
+        if params
+            .get("format_required")
+            .is_some_and(|value| !value.is_null())
+        {
+            return Err(
+                "subscribe.start params.format_required is not allowed with presence_transform"
+                    .to_string(),
+            );
+        }
+        return Ok(Some(SampleTransformConfig::DepthPresence));
+    }
+
     let downsample = match params.get("downsample_to") {
         None | Some(Value::Null) => None,
         Some(value) => Some(parse_downsample_to(value)?),
@@ -607,11 +689,18 @@ fn parse_dimension(value: &Value, label: &str) -> Result<u32, String> {
 fn transform_sample_payload(
     payload: &[u8],
     sample_transform: Option<&SampleTransformConfig>,
-) -> Result<Vec<u8>, &'static str> {
+) -> Result<TransformResult, &'static str> {
     match sample_transform {
-        None => Ok(payload.to_vec()),
-        Some(SampleTransformConfig::Color(config)) => transform_color_payload(payload, config),
-        Some(SampleTransformConfig::Depth(config)) => transform_depth_payload(payload, config),
+        None => Ok(TransformResult::PayloadBytes(payload.to_vec())),
+        Some(SampleTransformConfig::Color(config)) => {
+            transform_color_payload(payload, config).map(TransformResult::PayloadBytes)
+        }
+        Some(SampleTransformConfig::Depth(config)) => {
+            transform_depth_payload(payload, config).map(TransformResult::PayloadBytes)
+        }
+        Some(SampleTransformConfig::DepthPresence) => Ok(TransformResult::PresenceEvent(
+            transform_depth_presence_payload(payload),
+        )),
     }
 }
 
@@ -724,6 +813,186 @@ fn transform_depth_payload(
     rmp_serde::to_vec_named(&frame).map_err(|_| "depth_msgpack_encode_failed")
 }
 
+fn transform_depth_presence_payload(payload: &[u8]) -> PresenceDepthEvent {
+    match derive_depth_presence_event(payload) {
+        Ok(event) => event,
+        Err(error_class) => {
+            eprintln!("sensorium depth presence transform degraded to unknown: {error_class}");
+            unknown_presence_event()
+        }
+    }
+}
+
+fn derive_depth_presence_event(payload: &[u8]) -> Result<PresenceDepthEvent, &'static str> {
+    let frame: DepthFrame =
+        rmp_serde::from_slice(payload).map_err(|_| "depth_presence_msgpack_decode_failed")?;
+    if frame.schema_version != 1 {
+        return Err("depth_presence_schema_unsupported");
+    }
+    if frame.format != "png" {
+        return Err("depth_presence_format_unsupported");
+    }
+    if !frame.depth_units.is_finite() || frame.depth_units <= 0.0 {
+        return Err("depth_presence_units_invalid");
+    }
+
+    let image = image::load_from_memory_with_format(&frame.data, ImageFormat::Png)
+        .map_err(|_| "depth_presence_png_decode_failed")?;
+    let (source_width, source_height) = image.dimensions();
+    if source_width == 0 || source_height == 0 {
+        return Err("depth_presence_image_dimensions_invalid");
+    }
+
+    Ok(classify_depth_presence_image(&image, frame.depth_units))
+}
+
+fn classify_depth_presence_image(image: &DynamicImage, depth_units: f64) -> PresenceDepthEvent {
+    const GRID_WIDTH: usize = 64;
+    const GRID_HEIGHT: usize = 36;
+    const NEAR_METERS: f64 = 0.4;
+    const FAR_METERS: f64 = 4.5;
+    const MIN_VALID_COVERAGE: f64 = 0.25;
+    const MIN_COMPONENT_AREA: usize = 8;
+    const MAX_COMPONENTS_BEFORE_UNKNOWN: usize = 4;
+    const MAX_TINY_COMPONENT_CELLS: usize = 24;
+    const MAX_IN_BAND_FRACTION: f64 = 0.45;
+
+    let luma = image.to_luma16();
+    let (width, height) = luma.dimensions();
+    let mut valid_by_cell = vec![0_u32; GRID_WIDTH * GRID_HEIGHT];
+    let mut in_band_by_cell = vec![0_u32; GRID_WIDTH * GRID_HEIGHT];
+    let mut valid_pixels: u64 = 0;
+
+    for (x, y, pixel) in luma.enumerate_pixels() {
+        let raw = pixel.0[0];
+        if raw == 0 {
+            continue;
+        }
+        valid_pixels += 1;
+        let cell_x = ((x as usize * GRID_WIDTH) / width as usize).min(GRID_WIDTH - 1);
+        let cell_y = ((y as usize * GRID_HEIGHT) / height as usize).min(GRID_HEIGHT - 1);
+        let cell = cell_y * GRID_WIDTH + cell_x;
+        valid_by_cell[cell] += 1;
+        let meters = f64::from(raw) * depth_units;
+        if (NEAR_METERS..=FAR_METERS).contains(&meters) {
+            in_band_by_cell[cell] += 1;
+        }
+    }
+
+    let total_pixels = u64::from(width) * u64::from(height);
+    let valid_coverage = valid_pixels as f64 / total_pixels as f64;
+    if valid_coverage < MIN_VALID_COVERAGE {
+        return unknown_presence_event();
+    }
+
+    let mut mask = vec![false; GRID_WIDTH * GRID_HEIGHT];
+    for index in 0..mask.len() {
+        let valid = valid_by_cell[index];
+        if valid == 0 {
+            continue;
+        }
+        let in_band = in_band_by_cell[index];
+        if in_band >= 2 && f64::from(in_band) / f64::from(valid) >= 0.60 {
+            mask[index] = true;
+        }
+    }
+
+    let in_band_cells = mask.iter().filter(|cell| **cell).count();
+    if in_band_cells as f64 / mask.len() as f64 > MAX_IN_BAND_FRACTION {
+        return unknown_presence_event();
+    }
+
+    let components = connected_component_areas(&mask, GRID_WIDTH, GRID_HEIGHT);
+    let body_components: Vec<usize> = components
+        .iter()
+        .copied()
+        .filter(|area| *area >= MIN_COMPONENT_AREA)
+        .collect();
+    let tiny_component_cells: usize = components
+        .iter()
+        .copied()
+        .filter(|area| *area < MIN_COMPONENT_AREA)
+        .sum();
+    if body_components.len() > MAX_COMPONENTS_BEFORE_UNKNOWN
+        || tiny_component_cells > MAX_TINY_COMPONENT_CELLS
+    {
+        return unknown_presence_event();
+    }
+
+    match body_components.len() {
+        0 => presence_event("0", "not_detected", "medium"),
+        1 => presence_event("1", "not_detected", "medium"),
+        2..=MAX_COMPONENTS_BEFORE_UNKNOWN => presence_event("2_plus", "present", "medium"),
+        _ => unknown_presence_event(),
+    }
+}
+
+fn connected_component_areas(mask: &[bool], width: usize, height: usize) -> Vec<usize> {
+    let mut seen = vec![false; mask.len()];
+    let mut areas = Vec::new();
+    for start in 0..mask.len() {
+        if !mask[start] || seen[start] {
+            continue;
+        }
+        let mut area = 0;
+        let mut queue = VecDeque::from([start]);
+        seen[start] = true;
+        while let Some(index) = queue.pop_front() {
+            area += 1;
+            let x = index % width;
+            let y = index / width;
+            for (nx, ny) in neighbors4(x, y, width, height) {
+                let next = ny * width + nx;
+                if mask[next] && !seen[next] {
+                    seen[next] = true;
+                    queue.push_back(next);
+                }
+            }
+        }
+        areas.push(area);
+    }
+    areas
+}
+
+fn neighbors4(
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) -> impl Iterator<Item = (usize, usize)> {
+    [
+        x.checked_sub(1).map(|nx| (nx, y)),
+        (x + 1 < width).then_some((x + 1, y)),
+        y.checked_sub(1).map(|ny| (x, ny)),
+        (y + 1 < height).then_some((x, y + 1)),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+fn unknown_presence_event() -> PresenceDepthEvent {
+    presence_event("unknown", "unknown", "low")
+}
+
+fn presence_event(
+    count_bucket: &'static str,
+    additional_person_present: &'static str,
+    confidence_bucket: &'static str,
+) -> PresenceDepthEvent {
+    PresenceDepthEvent {
+        schema_version: 1,
+        event_type: "presence.depth",
+        count_bucket,
+        additional_person_present,
+        confidence_bucket,
+        identity: "not_performed",
+        seth_present: "unknown",
+        copresence_source: "depth",
+        raw_payload_included: false,
+        raw_payload_allowed_to_node: false,
+    }
+}
+
 fn bounded_dimensions(
     source_width: u32,
     source_height: u32,
@@ -829,7 +1098,26 @@ mod tests {
         encoded
     }
 
+    fn png_depth_bytes_from_fn(
+        width: u32,
+        height: u32,
+        value: impl Fn(u32, u32) -> u16,
+    ) -> Vec<u8> {
+        let image = ImageBuffer::from_fn(width, height, |x, y| Luma([value(x, y)]));
+        let dyn_image = DynamicImage::ImageLuma16(image);
+        let mut encoded = Vec::new();
+        let mut cursor = Cursor::new(&mut encoded);
+        dyn_image
+            .write_to(&mut cursor, ImageFormat::Png)
+            .expect("encode fixture png");
+        encoded
+    }
+
     fn depth_payload(width: u32, height: u32) -> Vec<u8> {
+        depth_payload_with_png(width, height, png_depth_bytes(width, height), 0.001)
+    }
+
+    fn depth_payload_with_png(width: u32, height: u32, data: Vec<u8>, depth_units: f64) -> Vec<u8> {
         rmp_serde::to_vec_named(&DepthFrame {
             schema_version: 1,
             timestamp: 1_779_000_001.25,
@@ -837,10 +1125,21 @@ mod tests {
             width,
             height,
             format: "png".to_string(),
-            depth_units: 0.001,
-            data: png_depth_bytes(width, height),
+            depth_units,
+            data,
         })
         .expect("encode depth frame")
+    }
+
+    fn synthetic_depth_payload(value: impl Fn(u32, u32) -> u16) -> Vec<u8> {
+        let width = 160;
+        let height = 90;
+        depth_payload_with_png(
+            width,
+            height,
+            png_depth_bytes_from_fn(width, height, value),
+            0.001,
+        )
     }
 
     #[tokio::test]
@@ -1099,6 +1398,60 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn start_rejects_presence_transform_on_color_topic_before_opening_subscription() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "sensorium.subscribe.start",
+                "params": {
+                    "topic": "sensor/test/realsense/color",
+                    "presence_transform": true,
+                },
+                "id": "bad-presence-transform",
+            })
+            .to_string(),
+            make_state(),
+            tx,
+        )
+        .await;
+
+        assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
+        assert_eq!(resp["error"]["code_name"], "invalid_params");
+        assert!(resp["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("presence_transform requires a realsense depth topic"));
+    }
+
+    #[tokio::test]
+    async fn start_rejects_raw_depth_transform_params_with_presence_transform() {
+        let (tx, _rx) = make_output();
+        let resp = handle_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "sensorium.subscribe.start",
+                "params": {
+                    "topic": "sensor/test/realsense/depth",
+                    "presence_transform": true,
+                    "format_required": "png",
+                },
+                "id": "bad-presence-transform",
+            })
+            .to_string(),
+            make_state(),
+            tx,
+        )
+        .await;
+
+        assert_eq!(resp["error"]["code"], json!(INVALID_PARAMS));
+        assert!(resp["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("format_required is not allowed with presence_transform"));
+    }
+
     #[test]
     fn color_transform_downsamples_jpeg_payload_without_passthrough() {
         let payload = color_payload(1280, 720);
@@ -1264,6 +1617,148 @@ mod tests {
             .unwrap_err(),
             "depth_units_invalid",
         );
+    }
+
+    #[test]
+    fn presence_transform_emits_event_without_raw_payload_fields() {
+        let payload = synthetic_depth_payload(|x, y| {
+            if (45..85).contains(&x) && (20..70).contains(&y) {
+                2_000
+            } else {
+                6_000
+            }
+        });
+        let event =
+            match transform_sample_payload(&payload, Some(&SampleTransformConfig::DepthPresence))
+                .expect("presence transform")
+            {
+                TransformResult::PresenceEvent(event) => event,
+                TransformResult::PayloadBytes(_) => {
+                    panic!("presence transform returned payload bytes")
+                }
+            };
+        assert_eq!(event.count_bucket, "1");
+        assert_eq!(event.additional_person_present, "not_detected");
+        assert_eq!(event.identity, "not_performed");
+        assert_eq!(event.seth_present, "unknown");
+        assert_eq!(event.raw_payload_included, false);
+        assert_eq!(event.raw_payload_allowed_to_node, false);
+
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "sensorium.presence.depth.event",
+            "params": {
+                "subscription_id": "sub-presence",
+                "topic": "sensor/test/realsense/depth",
+                "event": event,
+            }
+        });
+        let serialized = notification.to_string();
+        for forbidden in [
+            "payload_bytes",
+            "payload_size",
+            "\"data\"",
+            "\"image\"",
+            "depth_units",
+            "\"width\"",
+            "\"height\"",
+            "frame_number",
+            "timestamp",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "presence notification leaked forbidden field {forbidden}: {serialized}"
+            );
+        }
+    }
+
+    #[test]
+    fn presence_transform_keeps_raw_depth_transform_path_separate() {
+        let payload = depth_payload(160, 90);
+        let transformed = transform_sample_payload(
+            &payload,
+            Some(&SampleTransformConfig::Depth(DepthTransformConfig {
+                max_width: 80,
+                max_height: 45,
+                format_required: "png".to_string(),
+            })),
+        )
+        .expect("raw depth transform");
+
+        match transformed {
+            TransformResult::PayloadBytes(bytes) => {
+                assert!(!bytes.is_empty());
+                let frame: DepthFrame = rmp_serde::from_slice(&bytes).expect("decode depth frame");
+                assert_eq!((frame.width, frame.height), (80, 45));
+                assert_eq!(frame.format, "png");
+            }
+            TransformResult::PresenceEvent(_) => {
+                panic!("raw depth transform returned presence event")
+            }
+        }
+    }
+
+    #[test]
+    fn presence_transform_counts_empty_one_and_two_body_buckets() {
+        let far_background =
+            transform_depth_presence_payload(&synthetic_depth_payload(|_, _| 6_000));
+        assert_eq!(far_background.count_bucket, "0");
+        assert_eq!(far_background.additional_person_present, "not_detected");
+
+        let one = transform_depth_presence_payload(&synthetic_depth_payload(|x, y| {
+            if (45..85).contains(&x) && (20..70).contains(&y) {
+                2_000
+            } else {
+                6_000
+            }
+        }));
+        assert_eq!(one.count_bucket, "1");
+        assert_eq!(one.additional_person_present, "not_detected");
+
+        let two = transform_depth_presence_payload(&synthetic_depth_payload(|x, y| {
+            if ((20..55).contains(&x) && (20..70).contains(&y))
+                || ((100..135).contains(&x) && (20..70).contains(&y))
+            {
+                2_000
+            } else {
+                6_000
+            }
+        }));
+        assert_eq!(two.count_bucket, "2_plus");
+        assert_eq!(two.additional_person_present, "present");
+    }
+
+    #[test]
+    fn presence_transform_biases_blank_ambiguous_and_malformed_frames_to_unknown() {
+        let blank = transform_depth_presence_payload(&synthetic_depth_payload(|_, _| 0));
+        assert_eq!(blank.count_bucket, "unknown");
+        assert_eq!(blank.additional_person_present, "unknown");
+        assert_eq!(blank.confidence_bucket, "low");
+
+        let giant_slab = transform_depth_presence_payload(&synthetic_depth_payload(|x, y| {
+            if (10..150).contains(&x) && (10..80).contains(&y) {
+                2_000
+            } else {
+                6_000
+            }
+        }));
+        assert_eq!(giant_slab.count_bucket, "unknown");
+        assert_eq!(giant_slab.additional_person_present, "unknown");
+
+        let noisy = transform_depth_presence_payload(&synthetic_depth_payload(|x, y| {
+            if x % 11 < 3 && y % 13 < 3 {
+                2_000
+            } else {
+                6_000
+            }
+        }));
+        assert_eq!(noisy.count_bucket, "unknown");
+        assert_eq!(noisy.additional_person_present, "unknown");
+
+        let malformed = transform_depth_presence_payload(&[0xc1]);
+        assert_eq!(malformed.count_bucket, "unknown");
+        assert_eq!(malformed.additional_person_present, "unknown");
+        assert_eq!(malformed.raw_payload_included, false);
     }
 
     // Zenoh requires a multi-thread tokio runtime; current_thread

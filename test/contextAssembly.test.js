@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -211,6 +212,53 @@ function assemble(recipe = baseRecipe(), extra = {}) {
   });
 }
 
+function canonicalJson(value) {
+  return JSON.stringify(sortObject(value));
+}
+
+function sortObject(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortObject);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObject(value[key])]));
+  }
+  return value;
+}
+
+function digest(value) {
+  return createHash("sha256").update(String(value)).digest("hex");
+}
+
+function legacyBudgetDigestProjection(budget) {
+  return {
+    max_items: budget.max_items,
+    max_chars: budget.max_chars,
+    used_chars: budget.used_chars,
+    included_count: budget.included_count,
+    excluded_count: budget.excluded_count,
+    overflow_policy: budget.overflow_policy,
+    budget_exhausted: budget.budget_exhausted,
+    source_omission_count: budget.source_omission_count,
+    per_source: Object.fromEntries(Object.entries(budget.per_source).map(([sourceClass, sourceBudget]) => [sourceClass, {
+      max_items: sourceBudget.max_items,
+      max_chars: sourceBudget.max_chars,
+      included_count: sourceBudget.included_count,
+      excluded_count: sourceBudget.excluded_count,
+    }])),
+  };
+}
+
+function expectedLegacyBundleDigest(result) {
+  return digest(canonicalJson({
+    recipe_digest: result.local_audit_manifest.recipe_digest,
+    composite_snapshot_digest: result.local_audit_manifest.source_state.composite_snapshot_digest,
+    bundle_body: result.bundle_body,
+    budget: legacyBudgetDigestProjection(result.local_audit_manifest.budget),
+    source_omissions: result.local_audit_manifest.source_omissions,
+  }));
+}
+
 test("ContextRecipe validator accepts per-adapter source selectors", () => {
   const recipe = validateContextRecipe(baseRecipe());
 
@@ -339,6 +387,126 @@ test("per-source budgets are maximums not final bundle reservations", () => {
     )),
     true,
   );
+});
+
+test("reserve-share fixes starvation when a source reserves an item", () => {
+  const result = assemble(baseRecipe({
+    ordering: "newest_first",
+    source_selectors: [
+      memorySelector({ budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 1, min_chars: 0 } } }),
+      activitySelector({ budget: { max_items: 3, max_chars: 4_000, overflow_policy: "evict_oldest" } }),
+    ],
+    context_budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.local_audit_manifest.budget.budget_mode, "reserve_share");
+  assert.equal(result.bundle_body.includes("Local activity fixture"), true);
+  assert.equal(result.bundle_body.includes("Memory class"), true);
+  assert.equal(
+    result.local_audit_manifest.selection_receipts.some((receipt) => (
+      receipt.source_class === "occupant_memory"
+        && receipt.decision === "included"
+        && receipt.budget_phase === "reserve"
+    )),
+    true,
+  );
+});
+
+test("reserve-share rejects nominal reserves that exceed the global budget", () => {
+  const result = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 2, min_chars: 0 } } }),
+      activitySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 2, min_chars: 0 } } }),
+    ],
+    context_budget: { max_items: 3, max_chars: 4_000, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.status, "refused");
+  assert.equal(result.local_audit_manifest.reason_class, "reserves_exceed_budget");
+  assert.equal(result.frontier_facing_manifest.reason_class, "reserves_exceed_budget");
+});
+
+test("unused actual reserve returns to the share pool", () => {
+  const result = assemble(baseRecipe({
+    source_class_order: ["local_activity_fixture", "occupant_memory"],
+    source_selectors: [
+      activitySelector({
+        constraints: {
+          ...activitySelector().constraints,
+          event_types: ["occupant_ejected"],
+        },
+        budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 3, min_chars: 0 }, share: 0 },
+      }),
+      memorySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", share: 1 } }),
+    ],
+    context_budget: { max_items: 3, max_chars: 4_000, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.local_audit_manifest.budget.included_count, 3);
+  assert.equal(result.local_audit_manifest.budget.per_source.local_activity_fixture.included_count, 1);
+  assert.equal(result.local_audit_manifest.budget.per_source.occupant_memory.included_count, 2);
+});
+
+test("reserve-share rounding allocates leftovers by source_class_order", () => {
+  const result = assemble(baseRecipe({
+    source_class_order: ["local_activity_fixture", "occupant_memory"],
+    source_selectors: [
+      activitySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", share: 1 } }),
+      memorySelector({ budget: { max_items: 4, max_chars: 4_000, overflow_policy: "evict_oldest", share: 1 } }),
+    ],
+    context_budget: { max_items: 3, max_chars: 4_000, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.status, "assembled");
+  assert.equal(result.local_audit_manifest.budget.per_source.local_activity_fixture.included_count, 2);
+  assert.equal(result.local_audit_manifest.budget.per_source.occupant_memory.included_count, 1);
+});
+
+test("omitted reserve-share fields preserve legacy global competition", () => {
+  const first = assemble(baseRecipe());
+  const second = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector({ budget: { max_items: 4, max_chars: 2_000, overflow_policy: "evict_oldest" } }),
+      activitySelector({ budget: { max_items: 4, max_chars: 2_000, overflow_policy: "evict_oldest" } }),
+    ],
+  }));
+
+  assert.equal(first.local_audit_manifest.budget.budget_mode, "legacy_global");
+  assert.equal(second.local_audit_manifest.budget.budget_mode, "legacy_global");
+  assert.equal(Object.hasOwn(first.local_audit_manifest.budget.per_source.occupant_memory, "reserve"), true);
+  assert.equal(Object.hasOwn(first.local_audit_manifest.budget.per_source.occupant_memory, "share"), true);
+  assert.equal(first.bundle_body, second.bundle_body);
+  assert.equal(first.local_audit_manifest.bundle_digest, expectedLegacyBundleDigest(first));
+  assert.equal(first.local_audit_manifest.bundle_digest, second.local_audit_manifest.bundle_digest);
+});
+
+test("reserved items that exceed global chars abstain instead of oversubscribing", () => {
+  const result = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector({ budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 1, min_chars: 0 } } }),
+      activitySelector({ budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest" } }),
+    ],
+    context_budget: { max_items: 2, max_chars: 80, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.status, "refused");
+  assert.equal(result.local_audit_manifest.reason_class, "budget_insufficient");
+  assert.equal(result.frontier_facing_manifest.reason_class, "budget_insufficient");
+});
+
+test("budget phases are local-audit-only", () => {
+  const result = assemble(baseRecipe({
+    source_selectors: [
+      memorySelector({ budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest", reserve: { min_items: 1, min_chars: 0 } } }),
+      activitySelector({ budget: { max_items: 3, max_chars: 4_000, overflow_policy: "evict_oldest" } }),
+    ],
+    context_budget: { max_items: 2, max_chars: 4_000, overflow_policy: "evict_oldest" },
+  }));
+
+  assert.equal(result.local_audit_manifest.selection_receipts.some((receipt) => receipt.budget_phase), true);
+  assert.equal(JSON.stringify(result.frontier_facing_manifest).includes("budget_phase"), false);
 });
 
 test("required degraded source abstains and optional degraded source skips with coarse frontier signal", () => {

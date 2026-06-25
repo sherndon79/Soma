@@ -30,6 +30,8 @@ const SOURCE_SELECTOR_FIELDS = new Set([
 ]);
 
 const BUDGET_FIELDS = new Set(["max_items", "max_chars", "overflow_policy"]);
+const SOURCE_BUDGET_FIELDS = new Set(["max_items", "max_chars", "overflow_policy", "reserve", "share"]);
+const RESERVE_FIELDS = new Set(["min_items", "min_chars"]);
 const MEMORY_CONSTRAINT_FIELDS = new Set(["domain", "memory_classes", "include_tombstones", "recency_window", "consent_scope"]);
 const ACTIVITY_CONSTRAINT_FIELDS = new Set(["domain", "activity_classes", "event_types", "capability_classes", "summary_classes"]);
 
@@ -96,6 +98,7 @@ const FRONTIER_ALLOWED_FIELDS = new Set([
 const REASON_CLASSES = new Set([
   "selected",
   "budget_evicted",
+  "reserves_exceed_budget",
   "metadata_only",
   "recipe_schema_invalid",
   "selector_payload_bearing",
@@ -124,6 +127,8 @@ export function validateContextRecipe(input = {}, { adapters = SOURCE_ADAPTERS }
   }
   rejectUnknownFields(input, RECIPE_FIELDS, "recipe");
   const sourceSelectors = normalizeSourceSelectors(input.source_selectors, adapters);
+  const contextBudget = normalizeBudget(input.context_budget ?? {}, "context_budget", { maxItems: 128, maxChars: 64_000 });
+  validateReserveShareBudget(sourceSelectors, contextBudget);
   const sourceClassOrder = enumArray(
     input.source_class_order ?? sourceSelectors.map((selector) => selector.source_class),
     sourceClassSet(adapters),
@@ -138,7 +143,7 @@ export function validateContextRecipe(input = {}, { adapters = SOURCE_ADAPTERS }
     source_selectors: sourceSelectors,
     capability_classes: enumArray(input.capability_classes ?? [], CAPABILITY_CLASSES, "capability_classes"),
     required_receipt_types: enumArray(input.required_receipt_types ?? [], RECEIPT_TYPES, "required_receipt_types"),
-    context_budget: normalizeBudget(input.context_budget ?? {}, "context_budget", { maxItems: 128, maxChars: 64_000 }),
+    context_budget: contextBudget,
     ordering: enumValue(input.ordering ?? "newest_first", ORDERING, "ordering"),
     source_class_order: sourceClassOrder,
     abstention_criteria: enumArray(input.abstention_criteria ?? [], ABSTENTION_CRITERIA, "abstention_criteria"),
@@ -279,7 +284,7 @@ export function assembleContextBundle({
     recipe_digest: recipeDigest,
     composite_snapshot_digest: compositeSourceState.composite_snapshot_digest,
     bundle_body: bundleBody,
-    budget: assembled.budget,
+    budget: budgetDigestProjection(assembled.budget),
     source_omissions: sourceOmissions,
   }));
   const localAuditManifest = deepFreeze({
@@ -543,12 +548,81 @@ function normalizeBudget(input, field, { maxItems, maxChars }) {
       violated_field_class: fieldClass(field),
     });
   }
-  rejectUnknownFields(input, BUDGET_FIELDS, field);
-  return Object.freeze({
+  const isSourceBudget = field === "source_selectors.budget";
+  rejectUnknownFields(input, isSourceBudget ? SOURCE_BUDGET_FIELDS : BUDGET_FIELDS, field);
+  const budget = {
     max_items: integerValue(input.max_items ?? maxItems, `${field}.max_items`, { min: 1, max: maxItems }),
     max_chars: integerValue(input.max_chars ?? maxChars, `${field}.max_chars`, { min: 1, max: maxChars }),
     overflow_policy: enumValue(input.overflow_policy ?? "evict_oldest", OVERFLOW_POLICIES, `${field}.overflow_policy`),
+  };
+  if (isSourceBudget && Object.hasOwn(input, "reserve")) {
+    budget.reserve = normalizeReserve(input.reserve, field);
+  }
+  if (isSourceBudget && Object.hasOwn(input, "share")) {
+    budget.share = integerValue(input.share, `${field}.share`, { min: 0, max: 1_000 });
+  }
+  return deepFreeze(budget);
+}
+
+function normalizeReserve(input, field) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw contextAssemblyError("context_recipe_invalid", `ContextRecipe ${field}.reserve must be an object.`, {
+      reason_class: "recipe_schema_invalid",
+      violated_field_class: fieldClass(`${field}.reserve`),
+    });
+  }
+  rejectUnknownFields(input, RESERVE_FIELDS, `${field}.reserve`);
+  return Object.freeze({
+    min_items: integerValue(input.min_items ?? 0, `${field}.reserve.min_items`, { min: 0, max: 64 }),
+    min_chars: integerValue(input.min_chars ?? 0, `${field}.reserve.min_chars`, { min: 0, max: 32_000 }),
   });
+}
+
+function validateReserveShareBudget(sourceSelectors, contextBudget) {
+  if (budgetModeFor(sourceSelectors) !== "reserve_share") {
+    return;
+  }
+  let reserveItems = 0;
+  let reserveChars = 0;
+  for (const selector of sourceSelectors) {
+    const reserve = reserveFor(selector);
+    if (reserve.min_items > selector.budget.max_items) {
+      throw contextAssemblyError("context_recipe_invalid", "Source reserve min_items exceeds source max_items.", {
+        reason_class: "reserves_exceed_budget",
+        violated_field_class: "source_selectors.budget.reserve.min_items",
+      });
+    }
+    if (reserve.min_chars > selector.budget.max_chars) {
+      throw contextAssemblyError("context_recipe_invalid", "Source reserve min_chars exceeds source max_chars.", {
+        reason_class: "reserves_exceed_budget",
+        violated_field_class: "source_selectors.budget.reserve.min_chars",
+      });
+    }
+    reserveItems += reserve.min_items;
+    reserveChars += reserve.min_chars;
+  }
+  if (reserveItems > contextBudget.max_items || reserveChars > contextBudget.max_chars) {
+    throw contextAssemblyError("context_recipe_invalid", "Source reserves exceed the global context budget.", {
+      reason_class: "reserves_exceed_budget",
+      violated_field_class: "source_selectors.budget.reserve",
+    });
+  }
+}
+
+function budgetModeFor(sourceSelectors) {
+  return sourceSelectors.some((selector) => (
+    Object.hasOwn(selector.budget, "reserve") || Object.hasOwn(selector.budget, "share")
+  ))
+    ? "reserve_share"
+    : "legacy_global";
+}
+
+function reserveFor(selector) {
+  return selector.budget.reserve ?? { min_items: 0, min_chars: 0 };
+}
+
+function shareFor(selector) {
+  return Object.hasOwn(selector.budget, "share") ? selector.budget.share : 1;
 }
 
 function assembleFromSources({
@@ -563,6 +637,7 @@ function assembleFromSources({
   const selectionReceipts = [];
   const perSourceCandidates = [];
   const perSourceExcluded = [];
+  const budgetMode = budgetModeFor(recipe.source_selectors);
 
   for (const sourceResult of sourceResults) {
     let sourceChars = 0;
@@ -583,6 +658,7 @@ function assembleFromSources({
           item,
           sourceReceipt,
           idFactory,
+          budgetPhase: "evicted",
         });
         selectionReceipts.push(receipt);
         perSourceExcluded.push({ item, minimized, sourceReceipt, receipt, sourceResult });
@@ -596,6 +672,7 @@ function assembleFromSources({
         item,
         sourceReceipt,
         idFactory,
+        budgetPhase: budgetMode === "reserve_share" ? "" : "share",
       });
       perSourceCandidates.push({ item, minimized, sourceReceipt, receipt, sourceResult });
       sourceChars += minimized.char_count;
@@ -624,6 +701,20 @@ function assembleFromSources({
     };
   }
 
+  if (budgetMode === "reserve_share") {
+    return assembleReserveShareBudget({
+      recipe,
+      recipeDigest,
+      compositeSourceState,
+      sourceResults,
+      sourceOmissions,
+      sourceReceipts,
+      selectionReceipts,
+      perSourceCandidates,
+      idFactory,
+    });
+  }
+
   const ordered = orderItems(perSourceCandidates, recipe);
   const included = [];
   let usedChars = 0;
@@ -640,6 +731,7 @@ function assembleFromSources({
         item: entry.item,
         sourceReceipt: entry.sourceReceipt,
         idFactory,
+        budgetPhase: "evicted",
       }));
       continue;
     }
@@ -661,22 +753,333 @@ function assembleFromSources({
     items: included,
     source_receipts: sourceReceipts,
     selection_receipts: selectionReceipts,
-    budget: {
-      max_items: recipe.context_budget.max_items,
-      max_chars: recipe.context_budget.max_chars,
-      used_chars: usedChars,
-      included_count: included.length,
-      excluded_count: selectionReceipts.filter((receipt) => receipt.decision === "excluded").length,
-      overflow_policy: recipe.context_budget.overflow_policy,
-      budget_exhausted: selectionReceipts.some((receipt) => receipt.reason_class === "budget_evicted"),
-      source_omission_count: sourceOmissions.length,
-      per_source: Object.fromEntries(recipe.source_selectors.map((selector) => [selector.source_class, {
-        max_items: selector.budget.max_items,
-        max_chars: selector.budget.max_chars,
-        included_count: included.filter((entry) => entry.item.source_class === selector.source_class).length,
-        excluded_count: selectionReceipts.filter((receipt) => receipt.source_class === selector.source_class && receipt.decision === "excluded").length,
-      }])),
-    },
+    budget: budgetSummary({ recipe, budgetMode, included, selectionReceipts, sourceOmissions, usedChars }),
+  };
+}
+
+function assembleReserveShareBudget({
+  recipe,
+  recipeDigest,
+  compositeSourceState,
+  sourceResults,
+  sourceOmissions,
+  sourceReceipts,
+  selectionReceipts,
+  perSourceCandidates,
+  idFactory,
+}) {
+  const sourceResultByClass = new Map(sourceResults.map((sourceResult) => [sourceResult.selector.source_class, sourceResult]));
+  const candidatesBySource = new Map();
+  const selectedKeys = new Set();
+  const reserved = [];
+  const shared = [];
+  let reservedChars = 0;
+
+  for (const sourceClass of recipe.source_class_order) {
+    const sourceResult = sourceResultByClass.get(sourceClass);
+    if (!sourceResult) {
+      continue;
+    }
+    const reserve = reserveFor(sourceResult.selector);
+    const candidates = orderItems(
+      perSourceCandidates.filter((entry) => entry.item.source_class === sourceClass),
+      recipe,
+    );
+    candidatesBySource.set(sourceClass, candidates);
+    let sourceReservedItems = 0;
+    let sourceReservedChars = 0;
+    for (const entry of candidates) {
+      if (selectedKeys.has(entry.item.sort_key.stable_item_key)) {
+        continue;
+      }
+      const needsItemReserve = sourceReservedItems < reserve.min_items;
+      const fitsCharReserve = sourceReservedChars + entry.minimized.char_count <= reserve.min_chars;
+      if (!needsItemReserve && !fitsCharReserve) {
+        continue;
+      }
+      if (
+        !needsItemReserve
+        && (
+          reserved.length + 1 + remainingReserveItemsAfter({ recipe, sourceResultByClass, sourceClass }) > recipe.context_budget.max_items
+          || reservedChars + entry.minimized.char_count + remainingReserveCharsAfter({ recipe, sourceResultByClass, sourceClass }) > recipe.context_budget.max_chars
+        )
+      ) {
+        continue;
+      }
+      if (reserved.length >= recipe.context_budget.max_items) {
+        break;
+      }
+      if (reservedChars + entry.minimized.char_count > recipe.context_budget.max_chars) {
+        if (needsItemReserve) {
+          return budgetAbstention({ reason_class: "budget_insufficient", sourceReceipts, selectionReceipts });
+        }
+        continue;
+      }
+      const reservedEntry = withSelectionReceipt({
+        entry,
+        decision: "included",
+        reason_class: entry.minimized.reason_class,
+        budgetPhase: "reserve",
+        recipeDigest,
+        compositeSourceState,
+        idFactory,
+      });
+      reserved.push(reservedEntry);
+      selectedKeys.add(entry.item.sort_key.stable_item_key);
+      sourceReservedItems += 1;
+      sourceReservedChars += entry.minimized.char_count;
+      reservedChars += entry.minimized.char_count;
+    }
+  }
+
+  const remainingItems = recipe.context_budget.max_items - reserved.length;
+  const remainingChars = recipe.context_budget.max_chars - reservedChars;
+  if (remainingItems > 0 && remainingChars > 0) {
+    const allocations = shareAllocations({ recipe, sourceResults, remainingItems, remainingChars });
+    for (const sourceClass of recipe.source_class_order) {
+      const sourceResult = sourceResultByClass.get(sourceClass);
+      const allocation = allocations.get(sourceClass);
+      if (!sourceResult || !allocation || allocation.max_items === 0 || allocation.max_chars === 0) {
+        continue;
+      }
+      let sourceItems = reserved.filter((entry) => entry.item.source_class === sourceClass).length;
+      let sourceChars = reserved
+        .filter((entry) => entry.item.source_class === sourceClass)
+        .reduce((total, entry) => total + entry.minimized.char_count, 0);
+      let allocatedItems = 0;
+      let allocatedChars = 0;
+      const candidates = candidatesBySource.get(sourceClass)
+        ?? orderItems(perSourceCandidates.filter((entry) => entry.item.source_class === sourceClass), recipe);
+      for (const entry of candidates) {
+        if (selectedKeys.has(entry.item.sort_key.stable_item_key)) {
+          continue;
+        }
+        if (
+          allocatedItems >= allocation.max_items
+          || allocatedChars + entry.minimized.char_count > allocation.max_chars
+          || sourceItems >= sourceResult.selector.budget.max_items
+          || sourceChars + entry.minimized.char_count > sourceResult.selector.budget.max_chars
+        ) {
+          continue;
+        }
+        const sharedEntry = withSelectionReceipt({
+          entry,
+          decision: "included",
+          reason_class: entry.minimized.reason_class,
+          budgetPhase: "share",
+          recipeDigest,
+          compositeSourceState,
+          idFactory,
+        });
+        shared.push(sharedEntry);
+        selectedKeys.add(entry.item.sort_key.stable_item_key);
+        allocatedItems += 1;
+        allocatedChars += entry.minimized.char_count;
+        sourceItems += 1;
+        sourceChars += entry.minimized.char_count;
+      }
+    }
+  }
+
+  const selected = [...reserved, ...shared];
+  const finalItems = [];
+  let usedChars = 0;
+  for (const entry of orderItems(selected, recipe)) {
+    if (
+      finalItems.length >= recipe.context_budget.max_items
+      || usedChars + entry.minimized.char_count > recipe.context_budget.max_chars
+    ) {
+      if (entry.selectionReceipt.budget_phase === "reserve") {
+        return budgetAbstention({ reason_class: "budget_insufficient", sourceReceipts, selectionReceipts });
+      }
+      selectionReceipts.push(createSelectionReceipt({
+        decision: "excluded",
+        reason_class: "budget_evicted",
+        recipeDigest,
+        compositeSourceState,
+        item: entry.item,
+        sourceReceipt: entry.sourceReceipt,
+        idFactory,
+        budgetPhase: "evicted",
+      }));
+      continue;
+    }
+    finalItems.push(entry);
+    usedChars += entry.minimized.char_count;
+    selectionReceipts.push(entry.selectionReceipt);
+  }
+
+  for (const entry of perSourceCandidates) {
+    if (selectedKeys.has(entry.item.sort_key.stable_item_key)) {
+      continue;
+    }
+    selectionReceipts.push(createSelectionReceipt({
+      decision: "excluded",
+      reason_class: "budget_evicted",
+      recipeDigest,
+      compositeSourceState,
+      item: entry.item,
+      sourceReceipt: entry.sourceReceipt,
+      idFactory,
+      budgetPhase: "evicted",
+    }));
+  }
+
+  if (finalItems.length === 0 || (recipe.context_budget.overflow_policy === "abstain" && finalItems.length < perSourceCandidates.length)) {
+    return budgetAbstention({ reason_class: "budget_insufficient", sourceReceipts, selectionReceipts });
+  }
+
+  return {
+    abstained: false,
+    items: finalItems,
+    source_receipts: sourceReceipts,
+    selection_receipts: selectionReceipts,
+    budget: budgetSummary({ recipe, budgetMode: "reserve_share", included: finalItems, selectionReceipts, sourceOmissions, usedChars }),
+  };
+}
+
+function remainingReserveItemsAfter({ recipe, sourceResultByClass, sourceClass }) {
+  const index = recipe.source_class_order.indexOf(sourceClass);
+  return recipe.source_class_order
+    .slice(index + 1)
+    .filter((nextSourceClass) => sourceResultByClass.has(nextSourceClass))
+    .reduce((total, nextSourceClass) => total + reserveFor(sourceResultByClass.get(nextSourceClass).selector).min_items, 0);
+}
+
+function remainingReserveCharsAfter({ recipe, sourceResultByClass, sourceClass }) {
+  const index = recipe.source_class_order.indexOf(sourceClass);
+  return recipe.source_class_order
+    .slice(index + 1)
+    .filter((nextSourceClass) => sourceResultByClass.has(nextSourceClass))
+    .reduce((total, nextSourceClass) => total + reserveFor(sourceResultByClass.get(nextSourceClass).selector).min_chars, 0);
+}
+
+function withSelectionReceipt({
+  entry,
+  decision,
+  reason_class,
+  budgetPhase,
+  recipeDigest,
+  compositeSourceState,
+  idFactory,
+}) {
+  return {
+    ...entry,
+    selectionReceipt: createSelectionReceipt({
+      decision,
+      reason_class,
+      recipeDigest,
+      compositeSourceState,
+      item: entry.item,
+      sourceReceipt: entry.sourceReceipt,
+      idFactory,
+      budgetPhase,
+    }),
+  };
+}
+
+function budgetAbstention({ reason_class, sourceReceipts, selectionReceipts }) {
+  return {
+    abstained: true,
+    reason_class,
+    source_receipts: sourceReceipts,
+    selection_receipts: selectionReceipts,
+  };
+}
+
+function shareAllocations({ recipe, sourceResults, remainingItems, remainingChars }) {
+  const shares = new Map(sourceResults.map((sourceResult) => [sourceResult.selector.source_class, shareFor(sourceResult.selector)]));
+  const totalShare = [...shares.values()].reduce((total, share) => total + share, 0);
+  const allocations = new Map(sourceResults.map((sourceResult) => [sourceResult.selector.source_class, { max_items: 0, max_chars: 0 }]));
+  if (totalShare === 0) {
+    return allocations;
+  }
+  let allocatedItems = 0;
+  let allocatedChars = 0;
+  for (const sourceResult of sourceResults) {
+    const share = shares.get(sourceResult.selector.source_class) ?? 0;
+    const allocation = allocations.get(sourceResult.selector.source_class);
+    allocation.max_items = Math.floor((remainingItems * share) / totalShare);
+    allocation.max_chars = Math.floor((remainingChars * share) / totalShare);
+    allocatedItems += allocation.max_items;
+    allocatedChars += allocation.max_chars;
+  }
+  distributeRemainder({
+    allocations,
+    sourceClassOrder: recipe.source_class_order,
+    shares,
+    field: "max_items",
+    remaining: remainingItems - allocatedItems,
+  });
+  distributeRemainder({
+    allocations,
+    sourceClassOrder: recipe.source_class_order,
+    shares,
+    field: "max_chars",
+    remaining: remainingChars - allocatedChars,
+  });
+  return allocations;
+}
+
+function distributeRemainder({ allocations, sourceClassOrder, shares, field, remaining }) {
+  let left = remaining;
+  while (left > 0) {
+    let distributed = false;
+    for (const sourceClass of sourceClassOrder) {
+      if (left === 0) {
+        break;
+      }
+      if ((shares.get(sourceClass) ?? 0) === 0 || !allocations.has(sourceClass)) {
+        continue;
+      }
+      allocations.get(sourceClass)[field] += 1;
+      left -= 1;
+      distributed = true;
+    }
+    if (!distributed) {
+      break;
+    }
+  }
+}
+
+function budgetSummary({ recipe, budgetMode, included, selectionReceipts, sourceOmissions, usedChars }) {
+  return {
+    budget_mode: budgetMode,
+    max_items: recipe.context_budget.max_items,
+    max_chars: recipe.context_budget.max_chars,
+    used_chars: usedChars,
+    included_count: included.length,
+    excluded_count: selectionReceipts.filter((receipt) => receipt.decision === "excluded").length,
+    overflow_policy: recipe.context_budget.overflow_policy,
+    budget_exhausted: selectionReceipts.some((receipt) => receipt.reason_class === "budget_evicted"),
+    source_omission_count: sourceOmissions.length,
+    per_source: Object.fromEntries(recipe.source_selectors.map((selector) => [selector.source_class, {
+      max_items: selector.budget.max_items,
+      max_chars: selector.budget.max_chars,
+      reserve: reserveFor(selector),
+      share: budgetMode === "reserve_share" ? shareFor(selector) : 0,
+      included_count: included.filter((entry) => entry.item.source_class === selector.source_class).length,
+      excluded_count: selectionReceipts.filter((receipt) => receipt.source_class === selector.source_class && receipt.decision === "excluded").length,
+    }])),
+  };
+}
+
+function budgetDigestProjection(budget) {
+  return {
+    max_items: budget.max_items,
+    max_chars: budget.max_chars,
+    used_chars: budget.used_chars,
+    included_count: budget.included_count,
+    excluded_count: budget.excluded_count,
+    overflow_policy: budget.overflow_policy,
+    budget_exhausted: budget.budget_exhausted,
+    source_omission_count: budget.source_omission_count,
+    per_source: Object.fromEntries(Object.entries(budget.per_source ?? {}).map(([sourceClass, sourceBudget]) => [sourceClass, {
+      max_items: sourceBudget.max_items,
+      max_chars: sourceBudget.max_chars,
+      included_count: sourceBudget.included_count,
+      excluded_count: sourceBudget.excluded_count,
+    }])),
   };
 }
 
@@ -731,8 +1134,9 @@ function createSelectionReceipt({
   item,
   sourceReceipt,
   idFactory,
+  budgetPhase = "",
 }) {
-  return Object.freeze({
+  const receipt = {
     receipt_id: `selection_${idFactory()}`,
     recipe_digest: recipeDigest,
     source_class: item.source_class,
@@ -742,7 +1146,11 @@ function createSelectionReceipt({
     item_ref_digest: digest(item.sort_key.stable_item_key),
     source_receipt_id: sourceReceipt?.receipt_id ?? "",
     content_included: false,
-  });
+  };
+  if (budgetPhase !== "") {
+    receipt.budget_phase = enumValue(budgetPhase, new Set(["reserve", "share", "evicted"]), "budget_phase");
+  }
+  return Object.freeze(receipt);
 }
 
 function createRefusalBundle({

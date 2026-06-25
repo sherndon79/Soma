@@ -3,13 +3,33 @@ import { randomUUID } from "node:crypto";
 export const SENSORIUM_TIER_PROVIDER_ID = "soma.provider.sensorium-tier";
 export const SENSORIUM_SEMANTIC_EVENT_CAPABILITY = "sensorium.semantic_events.read";
 export const DESKTOP_VISUAL_CUE_CAPABILITY = "desktop.visual_cue.present";
+export const REVIEWED_DEPTH_FOV_COVERAGE = "reviewed_depth_fov_covers_private_audio_risk";
 
-const ALLOWED_SCREEN_EVENT_TYPES = new Set(["screen.structure"]);
+const ALLOWED_SEMANTIC_EVENT_TYPES = new Set(["screen.structure", "presence.depth"]);
 const ALLOWED_VISUAL_ACT_KINDS = new Set(["visual_cue.show", "surface.present"]);
 const ALLOWED_VISUAL_SUBSTRATES = new Set(["occupant_panel"]);
 const COMMUNICATIVE_INTENTS = new Set(["none", "low", "high"]);
 const AUDIENCE_SCOPES = new Set(["seth_only", "copresent_room", "third_party", "unknown"]);
 const OUTPUT_MODES = new Set(["visual.occupant_owned", "audio.private_content", "audio.neutral_earcon"]);
+const DEPTH_COUNT_BUCKETS = new Set(["0", "1", "2_plus", "unknown"]);
+const DEPTH_CONFIDENCE_BUCKETS = new Set(["low", "medium"]);
+const RAW_DEPTH_FIELD_NAMES = new Set([
+  "raw",
+  "raw_payload",
+  "raw_depth",
+  "depth_frame",
+  "depth_pixels",
+  "frame",
+  "image",
+  "pixels",
+  "bytes",
+  "payload_bytes",
+  "payload_base64",
+  "width",
+  "height",
+  "stride",
+  "depth_units",
+]);
 
 export function localAudienceContext({
   sethPresent = "unknown",
@@ -20,7 +40,11 @@ export function localAudienceContext({
   copresence_source,
 } = {}) {
   return Object.freeze({
-    seth_present: enumValue(seth_present ?? sethPresent, ["present", "absent", "unknown"], "unknown"),
+    seth_present: enumValue(
+      seth_present ?? sethPresent,
+      ["present", "absent", "session_assumed_present", "zone_present", "unknown"],
+      "unknown",
+    ),
     additional_person_present: enumValue(
       additional_person_present ?? additionalPersonPresent,
       ["present", "not_detected", "unknown"],
@@ -28,7 +52,7 @@ export function localAudienceContext({
     ),
     copresence_source: enumValue(
       copresence_source ?? copresenceSource,
-      ["camera", "mic", "camera_mic", "not_enabled", "muted", "unknown"],
+      ["camera", "mic", "camera_mic", "depth", "not_enabled", "muted", "unknown"],
       "not_enabled",
     ),
   });
@@ -72,6 +96,197 @@ export function createScreenStructureSemanticEvent({
       allowed_output_modes: ["visual.occupant_owned"],
       blocked_output_modes: ["audio.private_content"],
       reason_codes: normalizedAudienceContext.additional_person_present === "not_detected"
+        ? []
+        : ["copresence_not_exclusive"],
+    },
+  };
+  assertSemanticEvent(event);
+  return Object.freeze(event);
+}
+
+export function validateBrokerDepthPresenceEvent(event = {}) {
+  if (!isPlainObject(event)) {
+    throw validationError(["broker depth presence event must be an object"]);
+  }
+  const validationErrors = [];
+  for (const field of Object.keys(event)) {
+    if (RAW_DEPTH_FIELD_NAMES.has(field)) {
+      validationErrors.push(`raw broker field is forbidden: ${field}`);
+    }
+  }
+
+  const countBucket = enumValue(event.count_bucket, [...DEPTH_COUNT_BUCKETS], "");
+  const confidenceBucket = enumValue(event.confidence_bucket, [...DEPTH_CONFIDENCE_BUCKETS], "");
+  const additionalPersonPresent = enumValue(
+    event.additional_person_present,
+    ["present", "not_detected", "unknown"],
+    "unknown",
+  );
+
+  if (event.schema_version !== 1) {
+    validationErrors.push("schema_version must be 1");
+  }
+  if (event.event_type !== "presence.depth") {
+    validationErrors.push("event_type must be presence.depth");
+  }
+  if (!countBucket) {
+    validationErrors.push("count_bucket must be 0, 1, 2_plus, or unknown");
+  }
+  if (!confidenceBucket) {
+    validationErrors.push("confidence_bucket must be low or medium");
+  }
+  if (event.identity !== "not_performed") {
+    validationErrors.push("identity must be not_performed");
+  }
+  if (event.copresence_source !== "depth") {
+    validationErrors.push("copresence_source must be depth");
+  }
+  if (event.raw_payload_allowed_to_node === true || event.raw_payload_included === true) {
+    validationErrors.push("raw broker payload must not be allowed or included");
+  }
+  if (validationErrors.length > 0) {
+    throw validationError(validationErrors);
+  }
+
+  return Object.freeze({
+    schema_version: 1,
+    event_type: "presence.depth",
+    count_bucket: countBucket,
+    additional_person_present: additionalPersonPresent,
+    confidence_bucket: confidenceBucket,
+    identity: "not_performed",
+    copresence_source: "depth",
+    raw_payload_allowed_to_node: false,
+    raw_payload_included: false,
+  });
+}
+
+export function deriveOccupantSessionContext({ episode } = {}) {
+  if (!isPlainObject(episode)) {
+    return Object.freeze({
+      occupant_assumed_present: false,
+      seth_present_for_event: "unknown",
+      basis: "no_associated_episode",
+    });
+  }
+  if (episode.status === "ejected") {
+    return Object.freeze({
+      occupant_assumed_present: false,
+      seth_present_for_event: "unknown",
+      basis: "episode_ejected",
+    });
+  }
+  if (episode.status !== "active") {
+    return Object.freeze({
+      occupant_assumed_present: false,
+      seth_present_for_event: "unknown",
+      basis: "episode_not_active",
+    });
+  }
+
+  const posture = isPlainObject(episode.posture) ? episode.posture : {};
+  const hasAnalysisTestingTrust = posture.mode === "analysis_testing"
+    && stringValue(episode.occupant_id)
+    && stringValue(posture.trust_basis);
+
+  return Object.freeze({
+    occupant_assumed_present: true,
+    seth_present_for_event: "session_assumed_present",
+    basis: hasAnalysisTestingTrust ? "analysis_testing_posture" : "active_episode",
+  });
+}
+
+export function deriveDepthPresenceAudienceContext({
+  brokerEvent = {},
+  episode,
+  coverageAssumption = "",
+} = {}) {
+  const normalizedEvent = validateBrokerDepthPresenceEvent(brokerEvent);
+  const occupantSessionContext = deriveOccupantSessionContext({ episode });
+  const coverage = stringValue(coverageAssumption);
+  let additionalPersonPresent = "unknown";
+
+  if (occupantSessionContext.basis === "episode_ejected") {
+    additionalPersonPresent = "unknown";
+  } else if (normalizedEvent.count_bucket === "unknown") {
+    additionalPersonPresent = "unknown";
+  } else if (normalizedEvent.count_bucket === "2_plus") {
+    additionalPersonPresent = "present";
+  } else if (normalizedEvent.count_bucket === "1") {
+    additionalPersonPresent = occupantSessionContext.occupant_assumed_present
+      ? "not_detected"
+      : "present";
+  } else if (
+    normalizedEvent.count_bucket === "0"
+    && occupantSessionContext.occupant_assumed_present
+    && normalizedEvent.confidence_bucket === "medium"
+    && coverage === REVIEWED_DEPTH_FOV_COVERAGE
+  ) {
+    additionalPersonPresent = "not_detected";
+  }
+
+  return Object.freeze({
+    audience_context: localAudienceContext({
+      sethPresent: occupantSessionContext.seth_present_for_event,
+      additionalPersonPresent,
+      copresenceSource: "depth",
+    }),
+    occupant_session_context: occupantSessionContext,
+    coverage_assumption: coverage || "unreviewed_depth_fov",
+  });
+}
+
+export function createDepthPresenceSemanticEvent({
+  brokerEvent = {},
+  episode,
+  sourceGrant = {},
+  sourceCapability = "perception.sensorium.depth.subscribe",
+  coverageAssumption = "",
+  now = () => new Date(),
+  idFactory = randomUUID,
+} = {}) {
+  const normalizedEvent = validateBrokerDepthPresenceEvent(brokerEvent);
+  const observedAt = asDate(now());
+  const derivedAudience = deriveDepthPresenceAudienceContext({
+    brokerEvent: normalizedEvent,
+    episode,
+    coverageAssumption,
+  });
+  const event = {
+    schema_version: 1,
+    event_id: idFactory(),
+    observed_at: observedAt.toISOString(),
+    expires_at: new Date(observedAt.getTime() + 10_000).toISOString(),
+    source: {
+      tier: "sensorium.local",
+      provider: sourceGrant.provider ?? "",
+      capability: sourceCapability,
+      grant_id: sourceGrant.id ?? "",
+      domain: sourceGrant.constraints?.domain ?? "testing",
+    },
+    channel: "camera.depth",
+    event_type: "presence.depth",
+    minimization: {
+      level: "semantic",
+      raw_retained: false,
+      raw_egressed: false,
+      content_included: false,
+    },
+    confidence_bucket: normalizedEvent.confidence_bucket,
+    audience_context: derivedAudience.audience_context,
+    payload: {
+      count_bucket: normalizedEvent.count_bucket,
+      identity: "not_performed",
+      copresence_source: "depth",
+      coverage_scope: "depth_fov",
+      coverage_assumption: derivedAudience.coverage_assumption,
+    },
+    policy_effects: {
+      allowed_output_modes: ["visual.occupant_owned"],
+      blocked_output_modes: derivedAudience.audience_context.additional_person_present === "not_detected"
+        ? []
+        : ["audio.private_content"],
+      reason_codes: derivedAudience.audience_context.additional_person_present === "not_detected"
         ? []
         : ["copresence_not_exclusive"],
     },
@@ -338,14 +553,14 @@ function validateFirstSliceAct({ actKind, substrate, principal }) {
 }
 
 function assertSemanticEvent(event) {
-  if (!ALLOWED_SCREEN_EVENT_TYPES.has(event.event_type)) {
+  if (!ALLOWED_SEMANTIC_EVENT_TYPES.has(event.event_type)) {
     throw new TypeError("semantic event type is not supported");
   }
   if (event.minimization.raw_retained || event.minimization.raw_egressed) {
     throw new TypeError("semantic event must not retain or egress raw sensory payloads");
   }
   if (event.minimization.content_included) {
-    throw new TypeError("screen structure semantic event must not include content");
+    throw new TypeError("semantic event must not include content");
   }
 }
 
@@ -383,4 +598,15 @@ function asDate(value) {
     throw new TypeError("now must return a valid Date");
   }
   return date;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validationError(validationErrors) {
+  const error = new TypeError("broker depth presence event is invalid");
+  error.code = "sensorium_presence_event_invalid";
+  error.validation_errors = validationErrors;
+  return error;
 }

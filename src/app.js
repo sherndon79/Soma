@@ -138,6 +138,7 @@ import {
   buildSensoriumGrantCreateCandidateFromProposal,
 } from "./sensoriumGrantCreateCandidate.js";
 import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
+import { createSensoriumPresenceState } from "./sensoriumPresenceState.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import {
   modelVisualAttachGrantCandidateReviewText,
@@ -153,7 +154,6 @@ import {
   createScreenStructureSemanticEvent,
   createSensoriumOutputActProvenance,
   createSensoriumSemanticEventProvenance,
-  localAudienceContext,
   scoreSensoriumOutputAct,
   visualCueRenderResult,
 } from "./sensoriumTier.js";
@@ -192,6 +192,7 @@ export function createApp({
   desktopDisclosureRegistry,
   desktopNotificationAdapter,
   sensoriumSubscriber,
+  sensoriumPresenceState,
   remoteGraphicalBroker,
   desktopActuationTable,
   logger = console,
@@ -230,6 +231,7 @@ export function createApp({
     desktopDisclosureRegistry,
     desktopNotificationAdapter,
     sensoriumSubscriber,
+    sensoriumPresenceState,
     remoteGraphicalBroker,
     desktopActuationTable,
     logger,
@@ -285,6 +287,7 @@ export function createRequestHandler({
   desktopDisclosureRegistry = new DesktopDisclosureRegistry(),
   desktopNotificationAdapter = createDesktopNotificationAdapter(),
   sensoriumSubscriber = null,
+  sensoriumPresenceState = createSensoriumPresenceState(),
   remoteGraphicalBroker = new RemoteGraphicalBroker(),
   desktopActuationTable = createDesktopActuationTable(),
   logger = console,
@@ -324,6 +327,12 @@ export function createRequestHandler({
   const decisionWaiters = new Map();
   const episodes = new Map();
   const forums = new Map();
+  if (typeof sensoriumSubscriber?.configurePresenceContext === "function") {
+    sensoriumSubscriber.configurePresenceContext({
+      presenceState: sensoriumPresenceState,
+      getPresenceEpisodeContext: () => newestActiveEpisode(episodes),
+    });
+  }
   if (typeof sensoriumSubscriber?.onSubscriptionEnded === "function") {
     sensoriumSubscriber.onSubscriptionEnded(({ subscription_id, endSummary } = {}) => {
       if (!endSummary) {
@@ -2828,7 +2837,7 @@ export function createRequestHandler({
           inspection,
           grant: semanticAuthorization.grant,
           sourceGrant: sourceAuthorization.grant,
-          audienceContext: localAudienceContext(),
+          audienceContext: sensoriumPresenceState.read({ now: () => new Date() }),
         });
         const provenance = provenanceLog.append(createSensoriumSemanticEventProvenance({
           semanticEvent,
@@ -2878,7 +2887,7 @@ export function createRequestHandler({
         const scoredAct = scoreSensoriumOutputAct({
           proposal: visualRequest.proposal,
           grant: authorization.grant,
-          liveAudienceContext: localAudienceContext(),
+          liveAudienceContext: sensoriumPresenceState.read({ now: () => new Date() }),
         });
         const proposed = provenanceLog.append(createSensoriumOutputActProvenance({
           eventType: "sensorium.output_act.proposed",
@@ -5326,6 +5335,13 @@ function listEpisodeStates(episodes) {
   return [...episodes.values()]
     .map((episode) => serializeEpisodeState(episode))
     .sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
+}
+
+function newestActiveEpisode(episodes) {
+  return [...episodes.values()]
+    .filter((episode) => episode?.status === "active")
+    .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))
+    [0] ?? null;
 }
 
 function summarizeEpisodes(episodesList = []) {

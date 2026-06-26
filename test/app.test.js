@@ -18,6 +18,7 @@ import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js
 import { loadGrantAuthority } from "../src/grantAuthority.js";
 import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
+import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -10661,6 +10662,38 @@ test("sensorium screen structure event projects focused desktop metadata without
   });
 });
 
+test("sensorium screen structure event includes fresh presence audience context", async () => {
+  const presenceState = createSensoriumPresenceState();
+  presenceState.updateFromSemanticEvent({
+    event_id: "presence-screen-fresh",
+    expires_at: new Date(Date.now() + 10_000).toISOString(),
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "not_detected",
+      copresence_source: "depth",
+    },
+  });
+  await withFakeFocusedDesktopBroker(async () => {
+    const handler = makeHandler({
+      harness: sensoriumTierHarness,
+      grantStore: sensoriumTierGrantStore(),
+      sensoriumPresenceState: presenceState,
+    });
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/sensorium/semantic-events/screen-structure",
+      body: {
+        grant_id: "grant-semantic-events",
+        source_grant_id: "grant-focus",
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.semantic_event.audience_context.additional_person_present, "not_detected");
+    assert.equal(response.body.semantic_event.audience_context.copresence_source, "depth");
+  });
+});
+
 test("desktop visual cue route locally derives consequence and records proposed plus rendered provenance", async () => {
   const handler = makeHandler({
     harness: sensoriumTierHarness,
@@ -10751,6 +10784,80 @@ test("desktop visual cue route refuses private audio under unknown copresence", 
   );
   assert.equal(provenance.body.entries[1].allowed, false);
   assert.equal(provenance.body.entries[1].refusal_reason, "audio_private_content_requires_exclusive_audience");
+});
+
+test("desktop visual cue route uses fresh presence state for private audio H2", async () => {
+  const presenceState = createSensoriumPresenceState();
+  presenceState.updateFromSemanticEvent({
+    event_id: "presence-app-fresh",
+    expires_at: new Date(Date.now() + 10_000).toISOString(),
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "not_detected",
+      copresence_source: "depth",
+    },
+  });
+  const handler = makeHandler({
+    harness: sensoriumTierHarness,
+    grantStore: sensoriumTierGrantStore(),
+    sensoriumPresenceState: presenceState,
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/desktop/visual-cues",
+    body: {
+      grant_id: "grant-visual-cue",
+      proposal: {
+        act_kind: "visual_cue.show",
+        substrate: "occupant_panel",
+        principal: "occupant",
+        audience_scope: "seth_only",
+        output_mode: "audio.private_content",
+      },
+      cue: { text: "private content" },
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.scored_act.audience_context.additional_person_present, "not_detected");
+  assert.equal(response.body.scored_act.allowed, true);
+});
+
+test("desktop visual cue route treats expired presence state as unknown", async () => {
+  const presenceState = createSensoriumPresenceState();
+  presenceState.updateFromSemanticEvent({
+    event_id: "presence-app-expired",
+    expires_at: "2000-01-01T00:00:00.000Z",
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "not_detected",
+      copresence_source: "depth",
+    },
+  });
+  const handler = makeHandler({
+    harness: sensoriumTierHarness,
+    grantStore: sensoriumTierGrantStore(),
+    sensoriumPresenceState: presenceState,
+  });
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/desktop/visual-cues",
+    body: {
+      grant_id: "grant-visual-cue",
+      proposal: {
+        act_kind: "visual_cue.show",
+        substrate: "occupant_panel",
+        principal: "occupant",
+        audience_scope: "seth_only",
+        output_mode: "audio.private_content",
+      },
+      cue: { text: "private content" },
+    },
+  });
+
+  assert.equal(response.statusCode, 403, JSON.stringify(response.body));
+  assert.equal(response.body.scored_act.audience_context.additional_person_present, "unknown");
+  assert.equal(response.body.error, "audio_private_content_requires_exclusive_audience");
 });
 
 test("desktop window inspection requires an active runtime grant", async () => {
@@ -14929,6 +15036,7 @@ function makeHandler({
     },
   },
   sensoriumSubscriber,
+  sensoriumPresenceState,
   remoteGraphicalBroker,
   capabilityProposals,
   provenanceLog,
@@ -14965,6 +15073,7 @@ function makeHandler({
     desktopDisclosureRegistry,
     desktopNotificationAdapter,
     sensoriumSubscriber,
+    sensoriumPresenceState,
     remoteGraphicalBroker,
     capabilityProposals,
     provenanceLog,

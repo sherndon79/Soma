@@ -17,6 +17,7 @@ test("depth presence boundary has helper semantics but no live subscription", ()
 
   assert.equal(plan.helper_side_presence_derivation_available, true);
   assert.equal(plan.semantic_event_handler_available, true);
+  assert.equal(plan.subscriber_dispatch_available, true);
   assert.equal(plan.live_depth_presence_available, false);
   assert.equal(plan.activation_allowed, false);
   assert.equal(plan.blocker, "live_presence_subscription_not_wired");

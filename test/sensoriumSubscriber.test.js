@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 
+import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
 import { encodeColorPayload, encodeDepthPayload, encodeStatusPayload } from "./support/msgpackStatus.js";
 
@@ -89,6 +90,17 @@ class FakeManager extends EventEmitter {
     });
   }
 
+  emitPresence(subscriptionId, event = {}) {
+    this.emit("notification", {
+      jsonrpc: "2.0",
+      method: "sensorium.presence.depth.event",
+      params: {
+        subscription_id: subscriptionId,
+        ...presenceBrokerEvent(event),
+      },
+    });
+  }
+
   emitStreamError(subscriptionId, errorClass) {
     this.emit("notification", {
       jsonrpc: "2.0",
@@ -126,6 +138,21 @@ function flushAsync() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function presenceBrokerEvent(overrides = {}) {
+  return {
+    schema_version: 1,
+    event_type: "presence.depth",
+    count_bucket: "1",
+    additional_person_present: "unknown",
+    confidence_bucket: "medium",
+    identity: "not_performed",
+    copresence_source: "depth",
+    raw_payload_allowed_to_node: false,
+    raw_payload_included: false,
+    ...overrides,
+  };
+}
+
 const COMMON_START = {
   capability: "perception.sensorium.color.subscribe",
   provider: "soma.provider.sensorium.jetsorano",
@@ -138,6 +165,20 @@ const COMMON_START = {
       max_fps: 5,
       format_required: "jpeg",
       downsample_to: [320, 240],
+    },
+  },
+};
+
+const PRESENCE_START = {
+  capability: "perception.sensorium.presence.subscribe",
+  provider: "soma.provider.sensorium.jetsorano",
+  grantId: "grant-presence",
+  scope: "session",
+  body: {
+    topic: "sensor/jetsorano/realsense/depth",
+    constraints: {
+      max_seconds: 60,
+      max_fps: 5,
     },
   },
 };
@@ -257,6 +298,25 @@ test("subscriber.start passes depth transform constraints to the helper", async 
   assert.equal(manager.calls[0].method, "sensorium.subscribe.start");
   assert.deepEqual(manager.calls[0].params.downsample_to, [320, 240]);
   assert.equal(manager.calls[0].params.format_required, "png");
+});
+
+test("subscriber.start passes presence transform without raw depth constraints", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({ manager });
+  await subscriber.start(PRESENCE_START);
+
+  assert.equal(manager.calls[0].method, "sensorium.subscribe.start");
+  assert.deepEqual(manager.calls[0].params, {
+    topic: "sensor/jetsorano/realsense/depth",
+    max_fps: 5,
+    presence_transform: true,
+  });
 });
 
 test("helperStatusAnchor uses helper-owned status rather than the Node mirror", async () => {
@@ -865,6 +925,202 @@ test("depth samples with malformed payloads count schema mismatches only", async
   assert.equal(endSummary.schema_version_observed, null);
   assert.equal(endSummary.schema_mismatches, 1);
   assert.equal("stream_summary_observed" in endSummary, false);
+});
+
+test("presence events update current presence state with active episode context", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+  });
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-state",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+    getPresenceEpisodeContext: () => ({
+      status: "active",
+      occupant_id: "seth",
+      posture: {
+        mode: "analysis_testing",
+        trust_basis: "human_set_episode",
+      },
+    }),
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+
+  manager.emitPresence(subscription_id, {
+    count_bucket: "1",
+    additional_person_present: "present",
+  });
+
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
+      .additional_person_present,
+    "not_detected",
+  );
+  const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
+  assert.equal(disclosure.streams[0].presence_summary_observed.count_bucket, "1");
+  assert.equal(disclosure.streams[0].presence_summary_observed.additional_person_present, "not_detected");
+});
+
+test("presence events without active episode keep visitor-when-away floor", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-visitor",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+
+  manager.emitPresence(subscription_id, {
+    count_bucket: "1",
+    additional_person_present: "not_detected",
+  });
+
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
+      .additional_person_present,
+    "present",
+  );
+});
+
+test("presence unknown and expired readings return safe unknown audience", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-expire",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+    getPresenceEpisodeContext: () => ({ status: "active" }),
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+
+  manager.emitPresence(subscription_id, { count_bucket: "unknown" });
+  assert.equal(presenceState.read().additional_person_present, "unknown");
+
+  manager.emitPresence(subscription_id, { count_bucket: "1" });
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:09.999Z") })
+      .additional_person_present,
+    "not_detected",
+  );
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:10.000Z") })
+      .additional_person_present,
+    "unknown",
+  );
+});
+
+test("presence subscription stop clears current presence state", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-clear",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+    getPresenceEpisodeContext: () => ({ status: "active" }),
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+  manager.emitPresence(subscription_id, { count_bucket: "1" });
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
+      .additional_person_present,
+    "not_detected",
+  );
+
+  await subscriber.stop(subscription_id);
+
+  assert.equal(presenceState.read().additional_person_present, "unknown");
+});
+
+test("presence path rejects raw sample payloads without updating presence state", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-raw",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+    getPresenceEpisodeContext: () => ({ status: "active" }),
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/depth", {
+    payloadBytes: [1, 2, 3],
+  });
+
+  assert.equal(presenceState.read().additional_person_present, "unknown");
+  const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
+  assert.equal(disclosure.streams[0].helper_error_class, "presence_raw_payload_rejected");
+  assert.equal(JSON.stringify(disclosure).includes("payload_bytes"), false);
+});
+
+test("presence event notification rejects embedded payload_bytes", async () => {
+  const manager = new FakeManager();
+  const presenceState = createSensoriumPresenceState();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-presence-event-raw",
+    topic: "sensor/jetsorano/realsense/depth",
+    startedAt: 1_700_000_000.0,
+  });
+
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+    presenceState,
+    getPresenceEpisodeContext: () => ({ status: "active" }),
+  });
+  const { subscription_id } = await subscriber.start(PRESENCE_START);
+  manager.emitPresence(subscription_id, {
+    count_bucket: "1",
+  });
+  assert.equal(
+    presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
+      .additional_person_present,
+    "not_detected",
+  );
+
+  manager.emitPresence(subscription_id, {
+    payload_bytes: [1, 2, 3],
+  });
+
+  assert.equal(presenceState.read().additional_person_present, "unknown");
+  const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].frames_consumed_so_far, 2);
+  assert.equal(disclosure.streams[0].helper_error_class, "presence_event_rejected");
+  assert.equal(disclosure.streams[0].stream_summary_observed, null);
+  assert.equal(disclosure.streams[0].presence_summary_observed, null);
 });
 
 // ── describeActive ─────────────────────────────────────────────────────────

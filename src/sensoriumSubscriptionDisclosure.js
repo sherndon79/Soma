@@ -25,6 +25,7 @@ const FAMILY = "perception.sensorium";
 const CAPABILITY_LABELS = {
   "perception.sensorium.color.subscribe":    "color frames",
   "perception.sensorium.depth.subscribe":    "depth maps",
+  "perception.sensorium.presence.subscribe": "presence events",
   "perception.sensorium.imu.subscribe":      "accel + gyro samples",
   "perception.sensorium.location.subscribe": "static location",
   "perception.sensorium.status.subscribe":   "heartbeat",
@@ -75,6 +76,12 @@ function describeStream(subscription, now) {
     frames_consumed_so_far: nonNegativeIntOrZero(subscription.frames_consumed_so_far),
     status_summary_observed: copyStatusSummary(subscription.status_summary_observed),
     stream_summary_observed: copyStreamSummary(subscription.stream_summary_observed),
+    presence_summary_observed: copyPresenceSummary(
+      subscription.presence_summary_observed ??
+        (subscription.capability === "perception.sensorium.presence.subscribe"
+          ? subscription.stream_summary_observed
+          : null),
+    ),
     helper_error_class: copyHelperErrorClass(subscription.helper_error_class),
     description,
   };
@@ -254,6 +261,36 @@ function copyStreamSummary(summary) {
     out.depth_units = depthUnits;
   }
   return out;
+}
+
+function copyPresenceSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  const schemaVersion = integerOrNull(summary.schema_version);
+  const eventType = stringOrEmpty(summary.event_type);
+  const countBucket = stringOrEmpty(summary.count_bucket);
+  const confidenceBucket = stringOrEmpty(summary.confidence_bucket);
+  const additionalPersonPresent = stringOrEmpty(summary.additional_person_present);
+  const expiresAt = stringOrEmpty(summary.expires_at);
+  if (
+    schemaVersion === null ||
+    eventType !== "presence.depth" ||
+    !["0", "1", "2_plus", "unknown"].includes(countBucket) ||
+    !["low", "medium"].includes(confidenceBucket) ||
+    !["present", "not_detected", "unknown"].includes(additionalPersonPresent) ||
+    expiresAt.length === 0
+  ) {
+    return null;
+  }
+  return {
+    schema_version: schemaVersion,
+    event_type: eventType,
+    count_bucket: countBucket,
+    confidence_bucket: confidenceBucket,
+    additional_person_present: additionalPersonPresent,
+    expires_at: expiresAt,
+  };
 }
 
 function numberOrNull(value) {

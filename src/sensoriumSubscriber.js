@@ -36,9 +36,15 @@ import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
 import { createSensoriumStreamAnchor } from "./sensoriumStreamAnchor.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
+import {
+  createDepthPresenceSemanticEvent,
+  validateBrokerDepthPresenceEvent,
+} from "./sensoriumTier.js";
 
 const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
 const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
+const SENSORIUM_PRESENCE_NOTIFICATION = "sensorium.presence.depth.event";
+const PRESENCE_CAPABILITY = "perception.sensorium.presence.subscribe";
 
 export class SensoriumSubscriber {
   #manager;
@@ -49,6 +55,8 @@ export class SensoriumSubscriber {
   #setTimeout;
   #clearTimeout;
   #onSubscriptionEnded;
+  #presenceState;
+  #getPresenceEpisodeContext;
 
   constructor({
     manager,
@@ -57,6 +65,8 @@ export class SensoriumSubscriber {
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
     onSubscriptionEnded = null,
+    presenceState = null,
+    getPresenceEpisodeContext = () => null,
   } = {}) {
     if (!manager) {
       throw new TypeError("SensoriumSubscriber requires a manager");
@@ -68,6 +78,9 @@ export class SensoriumSubscriber {
     this.#clearTimeout = clearTimeoutFn;
     this.#onSubscriptionEnded =
       typeof onSubscriptionEnded === "function" ? onSubscriptionEnded : null;
+    this.#presenceState = presenceState;
+    this.#getPresenceEpisodeContext =
+      typeof getPresenceEpisodeContext === "function" ? getPresenceEpisodeContext : () => null;
   }
 
   /**
@@ -89,6 +102,7 @@ export class SensoriumSubscriber {
         topic: validated.topic,
         zenoh_config_path: this.#zenohConfigPath,
         max_fps: validated.constraints?.max_fps,
+        presence_transform: presenceOnly(capability, true),
         downsample_to: cameraClassOnly(capability, validated.constraints?.downsample_to),
         format_required: cameraClassOnly(capability, validated.constraints?.format_required),
       }),
@@ -163,6 +177,15 @@ export class SensoriumSubscriber {
     this.#onSubscriptionEnded = typeof handler === "function" ? handler : null;
   }
 
+  configurePresenceContext({ presenceState = null, getPresenceEpisodeContext = null } = {}) {
+    if (presenceState) {
+      this.#presenceState = presenceState;
+    }
+    if (typeof getPresenceEpisodeContext === "function") {
+      this.#getPresenceEpisodeContext = getPresenceEpisodeContext;
+    }
+  }
+
   async #stop(
     subscriptionId,
     { terminationReason = "", errorClass = "", notifyEnded = false } = {},
@@ -201,6 +224,9 @@ export class SensoriumSubscriber {
     });
 
     this.#active.delete(subscriptionId);
+    if (record.capability === PRESENCE_CAPABILITY) {
+      this.#presenceState?.clear?.();
+    }
     if (notifyEnded) {
       this.#notifySubscriptionEnded(subscriptionId, endSummary);
     }
@@ -322,6 +348,10 @@ export class SensoriumSubscriber {
       this.#recordHelperError(msg);
       return;
     }
+    if (msg.method === SENSORIUM_PRESENCE_NOTIFICATION) {
+      this.#recordPresenceEvent(msg);
+      return;
+    }
     if (msg.method !== SENSORIUM_SAMPLE_NOTIFICATION) {
       return;
     }
@@ -336,6 +366,10 @@ export class SensoriumSubscriber {
     }
     if (sub.capability === "perception.sensorium.depth.subscribe") {
       this.#recordDepthSample(sub, msg.params?.payload_bytes);
+      return;
+    }
+    if (sub.capability === PRESENCE_CAPABILITY) {
+      this.#rejectPresenceRawSample(sub);
       return;
     }
     if (sub.capability !== "perception.sensorium.status.subscribe") {
@@ -478,6 +512,50 @@ export class SensoriumSubscriber {
       sub._stats.schemaMismatches += 1;
     }
   }
+
+  #recordPresenceEvent(msg) {
+    const sub = this.#active.get(msg.params?.subscription_id);
+    if (!sub || sub.capability !== PRESENCE_CAPABILITY) {
+      return;
+    }
+    sub._stats.framesConsumed += 1;
+    try {
+      const brokerEvent = normalizePresenceBrokerEvent(msg.params);
+      validateBrokerDepthPresenceEvent(brokerEvent);
+      const semanticEvent = createDepthPresenceSemanticEvent({
+        brokerEvent,
+        episode: this.#getPresenceEpisodeContext(),
+        sourceGrant: {
+          id: sub.grant_id,
+          provider: sub.provider,
+        },
+        sourceCapability: sub.capability,
+        now: this.#now,
+      });
+      this.#presenceState?.updateFromSemanticEvent?.(semanticEvent);
+      sub._stats.schemaVersionObserved = semanticEvent.schema_version;
+      sub._stats.streamSummaryObserved = {
+        schema_version: semanticEvent.schema_version,
+        event_type: semanticEvent.event_type,
+        count_bucket: semanticEvent.payload.count_bucket,
+        confidence_bucket: semanticEvent.confidence_bucket,
+        additional_person_present: semanticEvent.audience_context.additional_person_present,
+        expires_at: semanticEvent.expires_at,
+      };
+    } catch {
+      sub._stats.schemaMismatches += 1;
+      sub._stats.helperErrorClass = "presence_event_rejected";
+      sub._stats.streamSummaryObserved = null;
+      this.#presenceState?.clear?.();
+    }
+  }
+
+  #rejectPresenceRawSample(sub) {
+    sub._stats.schemaMismatches += 1;
+    sub._stats.helperErrorClass = "presence_raw_payload_rejected";
+    sub._stats.streamSummaryObserved = null;
+    this.#presenceState?.clear?.();
+  }
 }
 
 function computeExpiresAtISO({ startedAtUnix, maxSeconds }) {
@@ -504,7 +582,7 @@ function estimateFrameRate(record, now) {
 
 function stripEmpty(object) {
   return Object.fromEntries(
-    Object.entries(object).filter(([, value]) => value !== ""),
+    Object.entries(object).filter(([, value]) => value !== "" && value !== undefined),
   );
 }
 
@@ -513,6 +591,35 @@ function cameraClassOnly(capability, value) {
     capability === "perception.sensorium.depth.subscribe"
     ? value
     : undefined;
+}
+
+function presenceOnly(capability, value) {
+  return capability === PRESENCE_CAPABILITY ? value : undefined;
+}
+
+function normalizePresenceBrokerEvent(params = {}) {
+  const candidate = isPlainObject(params.event) ? params.event : params;
+  if ("payload_bytes" in params || "payload_bytes" in candidate) {
+    return {
+      ...candidate,
+      payload_bytes: params.payload_bytes ?? candidate.payload_bytes,
+    };
+  }
+  return {
+    schema_version: candidate.schema_version,
+    event_type: candidate.event_type,
+    count_bucket: candidate.count_bucket,
+    additional_person_present: candidate.additional_person_present,
+    confidence_bucket: candidate.confidence_bucket,
+    identity: candidate.identity,
+    copresence_source: candidate.copresence_source,
+    raw_payload_allowed_to_node: candidate.raw_payload_allowed_to_node,
+    raw_payload_included: candidate.raw_payload_included,
+  };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function sanitizeHelperErrorClass(value) {

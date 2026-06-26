@@ -29,6 +29,7 @@ export function buildDepthPresenceBoundaryPlan({
     source_capabilities: capabilities,
     helper_side_presence_derivation_available: true,
     semantic_event_handler_available: true,
+    subscriber_dispatch_available: true,
     live_depth_presence_available: false,
     activation_allowed: false,
     blocker: "live_presence_subscription_not_wired",

@@ -175,6 +175,12 @@ test("disclosure descriptions match the capability family vocabulary", () => {
       want: "Receiving depth maps from jetsorano at ~24 fps",
     },
     {
+      capability: "perception.sensorium.presence.subscribe",
+      topic: "sensor/jetsorano/realsense/depth",
+      recent_frame_rate: 5,
+      want: "Receiving presence events from jetsorano",
+    },
+    {
       capability: "perception.sensorium.imu.subscribe",
       topic: "sensor/jetsorano/realsense/imu/accel",
       recent_frame_rate: 24,

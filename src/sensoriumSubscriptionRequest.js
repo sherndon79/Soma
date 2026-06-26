@@ -20,6 +20,7 @@
 const SENSORIUM_CAPABILITY_KEYS = new Set([
   "perception.sensorium.color.subscribe",
   "perception.sensorium.depth.subscribe",
+  "perception.sensorium.presence.subscribe",
   "perception.sensorium.imu.subscribe",
   "perception.sensorium.location.subscribe",
   "perception.sensorium.status.subscribe",
@@ -46,6 +47,15 @@ const CONSTRAINT_RULES = {
   "perception.sensorium.depth.subscribe": {
     allowed: new Set(["max_seconds", "max_fps", "downsample_to", "format_required"]),
     formats: new Set(["png"]),
+    topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/depth$/,
+    topic_description: "sensor/<host>/realsense/depth",
+  },
+  "perception.sensorium.presence.subscribe": {
+    allowed: new Set(["max_seconds", "max_fps"]),
+    formats: null,
+    // Presence consumes the same depth topic as raw depth, but the
+    // capability key selects the broker-side presence transform. Topic
+    // alone is not sufficient authority for raw depth map exposure.
     topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/depth$/,
     topic_description: "sensor/<host>/realsense/depth",
   },

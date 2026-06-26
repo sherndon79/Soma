@@ -916,6 +916,30 @@
       "description": "Subscribe to PNG-encoded 16-bit depth maps from a remote Sensorium publisher node. Each payload carries a depth_units field (meters per raw sample) so consumers can convert to physical distance. Camera-class capability; model-boundary irreversibility applies."
     },
     {
+      "key": "perception.sensorium.presence.subscribe",
+      "name": "Sensorium Depth Presence Event Subscription",
+      "category": "perception",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "depth-derived presence event count buckets from a remote Sensorium publisher",
+        "non-identity copresence cues within the depth sensor's field of view"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export of frames",
+        "color or audio data",
+        "raw depth maps",
+        "identity recognition",
+        "frames outside the subscription window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.presence.v1",
+      "description": "Subscribe to depth-derived presence events from a remote Sensorium publisher node. The provider targets the depth topic but applies a presence transform that exposes coarse count buckets only: no raw frames to Node, no color, no audio, and identity is not_performed. Distinct from perception.sensorium.depth.subscribe, which exposes depth maps. Feeds output-discretion decisions; count=0 does not relax private-output discretion until a separate FOV coverage review is completed."
+    },
+    {
       "key": "perception.sensorium.imu.subscribe",
       "name": "Sensorium IMU Stream Subscription",
       "category": "perception",

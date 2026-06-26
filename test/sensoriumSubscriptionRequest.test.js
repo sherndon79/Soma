@@ -47,6 +47,28 @@ test("Sensorium request validator accepts a minimal status subscription request"
   });
 });
 
+test("Sensorium request validator accepts presence transform on the depth topic", () => {
+  const result = validateSensoriumSubscriptionRequest(
+    {
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: {
+        max_seconds: 120,
+        max_fps: 5,
+      },
+    },
+    { capability: "perception.sensorium.presence.subscribe" },
+  );
+
+  assert.deepEqual(result, {
+    capability: "perception.sensorium.presence.subscribe",
+    topic: "sensor/jetsorano/realsense/depth",
+    constraints: {
+      max_seconds: 120,
+      max_fps: 5,
+    },
+  });
+});
+
 test("Sensorium request validator accepts both imu accel and gyro topics", () => {
   for (const topic of [
     "sensor/jetsorano/realsense/imu/accel",
@@ -207,6 +229,72 @@ test("Sensorium request validator rejects unknown constraint keys", () => {
   );
 });
 
+test("Sensorium request validator keeps presence distinct from raw depth constraints", () => {
+  assert.throws(
+    () =>
+      validateSensoriumSubscriptionRequest(
+        {
+          topic: "sensor/jetsorano/realsense/depth",
+          constraints: {
+            max_seconds: 120,
+            max_fps: 5,
+            downsample_to: [384, 384],
+          },
+        },
+        { capability: "perception.sensorium.presence.subscribe" },
+      ),
+    {
+      code: "sensorium_subscription_request_invalid",
+      validation_errors: [
+        "request.constraints.downsample_to is not allowed for perception.sensorium.presence.subscribe",
+      ],
+    },
+  );
+
+  assert.throws(
+    () =>
+      validateSensoriumSubscriptionRequest(
+        {
+          topic: "sensor/jetsorano/realsense/depth",
+          constraints: {
+            max_seconds: 120,
+            max_fps: 5,
+            format_required: "png",
+          },
+        },
+        { capability: "perception.sensorium.presence.subscribe" },
+      ),
+    {
+      code: "sensorium_subscription_request_invalid",
+      validation_errors: [
+        "request.constraints.format_required is not allowed for perception.sensorium.presence.subscribe",
+      ],
+    },
+  );
+});
+
+test("Sensorium request validator rejects presence on the color topic", () => {
+  assert.throws(
+    () =>
+      validateSensoriumSubscriptionRequest(
+        {
+          topic: "sensor/jetsorano/realsense/color",
+          constraints: {
+            max_seconds: 120,
+            max_fps: 5,
+          },
+        },
+        { capability: "perception.sensorium.presence.subscribe" },
+      ),
+    {
+      code: "sensorium_subscription_request_invalid",
+      validation_errors: [
+        "request.topic must match sensor/<host>/realsense/depth for perception.sensorium.presence.subscribe",
+      ],
+    },
+  );
+});
+
 test("Sensorium request validator rejects max_fps on non-streaming capabilities", () => {
   for (const cap of [
     "perception.sensorium.imu.subscribe",
@@ -341,6 +429,7 @@ test("Sensorium request validator publishes its known capability set", () => {
     "perception.sensorium.depth.subscribe",
     "perception.sensorium.imu.subscribe",
     "perception.sensorium.location.subscribe",
+    "perception.sensorium.presence.subscribe",
     "perception.sensorium.status.subscribe",
   ]);
 });

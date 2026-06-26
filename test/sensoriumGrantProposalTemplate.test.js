@@ -106,6 +106,67 @@ test("buildSensoriumGrantProposalTemplate supports status review without video c
   assert.deepEqual(template.grant_intent.constraints, { max_seconds: 30 });
 });
 
+test("buildSensoriumGrantProposalTemplate supports inert presence review on depth topic", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+
+  const template = buildSensoriumGrantProposalTemplate({
+    catalog,
+    providerRegistry,
+    capability: "perception.sensorium.presence.subscribe",
+    provider: SENSORIUM_PROVIDER,
+    topic: "sensor/jetsorano/realsense/depth",
+    constraints: {
+      max_seconds: 120,
+      max_fps: 5,
+    },
+    reason: "Need a bounded depth-derived presence review before any live enablement.",
+  });
+
+  assert.equal(template.proposal.capability, "perception.sensorium.presence.subscribe");
+  assert.equal(template.proposal.requested_scope, "session");
+  assert.match(template.proposal.risk, /risk_class=sensitive/);
+  assert.match(template.proposal.risk, /output-discretion/);
+  assert.match(template.proposal.risk, /without raw frames/);
+  assert.ok(
+    template.proposal.data_exposed.includes(
+      "depth-derived presence event count buckets from a remote Sensorium publisher",
+    ),
+  );
+  assert.ok(template.proposal.excluded_data.includes("raw depth maps"));
+  assert.ok(template.proposal.excluded_data.includes("identity recognition"));
+
+  assert.equal(template.review.provider, SENSORIUM_PROVIDER);
+  assert.equal(template.review.host_segment, "jetsorano");
+  assert.equal(template.review.topic, "sensor/jetsorano/realsense/depth");
+  assert.equal(template.review.stream_type, "presence");
+  assert.equal(template.review.risk_class, "sensitive");
+  assert.equal(template.review.max_seconds, 120);
+  assert.equal(template.review.max_fps, 5);
+  assert.equal(template.review.format_required, "");
+  assert.deepEqual(template.review.downsample_to, []);
+  assert.match(template.review.active_disclosure, /presence from jetsorano/);
+  assert.match(template.review.model_boundary_warning, /output discretion \(H2\)/);
+  assert.match(template.review.model_boundary_warning, /not_performed/);
+  assert.match(template.review.model_boundary_warning, /Count=0 does not relax/);
+  assert.match(template.review.model_boundary_warning, /default coverage remains unreviewed/);
+
+  assert.deepEqual(template.grant_intent, {
+    capability: "perception.sensorium.presence.subscribe",
+    provider: SENSORIUM_PROVIDER,
+    scope: "session",
+    constraints: {
+      max_seconds: 120,
+      max_fps: 5,
+    },
+    reason: "Need a bounded depth-derived presence review before any live enablement.",
+    activation_performed: false,
+  });
+  assert.equal(template.activation_performed, false);
+  assert.equal(template.durable, false);
+  assert.equal(template.writable, false);
+});
+
 test("buildSensoriumGrantProposalTemplate rejects invalid topic for capability", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();

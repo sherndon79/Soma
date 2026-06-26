@@ -9,6 +9,10 @@ const SENSORIUM_CAPABILITIES = {
     stream_type: "depth",
     required_constraints: ["max_seconds", "max_fps", "format_required", "downsample_to"],
   },
+  "perception.sensorium.presence.subscribe": {
+    stream_type: "presence",
+    required_constraints: ["max_seconds", "max_fps"],
+  },
   "perception.sensorium.imu.subscribe": {
     stream_type: "imu",
     required_constraints: ["max_seconds"],
@@ -215,6 +219,9 @@ function activeDisclosureText({ streamType, hostSegment, constraints }) {
 }
 
 function modelBoundaryWarning(streamType) {
+  if (streamType === "presence") {
+    return "Presence events are depth-derived coarse count buckets for output discretion (H2), not raw frames to Node, color, or identity claims; identity is not_performed. Count=0 does not relax private-output discretion until a separate reviewed FOV-coverage step is complete, and default coverage remains unreviewed.";
+  }
   if (streamType === "color" || streamType === "depth") {
     return "Camera-class payloads can be stopped or withheld later, but frames already incorporated into a model turn cannot be removed from that turn's working context.";
   }
@@ -222,6 +229,9 @@ function modelBoundaryWarning(streamType) {
 }
 
 function riskSummary({ streamType, riskClass, hostSegment }) {
+  if (streamType === "presence") {
+    return `Sensorium presence events from ${hostSegment}; risk_class=${riskClass}; minimized depth-derived count buckets feed output-discretion decisions without raw frames, color, audio, or identity recognition.`;
+  }
   return `Sensorium ${streamType} stream from ${hostSegment}; risk_class=${riskClass}; live perception is not fully reversible once consumed by a model turn.`;
 }
 

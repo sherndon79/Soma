@@ -12816,6 +12816,50 @@ const SENSORIUM_TEST_GRANT_STORE = {
   ],
 };
 
+const sensoriumPresenceCapabilityCatalog = {
+  ...capabilityCatalog,
+  capabilities: [
+    ...capabilityCatalog.capabilities,
+    {
+      key: "perception.sensorium.presence.subscribe",
+      name: "Sensorium Presence Subscription",
+      category: "perception",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      allowed_scopes: ["session"],
+      data_exposed: [
+        "derived presence events from a remote Sensorium publisher",
+        "presence count buckets and confidence buckets",
+      ],
+      excluded_by_default: [
+        "raw color frames",
+        "raw depth maps",
+        "audio",
+        "identity labels",
+      ],
+      reversible: false,
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.perception.sensorium.presence.v2",
+    },
+  ],
+};
+
+const sensoriumPresenceProviderRegistry = {
+  ...providerRegistry,
+  providers: providerRegistry.providers.map((provider) => {
+    if (provider.id !== "soma.provider.sensorium.jetsorano") {
+      return provider;
+    }
+    return {
+      ...provider,
+      capabilities: [
+        ...provider.capabilities,
+        "perception.sensorium.presence.subscribe",
+      ],
+    };
+  }),
+};
+
 test("Sensorium routes return 503 when sensoriumSubscriber is not configured", async () => {
   const handler = makeHandler({ harness: allowedHarness });
   for (const url of ["/sensorium/subscriptions", "/sensorium/subscriptions/foo"]) {
@@ -14315,6 +14359,88 @@ test("POST /sensorium/grants creates session grant from approved proposal withou
   assert.equal(response.body.entries[0].proposal_id, proposalId);
   assert.equal(response.body.entries[0].topic, "sensor/jetsorano/realsense/color");
   assert.equal(response.body.entries[0].subscription_activated, false);
+});
+
+test("Sensorium presence proposal grant can activate perception-rooted subscription", async () => {
+  const subscriber = makeFakeSensoriumSubscriber({ subscriptionId: "sub-presence-route" });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
+    grantStore: { schema_version: 1, grants: [] },
+    sensoriumSubscriber: subscriber,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "perception.sensorium.presence.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      topic: "perception/jetsorano/presence",
+      requested_scope: "session",
+      reason: "Need bounded live presence events for this task.",
+      constraints: {
+        max_seconds: 3600,
+        max_fps: 2,
+      },
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "session", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.activation_performed, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/grants",
+    body: { proposal_id: proposalId, actor: "user" },
+  });
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.grant.capability, "perception.sensorium.presence.subscribe");
+  assert.equal(response.body.grant.provider, "soma.provider.sensorium.jetsorano");
+  assert.equal(response.body.grant.constraints.topic, "perception/jetsorano/presence");
+  assert.equal(response.body.activation_performed, false);
+  assert.equal(response.body.subscription_activated, false);
+  const grantId = response.body.grant.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      topic: "perception/jetsorano/presence",
+      constraints: {
+        max_seconds: 3600,
+        max_fps: 2,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.subscription_id, "sub-presence-route");
+  assert.equal(response.body.topic, "perception/jetsorano/presence");
+  assert.equal(response.body.grant_id, grantId);
+  assert.equal(response.body.activation_performed, true);
+  assert.equal(subscriber.calls.length, 1);
+  assert.equal(subscriber.calls[0].method, "start");
+  assert.equal(subscriber.calls[0].args.capability, "perception.sensorium.presence.subscribe");
+  assert.equal(subscriber.calls[0].args.provider, "soma.provider.sensorium.jetsorano");
+  assert.equal(subscriber.calls[0].args.grantId, grantId);
+  assert.deepEqual(subscriber.calls[0].args.body, {
+    topic: "perception/jetsorano/presence",
+    constraints: {
+      max_seconds: 3600,
+      max_fps: 2,
+    },
+  });
 });
 
 test("POST /sensorium/grants rejects unapproved proposals and non-user actors", async () => {

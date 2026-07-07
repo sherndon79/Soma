@@ -11697,7 +11697,8 @@ function providerHostMatchesTopic(provider = {}, topic = "") {
   if (!provider.host_segment) {
     return true;
   }
-  return topic.startsWith(`sensor/${provider.host_segment}/`);
+  return topic.startsWith(`sensor/${provider.host_segment}/`) ||
+    topic.startsWith(`perception/${provider.host_segment}/`);
 }
 
 function grantTopicMatchesTopic(grant = {}, topic = "") {

@@ -1,14 +1,15 @@
 export const SENSORIUM_DEPTH_PRESENCE_CAPABILITY = "sensorium.presence.depth.read";
 export const DEPTH_SUBSCRIPTION_CAPABILITY = "perception.sensorium.depth.subscribe";
+export const PRESENCE_SUBSCRIPTION_CAPABILITY = "perception.sensorium.presence.subscribe";
 export const COLOR_SUBSCRIPTION_CAPABILITY = "perception.sensorium.color.subscribe";
 
 const SETH_PRESENT_VALUES = new Set(["session_assumed_present", "zone_present", "unknown"]);
 const ADDITIONAL_PERSON_VALUES = new Set(["present", "not_detected", "unknown"]);
 const COUNT_BUCKETS = new Set(["0", "1", "2_plus", "unknown"]);
-const CONFIDENCE_BUCKETS = new Set(["low", "medium"]);
+const CONFIDENCE_BUCKETS = new Set(["low", "medium", "high"]);
 
 export function buildDepthPresenceBoundaryPlan({
-  sourceCapabilities = [DEPTH_SUBSCRIPTION_CAPABILITY],
+  sourceCapabilities = [PRESENCE_SUBSCRIPTION_CAPABILITY],
   sethPresent = "unknown",
   additionalPersonPresent = "unknown",
   countBucket = "unknown",
@@ -16,21 +17,23 @@ export function buildDepthPresenceBoundaryPlan({
 } = {}) {
   const capabilities = normalizeCapabilities(sourceCapabilities);
   const findings = [];
-  if (!capabilities.includes(DEPTH_SUBSCRIPTION_CAPABILITY)) {
-    findings.push("depth subscription capability is required for depth presence");
+  if (!capabilities.includes(PRESENCE_SUBSCRIPTION_CAPABILITY)) {
+    findings.push("derived presence subscription capability is required for presence");
   }
   if (capabilities.includes(COLOR_SUBSCRIPTION_CAPABILITY)) {
-    findings.push("color subscription capability is forbidden for depth presence");
+    findings.push("color subscription capability is forbidden as a presence source");
   }
 
   return Object.freeze({
     schema_version: 1,
     capability: SENSORIUM_DEPTH_PRESENCE_CAPABILITY,
     source_capabilities: capabilities,
-    helper_side_presence_derivation_available: true,
+    helper_side_presence_derivation_available: false,
+    sensorium_derived_presence_available: true,
     semantic_event_handler_available: true,
     subscriber_dispatch_available: true,
     live_depth_presence_available: false,
+    live_derived_presence_available: false,
     activation_allowed: false,
     blocker: "live_presence_subscription_not_wired",
     refused: findings.length > 0,

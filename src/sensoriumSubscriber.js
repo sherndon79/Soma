@@ -32,6 +32,7 @@ import {
 } from "./sensoriumSubscriptionProvenance.js";
 import { summarizeSensoriumColorPayload } from "./sensoriumColorPayload.js";
 import { summarizeSensoriumDepthPayload } from "./sensoriumDepthPayload.js";
+import { summarizeSensoriumPresencePayload } from "./sensoriumPresencePayload.js";
 import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
 import { createSensoriumStreamAnchor } from "./sensoriumStreamAnchor.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
@@ -43,7 +44,6 @@ import {
 
 const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
 const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
-const SENSORIUM_PRESENCE_NOTIFICATION = "sensorium.presence.depth.event";
 const PRESENCE_CAPABILITY = "perception.sensorium.presence.subscribe";
 
 export class SensoriumSubscriber {
@@ -102,7 +102,6 @@ export class SensoriumSubscriber {
         topic: validated.topic,
         zenoh_config_path: this.#zenohConfigPath,
         max_fps: validated.constraints?.max_fps,
-        presence_transform: presenceOnly(capability, true),
         downsample_to: cameraClassOnly(capability, validated.constraints?.downsample_to),
         format_required: cameraClassOnly(capability, validated.constraints?.format_required),
       }),
@@ -348,10 +347,6 @@ export class SensoriumSubscriber {
       this.#recordHelperError(msg);
       return;
     }
-    if (msg.method === SENSORIUM_PRESENCE_NOTIFICATION) {
-      this.#recordPresenceEvent(msg);
-      return;
-    }
     if (msg.method !== SENSORIUM_SAMPLE_NOTIFICATION) {
       return;
     }
@@ -369,7 +364,7 @@ export class SensoriumSubscriber {
       return;
     }
     if (sub.capability === PRESENCE_CAPABILITY) {
-      this.#rejectPresenceRawSample(sub);
+      this.#recordPresenceSample(sub, msg.params?.payload_bytes);
       return;
     }
     if (sub.capability !== "perception.sensorium.status.subscribe") {
@@ -513,14 +508,27 @@ export class SensoriumSubscriber {
     }
   }
 
-  #recordPresenceEvent(msg) {
-    const sub = this.#active.get(msg.params?.subscription_id);
-    if (!sub || sub.capability !== PRESENCE_CAPABILITY) {
-      return;
-    }
-    sub._stats.framesConsumed += 1;
+  #recordPresenceSample(sub, payloadBytes) {
     try {
-      const brokerEvent = normalizePresenceBrokerEvent(msg.params);
+      const summary = summarizeSensoriumPresencePayload(payloadBytes);
+      sub._stats.schemaVersionObserved = summary.schema_matches_expected ? 1 : null;
+      if (!summary.schema_matches_expected) {
+        sub._stats.schemaMismatches += 1;
+        sub._stats.streamSummaryObserved = null;
+        this.#presenceState?.clear?.();
+        return;
+      }
+      const brokerEvent = {
+        schema_version: 1,
+        event_type: "presence.depth",
+        count_bucket: summary.count_bucket,
+        additional_person_present: summary.additional_person_present,
+        confidence_bucket: summary.confidence_bucket,
+        identity: "not_performed",
+        copresence_source: "depth",
+        raw_payload_allowed_to_node: false,
+        raw_payload_included: false,
+      };
       validateBrokerDepthPresenceEvent(brokerEvent);
       const semanticEvent = createDepthPresenceSemanticEvent({
         brokerEvent,
@@ -533,13 +541,16 @@ export class SensoriumSubscriber {
         now: this.#now,
       });
       this.#presenceState?.updateFromSemanticEvent?.(semanticEvent);
-      sub._stats.schemaVersionObserved = semanticEvent.schema_version;
       sub._stats.streamSummaryObserved = {
         schema_version: semanticEvent.schema_version,
+        sensorium_schema: summary.schema,
         event_type: semanticEvent.event_type,
+        frameset_sequence: summary.frameset_sequence,
+        present: summary.present,
         count_bucket: semanticEvent.payload.count_bucket,
         confidence_bucket: semanticEvent.confidence_bucket,
         additional_person_present: semanticEvent.audience_context.additional_person_present,
+        source: summary.source,
         expires_at: semanticEvent.expires_at,
       };
     } catch {
@@ -548,13 +559,6 @@ export class SensoriumSubscriber {
       sub._stats.streamSummaryObserved = null;
       this.#presenceState?.clear?.();
     }
-  }
-
-  #rejectPresenceRawSample(sub) {
-    sub._stats.schemaMismatches += 1;
-    sub._stats.helperErrorClass = "presence_raw_payload_rejected";
-    sub._stats.streamSummaryObserved = null;
-    this.#presenceState?.clear?.();
   }
 }
 
@@ -591,35 +595,6 @@ function cameraClassOnly(capability, value) {
     capability === "perception.sensorium.depth.subscribe"
     ? value
     : undefined;
-}
-
-function presenceOnly(capability, value) {
-  return capability === PRESENCE_CAPABILITY ? value : undefined;
-}
-
-function normalizePresenceBrokerEvent(params = {}) {
-  const candidate = isPlainObject(params.event) ? params.event : params;
-  if ("payload_bytes" in params || "payload_bytes" in candidate) {
-    return {
-      ...candidate,
-      payload_bytes: params.payload_bytes ?? candidate.payload_bytes,
-    };
-  }
-  return {
-    schema_version: candidate.schema_version,
-    event_type: candidate.event_type,
-    count_bucket: candidate.count_bucket,
-    additional_person_present: candidate.additional_person_present,
-    confidence_bucket: candidate.confidence_bucket,
-    identity: candidate.identity,
-    copresence_source: candidate.copresence_source,
-    raw_payload_allowed_to_node: candidate.raw_payload_allowed_to_node,
-    raw_payload_included: candidate.raw_payload_included,
-  };
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function sanitizeHelperErrorClass(value) {

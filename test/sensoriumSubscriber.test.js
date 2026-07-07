@@ -4,7 +4,12 @@ import { EventEmitter } from "node:events";
 
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
-import { encodeColorPayload, encodeDepthPayload, encodeStatusPayload } from "./support/msgpackStatus.js";
+import {
+  encodeColorPayload,
+  encodeDepthPayload,
+  encodePresencePayload,
+  encodeStatusPayload,
+} from "./support/msgpackStatus.js";
 
 // ── fake manager ───────────────────────────────────────────────────────────
 // A small EventEmitter that records sent requests and lets tests
@@ -175,7 +180,7 @@ const PRESENCE_START = {
   grantId: "grant-presence",
   scope: "session",
   body: {
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     constraints: {
       max_seconds: 60,
       max_fps: 5,
@@ -300,11 +305,11 @@ test("subscriber.start passes depth transform constraints to the helper", async 
   assert.equal(manager.calls[0].params.format_required, "png");
 });
 
-test("subscriber.start passes presence transform without raw depth constraints", async () => {
+test("subscriber.start subscribes to derived presence without broker transform", async () => {
   const manager = new FakeManager();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -313,9 +318,8 @@ test("subscriber.start passes presence transform without raw depth constraints",
 
   assert.equal(manager.calls[0].method, "sensorium.subscribe.start");
   assert.deepEqual(manager.calls[0].params, {
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     max_fps: 5,
-    presence_transform: true,
   });
 });
 
@@ -934,7 +938,7 @@ test("presence events update current presence state with active episode context"
   });
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-state",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -953,9 +957,11 @@ test("presence events update current presence state with active episode context"
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
 
-  manager.emitPresence(subscription_id, {
-    count_bucket: "1",
-    additional_person_present: "present",
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      count_bucket: "1",
+      additional_person_present: "present",
+    }),
   });
 
   assert.equal(
@@ -964,9 +970,14 @@ test("presence events update current presence state with active episode context"
     "not_detected",
   );
   const disclosure = subscriber.describeActive();
+  assert.equal(disclosure.streams[0].host, "jetsorano");
   assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
   assert.equal(disclosure.streams[0].presence_summary_observed.count_bucket, "1");
   assert.equal(disclosure.streams[0].presence_summary_observed.additional_person_present, "not_detected");
+  assert.equal(
+    disclosure.streams[0].presence_summary_observed.sensorium_schema,
+    "perception.presence.v0.1",
+  );
 });
 
 test("presence events without active episode keep visitor-when-away floor", async () => {
@@ -974,7 +985,7 @@ test("presence events without active episode keep visitor-when-away floor", asyn
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-visitor",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -985,9 +996,11 @@ test("presence events without active episode keep visitor-when-away floor", asyn
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
 
-  manager.emitPresence(subscription_id, {
-    count_bucket: "1",
-    additional_person_present: "not_detected",
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+    }),
   });
 
   assert.equal(
@@ -1002,7 +1015,7 @@ test("presence unknown and expired readings return safe unknown audience", async
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-expire",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -1014,10 +1027,14 @@ test("presence unknown and expired readings return safe unknown audience", async
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
 
-  manager.emitPresence(subscription_id, { count_bucket: "unknown" });
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({ schema: "perception.presence.v9" }),
+  });
   assert.equal(presenceState.read().additional_person_present, "unknown");
 
-  manager.emitPresence(subscription_id, { count_bucket: "1" });
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({ count_bucket: "1" }),
+  });
   assert.equal(
     presenceState.read({ now: () => new Date("2026-06-26T01:00:09.999Z") })
       .additional_person_present,
@@ -1035,7 +1052,7 @@ test("presence subscription stop clears current presence state", async () => {
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-clear",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -1046,7 +1063,9 @@ test("presence subscription stop clears current presence state", async () => {
     getPresenceEpisodeContext: () => ({ status: "active" }),
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
-  manager.emitPresence(subscription_id, { count_bucket: "1" });
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({ count_bucket: "1" }),
+  });
   assert.equal(
     presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
       .additional_person_present,
@@ -1058,12 +1077,12 @@ test("presence subscription stop clears current presence state", async () => {
   assert.equal(presenceState.read().additional_person_present, "unknown");
 });
 
-test("presence path rejects raw sample payloads without updating presence state", async () => {
+test("presence path rejects malformed derived presence payloads without updating presence state", async () => {
   const manager = new FakeManager();
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-raw",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -1075,23 +1094,23 @@ test("presence path rejects raw sample payloads without updating presence state"
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
 
-  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/depth", {
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
     payloadBytes: [1, 2, 3],
   });
 
   assert.equal(presenceState.read().additional_person_present, "unknown");
   const disclosure = subscriber.describeActive();
   assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
-  assert.equal(disclosure.streams[0].helper_error_class, "presence_raw_payload_rejected");
+  assert.equal(disclosure.streams[0].helper_error_class, "presence_event_rejected");
   assert.equal(JSON.stringify(disclosure).includes("payload_bytes"), false);
 });
 
-test("presence event notification rejects embedded payload_bytes", async () => {
+test("presence derived payload with unsupported enum clears current presence state", async () => {
   const manager = new FakeManager();
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
     subscriptionId: "sub-presence-event-raw",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     startedAt: 1_700_000_000.0,
   });
 
@@ -1102,8 +1121,8 @@ test("presence event notification rejects embedded payload_bytes", async () => {
     getPresenceEpisodeContext: () => ({ status: "active" }),
   });
   const { subscription_id } = await subscriber.start(PRESENCE_START);
-  manager.emitPresence(subscription_id, {
-    count_bucket: "1",
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({ count_bucket: "1" }),
   });
   assert.equal(
     presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
@@ -1111,8 +1130,8 @@ test("presence event notification rejects embedded payload_bytes", async () => {
     "not_detected",
   );
 
-  manager.emitPresence(subscription_id, {
-    payload_bytes: [1, 2, 3],
+  manager.emitSample(subscription_id, "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({ count_bucket: "many" }),
   });
 
   assert.equal(presenceState.read().additional_person_present, "unknown");

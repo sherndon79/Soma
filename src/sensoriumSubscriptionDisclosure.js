@@ -117,8 +117,8 @@ function hostFromTopic(topic) {
   if (typeof topic !== "string") {
     return "";
   }
-  // Expected shape: sensor/<host>/<tail>...
-  const match = topic.match(/^sensor\/([a-z0-9-]+)\//);
+  // Expected shape: sensor/<host>/<tail>... or perception/<host>/<tail>...
+  const match = topic.match(/^(?:sensor|perception)\/([a-z0-9-]+)\//);
   return match ? match[1] : "";
 }
 
@@ -277,7 +277,7 @@ function copyPresenceSummary(summary) {
     schemaVersion === null ||
     eventType !== "presence.depth" ||
     !["0", "1", "2_plus", "unknown"].includes(countBucket) ||
-    !["low", "medium"].includes(confidenceBucket) ||
+    !["low", "medium", "high"].includes(confidenceBucket) ||
     !["present", "not_detected", "unknown"].includes(additionalPersonPresent) ||
     expiresAt.length === 0
   ) {
@@ -285,6 +285,7 @@ function copyPresenceSummary(summary) {
   }
   return {
     schema_version: schemaVersion,
+    sensorium_schema: stringOrEmpty(summary.sensorium_schema),
     event_type: eventType,
     count_bucket: countBucket,
     confidence_bucket: confidenceBucket,

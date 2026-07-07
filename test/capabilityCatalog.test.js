@@ -180,7 +180,7 @@ test("capability catalog permits reviewed sensitive base-harness authority", () 
 const SENSORIUM_CAPABILITIES = [
   { key: "perception.sensorium.color.subscribe",    risk: "high",      contract: "soma.perception.sensorium.color.v1" },
   { key: "perception.sensorium.depth.subscribe",    risk: "high",      contract: "soma.perception.sensorium.depth.v1" },
-  { key: "perception.sensorium.presence.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.presence.v1" },
+  { key: "perception.sensorium.presence.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.presence.v2" },
   { key: "perception.sensorium.imu.subscribe",      risk: "sensitive", contract: "soma.perception.sensorium.imu.v1" },
   { key: "perception.sensorium.location.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.location.v1" },
   { key: "perception.sensorium.status.subscribe",   risk: "low",       contract: "soma.perception.sensorium.status.v1" },
@@ -220,7 +220,7 @@ test("Sensorium subscription capabilities are catalogued with the disabled-first
   assert.ok(presence.data_exposed.some((entry) => entry.includes("count buckets")));
   assert.ok(presence.excluded_by_default.includes("raw depth maps"));
   assert.ok(presence.excluded_by_default.includes("identity recognition"));
-  assert.match(presence.description, /coarse count buckets only/);
+  assert.match(presence.description, /coarse count buckets/);
   assert.match(presence.description, /identity is not_performed/);
   assert.match(presence.description, /count=0 does not relax/);
 });

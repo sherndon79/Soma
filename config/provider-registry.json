@@ -352,7 +352,7 @@
         },
         {
           "key": "perception.sensorium.presence.subscribe",
-          "provider_contract": "soma.perception.sensorium.presence.v1",
+          "provider_contract": "soma.perception.sensorium.presence.v2",
           "output_schema": "soma.perception.sensorium.presence.response.v1"
         },
         {

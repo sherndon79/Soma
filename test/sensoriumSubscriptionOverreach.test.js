@@ -49,6 +49,16 @@ const CROSS_CAPABILITY_TOPIC_PAIRS = [
     why: "depth capability with color topic",
   },
   {
+    capability: "perception.sensorium.presence.subscribe",
+    topic: "sensor/jetsorano/realsense/depth",
+    why: "presence capability with raw depth topic",
+  },
+  {
+    capability: "perception.sensorium.depth.subscribe",
+    topic: "perception/jetsorano/presence",
+    why: "depth capability with derived presence topic",
+  },
+  {
     capability: "perception.sensorium.status.subscribe",
     topic: "sensor/jetsorano/location",
     why: "status capability with location topic",

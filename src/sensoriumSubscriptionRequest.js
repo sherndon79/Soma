@@ -53,11 +53,11 @@ const CONSTRAINT_RULES = {
   "perception.sensorium.presence.subscribe": {
     allowed: new Set(["max_seconds", "max_fps"]),
     formats: null,
-    // Presence consumes the same depth topic as raw depth, but the
-    // capability key selects the broker-side presence transform. Topic
-    // alone is not sufficient authority for raw depth map exposure.
-    topic_pattern: /^sensor\/[a-z0-9-]+\/realsense\/depth$/,
-    topic_description: "sensor/<host>/realsense/depth",
+    // Presence consumes Sensorium's derived presence topic. Raw depth
+    // stays available via perception.sensorium.depth.subscribe, but is
+    // no longer the producer for the presence capability.
+    topic_pattern: /^perception\/[a-z0-9-]+\/presence$/,
+    topic_description: "perception/<host>/presence",
   },
   "perception.sensorium.imu.subscribe": {
     allowed: new Set(["max_seconds"]),
@@ -125,10 +125,9 @@ export function validateSensoriumSubscriptionRequest(body, { capability } = {}) 
   if (typeof body.topic !== "string" || body.topic.length === 0) {
     errors.push("request.topic must be a non-empty string");
   } else if (SENSORIUM_CAPABILITY_KEYS.has(capability)) {
-    // Capability is known — apply the capability-specific pattern.
-    // This is stricter than the generic pattern, so we don't also
-    // check the generic one (a topic that matches the cap-specific
-    // pattern necessarily matches the generic one).
+    // Capability is known, so apply the exact capability-specific topic
+    // authority. Presence now lives under perception/<host>/presence, while
+    // camera/status topics remain under sensor/<host>/...
     const rules = CONSTRAINT_RULES[capability];
     if (!rules.topic_pattern.test(body.topic)) {
       errors.push(

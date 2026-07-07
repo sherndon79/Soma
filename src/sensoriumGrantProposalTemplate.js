@@ -200,7 +200,8 @@ function providerHostMatchesTopic(provider = {}, topic = "") {
   if (!provider.host_segment) {
     return true;
   }
-  return topic.startsWith(`sensor/${provider.host_segment}/`);
+  return topic.startsWith(`sensor/${provider.host_segment}/`) ||
+    topic.startsWith(`perception/${provider.host_segment}/`);
 }
 
 function topicHost(topic = "") {
@@ -220,7 +221,7 @@ function activeDisclosureText({ streamType, hostSegment, constraints }) {
 
 function modelBoundaryWarning(streamType) {
   if (streamType === "presence") {
-    return "Presence events are depth-derived coarse count buckets for output discretion (H2), not raw frames to Node, color, or identity claims; identity is not_performed. Count=0 does not relax private-output discretion until a separate reviewed FOV-coverage step is complete, and default coverage remains unreviewed.";
+    return "Presence events are Sensorium-derived coarse count buckets for output discretion (H2), not raw frames to Node, color, or identity claims; identity is not_performed. Count=0 does not relax private-output discretion until a separate reviewed FOV-coverage step is complete, and default coverage remains unreviewed.";
   }
   if (streamType === "color" || streamType === "depth") {
     return "Camera-class payloads can be stopped or withheld later, but frames already incorporated into a model turn cannot be removed from that turn's working context.";
@@ -230,7 +231,7 @@ function modelBoundaryWarning(streamType) {
 
 function riskSummary({ streamType, riskClass, hostSegment }) {
   if (streamType === "presence") {
-    return `Sensorium presence events from ${hostSegment}; risk_class=${riskClass}; minimized depth-derived count buckets feed output-discretion decisions without raw frames, color, audio, or identity recognition.`;
+    return `Sensorium presence events from ${hostSegment}; risk_class=${riskClass}; minimized derived count buckets feed output-discretion decisions without raw frames, color, audio, or identity recognition.`;
   }
   return `Sensorium ${streamType} stream from ${hostSegment}; risk_class=${riskClass}; live perception is not fully reversible once consumed by a model turn.`;
 }

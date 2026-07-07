@@ -106,7 +106,7 @@ test("buildSensoriumGrantProposalTemplate supports status review without video c
   assert.deepEqual(template.grant_intent.constraints, { max_seconds: 30 });
 });
 
-test("buildSensoriumGrantProposalTemplate supports inert presence review on depth topic", async () => {
+test("buildSensoriumGrantProposalTemplate supports inert derived presence review", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();
 
@@ -115,12 +115,12 @@ test("buildSensoriumGrantProposalTemplate supports inert presence review on dept
     providerRegistry,
     capability: "perception.sensorium.presence.subscribe",
     provider: SENSORIUM_PROVIDER,
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     constraints: {
       max_seconds: 120,
       max_fps: 5,
     },
-    reason: "Need a bounded depth-derived presence review before any live enablement.",
+    reason: "Need a bounded derived presence review before any live enablement.",
   });
 
   assert.equal(template.proposal.capability, "perception.sensorium.presence.subscribe");
@@ -130,7 +130,7 @@ test("buildSensoriumGrantProposalTemplate supports inert presence review on dept
   assert.match(template.proposal.risk, /without raw frames/);
   assert.ok(
     template.proposal.data_exposed.includes(
-      "depth-derived presence event count buckets from a remote Sensorium publisher",
+      "pose-derived presence event count buckets from Sensorium perception",
     ),
   );
   assert.ok(template.proposal.excluded_data.includes("raw depth maps"));
@@ -138,7 +138,7 @@ test("buildSensoriumGrantProposalTemplate supports inert presence review on dept
 
   assert.equal(template.review.provider, SENSORIUM_PROVIDER);
   assert.equal(template.review.host_segment, "jetsorano");
-  assert.equal(template.review.topic, "sensor/jetsorano/realsense/depth");
+  assert.equal(template.review.topic, "perception/jetsorano/presence");
   assert.equal(template.review.stream_type, "presence");
   assert.equal(template.review.risk_class, "sensitive");
   assert.equal(template.review.max_seconds, 120);
@@ -159,7 +159,7 @@ test("buildSensoriumGrantProposalTemplate supports inert presence review on dept
       max_seconds: 120,
       max_fps: 5,
     },
-    reason: "Need a bounded depth-derived presence review before any live enablement.",
+    reason: "Need a bounded derived presence review before any live enablement.",
     activation_performed: false,
   });
   assert.equal(template.activation_performed, false);

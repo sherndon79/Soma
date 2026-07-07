@@ -47,10 +47,10 @@ test("Sensorium request validator accepts a minimal status subscription request"
   });
 });
 
-test("Sensorium request validator accepts presence transform on the depth topic", () => {
+test("Sensorium request validator accepts derived presence topic", () => {
   const result = validateSensoriumSubscriptionRequest(
     {
-      topic: "sensor/jetsorano/realsense/depth",
+      topic: "perception/jetsorano/presence",
       constraints: {
         max_seconds: 120,
         max_fps: 5,
@@ -61,7 +61,7 @@ test("Sensorium request validator accepts presence transform on the depth topic"
 
   assert.deepEqual(result, {
     capability: "perception.sensorium.presence.subscribe",
-    topic: "sensor/jetsorano/realsense/depth",
+    topic: "perception/jetsorano/presence",
     constraints: {
       max_seconds: 120,
       max_fps: 5,
@@ -229,12 +229,12 @@ test("Sensorium request validator rejects unknown constraint keys", () => {
   );
 });
 
-test("Sensorium request validator keeps presence distinct from raw depth constraints", () => {
+test("Sensorium request validator keeps derived presence distinct from raw depth constraints", () => {
   assert.throws(
     () =>
       validateSensoriumSubscriptionRequest(
         {
-          topic: "sensor/jetsorano/realsense/depth",
+          topic: "perception/jetsorano/presence",
           constraints: {
             max_seconds: 120,
             max_fps: 5,
@@ -255,7 +255,7 @@ test("Sensorium request validator keeps presence distinct from raw depth constra
     () =>
       validateSensoriumSubscriptionRequest(
         {
-          topic: "sensor/jetsorano/realsense/depth",
+          topic: "perception/jetsorano/presence",
           constraints: {
             max_seconds: 120,
             max_fps: 5,
@@ -289,10 +289,31 @@ test("Sensorium request validator rejects presence on the color topic", () => {
     {
       code: "sensorium_subscription_request_invalid",
       validation_errors: [
-        "request.topic must match sensor/<host>/realsense/depth for perception.sensorium.presence.subscribe",
+        "request.topic must match perception/<host>/presence for perception.sensorium.presence.subscribe",
       ],
     },
   );
+});
+
+test("Sensorium request validator rejects broad presence wildcards before helper", () => {
+  for (const topic of [
+    "perception/**/presence",
+    "perception/*/presence",
+    "perception/jetsorano/**",
+    "sensor/jetsorano/realsense/depth",
+  ]) {
+    assert.throws(
+      () =>
+        validateSensoriumSubscriptionRequest(
+          { topic },
+          { capability: "perception.sensorium.presence.subscribe" },
+        ),
+      {
+        code: "sensorium_subscription_request_invalid",
+      },
+      `expected rejection for topic ${JSON.stringify(topic)}`,
+    );
+  }
 });
 
 test("Sensorium request validator rejects max_fps on non-streaming capabilities", () => {

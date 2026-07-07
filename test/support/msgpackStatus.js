@@ -85,6 +85,37 @@ export function encodeDepthPayload({
   ];
 }
 
+export function encodePresencePayload({
+  schema = "perception.presence.v0.1",
+  time = 1_783_447_951.14,
+  frameset_sequence = 85_203,
+  present = true,
+  count_bucket = "1",
+  additional_person_present = "not_detected",
+  confidence_bucket = "medium",
+  source = "live",
+} = {}) {
+  return [
+    ...mapHeader(8),
+    ...str("schema"),
+    ...str(schema),
+    ...str("time"),
+    ...float64(time),
+    ...str("frameset_sequence"),
+    ...uint(frameset_sequence),
+    ...str("present"),
+    ...(present ? [0xc3] : [0xc2]),
+    ...str("count_bucket"),
+    ...str(count_bucket),
+    ...str("additional_person_present"),
+    ...str(additional_person_present),
+    ...str("confidence_bucket"),
+    ...str(confidence_bucket),
+    ...str("source"),
+    ...str(source),
+  ];
+}
+
 function mapHeader(length) {
   if (length <= 15) return [0x80 | length];
   return [0xde, (length >> 8) & 0xff, length & 0xff];

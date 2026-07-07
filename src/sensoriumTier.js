@@ -12,7 +12,7 @@ const COMMUNICATIVE_INTENTS = new Set(["none", "low", "high"]);
 const AUDIENCE_SCOPES = new Set(["seth_only", "copresent_room", "third_party", "unknown"]);
 const OUTPUT_MODES = new Set(["visual.occupant_owned", "audio.private_content", "audio.neutral_earcon"]);
 const DEPTH_COUNT_BUCKETS = new Set(["0", "1", "2_plus", "unknown"]);
-const DEPTH_CONFIDENCE_BUCKETS = new Set(["low", "medium"]);
+const DEPTH_CONFIDENCE_BUCKETS = new Set(["low", "medium", "high"]);
 const RAW_DEPTH_FIELD_NAMES = new Set([
   "raw",
   "raw_payload",
@@ -133,7 +133,7 @@ export function validateBrokerDepthPresenceEvent(event = {}) {
     validationErrors.push("count_bucket must be 0, 1, 2_plus, or unknown");
   }
   if (!confidenceBucket) {
-    validationErrors.push("confidence_bucket must be low or medium");
+    validationErrors.push("confidence_bucket must be low, medium, or high");
   }
   if (event.identity !== "not_performed") {
     validationErrors.push("identity must be not_performed");

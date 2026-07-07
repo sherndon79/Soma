@@ -4,10 +4,11 @@ import test from "node:test";
 import {
   COLOR_SUBSCRIPTION_CAPABILITY,
   DEPTH_SUBSCRIPTION_CAPABILITY,
+  PRESENCE_SUBSCRIPTION_CAPABILITY,
   buildDepthPresenceBoundaryPlan,
 } from "../src/sensoriumPresenceBoundary.js";
 
-test("depth presence boundary has helper semantics but no live subscription", () => {
+test("derived presence boundary has Sensorium semantics but no live subscription", () => {
   const plan = buildDepthPresenceBoundaryPlan({
     sethPresent: "session_assumed_present",
     additionalPersonPresent: "not_detected",
@@ -15,10 +16,12 @@ test("depth presence boundary has helper semantics but no live subscription", ()
     confidenceBucket: "medium",
   });
 
-  assert.equal(plan.helper_side_presence_derivation_available, true);
+  assert.equal(plan.helper_side_presence_derivation_available, false);
+  assert.equal(plan.sensorium_derived_presence_available, true);
   assert.equal(plan.semantic_event_handler_available, true);
   assert.equal(plan.subscriber_dispatch_available, true);
   assert.equal(plan.live_depth_presence_available, false);
+  assert.equal(plan.live_derived_presence_available, false);
   assert.equal(plan.activation_allowed, false);
   assert.equal(plan.blocker, "live_presence_subscription_not_wired");
   assert.equal(plan.semantic_event_contract.raw_payload_allowed_to_node, false);
@@ -31,35 +34,35 @@ test("depth presence boundary has helper semantics but no live subscription", ()
   assert.equal(plan.semantic_event_contract.copresence_source, "depth");
 });
 
-test("depth presence boundary refuses color as a source capability", () => {
+test("derived presence boundary refuses color as a source capability", () => {
   const plan = buildDepthPresenceBoundaryPlan({
     sourceCapabilities: [
-      DEPTH_SUBSCRIPTION_CAPABILITY,
+      PRESENCE_SUBSCRIPTION_CAPABILITY,
       COLOR_SUBSCRIPTION_CAPABILITY,
     ],
   });
 
   assert.equal(plan.refused, true);
   assert.ok(
-    plan.findings.includes("color subscription capability is forbidden for depth presence"),
+    plan.findings.includes("color subscription capability is forbidden as a presence source"),
   );
 });
 
-test("depth presence boundary requires depth source and preserves non-identity Seth posture", () => {
+test("derived presence boundary requires presence source and preserves non-identity Seth posture", () => {
   const plan = buildDepthPresenceBoundaryPlan({
-    sourceCapabilities: [],
+    sourceCapabilities: [DEPTH_SUBSCRIPTION_CAPABILITY],
     sethPresent: "identified",
   });
 
   assert.equal(plan.refused, true);
-  assert.ok(plan.findings.includes("depth subscription capability is required for depth presence"));
+  assert.ok(plan.findings.includes("derived presence subscription capability is required for presence"));
   assert.equal(plan.semantic_event_contract.seth_present, "unknown");
   assert.equal(plan.semantic_event_contract.identity, "not_performed");
 });
 
-test("depth presence boundary does not accept high-confidence identity-style claims", () => {
+test("derived presence boundary does not accept unknown confidence claims", () => {
   const plan = buildDepthPresenceBoundaryPlan({
-    confidenceBucket: "high",
+    confidenceBucket: "certain",
   });
 
   assert.equal(plan.semantic_event_contract.confidence_bucket, "low");

@@ -23,6 +23,7 @@ export class ModelClient {
   }
 
   async #openAiCompatibleChat({ messages, maxTokens, temperature, model }) {
+    const normalizedMessages = coalesceSystemMessages(messages);
     const response = await this.fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
@@ -31,7 +32,7 @@ export class ModelClient {
       },
       body: JSON.stringify({
         model,
-        messages,
+        messages: normalizedMessages,
         max_tokens: maxTokens,
         temperature,
       }),
@@ -126,9 +127,10 @@ export class ModelClient {
 }
 
 function toAnthropicMessages(messages = []) {
+  const normalizedMessages = coalesceSystemMessages(messages);
   const system = [];
   const mapped = [];
-  for (const message of messages) {
+  for (const message of normalizedMessages) {
     const role = String(message?.role ?? "").trim();
     const content = String(message?.content ?? "");
     if (role === "system") {
@@ -144,6 +146,46 @@ function toAnthropicMessages(messages = []) {
     system: system.join("\n\n"),
     messages: mapped,
   };
+}
+
+export function coalesceSystemMessages(messages = []) {
+  const systemContents = [];
+  const nonSystemMessages = [];
+  let firstSystemIndex = -1;
+  for (const [index, message] of (Array.isArray(messages) ? messages : []).entries()) {
+    const role = String(message?.role ?? "").trim();
+    const content = String(message?.content ?? "");
+    if (role === "system") {
+      if (firstSystemIndex < 0) {
+        firstSystemIndex = index;
+      }
+      systemContents.push(content);
+      continue;
+    }
+    nonSystemMessages.push({
+      role,
+      content,
+    });
+  }
+  if (systemContents.length === 0) {
+    return nonSystemMessages;
+  }
+  const systemMessage = {
+    role: "system",
+    content: systemContents.join("\n\n"),
+  };
+  if (firstSystemIndex <= 0) {
+    return [systemMessage, ...nonSystemMessages];
+  }
+  const beforeSystem = messages
+    .slice(0, firstSystemIndex)
+    .filter((message) => String(message?.role ?? "").trim() !== "system")
+    .map((message) => ({
+      role: String(message?.role ?? "").trim(),
+      content: String(message?.content ?? ""),
+    }));
+  const afterSystem = nonSystemMessages.slice(beforeSystem.length);
+  return [...beforeSystem, systemMessage, ...afterSystem];
 }
 
 function anthropicText(content = []) {

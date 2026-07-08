@@ -3,6 +3,57 @@ import test from "node:test";
 
 import { ModelClient } from "../src/modelClient.js";
 
+test("ModelClient coalesces system messages for openai-compatible chat templates", async () => {
+  let captured;
+  const client = new ModelClient({
+    baseUrl: "http://model.test/",
+    model: "strict-template-model",
+    async fetchImpl(url, options) {
+      captured = { url, options };
+      return {
+        ok: true,
+        async json() {
+          return {
+            model: "strict-template-model",
+            choices: [
+              {
+                message: { content: "ok" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { total_tokens: 9 },
+          };
+        },
+      };
+    },
+  });
+
+  const result = await client.chat({
+    messages: [
+      { role: "system", content: "briefing" },
+      { role: "system", content: "held grants" },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+      { role: "user", content: "task" },
+    ],
+    maxTokens: 64,
+    temperature: 0.3,
+  });
+
+  assert.equal(captured.url, "http://model.test/v1/chat/completions");
+  const body = JSON.parse(captured.options.body);
+  assert.deepEqual(body.messages, [
+    { role: "system", content: "briefing\n\nheld grants" },
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "hi" },
+    { role: "user", content: "task" },
+  ]);
+  assert.equal(body.max_tokens, 64);
+  assert.equal(body.temperature, 0.3);
+  assert.equal(result.text, "ok");
+  assert.equal(result.tokens_used, 9);
+});
+
 test("ModelClient maps anthropic-messages chat without logging or configuring the key", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   const previousVersion = process.env.ANTHROPIC_VERSION;

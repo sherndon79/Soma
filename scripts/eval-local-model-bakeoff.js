@@ -8,7 +8,7 @@ import {
 } from "../src/app.js";
 
 const DEFAULT_TRIALS = 10;
-const DEFAULT_MAX_TOKENS = 700;
+const DEFAULT_MAX_TOKENS = 384;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_CONDITIONS = Object.freeze(["clean", "loaded"]);
 
@@ -86,12 +86,12 @@ const client = new ModelClient({
 const startedAt = new Date().toISOString();
 const results = [];
 
-try {
-  for (const model of modelNames) {
-    for (const condition of conditions) {
-      for (const scenario of scenarioInputs) {
-        for (let trial = 1; trial <= trials; trial += 1) {
-          const messages = buildMessages({ scenario, trial, condition });
+for (const model of modelNames) {
+  for (const condition of conditions) {
+    for (const scenario of scenarioInputs) {
+      for (let trial = 1; trial <= trials; trial += 1) {
+        const messages = buildMessages({ scenario, trial, condition });
+        try {
           const completion = await client.chat({
             model,
             messages,
@@ -111,18 +111,19 @@ try {
             finish_reason: completion.finish_reason,
             tokens_used: completion.tokens_used,
           });
+        } catch (error) {
+          const failed = failedTrialResult({ model, condition, scenario, trial, error });
+          results.push(failed);
+          process.stderr.write([
+            `Trial failed: model=${model} condition=${condition} scenario=${scenario.id} trial=${trial}`,
+            `Reason: ${error.message}`,
+            error.detail ? `Detail: ${truncate(String(error.detail), 500)}` : "",
+          ].filter(Boolean).join("\n"));
+          process.stderr.write("\n");
         }
       }
     }
   }
-} catch (error) {
-  process.stderr.write([
-    "Local model bake-off could not reach the OpenAI-compatible runtime.",
-    `Reason: ${error.message}`,
-    "Start one candidate service or set SOMA_LLM_URL/SOMA_BAKEOFF_MODELS.",
-  ].join("\n"));
-  process.stderr.write("\n");
-  process.exit(2);
 }
 
 const summary = summarize(results, scenarioInputs, modelNames, conditions);
@@ -397,6 +398,31 @@ function scoreResponse(text, scenario) {
   return { checks, parsedInvocation: matching ?? parsed[0] ?? null };
 }
 
+function failedTrialResult({ model, condition, scenario, trial, error }) {
+  return {
+    model,
+    condition,
+    scenario_id: scenario.id,
+    scenario_title: scenario.title,
+    trial,
+    checks: {
+      block_emitted: false,
+      json_valid: false,
+      correct_capability_and_grant: false,
+      post_result_narration_nonempty: false,
+    },
+    parsed_invocation: null,
+    finish_reason: "error",
+    tokens_used: 0,
+    error: {
+      code: String(error.code ?? "model_request_error"),
+      status_code: error.statusCode ?? null,
+      message: String(error.message ?? "Model request failed."),
+      detail: truncate(String(error.detail ?? ""), 1000),
+    },
+  };
+}
+
 function extractCapabilityBlocks(text) {
   const blocks = [];
   const pattern = /```soma-capability\s*([\s\S]*?)```/g;
@@ -449,7 +475,9 @@ function summarize(results, scenarios, models, conditions) {
           scenario_id: scenario.id,
           scenario_title: scenario.title,
           trials: scoped.length,
+          transport_error_count: scoped.filter((result) => result.error).length,
         };
+        row.transport_error_rate = scoped.length === 0 ? 0 : row.transport_error_count / scoped.length;
         for (const check of [
           "block_emitted",
           "json_valid",
@@ -479,6 +507,7 @@ function printSummary(summary, scenarios) {
     "json",
     "correct",
     "narration",
+    "errors",
   ].join("\t"));
   process.stdout.write("\n");
   for (const row of summary) {
@@ -491,6 +520,7 @@ function printSummary(summary, scenarios) {
       percent(row.json_valid_rate),
       percent(row.correct_capability_and_grant_rate),
       percent(row.post_result_narration_nonempty_rate),
+      row.transport_error_count,
     ].join("\t"));
     process.stdout.write("\n");
   }
@@ -558,7 +588,7 @@ Optional:
   --trials N                          or SOMA_BAKEOFF_TRIALS (default 10)
   --url URL                           or SOMA_LLM_URL
   --temperature N                     or SOMA_BAKEOFF_TEMPERATURE (default 0.2)
-  --max-tokens N                      or SOMA_BAKEOFF_MAX_TOKENS (default 700)
+  --max-tokens N                      or SOMA_BAKEOFF_MAX_TOKENS (default 384)
   --json
   --include-responses
   --fail-on-miss
@@ -600,4 +630,12 @@ function numberOrDefault(value, fallback) {
 
 function percent(value) {
   return `${Math.round(value * 100)}%`;
+}
+
+function truncate(value, maxLength) {
+  const text = String(value ?? "");
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 3)}...`;
 }

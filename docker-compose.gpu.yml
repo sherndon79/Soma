@@ -2,10 +2,17 @@
 #
 # Usage:
 #   docker compose -f docker-compose.gpu.yml up gemma4-llm
+#   docker compose -f docker-compose.gpu.yml up qwen36-a3b-llm
+#   docker compose -f docker-compose.gpu.yml up qwen36-27b-llm
+#
+# Run only one LLM service at a time; all bind the same OpenAI-compatible
+# container port and default host port.
 #
 # Requires:
 #   - NVIDIA GPU with CUDA support
 #   - nvidia-container-toolkit installed
+#   - enough model-cache disk before first pull; Qwen AWQ candidates are
+#     roughly 20GB each (`df -h models`).
 #
 # Optional overrides:
 #   - VLLM_IMAGE: pin/override inference image
@@ -16,6 +23,9 @@
 #   - VLLM_MAX_CONCURRENCY: default 1
 #   - VLLM_TOOL_CALL_PARSER: default gemma4
 #   - VLLM_EXTRA_ARGS: append additional vLLM flags
+#   - QWEN36_A3B_MODEL: default cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit
+#   - QWEN36_27B_MODEL: default cyankiwi/Qwen3.6-27B-AWQ-INT4
+#   - QWEN36_MAX_MODEL_LEN: default 32768
 
 services:
   gemma4-llm:
@@ -57,3 +67,79 @@ services:
       timeout: 3s
       start_period: 120s
       retries: 12
+
+  qwen36-a3b-llm:
+    image: ${VLLM_QWEN_IMAGE:-vllm/vllm-openai:latest}
+    container_name: soma-qwen36-a3b-llm
+    command: >-
+      --model ${QWEN36_A3B_MODEL:-cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit}
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len ${QWEN36_MAX_MODEL_LEN:-32768}
+      --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
+      --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
+      --trust-remote-code
+      --quantization awq
+      ${VLLM_QWEN_EXTRA_ARGS:-}
+      --enforce-eager
+    environment:
+      - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - HF_HOME=/models/cache
+      - HF_TOKEN=${HF_TOKEN:-}
+    restart: unless-stopped
+    ports:
+      - "${LLM_PORT:-8000}:8000"
+    volumes:
+      - ./models:/models/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 18
+
+  qwen36-27b-llm:
+    image: ${VLLM_QWEN_IMAGE:-vllm/vllm-openai:latest}
+    container_name: soma-qwen36-27b-llm
+    command: >-
+      --model ${QWEN36_27B_MODEL:-cyankiwi/Qwen3.6-27B-AWQ-INT4}
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len ${QWEN36_MAX_MODEL_LEN:-32768}
+      --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
+      --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
+      --trust-remote-code
+      --quantization awq
+      ${VLLM_QWEN_EXTRA_ARGS:-}
+      --enforce-eager
+    environment:
+      - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - HF_HOME=/models/cache
+      - HF_TOKEN=${HF_TOKEN:-}
+    restart: unless-stopped
+    ports:
+      - "${LLM_PORT:-8000}:8000"
+    volumes:
+      - ./models:/models/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 18

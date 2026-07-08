@@ -11,6 +11,7 @@
     "cli": "node src/cli.js",
     "desktop-broker:build": "cargo build -p soma-desktop-broker",
     "eval:capabilities": "node scripts/eval-capabilities.js",
+    "eval:local-model-bakeoff": "node scripts/eval-local-model-bakeoff.js",
     "grant-preview:smoke": "node scripts/grant-preview-review-smoke.js",
     "graphical-node:smoke": "node scripts/graphical-node-smoke.js",
     "lca:package-validate": "node scripts/validate-lca-package.mjs",

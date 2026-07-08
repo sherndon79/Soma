@@ -58,6 +58,51 @@ included GPU compose file can start the current Gemma/vLLM test runtime:
 docker compose -f docker-compose.gpu.yml up gemma4-llm
 ```
 
+### Local Model Bake-Off Windows
+
+Gemma 4 remains the default runtime until Seth decides otherwise. The Qwen3.6 candidates are defined
+in `docker-compose.gpu.yml` as one-at-a-time alternatives on the same `:8000` endpoint:
+
+```bash
+df -h models
+docker compose -f docker-compose.gpu.yml stop gemma4-llm qwen36-a3b-llm qwen36-27b-llm
+docker compose -f docker-compose.gpu.yml up -d qwen36-a3b-llm
+# or:
+docker compose -f docker-compose.gpu.yml up -d qwen36-27b-llm
+```
+
+Both Qwen services default to AWQ-class community quantizations because no official Qwen AWQ repos
+were available when this runbook was written:
+
+- `qwen36-a3b-llm`: `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit`
+- `qwen36-27b-llm`: `cyankiwi/Qwen3.6-27B-AWQ-INT4`
+
+Override with `QWEN36_A3B_MODEL` or `QWEN36_27B_MODEL` if a preferred quant repo is selected. Both
+services cap vLLM with `QWEN36_MAX_MODEL_LEN=32768` by default so the 262K model context does not
+consume the 24GB GPU KV budget. Plan for roughly 20GB of model-cache disk per candidate before first
+pull. These services intentionally do not pass vLLM tool-call parser flags: Soma's occupant actions
+use fenced `soma-capability` text blocks parsed by the harness, not OpenAI function-calling.
+
+Run the occupant tool-use bake-off against the currently running endpoint:
+
+```bash
+npm run eval:local-model-bakeoff -- \
+  --models cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit \
+  --space-status-grant-id "$SPACE_STATUS_GRANT_ID" \
+  --occupant-memory-read-grant-id "$OCCUPANT_MEMORY_READ_GRANT_ID" \
+  --tool-files-read-grant-id "$TOOL_FILES_READ_GRANT_ID" \
+  --tool-files-root-id "$TOOL_FILES_ROOT_ID" \
+  --tool-files-relative-path "$TOOL_FILES_RELATIVE_PATH"
+```
+
+The eval prompts with Soma's standing capability-block instructions, but the scenario prompt does
+not repeat block syntax. It reports per-scenario rates for block emission, JSON validity, exact
+capability/grant match, and nonempty narration.
+
+Hermes currently consumes the same `:8000` endpoint and pins the Gemma model id. Qwen swap windows
+will break Hermes chat until a separate cutover updates Hermes configuration. Do not change Hermes
+as part of bake-off setup.
+
 ## Check Status
 
 ```bash

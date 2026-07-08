@@ -8915,6 +8915,7 @@ function normalizeSpaceStatusAudienceContext(context = {}) {
         "not_armed_or_cleared",
         "stale",
       ], "not_armed_or_cleared"),
+      person_count: null,
       count_bucket: "unknown",
       additional_person_present: "unknown",
       confidence_bucket: "unknown",
@@ -8925,6 +8926,9 @@ function normalizeSpaceStatusAudienceContext(context = {}) {
   return {
     status: "available",
     unavailable_reason: "",
+    person_count: Number.isInteger(context.person_count) && context.person_count >= 0 && context.person_count <= 64
+      ? context.person_count
+      : null,
     count_bucket: stringEnum(context.count_bucket, ["0", "1", "2_plus", "unknown"], "unknown"),
     additional_person_present: stringEnum(
       context.additional_person_present,
@@ -8943,6 +8947,7 @@ function validateSpaceStatusAudienceContext(context = {}, errors = []) {
     [
       "status",
       "unavailable_reason",
+      "person_count",
       "count_bucket",
       "additional_person_present",
       "confidence_bucket",
@@ -8957,6 +8962,12 @@ function validateSpaceStatusAudienceContext(context = {}, errors = []) {
   }
   if (!["", "not_armed_or_cleared", "stale"].includes(context.unavailable_reason)) {
     errors.push("result.audience_context.unavailable_reason invalid");
+  }
+  if (
+    context.person_count !== null &&
+    !(Number.isInteger(context.person_count) && context.person_count >= 0 && context.person_count <= 64)
+  ) {
+    errors.push("result.audience_context.person_count invalid");
   }
   if (!["0", "1", "2_plus", "unknown"].includes(context.count_bucket)) {
     errors.push("result.audience_context.count_bucket invalid");
@@ -8983,7 +8994,8 @@ function validateSpaceStatusAudienceContext(context = {}, errors = []) {
     }
     if (context.count_bucket !== "unknown" ||
         context.additional_person_present !== "unknown" ||
-        context.confidence_bucket !== "unknown") {
+        context.confidence_bucket !== "unknown" ||
+        context.person_count !== null) {
       errors.push("result.audience_context unavailable buckets must be unknown");
     }
     if (context.observed_at !== "" || context.expires_at !== "") {

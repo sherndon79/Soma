@@ -12,6 +12,7 @@ export function createSensoriumPresenceState({ now = () => new Date() } = {}) {
       }
       current = Object.freeze({
         audience_context: localAudienceContext(event.audience_context),
+        person_count: normalizePersonCount(event.payload?.person_count),
         count_bucket: normalizeCountBucket(event.payload?.count_bucket),
         confidence_bucket: normalizeConfidenceBucket(event.confidence_bucket),
         observed_at: parseDate(event.observed_at)?.toISOString() ?? "",
@@ -55,6 +56,7 @@ export function createSensoriumPresenceState({ now = () => new Date() } = {}) {
     return Object.freeze({
       status: "available",
       unavailable_reason: "",
+      person_count: normalizePersonCount(current.person_count),
       count_bucket: normalizeCountBucket(current.count_bucket),
       additional_person_present: current.audience_context.additional_person_present,
       confidence_bucket: normalizeConfidenceBucket(current.confidence_bucket),
@@ -72,6 +74,7 @@ function unavailableSnapshot(reason) {
   return Object.freeze({
     status: "unavailable",
     unavailable_reason: reason,
+    person_count: null,
     count_bucket: "unknown",
     additional_person_present: "unknown",
     confidence_bucket: "unknown",
@@ -82,6 +85,10 @@ function unavailableSnapshot(reason) {
 
 function normalizeCountBucket(value) {
   return ["0", "1", "2_plus", "unknown"].includes(value) ? value : "unknown";
+}
+
+function normalizePersonCount(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 64 ? value : null;
 }
 
 function normalizeConfidenceBucket(value) {

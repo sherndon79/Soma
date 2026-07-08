@@ -148,6 +148,7 @@ function presenceBrokerEvent(overrides = {}) {
   return {
     schema_version: 1,
     event_type: "presence.depth",
+    person_count: 1,
     count_bucket: "1",
     additional_person_present: "unknown",
     confidence_bucket: "medium",
@@ -960,6 +961,7 @@ test("presence events update current presence state with active episode context"
 
   manager.emitSample(subscription_id, "perception/jetsorano/presence", {
     payloadBytes: encodePresencePayload({
+      person_count: 1,
       count_bucket: "1",
       additional_person_present: "present",
     }),
@@ -973,6 +975,7 @@ test("presence events update current presence state with active episode context"
   const disclosure = subscriber.describeActive();
   assert.equal(disclosure.streams[0].host, "jetsorano");
   assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
+  assert.equal(disclosure.streams[0].presence_summary_observed.person_count, 1);
   assert.equal(disclosure.streams[0].presence_summary_observed.count_bucket, "1");
   assert.equal(disclosure.streams[0].presence_summary_observed.additional_person_present, "not_detected");
   assert.equal(

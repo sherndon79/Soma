@@ -143,6 +143,7 @@ test("depth presence event is minimized and carries no raw broker fields", () =>
     content_included: false,
   });
   assert.deepEqual(event.payload, {
+    person_count: 1,
     count_bucket: "1",
     identity: "not_performed",
     copresence_source: "depth",
@@ -245,6 +246,7 @@ function depthBrokerEvent(overrides = {}) {
   return {
     schema_version: 1,
     event_type: "presence.depth",
+    person_count: 1,
     count_bucket: "1",
     additional_person_present: "unknown",
     confidence_bucket: "medium",

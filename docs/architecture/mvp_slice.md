@@ -615,9 +615,10 @@ The result-egress envelope declares `capability`, `grant_id`, `provider`, `resul
 and one-shot. It may include mode/domain, armed protective controls, active module ids/count,
 capability status counts, pending proposal count, runtime-write posture summary, and declared
 returnable data classes. When a Sensorium presence subscription is active, it may also include
-`audience_context`: minimized copresence buckets (`count_bucket`, `additional_person_present`,
-`confidence_bucket`) plus `observed_at`/`expires_at`; absent, cleared, or stale presence is reported
-as unavailable/unknown rather than count zero.
+`audience_context`: exact local `person_count`, compatibility copresence buckets (`count_bucket`,
+`additional_person_present`, `confidence_bucket`) plus `observed_at`/`expires_at`; absent, cleared,
+or stale presence is reported as unavailable/unknown with `person_count: null` rather than count zero.
+Future frontier-facing projections must coarsen or omit exact `person_count`.
 
 The minimizer/validator forbids raw grants, raw provenance entries, chat/predecessor content, forum
 content, durable testimony text, memory content, file content, desktop content, sensor payloads,

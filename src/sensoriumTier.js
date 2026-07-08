@@ -13,6 +13,7 @@ const AUDIENCE_SCOPES = new Set(["seth_only", "copresent_room", "third_party", "
 const OUTPUT_MODES = new Set(["visual.occupant_owned", "audio.private_content", "audio.neutral_earcon"]);
 const DEPTH_COUNT_BUCKETS = new Set(["0", "1", "2_plus", "unknown"]);
 const DEPTH_CONFIDENCE_BUCKETS = new Set(["low", "medium", "high"]);
+const MAX_PRESENCE_PERSON_COUNT = 64;
 const RAW_DEPTH_FIELD_NAMES = new Set([
   "raw",
   "raw_payload",
@@ -116,6 +117,9 @@ export function validateBrokerDepthPresenceEvent(event = {}) {
   }
 
   const countBucket = enumValue(event.count_bucket, [...DEPTH_COUNT_BUCKETS], "");
+  const personCount = event.person_count === undefined
+    ? null
+    : boundedPersonCountOrNull(event.person_count);
   const confidenceBucket = enumValue(event.confidence_bucket, [...DEPTH_CONFIDENCE_BUCKETS], "");
   const additionalPersonPresent = enumValue(
     event.additional_person_present,
@@ -131,6 +135,9 @@ export function validateBrokerDepthPresenceEvent(event = {}) {
   }
   if (!countBucket) {
     validationErrors.push("count_bucket must be 0, 1, 2_plus, or unknown");
+  }
+  if (personCount === null && event.person_count !== undefined) {
+    validationErrors.push(`person_count must be an integer from 0 to ${MAX_PRESENCE_PERSON_COUNT}`);
   }
   if (!confidenceBucket) {
     validationErrors.push("confidence_bucket must be low, medium, or high");
@@ -151,6 +158,7 @@ export function validateBrokerDepthPresenceEvent(event = {}) {
   return Object.freeze({
     schema_version: 1,
     event_type: "presence.depth",
+    person_count: personCount,
     count_bucket: countBucket,
     additional_person_present: additionalPersonPresent,
     confidence_bucket: confidenceBucket,
@@ -275,6 +283,7 @@ export function createDepthPresenceSemanticEvent({
     confidence_bucket: normalizedEvent.confidence_bucket,
     audience_context: derivedAudience.audience_context,
     payload: {
+      person_count: normalizedEvent.person_count,
       count_bucket: normalizedEvent.count_bucket,
       identity: "not_performed",
       copresence_source: "depth",
@@ -586,6 +595,12 @@ function boundedText(value, maxLength) {
 function enumValue(value, allowed, fallback) {
   const candidate = stringValue(value);
   return allowed.includes(candidate) ? candidate : fallback;
+}
+
+function boundedPersonCountOrNull(value) {
+  return Number.isInteger(value) && value >= 0 && value <= MAX_PRESENCE_PERSON_COUNT
+    ? value
+    : null;
 }
 
 function stringValue(value) {

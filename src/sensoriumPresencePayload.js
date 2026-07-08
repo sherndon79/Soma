@@ -5,6 +5,7 @@ export const SENSORIUM_PRESENCE_SCHEMA = "perception.presence.v0.1";
 const COUNT_BUCKETS = new Set(["0", "1", "2_plus"]);
 const ADDITIONAL_PERSON_VALUES = new Set(["present", "not_detected"]);
 const CONFIDENCE_BUCKETS = new Set(["low", "medium", "high"]);
+const MAX_PERSON_COUNT = 64;
 
 export function summarizeSensoriumPresencePayload(payloadBytes) {
   const decoded = decodeSensoriumMessagePack(payloadBytes, {
@@ -26,6 +27,7 @@ export function summarizeSensoriumPresencePayload(payloadBytes) {
     time: numberValue(decoded.time, "time"),
     frameset_sequence: integerValue(decoded.frameset_sequence, "frameset_sequence"),
     present: booleanValue(decoded.present, "present"),
+    person_count: boundedNonNegativeIntegerValue(decoded.person_count, "person_count", MAX_PERSON_COUNT),
     count_bucket: enumValue(decoded.count_bucket, COUNT_BUCKETS, "count_bucket"),
     additional_person_present: enumValue(
       decoded.additional_person_present,
@@ -37,6 +39,17 @@ export function summarizeSensoriumPresencePayload(payloadBytes) {
   };
 
   return Object.freeze(summary);
+}
+
+function boundedNonNegativeIntegerValue(value, field, maximum) {
+  const integer = integerValue(value, field);
+  if (integer < 0 || integer > maximum) {
+    throwPresenceDecodeError(
+      `sensorium_presence_${field}_invalid`,
+      `presence payload ${field} must be an integer from 0 to ${maximum}`,
+    );
+  }
+  return integer;
 }
 
 function numberValue(value, field) {

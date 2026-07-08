@@ -14,8 +14,9 @@ test("Sensorium presence payload parser accepts the live derived presence shape"
       time: 1_783_447_951.14,
       frameset_sequence: 85_203,
       present: true,
-      count_bucket: "1",
-      additional_person_present: "not_detected",
+      person_count: 3,
+      count_bucket: "2_plus",
+      additional_person_present: "present",
       confidence_bucket: "medium",
       source: "live",
     }),
@@ -28,11 +29,34 @@ test("Sensorium presence payload parser accepts the live derived presence shape"
     time: 1_783_447_951.14,
     frameset_sequence: 85_203,
     present: true,
-    count_bucket: "1",
-    additional_person_present: "not_detected",
+    person_count: 3,
+    count_bucket: "2_plus",
+    additional_person_present: "present",
     confidence_bucket: "medium",
     source: "live",
   });
+});
+
+test("Sensorium presence payload parser rejects absurd person_count values", () => {
+  assert.throws(
+    () => summarizeSensoriumPresencePayload(encodePresencePayload({ person_count: 65 })),
+    { code: "sensorium_presence_person_count_invalid" },
+  );
+});
+
+test("Sensorium presence payload parser keeps count_bucket validation during transition", () => {
+  const summary = summarizeSensoriumPresencePayload(
+    encodePresencePayload({
+      person_count: 2,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "medium",
+      source: "live",
+    }),
+  );
+
+  assert.equal(summary.person_count, 2);
+  assert.equal(summary.count_bucket, "1");
 });
 
 test("Sensorium presence payload parser records unexpected schema without crashing", () => {

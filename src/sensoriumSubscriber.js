@@ -529,6 +529,7 @@ export class SensoriumSubscriber {
       const brokerEvent = {
         schema_version: 1,
         event_type: "presence.depth",
+        person_count: summary.person_count,
         count_bucket: summary.count_bucket,
         additional_person_present: summary.additional_person_present,
         confidence_bucket: summary.confidence_bucket,
@@ -555,6 +556,7 @@ export class SensoriumSubscriber {
         event_type: semanticEvent.event_type,
         frameset_sequence: summary.frameset_sequence,
         present: summary.present,
+        person_count: semanticEvent.payload.person_count,
         count_bucket: semanticEvent.payload.count_bucket,
         confidence_bucket: semanticEvent.confidence_bucket,
         additional_person_present: semanticEvent.audience_context.additional_person_present,

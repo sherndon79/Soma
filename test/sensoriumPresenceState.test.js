@@ -26,6 +26,7 @@ test("presence state returns fresh audience context until expiry", () => {
       copresence_source: "depth",
     },
     payload: {
+      person_count: 1,
       count_bucket: "1",
     },
   });
@@ -40,6 +41,7 @@ test("presence state returns fresh audience context until expiry", () => {
     {
       status: "available",
       unavailable_reason: "",
+      person_count: 1,
       count_bucket: "1",
       additional_person_present: "not_detected",
       confidence_bucket: "medium",
@@ -63,6 +65,7 @@ test("presence state expires to unknown audience on read", () => {
       copresence_source: "depth",
     },
     payload: {
+      person_count: 1,
       count_bucket: "1",
     },
   });
@@ -70,6 +73,7 @@ test("presence state expires to unknown audience on read", () => {
   const stale = state.snapshot({ now: () => new Date("2026-06-26T01:00:10.000Z") });
   assert.equal(stale.status, "unavailable");
   assert.equal(stale.unavailable_reason, "stale");
+  assert.equal(stale.person_count, null);
   assert.equal(stale.count_bucket, "unknown");
   assert.equal(stale.additional_person_present, "unknown");
 
@@ -84,6 +88,7 @@ test("presence state expires to unknown audience on read", () => {
     {
       status: "unavailable",
       unavailable_reason: "not_armed_or_cleared",
+      person_count: null,
       count_bucket: "unknown",
       additional_person_present: "unknown",
       confidence_bucket: "unknown",

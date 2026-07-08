@@ -6460,6 +6460,7 @@ test("space.status.read delivers minimized grant-bound result egress without for
   assert.deepEqual(result.audience_context, {
     status: "unavailable",
     unavailable_reason: "not_armed_or_cleared",
+    person_count: null,
     count_bucket: "unknown",
     additional_person_present: "unknown",
     confidence_bucket: "unknown",
@@ -6537,6 +6538,7 @@ test("space.status.read includes live minimized presence audience context", asyn
       copresence_source: "depth",
     },
     payload: {
+      person_count: 1,
       count_bucket: "1",
     },
   });
@@ -6592,6 +6594,7 @@ test("space.status.read includes live minimized presence audience context", asyn
   assert.deepEqual(audience, {
     status: "available",
     unavailable_reason: "",
+    person_count: 1,
     count_bucket: "1",
     additional_person_present: "not_detected",
     confidence_bucket: "medium",
@@ -6616,6 +6619,7 @@ test("space.status.read marks stale presence audience unavailable", async () => 
       copresence_source: "depth",
     },
     payload: {
+      person_count: 2,
       count_bucket: "2_plus",
     },
   });
@@ -6670,6 +6674,7 @@ test("space.status.read marks stale presence audience unavailable", async () => 
   assert.deepEqual(response.body.capability_results[0].result.audience_context, {
     status: "unavailable",
     unavailable_reason: "stale",
+    person_count: null,
     count_bucket: "unknown",
     additional_person_present: "unknown",
     confidence_bucket: "unknown",

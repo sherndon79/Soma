@@ -116,7 +116,12 @@ provenance-marked + copresence-gated.
 
 ### 5.3 video / camera (in) — HIGHEST floor stakes
 - Perceive: physical presence only. Default output of this channel to System-2 is a PRESENCE EVENT
-  vocabulary, e.g. {seth_present, additional_person_present, count_bucket}, NOT identity, NOT frames.
+  vocabulary, e.g. {seth_present, additional_person_present, person_count, count_bucket}, NOT
+  identity, NOT frames.
+- `person_count` is the exact local integer count exposed after deliberate local arming. Any future
+  frontier-facing projection MUST coarsen or omit it; repeated exact counts are a side channel.
+  `count_bucket` remains as a compatibility/discretion field until the output-copresence ruling
+  retires or replaces that vocabulary.
 - Minimize: raw frames never leave System-1. No face recognition / identity by default.
 - This channel's presence-events FEED output discretion (see 5.5, 5.6). This is the primary coupling.
 - Open Q: is the camera even enabled by default, or opt-in per session? What's the off-by-default

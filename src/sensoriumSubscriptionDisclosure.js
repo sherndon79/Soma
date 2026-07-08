@@ -277,6 +277,7 @@ function copyPresenceSummary(summary) {
   }
   const schemaVersion = integerOrNull(summary.schema_version);
   const eventType = stringOrEmpty(summary.event_type);
+  const personCount = personCountOrNull(summary.person_count);
   const countBucket = stringOrEmpty(summary.count_bucket);
   const confidenceBucket = stringOrEmpty(summary.confidence_bucket);
   const additionalPersonPresent = stringOrEmpty(summary.additional_person_present);
@@ -295,11 +296,16 @@ function copyPresenceSummary(summary) {
     schema_version: schemaVersion,
     sensorium_schema: stringOrEmpty(summary.sensorium_schema),
     event_type: eventType,
+    person_count: personCount,
     count_bucket: countBucket,
     confidence_bucket: confidenceBucket,
     additional_person_present: additionalPersonPresent,
     expires_at: expiresAt,
   };
+}
+
+function personCountOrNull(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 64 ? value : null;
 }
 
 function copyPoseSummary(summary) {

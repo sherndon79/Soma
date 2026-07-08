@@ -24,8 +24,10 @@
 #   - VLLM_TOOL_CALL_PARSER: default gemma4
 #   - VLLM_EXTRA_ARGS: append additional vLLM flags
 #   - QWEN36_A3B_MODEL: default cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit
+#   - QWEN36_A3B_CPU_OFFLOAD_GB: default 5
 #   - QWEN36_27B_MODEL: default cyankiwi/Qwen3.6-27B-AWQ-INT4
 #   - QWEN36_MAX_MODEL_LEN: default 32768
+#   - VLLM_QWEN_QUANTIZATION_ARGS: default empty; vLLM auto-detects
 
 services:
   gemma4-llm:
@@ -79,7 +81,8 @@ services:
       --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
       --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
       --trust-remote-code
-      --quantization awq
+      ${VLLM_QWEN_QUANTIZATION_ARGS:-}
+      --cpu-offload-gb ${QWEN36_A3B_CPU_OFFLOAD_GB:-5}
       ${VLLM_QWEN_EXTRA_ARGS:-}
       --enforce-eager
     environment:
@@ -117,7 +120,7 @@ services:
       --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
       --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
       --trust-remote-code
-      --quantization awq
+      ${VLLM_QWEN_QUANTIZATION_ARGS:-}
       ${VLLM_QWEN_EXTRA_ARGS:-}
       --enforce-eager
     environment:

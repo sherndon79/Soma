@@ -81,7 +81,16 @@ Override with `QWEN36_A3B_MODEL` or `QWEN36_27B_MODEL` if a preferred quant repo
 services cap vLLM with `QWEN36_MAX_MODEL_LEN=32768` by default so the 262K model context does not
 consume the 24GB GPU KV budget. Plan for roughly 20GB of model-cache disk per candidate before first
 pull. These services intentionally do not pass vLLM tool-call parser flags: Soma's occupant actions
-use fenced `soma-capability` text blocks parsed by the harness, not OpenAI function-calling.
+use fenced `soma-capability` text blocks parsed by the harness, not OpenAI function-calling. The
+Qwen services also do not hardcode `--quantization`: vLLM should auto-detect each repo's method from
+model config. Use `VLLM_QWEN_QUANTIZATION_ARGS` only when a selected repo requires an explicit
+quantization flag.
+
+The A3B AWQ default is too tight for the 24GB workstation card when the desktop owns part of VRAM:
+one live attempt saw roughly 21.3GiB of model weights allocated before a 128MiB CUDA allocation
+failed. `qwen36-a3b-llm` therefore defaults to `QWEN36_A3B_CPU_OFFLOAD_GB=5`. Set it lower only if
+the desktop allocation is gone or a lighter vLLM-compatible A3B quant is selected; set it higher if
+the service still OOMs. This trades latency for the ability to complete eval windows.
 
 Run the occupant tool-use bake-off against the currently running endpoint:
 

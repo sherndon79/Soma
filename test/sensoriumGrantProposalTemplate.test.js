@@ -167,6 +167,61 @@ test("buildSensoriumGrantProposalTemplate supports inert derived presence review
   assert.equal(template.writable, false);
 });
 
+test("buildSensoriumGrantProposalTemplate supports full derived pose review", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+
+  const template = buildSensoriumGrantProposalTemplate({
+    catalog,
+    providerRegistry,
+    capability: "perception.sensorium.pose.subscribe",
+    provider: SENSORIUM_PROVIDER,
+    topic: "perception/jetsorano/pose/features",
+    constraints: {
+      max_seconds: 120,
+      max_fps: 10,
+    },
+    reason: "Need full derived pose cues for local occupant perception.",
+  });
+
+  assert.equal(template.proposal.capability, "perception.sensorium.pose.subscribe");
+  assert.match(template.proposal.risk, /risk_class=sensitive/);
+  assert.match(template.proposal.risk, /landmark tiers/);
+  assert.ok(
+    template.proposal.data_exposed.includes(
+      "body landmark coordinates and confidence scores",
+    ),
+  );
+  assert.ok(template.proposal.excluded_data.includes("raw color frames"));
+  assert.ok(template.proposal.excluded_data.includes("raw depth frames"));
+  assert.ok(template.proposal.excluded_data.includes("identity recognition"));
+
+  assert.equal(template.review.provider, SENSORIUM_PROVIDER);
+  assert.equal(template.review.host_segment, "jetsorano");
+  assert.equal(template.review.topic, "perception/jetsorano/pose/features");
+  assert.equal(template.review.stream_type, "pose");
+  assert.equal(template.review.risk_class, "sensitive");
+  assert.equal(template.review.max_seconds, 120);
+  assert.equal(template.review.max_fps, 10);
+  assert.equal(template.review.format_required, "");
+  assert.deepEqual(template.review.downsample_to, []);
+  assert.match(template.review.active_disclosure, /pose from jetsorano/);
+  assert.match(template.review.model_boundary_warning, /full derived body/);
+  assert.match(template.review.model_boundary_warning, /Raw color\/depth frames/);
+
+  assert.deepEqual(template.grant_intent, {
+    capability: "perception.sensorium.pose.subscribe",
+    provider: SENSORIUM_PROVIDER,
+    scope: "session",
+    constraints: {
+      max_seconds: 120,
+      max_fps: 10,
+    },
+    reason: "Need full derived pose cues for local occupant perception.",
+    activation_performed: false,
+  });
+});
+
 test("buildSensoriumGrantProposalTemplate rejects invalid topic for capability", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();

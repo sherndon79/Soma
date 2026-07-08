@@ -26,6 +26,7 @@ const CAPABILITY_LABELS = {
   "perception.sensorium.color.subscribe":    "color frames",
   "perception.sensorium.depth.subscribe":    "depth maps",
   "perception.sensorium.presence.subscribe": "presence events",
+  "perception.sensorium.pose.subscribe":     "pose features",
   "perception.sensorium.imu.subscribe":      "accel + gyro samples",
   "perception.sensorium.location.subscribe": "static location",
   "perception.sensorium.status.subscribe":   "heartbeat",
@@ -82,6 +83,12 @@ function describeStream(subscription, now) {
           ? subscription.stream_summary_observed
           : null),
     ),
+    pose_summary_observed: copyPoseSummary(
+      subscription.pose_summary_observed ??
+        (subscription.capability === "perception.sensorium.pose.subscribe"
+          ? subscription.stream_summary_observed
+          : null),
+    ),
     helper_error_class: copyHelperErrorClass(subscription.helper_error_class),
     description,
   };
@@ -94,7 +101,8 @@ function describeStreamLine({ capability, host, label, recentFps }) {
   // heartbeat-cadenced, so rate isn't a useful surface for those.
   const showsFps =
     capability === "perception.sensorium.color.subscribe" ||
-    capability === "perception.sensorium.depth.subscribe";
+    capability === "perception.sensorium.depth.subscribe" ||
+    capability === "perception.sensorium.pose.subscribe";
   const ratePhrase = showsFps && recentFps !== null
     ? ` at ~${formatRate(recentFps)} fps`
     : "";
@@ -292,6 +300,54 @@ function copyPresenceSummary(summary) {
     additional_person_present: additionalPersonPresent,
     expires_at: expiresAt,
   };
+}
+
+function copyPoseSummary(summary) {
+  if (!isPlainObject(summary)) {
+    return null;
+  }
+  if (
+    stringOrEmpty(summary.schema).length === 0 ||
+    summary.schema_matches_expected !== true ||
+    integerOrNull(summary.frameset_sequence) === null ||
+    numberOrNull(summary.capture_timestamp) === null ||
+    !Array.isArray(summary.persons) ||
+    !Array.isArray(summary.detections)
+  ) {
+    return null;
+  }
+  return copyBoundedJson(summary, "pose_summary_observed", 0);
+}
+
+function copyBoundedJson(value, field, depth) {
+  if (value === null || typeof value === "boolean" || Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value.length <= 4096 ? value : "";
+  }
+  if (value instanceof Uint8Array) {
+    return null;
+  }
+  if (depth >= 8) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, 256)
+      .map((item, index) => copyBoundedJson(item, `${field}[${index}]`, depth + 1))
+      .filter((item) => item !== null);
+  }
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const out = {};
+  for (const [key, child] of Object.entries(value).slice(0, 64)) {
+    if (typeof key === "string" && key.length > 0 && key.length <= 128) {
+      out[key] = copyBoundedJson(child, `${field}.${key}`, depth + 1);
+    }
+  }
+  return out;
 }
 
 function numberOrNull(value) {

@@ -8,6 +8,7 @@ import {
   encodeColorPayload,
   encodeDepthPayload,
   encodePresencePayload,
+  encodePosePayload,
   encodeStatusPayload,
 } from "./support/msgpackStatus.js";
 
@@ -978,6 +979,57 @@ test("presence events update current presence state with active episode context"
     disclosure.streams[0].presence_summary_observed.sensorium_schema,
     "perception.presence.v0.1",
   );
+});
+
+test("pose samples surface full bounded pose summary in active disclosure", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-pose",
+    topic: "perception/jetsorano/pose/features",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+  });
+  const { subscription_id } = await subscriber.start({
+    capability: "perception.sensorium.pose.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    grantId: "grant-pose",
+    scope: "session",
+    body: {
+      topic: "perception/jetsorano/pose/features",
+      constraints: {
+        max_seconds: 120,
+        max_fps: 10,
+      },
+    },
+  });
+
+  manager.emitSample(subscription_id, "perception/jetsorano/pose/features", {
+    payloadBytes: encodePosePayload({
+      frameset_sequence: 85204,
+    }),
+  });
+
+  const disclosure = subscriber.describeActive();
+  const stream = disclosure.streams[0];
+  assert.equal(stream.capability, "perception.sensorium.pose.subscribe");
+  assert.equal(stream.host, "jetsorano");
+  assert.match(stream.description, /Receiving pose features from jetsorano/);
+  assert.equal(stream.frames_consumed_so_far, 1);
+  assert.equal(stream.pose_summary_observed.schema, "perception.pose.contract.v0.2");
+  assert.equal(stream.pose_summary_observed.frameset_sequence, 85204);
+  assert.equal(stream.pose_summary_observed.persons[0].body_keypoints.length, 17);
+  assert.equal(stream.pose_summary_observed.persons[0].face_keypoints.length, 68);
+  assert.equal(stream.pose_summary_observed.persons[0].left_hand_keypoints.length, 21);
+  assert.equal(stream.pose_summary_observed.persons[0].right_hand_keypoints.length, 21);
+
+  const { endSummary } = await subscriber.stop(subscription_id);
+  assert.equal(endSummary.frames_consumed, 1);
+  assert.equal(endSummary.schema_version_observed, 1);
+  assert.equal(endSummary.first_frame_number, 85204);
+  assert.equal(endSummary.last_frame_number, 85204);
 });
 
 test("presence events without active episode keep visitor-when-away floor", async () => {

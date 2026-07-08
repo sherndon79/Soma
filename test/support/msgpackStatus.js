@@ -116,6 +116,54 @@ export function encodePresencePayload({
   ];
 }
 
+export function encodePosePayload(overrides = {}) {
+  return encodeAny({
+    schema: "perception.pose.contract.v0.2",
+    derived_fields_version: "2026-07-08",
+    model: "rtmo-wholebody",
+    processor: "sensorium-pose-worker",
+    frameset_sequence: 85_204,
+    capture_timestamp: 1_783_447_952.14,
+    color: { width: 1280, height: 720, fps: 15 },
+    depth: { width: 1280, height: 720, depth_units: 0.001 },
+    tiers_available: ["body", "face", "left_hand", "right_hand"],
+    tracker: { active: true, next_track_id: 8 },
+    persons: [
+      {
+        track_id: 7,
+        keypoint_count: 127,
+        body_keypoints: points(17, 10),
+        body_scores: scores(17, 0.91),
+        face_keypoints: points(68, 100),
+        face_scores: scores(68, 0.72),
+        left_hand_keypoints: points(21, 200),
+        left_hand_scores: scores(21, 0.81),
+        right_hand_keypoints: points(21, 300),
+        right_hand_scores: scores(21, 0.83),
+        derived: {
+          posture: "standing",
+          gaze: "toward_display",
+          gestures: ["open_hand"],
+          hand_visibility: { left: "visible", right: "visible" },
+          position_3d: { x: 0.1, y: 0.2, z: 1.4 },
+          mouth_moving: false,
+          motion: "low",
+          fall: "not_detected",
+        },
+      },
+    ],
+    detections: [
+      {
+        detection_id: "det-7",
+        track_id: 7,
+        xyxy: [10, 20, 300, 600],
+        score: 0.94,
+      },
+    ],
+    ...overrides,
+  });
+}
+
 function mapHeader(length) {
   if (length <= 15) return [0x80 | length];
   return [0xde, (length >> 8) & 0xff, length & 0xff];
@@ -187,4 +235,32 @@ function float64(value) {
   const buffer = new ArrayBuffer(8);
   new DataView(buffer).setFloat64(0, value, false);
   return [0xcb, ...Array.from(new Uint8Array(buffer))];
+}
+
+function points(length, offset) {
+  return Array.from({ length }, (_, index) => [offset + index, offset + index + 0.5]);
+}
+
+function scores(length, value) {
+  return Array.from({ length }, (_, index) => value - index / 1000);
+}
+
+function encodeAny(value) {
+  if (value === null || value === undefined) return [0xc0];
+  if (typeof value === "boolean") return value ? [0xc3] : [0xc2];
+  if (typeof value === "number") {
+    if (Number.isInteger(value) && value >= 0) return uint(value);
+    return float64(value);
+  }
+  if (typeof value === "string") return str(value);
+  if (value instanceof Uint8Array || value?.type === "Buffer") return bin(value);
+  if (Array.isArray(value)) return array(value.map(encodeAny));
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value);
+    return [
+      ...mapHeader(entries.length),
+      ...entries.flatMap(([key, child]) => [...str(key), ...encodeAny(child)]),
+    ];
+  }
+  throw new TypeError(`unsupported msgpack test value: ${String(value)}`);
 }

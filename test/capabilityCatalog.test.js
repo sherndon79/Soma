@@ -182,6 +182,7 @@ const SENSORIUM_CAPABILITIES = [
   { key: "perception.sensorium.color.subscribe",    risk: "high",      contract: "soma.perception.sensorium.color.v1" },
   { key: "perception.sensorium.depth.subscribe",    risk: "high",      contract: "soma.perception.sensorium.depth.v1" },
   { key: "perception.sensorium.presence.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.presence.v2" },
+  { key: "perception.sensorium.pose.subscribe",     risk: "sensitive", contract: "soma.perception.sensorium.pose.v1" },
   { key: "perception.sensorium.imu.subscribe",      risk: "sensitive", contract: "soma.perception.sensorium.imu.v1" },
   { key: "perception.sensorium.location.subscribe", risk: "sensitive", contract: "soma.perception.sensorium.location.v1" },
   { key: "perception.sensorium.status.subscribe",   risk: "low",       contract: "soma.perception.sensorium.status.v1" },
@@ -224,6 +225,17 @@ test("Sensorium subscription capabilities are catalogued with the disabled-first
   assert.match(presence.description, /coarse count buckets/);
   assert.match(presence.description, /identity is not_performed/);
   assert.match(presence.description, /count=0 does not relax/);
+
+  const pose = view.capabilities.find((c) =>
+    c.key === "perception.sensorium.pose.subscribe"
+  );
+  assert.ok(pose.data_exposed.some((entry) => entry.includes("face landmark")));
+  assert.ok(pose.data_exposed.some((entry) => entry.includes("left and right hand")));
+  assert.ok(pose.excluded_by_default.includes("raw color frames"));
+  assert.ok(pose.excluded_by_default.includes("raw depth frames"));
+  assert.ok(pose.excluded_by_default.includes("identity recognition"));
+  assert.match(pose.description, /WholeBody landmark tiers/);
+  assert.match(pose.description, /raw color\/depth frames/);
 });
 
 test("Sensorium provider registry claim makes capabilities requestable without activating them", async () => {

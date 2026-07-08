@@ -13,6 +13,10 @@ const SENSORIUM_CAPABILITIES = {
     stream_type: "presence",
     required_constraints: ["max_seconds", "max_fps"],
   },
+  "perception.sensorium.pose.subscribe": {
+    stream_type: "pose",
+    required_constraints: ["max_seconds", "max_fps"],
+  },
   "perception.sensorium.imu.subscribe": {
     stream_type: "imu",
     required_constraints: ["max_seconds"],
@@ -223,6 +227,9 @@ function modelBoundaryWarning(streamType) {
   if (streamType === "presence") {
     return "Presence events are Sensorium-derived coarse count buckets for output discretion (H2), not raw frames to Node, color, or identity claims; identity is not_performed. Count=0 does not relax private-output discretion until a separate reviewed FOV-coverage step is complete, and default coverage remains unreviewed.";
   }
+  if (streamType === "pose") {
+    return "Pose features expose full derived body, face, hand, posture, gaze, gesture, motion, and 3D position context to the local occupant once explicitly granted. Raw color/depth frames and identity recognition remain excluded unless separately granted.";
+  }
   if (streamType === "color" || streamType === "depth") {
     return "Camera-class payloads can be stopped or withheld later, but frames already incorporated into a model turn cannot be removed from that turn's working context.";
   }
@@ -232,6 +239,9 @@ function modelBoundaryWarning(streamType) {
 function riskSummary({ streamType, riskClass, hostSegment }) {
   if (streamType === "presence") {
     return `Sensorium presence events from ${hostSegment}; risk_class=${riskClass}; minimized derived count buckets feed output-discretion decisions without raw frames, color, audio, or identity recognition.`;
+  }
+  if (streamType === "pose") {
+    return `Sensorium full derived pose features from ${hostSegment}; risk_class=${riskClass}; exposes landmark tiers and derived posture/gaze/gesture/motion context without raw color/depth frames or identity recognition.`;
   }
   return `Sensorium ${streamType} stream from ${hostSegment}; risk_class=${riskClass}; live perception is not fully reversible once consumed by a model turn.`;
 }

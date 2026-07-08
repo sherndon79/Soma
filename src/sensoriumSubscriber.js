@@ -33,6 +33,7 @@ import {
 import { summarizeSensoriumColorPayload } from "./sensoriumColorPayload.js";
 import { summarizeSensoriumDepthPayload } from "./sensoriumDepthPayload.js";
 import { summarizeSensoriumPresencePayload } from "./sensoriumPresencePayload.js";
+import { summarizeSensoriumPosePayload } from "./sensoriumPosePayload.js";
 import { summarizeSensoriumStatusPayload } from "./sensoriumStatusPayload.js";
 import { createSensoriumStreamAnchor } from "./sensoriumStreamAnchor.js";
 import { describeActiveSensoriumSubscriptions } from "./sensoriumSubscriptionDisclosure.js";
@@ -45,6 +46,7 @@ import {
 const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
 const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
 const PRESENCE_CAPABILITY = "perception.sensorium.presence.subscribe";
+const POSE_CAPABILITY = "perception.sensorium.pose.subscribe";
 
 export class SensoriumSubscriber {
   #manager;
@@ -150,6 +152,7 @@ export class SensoriumSubscriber {
         lastFrameNumber: null,
         statusSummaryObserved: null,
         streamSummaryObserved: null,
+        poseSummaryObserved: null,
         helperErrorClass: "",
       },
     };
@@ -313,6 +316,7 @@ export class SensoriumSubscriber {
       frames_consumed_so_far: record._stats.framesConsumed,
       status_summary_observed: record._stats.statusSummaryObserved,
       stream_summary_observed: record._stats.streamSummaryObserved,
+      pose_summary_observed: record._stats.poseSummaryObserved,
       helper_error_class: record._stats.helperErrorClass,
     }));
     return describeActiveSensoriumSubscriptions(subscriptions, { now: now ?? this.#now() });
@@ -365,6 +369,10 @@ export class SensoriumSubscriber {
     }
     if (sub.capability === PRESENCE_CAPABILITY) {
       this.#recordPresenceSample(sub, msg.params?.payload_bytes);
+      return;
+    }
+    if (sub.capability === POSE_CAPABILITY) {
+      this.#recordPoseSample(sub, msg.params?.payload_bytes);
       return;
     }
     if (sub.capability !== "perception.sensorium.status.subscribe") {
@@ -558,6 +566,25 @@ export class SensoriumSubscriber {
       sub._stats.helperErrorClass = "presence_event_rejected";
       sub._stats.streamSummaryObserved = null;
       this.#presenceState?.clear?.();
+    }
+  }
+
+  #recordPoseSample(sub, payloadBytes) {
+    try {
+      const summary = summarizeSensoriumPosePayload(payloadBytes);
+      sub._stats.schemaVersionObserved = summary.schema_matches_expected ? 1 : null;
+      if (!summary.schema_matches_expected) {
+        sub._stats.schemaMismatches += 1;
+        sub._stats.poseSummaryObserved = null;
+        return;
+      }
+      sub._stats.firstFrameNumber = sub._stats.firstFrameNumber ?? summary.frameset_sequence;
+      sub._stats.lastFrameNumber = summary.frameset_sequence;
+      sub._stats.poseSummaryObserved = summary;
+    } catch {
+      sub._stats.schemaMismatches += 1;
+      sub._stats.helperErrorClass = "pose_payload_rejected";
+      sub._stats.poseSummaryObserved = null;
     }
   }
 }

@@ -356,6 +356,11 @@
           "output_schema": "soma.perception.sensorium.presence.response.v1"
         },
         {
+          "key": "perception.sensorium.pose.subscribe",
+          "provider_contract": "soma.perception.sensorium.pose.v1",
+          "output_schema": "soma.perception.sensorium.pose.response.v1"
+        },
+        {
           "key": "perception.sensorium.imu.subscribe",
           "provider_contract": "soma.perception.sensorium.imu.v1",
           "output_schema": "soma.perception.sensorium.imu.response.v1"

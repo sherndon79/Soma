@@ -941,6 +941,35 @@
       "description": "Subscribe to Sensorium's derived presence topic from perception/<host>/presence. The provider consumes pose-derived coarse count buckets produced by the Sensorium perception sidecar: no raw frames to Node, no color, no audio, and identity is not_performed. Distinct from perception.sensorium.depth.subscribe, which exposes depth maps. Feeds output-discretion decisions; count=0 does not relax private-output discretion until a separate FOV coverage review is completed."
     },
     {
+      "key": "perception.sensorium.pose.subscribe",
+      "name": "Sensorium Full Derived Pose Feature Subscription",
+      "category": "perception",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "full derived pose feature samples from perception/<host>/pose/features",
+        "body landmark coordinates and confidence scores",
+        "face landmark coordinates and confidence scores",
+        "left and right hand landmark coordinates and confidence scores",
+        "derived posture, gaze, gesture, hand-visibility, mouth-motion, motion, fall, and 3D position cues",
+        "tracker identifiers and detection boxes needed to maintain continuity within the subscription window"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export of pose features",
+        "raw color frames",
+        "raw depth frames",
+        "audio",
+        "identity recognition",
+        "frames or pose samples outside the subscription window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.perception.sensorium.pose.v1",
+      "description": "Subscribe to Sensorium's full derived pose feature topic from perception/<host>/pose/features. This exposes the full local occupant pose contract after deliberate grant, including WholeBody landmark tiers and derived posture/gaze/gesture/motion context, while still excluding raw color/depth frames, identity recognition, audio, hidden recording, and remote egress."
+    },
+    {
       "key": "perception.sensorium.imu.subscribe",
       "name": "Sensorium IMU Stream Subscription",
       "category": "perception",

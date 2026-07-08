@@ -38,6 +38,8 @@ const REPO_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SENSORIUM_KEYS = [
   "perception.sensorium.color.subscribe",
   "perception.sensorium.depth.subscribe",
+  "perception.sensorium.presence.subscribe",
+  "perception.sensorium.pose.subscribe",
   "perception.sensorium.imu.subscribe",
   "perception.sensorium.location.subscribe",
   "perception.sensorium.status.subscribe",

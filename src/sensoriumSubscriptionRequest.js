@@ -21,6 +21,7 @@ const SENSORIUM_CAPABILITY_KEYS = new Set([
   "perception.sensorium.color.subscribe",
   "perception.sensorium.depth.subscribe",
   "perception.sensorium.presence.subscribe",
+  "perception.sensorium.pose.subscribe",
   "perception.sensorium.imu.subscribe",
   "perception.sensorium.location.subscribe",
   "perception.sensorium.status.subscribe",
@@ -58,6 +59,12 @@ const CONSTRAINT_RULES = {
     // no longer the producer for the presence capability.
     topic_pattern: /^perception\/[a-z0-9-]+\/presence$/,
     topic_description: "perception/<host>/presence",
+  },
+  "perception.sensorium.pose.subscribe": {
+    allowed: new Set(["max_seconds", "max_fps"]),
+    formats: null,
+    topic_pattern: /^perception\/[a-z0-9-]+\/pose\/features$/,
+    topic_description: "perception/<host>/pose/features",
   },
   "perception.sensorium.imu.subscribe": {
     allowed: new Set(["max_seconds"]),

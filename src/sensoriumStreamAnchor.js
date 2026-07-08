@@ -19,6 +19,11 @@ const SENSORIUM_TOPIC_PATTERNS = [
     stream_type: "status",
     pattern: /^sensor\/([a-z0-9-]+)\/status$/,
   },
+  {
+    capability: "perception.sensorium.pose.subscribe",
+    stream_type: "pose",
+    pattern: /^perception\/([a-z0-9-]+)\/pose\/features$/,
+  },
 ];
 
 export function createSensoriumStreamAnchor({

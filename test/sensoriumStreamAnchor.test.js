@@ -116,4 +116,9 @@ test("stream anchor classifies realsense and status topics without payloads", ()
     stream_type: "status",
     host: "jetsorano",
   });
+  assert.deepEqual(classifySensoriumTopic("perception/jetsorano/pose/features"), {
+    capability: "perception.sensorium.pose.subscribe",
+    stream_type: "pose",
+    host: "jetsorano",
+  });
 });

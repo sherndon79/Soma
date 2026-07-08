@@ -181,6 +181,12 @@ test("disclosure descriptions match the capability family vocabulary", () => {
       want: "Receiving presence events from jetsorano",
     },
     {
+      capability: "perception.sensorium.pose.subscribe",
+      topic: "perception/jetsorano/pose/features",
+      recent_frame_rate: 10,
+      want: "Receiving pose features from jetsorano at ~10 fps",
+    },
+    {
       capability: "perception.sensorium.imu.subscribe",
       topic: "sensor/jetsorano/realsense/imu/accel",
       recent_frame_rate: 24,
@@ -352,6 +358,46 @@ test("disclosure preserves bounded depth_units in stream summaries", () => {
     depth_units: 0.001,
   });
   assert.equal(JSON.stringify(disclosure).includes("raw_depth"), false);
+});
+
+test("disclosure surfaces full bounded pose summaries without frame content", () => {
+  const disclosure = describeActiveSensoriumSubscriptions(
+    [
+      activeSubscription({
+        capability: "perception.sensorium.pose.subscribe",
+        topic: "perception/jetsorano/pose/features",
+        recent_frame_rate: 9.5,
+        stream_summary_observed: {
+          schema: "perception.pose.contract.v0.2",
+          schema_matches_expected: true,
+          expected_schema: "perception.pose.contract.v0.2",
+          frameset_sequence: 85204,
+          capture_timestamp: 1783447952.14,
+          tiers_available: ["body", "face", "left_hand", "right_hand"],
+          persons: [
+            {
+              track_id: 7,
+              body_keypoints: Array.from({ length: 17 }, () => [1, 2]),
+              face_keypoints: Array.from({ length: 68 }, () => [1, 2]),
+              left_hand_keypoints: Array.from({ length: 21 }, () => [1, 2]),
+              right_hand_keypoints: Array.from({ length: 21 }, () => [1, 2]),
+              derived: { posture: "standing", gaze: "toward_display" },
+            },
+          ],
+          detections: [{ xyxy: [10, 20, 300, 600], score: 0.94 }],
+          raw_frame_data: new Uint8Array([1, 2, 3]),
+        },
+      }),
+    ],
+    { now: NOW },
+  );
+
+  const stream = disclosure.streams[0];
+  assert.equal(stream.host, "jetsorano");
+  assert.equal(stream.stream_summary_observed, null);
+  assert.equal(stream.pose_summary_observed.schema, "perception.pose.contract.v0.2");
+  assert.equal(stream.pose_summary_observed.persons[0].face_keypoints.length, 68);
+  assert.equal(stream.pose_summary_observed.raw_frame_data, null);
 });
 
 test("disclosure rejects non-array input", () => {

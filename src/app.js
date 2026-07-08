@@ -3681,6 +3681,7 @@ export function createRequestHandler({
           provenanceLog,
           providerRegistry,
           desktopActuationTable,
+          sensoriumPresenceState,
           writePosture,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -5748,6 +5749,7 @@ async function processSpaceCapabilityInvocations({
   occupantMemoryProvenance,
   provenanceLog,
   providerRegistry,
+  sensoriumPresenceState,
   desktopActuationTable,
   writePosture,
   logger = console,
@@ -6082,6 +6084,7 @@ async function processSpaceCapabilityInvocations({
       capabilityCatalog,
       effectiveHarness,
       providerRegistry,
+      audienceContext: sensoriumPresenceState?.snapshot?.({ now: () => new Date() }),
       snapshot,
       writePosture,
     });
@@ -8713,6 +8716,7 @@ function provenanceSummaryResultDisclosure({ domain = "" } = {}) {
 const SPACE_STATUS_DATA_CLASSES = Object.freeze([
   "episode mode and domain",
   "armed protective controls",
+  "minimized copresence buckets and freshness",
   "active module ids",
   "capability status summary",
   "pending proposal count",
@@ -8738,6 +8742,7 @@ function buildSpaceStatusProjection({
   capabilityCatalog,
   effectiveHarness,
   providerRegistry,
+  audienceContext,
   snapshot,
   writePosture,
 } = {}) {
@@ -8763,6 +8768,7 @@ function buildSpaceStatusProjection({
       episode?.posture?.armed_protections,
       ["pause", "distress", "eject"],
     ),
+    audience_context: normalizeSpaceStatusAudienceContext(audienceContext),
     modules: {
       active_ids: activeModules.map((module) => String(module?.id ?? module)).filter(Boolean).sort(),
       active_count: activeModules.length,
@@ -8810,6 +8816,7 @@ function validateSpaceStatusProjection(projection = {}) {
     "domain",
     "occupant_id_present",
     "armed_protective_controls",
+    "audience_context",
     "modules",
     "capabilities",
     "proposals",
@@ -8850,6 +8857,7 @@ function validateSpaceStatusProjection(projection = {}) {
   }
   if (projection.one_shot !== true) errors.push("result.one_shot must be true");
   if (projection.read_only !== true) errors.push("result.read_only must be true");
+  validateSpaceStatusAudienceContext(projection.audience_context, errors);
   rejectUnexpectedProjectionKeys(projection.modules, ["active_ids", "active_count"], "result.modules", errors);
   rejectUnexpectedProjectionKeys(
     projection.capabilities,
@@ -8891,6 +8899,108 @@ function validateSpaceStatusProjection(projection = {}) {
     }
   }
   return { valid: errors.length === 0, errors };
+}
+
+function normalizeSpaceStatusAudienceContext(context = {}) {
+  if (!isPlainObject(context) || context.status !== "available") {
+    return {
+      status: "unavailable",
+      unavailable_reason: stringEnum(context?.unavailable_reason, [
+        "not_armed_or_cleared",
+        "stale",
+      ], "not_armed_or_cleared"),
+      count_bucket: "unknown",
+      additional_person_present: "unknown",
+      confidence_bucket: "unknown",
+      observed_at: "",
+      expires_at: "",
+    };
+  }
+  return {
+    status: "available",
+    unavailable_reason: "",
+    count_bucket: stringEnum(context.count_bucket, ["0", "1", "2_plus", "unknown"], "unknown"),
+    additional_person_present: stringEnum(
+      context.additional_person_present,
+      ["present", "not_detected", "unknown"],
+      "unknown",
+    ),
+    confidence_bucket: stringEnum(context.confidence_bucket, ["low", "medium", "high", "unknown"], "unknown"),
+    observed_at: isoStringOrEmpty(context.observed_at),
+    expires_at: isoStringOrEmpty(context.expires_at),
+  };
+}
+
+function validateSpaceStatusAudienceContext(context = {}, errors = []) {
+  rejectUnexpectedProjectionKeys(
+    context,
+    [
+      "status",
+      "unavailable_reason",
+      "count_bucket",
+      "additional_person_present",
+      "confidence_bucket",
+      "observed_at",
+      "expires_at",
+    ],
+    "result.audience_context",
+    errors,
+  );
+  if (!["available", "unavailable"].includes(context.status)) {
+    errors.push("result.audience_context.status invalid");
+  }
+  if (!["", "not_armed_or_cleared", "stale"].includes(context.unavailable_reason)) {
+    errors.push("result.audience_context.unavailable_reason invalid");
+  }
+  if (!["0", "1", "2_plus", "unknown"].includes(context.count_bucket)) {
+    errors.push("result.audience_context.count_bucket invalid");
+  }
+  if (!["present", "not_detected", "unknown"].includes(context.additional_person_present)) {
+    errors.push("result.audience_context.additional_person_present invalid");
+  }
+  if (!["low", "medium", "high", "unknown"].includes(context.confidence_bucket)) {
+    errors.push("result.audience_context.confidence_bucket invalid");
+  }
+  if (context.status === "available") {
+    if (context.unavailable_reason !== "") {
+      errors.push("result.audience_context.unavailable_reason must be empty when available");
+    }
+    if (!validIsoString(context.observed_at)) {
+      errors.push("result.audience_context.observed_at must be an ISO timestamp when available");
+    }
+    if (!validIsoString(context.expires_at)) {
+      errors.push("result.audience_context.expires_at must be an ISO timestamp when available");
+    }
+  } else {
+    if (!context.unavailable_reason) {
+      errors.push("result.audience_context.unavailable_reason required when unavailable");
+    }
+    if (context.count_bucket !== "unknown" ||
+        context.additional_person_present !== "unknown" ||
+        context.confidence_bucket !== "unknown") {
+      errors.push("result.audience_context unavailable buckets must be unknown");
+    }
+    if (context.observed_at !== "" || context.expires_at !== "") {
+      errors.push("result.audience_context unavailable freshness must be empty");
+    }
+  }
+}
+
+function stringEnum(value, allowedValues, fallback) {
+  const candidate = String(value ?? "");
+  return allowedValues.includes(candidate) ? candidate : fallback;
+}
+
+function isoStringOrEmpty(value) {
+  return validIsoString(value) ? new Date(value).toISOString() : "";
+}
+
+function validIsoString(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime());
 }
 
 function rejectUnexpectedProjectionKeys(value, allowedKeys, path, errors) {

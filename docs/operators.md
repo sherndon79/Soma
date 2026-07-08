@@ -92,7 +92,9 @@ chat with a typed directive:
 
 The result is a one-shot minimized projection delivered through a declared result-egress envelope.
 It includes mode/domain, armed protective controls, active module ids/count, capability status counts,
-pending proposal count, runtime-write posture summary, and declared returnable data classes. It does
+pending proposal count, runtime-write posture summary, and declared returnable data classes. When a
+Sensorium presence subscription is active, it also includes minimized copresence buckets and freshness;
+absent or stale presence is explicit unavailable/unknown, never manufactured as count zero. It does
 not include capability key lists, raw grants, raw provenance entries, chat/predecessor content,
 forum content, durable testimony text, memory content, file content, desktop content, or sensor
 payloads. Remote tool-call authority remains disabled unless separately granted through

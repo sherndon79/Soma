@@ -83,6 +83,7 @@ test("space status read is explicit-grant occupant capability and provider-backe
   assert.equal(spaceStatus.reversible, true);
   assert.equal(spaceStatus.provider_contract, "soma.space.status.read.v1");
   assert.ok(spaceStatus.data_exposed.includes("armed protective controls"));
+  assert.ok(spaceStatus.data_exposed.includes("minimized copresence buckets and freshness"));
   assert.ok(spaceStatus.excluded_by_default.includes("predecessor content"));
   assert.equal(spaceStatus.providers.length, 1);
   assert.equal(spaceStatus.providers[0].id, "soma.provider.status");

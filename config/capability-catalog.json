@@ -344,6 +344,7 @@
       "data_exposed": [
         "episode mode and domain",
         "armed protective controls",
+        "minimized copresence buckets and freshness",
         "active module ids",
         "capability status summary",
         "pending proposal count",
@@ -364,7 +365,7 @@
       "reversible": true,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.space.status.read.v1",
-      "description": "Let an occupant invoke a one-shot, minimized status projection through a declared per-capability result-egress envelope. This is not generic tool-call authority."
+      "description": "Let an occupant invoke a one-shot, minimized status projection through a declared per-capability result-egress envelope. When a Sensorium presence subscription is active, this includes minimized copresence buckets and freshness only. This is not generic tool-call authority."
     },
     {
       "key": "space.history.read",

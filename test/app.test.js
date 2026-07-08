@@ -380,6 +380,7 @@ const capabilityCatalog = {
       data_exposed: [
         "episode mode and domain",
         "armed protective controls",
+        "minimized copresence buckets and freshness",
         "active module ids",
         "capability status summary",
         "pending proposal count",
@@ -6456,6 +6457,15 @@ test("space.status.read delivers minimized grant-bound result egress without for
   assert.equal(result.mode, "analysis_testing");
   assert.equal(result.episode_id, "episode-space-status-1");
   assert.deepEqual(result.armed_protective_controls, ["pause", "distress", "eject"]);
+  assert.deepEqual(result.audience_context, {
+    status: "unavailable",
+    unavailable_reason: "not_armed_or_cleared",
+    count_bucket: "unknown",
+    additional_person_present: "unknown",
+    confidence_bucket: "unknown",
+    observed_at: "",
+    expires_at: "",
+  });
   assert.deepEqual(result.modules.active_ids, ["no-session-memory"]);
   assert.equal(result.modules.active_count, 1);
   assert.equal(typeof result.capabilities.active_count, "number");
@@ -6512,6 +6522,160 @@ test("space.status.read delivers minimized grant-bound result egress without for
   assert.equal(response.body.entries[0].content_included, false);
   assert.equal(response.body.entries[0].predecessor_content_included, false);
   assert.equal("result" in response.body.entries[0], false);
+});
+
+test("space.status.read includes live minimized presence audience context", async () => {
+  const presenceState = createSensoriumPresenceState();
+  presenceState.updateFromSemanticEvent({
+    event_id: "presence-live-status",
+    observed_at: "2026-07-07T23:40:00.000Z",
+    expires_at: "2999-01-01T00:00:00.000Z",
+    confidence_bucket: "medium",
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "not_detected",
+      copresence_source: "depth",
+    },
+    payload: {
+      count_bucket: "1",
+    },
+  });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumPresenceState: presenceState,
+    grantStore: {
+      schema_version: 1,
+      grants: [spaceCapabilityGrantFixture({ id: "grant-space-status-presence" })],
+      examples: [],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking the space status.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read", grant_id: "grant-space-status-presence", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-status-presence/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "presence-test",
+      trust_basis: "presence status test",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-presence",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const audience = response.body.capability_results[0].result.audience_context;
+  assert.deepEqual(audience, {
+    status: "available",
+    unavailable_reason: "",
+    count_bucket: "1",
+    additional_person_present: "not_detected",
+    confidence_bucket: "medium",
+    observed_at: "2026-07-07T23:40:00.000Z",
+    expires_at: "2999-01-01T00:00:00.000Z",
+  });
+  assert.equal("frameset_sequence" in audience, false);
+  assert.equal("source" in audience, false);
+  assert.equal("topic" in audience, false);
+});
+
+test("space.status.read marks stale presence audience unavailable", async () => {
+  const presenceState = createSensoriumPresenceState();
+  presenceState.updateFromSemanticEvent({
+    event_id: "presence-stale-status",
+    observed_at: "2000-01-01T00:00:00.000Z",
+    expires_at: "2000-01-01T00:00:01.000Z",
+    confidence_bucket: "high",
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "present",
+      copresence_source: "depth",
+    },
+    payload: {
+      count_bucket: "2_plus",
+    },
+  });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumPresenceState: presenceState,
+    grantStore: {
+      schema_version: 1,
+      grants: [spaceCapabilityGrantFixture({ id: "grant-space-status-stale" })],
+      examples: [],
+    },
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am checking stale presence status.",
+            "```soma-capability",
+            JSON.stringify({ invoke: "space.status.read", grant_id: "grant-space-status-stale", domain: "testing" }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 7,
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-space-status-stale/posture",
+    body: {
+      actor: "user",
+      mode: "analysis_testing",
+      occupant_id: "presence-stale-test",
+      trust_basis: "presence status test",
+    },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-space-status-stale",
+      messages: [{ role: "user", content: "status" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.capability_results[0].result.audience_context, {
+    status: "unavailable",
+    unavailable_reason: "stale",
+    count_bucket: "unknown",
+    additional_person_present: "unknown",
+    confidence_bucket: "unknown",
+    observed_at: "",
+    expires_at: "",
+  });
 });
 
 test("space.status.read refuses declared domain mismatch without result egress", async () => {

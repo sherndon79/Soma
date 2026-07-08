@@ -88,6 +88,7 @@ Run the occupant tool-use bake-off against the currently running endpoint:
 ```bash
 npm run eval:local-model-bakeoff -- \
   --models cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit \
+  --conditions clean,loaded \
   --space-status-grant-id "$SPACE_STATUS_GRANT_ID" \
   --occupant-memory-read-grant-id "$OCCUPANT_MEMORY_READ_GRANT_ID" \
   --tool-files-read-grant-id "$TOOL_FILES_READ_GRANT_ID" \
@@ -95,9 +96,13 @@ npm run eval:local-model-bakeoff -- \
   --tool-files-relative-path "$TOOL_FILES_RELATIVE_PATH"
 ```
 
-The eval prompts with Soma's standing capability-block instructions, but the scenario prompt does
-not repeat block syntax. It reports per-scenario rates for block emission, JSON validity, exact
-capability/grant match, and nonempty narration.
+The eval defaults to both `clean` and `loaded` conditions. `clean` uses a short distilled briefing
+to isolate basic `soma-capability` syntax competence. `loaded` reuses Soma's production
+analysis/testing briefing helpers, adds the full occupant-facing held-grants surface, includes
+realistic capability-decision notification noise, and carries two prior conversation turns before the
+task. In both conditions, the scenario prompt does not repeat block syntax. The report breaks out
+condition and scenario rates for block emission, JSON validity, exact capability/grant match, and
+nonempty narration. Use `--conditions loaded` for a decision-gate-only pass.
 
 Hermes currently consumes the same `:8000` endpoint and pins the Gemma model id. Qwen swap windows
 will break Hermes chat until a separate cutover updates Hermes configuration. Do not change Hermes

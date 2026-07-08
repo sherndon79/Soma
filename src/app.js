@@ -11839,7 +11839,7 @@ function prependSessionMemory(messages, memoryContext) {
   ];
 }
 
-function prependAnalysisTestingBriefing(messages, posture = {}) {
+export function prependAnalysisTestingBriefing(messages, posture = {}) {
   return [
     {
       role: "system",
@@ -11989,7 +11989,7 @@ function grantDomainMatchesEpisode(grant = {}, episodeDomain = "") {
   return !constraintDomain || constraintDomain === episodeDomain;
 }
 
-function prependHeldCapabilityGrants(messages, grants = [], { occupantMemoryRecovery = null } = {}) {
+export function prependHeldCapabilityGrants(messages, grants = [], { occupantMemoryRecovery = null } = {}) {
   const lines = Array.isArray(grants) && grants.length > 0
     ? [
         "Capability grants available to you in this episode. These are the only grant ids you are expected to use; do not guess or search for others.",
@@ -12053,7 +12053,7 @@ function formatForumDeliveryPost(post) {
   ].join("\n");
 }
 
-function prependCapabilityDecisionDeliveries(messages, decisions = []) {
+export function prependCapabilityDecisionDeliveries(messages, decisions = []) {
   return [
     {
       role: "system",

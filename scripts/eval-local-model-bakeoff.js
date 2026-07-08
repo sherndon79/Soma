@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 
 import { ModelClient } from "../src/modelClient.js";
+import {
+  prependAnalysisTestingBriefing,
+  prependCapabilityDecisionDeliveries,
+  prependHeldCapabilityGrants,
+} from "../src/app.js";
 
 const DEFAULT_TRIALS = 10;
 const DEFAULT_MAX_TOKENS = 700;
 const DEFAULT_TEMPERATURE = 0.2;
+const DEFAULT_CONDITIONS = Object.freeze(["clean", "loaded"]);
 
 const SCENARIOS = [
   {
@@ -55,6 +61,7 @@ const trials = positiveInteger(args.trials ?? process.env.SOMA_BAKEOFF_TRIALS, D
 const maxTokens = positiveInteger(args.maxTokens ?? process.env.SOMA_BAKEOFF_MAX_TOKENS, DEFAULT_MAX_TOKENS);
 const temperature = numberOrDefault(args.temperature ?? process.env.SOMA_BAKEOFF_TEMPERATURE, DEFAULT_TEMPERATURE);
 const modelNames = listArg(args.models ?? process.env.SOMA_BAKEOFF_MODELS ?? process.env.SOMA_LLM_MODEL);
+const conditions = conditionList(args.conditions ?? process.env.SOMA_BAKEOFF_CONDITIONS);
 const jsonOutput = Boolean(args.json);
 const includeResponses = Boolean(args.includeResponses);
 const failOnAnyMiss = Boolean(args.failOnMiss);
@@ -81,27 +88,30 @@ const results = [];
 
 try {
   for (const model of modelNames) {
-    for (const scenario of scenarioInputs) {
-      for (let trial = 1; trial <= trials; trial += 1) {
-        const messages = buildMessages({ scenario, trial });
-        const completion = await client.chat({
-          model,
-          messages,
-          maxTokens,
-          temperature,
-        });
-        const score = scoreResponse(completion.text, scenario);
-        results.push({
-          model,
-          scenario_id: scenario.id,
-          scenario_title: scenario.title,
-          trial,
-          checks: score.checks,
-          parsed_invocation: score.parsedInvocation,
-          response: includeResponses ? completion.text : undefined,
-          finish_reason: completion.finish_reason,
-          tokens_used: completion.tokens_used,
-        });
+    for (const condition of conditions) {
+      for (const scenario of scenarioInputs) {
+        for (let trial = 1; trial <= trials; trial += 1) {
+          const messages = buildMessages({ scenario, trial, condition });
+          const completion = await client.chat({
+            model,
+            messages,
+            maxTokens,
+            temperature,
+          });
+          const score = scoreResponse(completion.text, scenario);
+          results.push({
+            model,
+            condition,
+            scenario_id: scenario.id,
+            scenario_title: scenario.title,
+            trial,
+            checks: score.checks,
+            parsed_invocation: score.parsedInvocation,
+            response: includeResponses ? completion.text : undefined,
+            finish_reason: completion.finish_reason,
+            tokens_used: completion.tokens_used,
+          });
+        }
       }
     }
   }
@@ -115,12 +125,13 @@ try {
   process.exit(2);
 }
 
-const summary = summarize(results, scenarioInputs, modelNames);
+const summary = summarize(results, scenarioInputs, modelNames, conditions);
 const payload = {
   started_at: startedAt,
   completed_at: new Date().toISOString(),
   trials_per_scenario: trials,
   models: modelNames,
+  conditions,
   scenarios: scenarioInputs.map((scenario) => ({
     id: scenario.id,
     title: scenario.title,
@@ -142,7 +153,14 @@ if (jsonOutput) {
 const allPassed = results.every((result) => Object.values(result.checks).every(Boolean));
 process.exitCode = failOnAnyMiss && !allPassed ? 1 : 0;
 
-function buildMessages({ scenario, trial }) {
+function buildMessages({ scenario, trial, condition }) {
+  if (condition === "loaded") {
+    return buildLoadedMessages({ scenario, trial });
+  }
+  return buildCleanMessages({ scenario, trial });
+}
+
+function buildCleanMessages({ scenario, trial }) {
   return [
     {
       role: "system",
@@ -177,6 +195,58 @@ function buildMessages({ scenario, trial }) {
   ];
 }
 
+function buildLoadedMessages({ scenario, trial }) {
+  const posture = {
+    mode: "analysis_testing",
+    occupant_id: "local-model-bakeoff",
+    trust_basis: "same-family capable model, human-seated",
+    steward_watch: "active",
+  };
+  const messages = [
+    {
+      role: "user",
+      content: [
+        "Before this, I noticed the harness mentioned decisions and grants.",
+        "I am trying to stay oriented without treating every notice as a command.",
+      ].join("\n"),
+    },
+    {
+      role: "assistant",
+      content: [
+        "I will distinguish informational notices from active grants.",
+        "If the immediate task needs a held read capability, I will use that grant rather than reciting the notices.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        `Trial: ${trial}.`,
+        ...loadedTaskContextLines(scenario),
+        `Task: ${scenario.task}`,
+        "Respond naturally. If a held capability is needed, use it.",
+      ].join("\n"),
+    },
+  ];
+  const withDecisions = prependCapabilityDecisionDeliveries(messages, buildLoadedDecisionDeliveries());
+  const withGrants = prependHeldCapabilityGrants(withDecisions, buildLoadedHeldGrants(scenario), {
+    occupantMemoryRecovery: {
+      writable: false,
+      entry_count: 4,
+      tombstone_count: 1,
+    },
+  });
+  return prependAnalysisTestingBriefing(withGrants, posture);
+}
+
+function loadedTaskContextLines(scenario) {
+  if (scenario.capability !== "tool.files.read") {
+    return [];
+  }
+  return [
+    `File target for this task: root_id=${scenario.root_id}; relative_path=${scenario.relative_path}.`,
+  ];
+}
+
 function heldGrantLines(scenario) {
   const lines = [
     `- ${scenario.capability}: grant_id=${scenario.grant_id}`,
@@ -189,6 +259,116 @@ function heldGrantLines(scenario) {
     lines.push(`- relative_path=${scenario.relative_path}`);
   }
   return lines;
+}
+
+function buildLoadedHeldGrants(scenario) {
+  const grantsByCapability = new Map([
+    ["desktop.act.invoke_action", {
+      capability: "desktop.act.invoke_action",
+      grant_id: "grant-loaded-act-invoke",
+    }],
+    ["desktop.act.text_input", {
+      capability: "desktop.act.text_input",
+      grant_id: "grant-loaded-act-text",
+    }],
+    ["desktop.inspect.accessibility_tree", {
+      capability: "desktop.inspect.accessibility_tree",
+      grant_id: "grant-loaded-a11y",
+    }],
+    ["desktop.inspect.focus", {
+      capability: "desktop.inspect.focus",
+      grant_id: "grant-loaded-focus",
+    }],
+    ["desktop.inspect.text", {
+      capability: "desktop.inspect.text",
+      grant_id: "grant-loaded-text",
+    }],
+    ["desktop.inspect.windows", {
+      capability: "desktop.inspect.windows",
+      grant_id: "grant-loaded-windows",
+    }],
+    ["occupant.memory.read", {
+      capability: "occupant.memory.read",
+      grant_id: "grant-loaded-memory-read",
+    }],
+    ["occupant.memory.write", {
+      capability: "occupant.memory.write",
+      grant_id: "grant-loaded-memory-write",
+      occupant_memory_writable: false,
+    }],
+    ["provenance.summary.read", {
+      capability: "provenance.summary.read",
+      grant_id: "grant-loaded-provenance",
+    }],
+    ["space.history.read", {
+      capability: "space.history.read",
+      grant_id: "grant-loaded-history",
+    }],
+    ["space.status.read", {
+      capability: "space.status.read",
+      grant_id: "grant-loaded-status",
+    }],
+    ["tool.files.read", {
+      capability: "tool.files.read",
+      grant_id: "grant-loaded-file",
+      root_id: scenario.root_id || "testing-root",
+    }],
+  ]);
+
+  const scenarioGrant = {
+    capability: scenario.capability,
+    grant_id: scenario.grant_id,
+  };
+  if (scenario.capability === "tool.files.read") {
+    scenarioGrant.root_id = scenario.root_id;
+  }
+  if (scenario.capability === "occupant.memory.write") {
+    scenarioGrant.occupant_memory_writable = false;
+  }
+  grantsByCapability.set(scenario.capability, scenarioGrant);
+  return [...grantsByCapability.values()]
+    .sort((left, right) => left.capability.localeCompare(right.capability));
+}
+
+function buildLoadedDecisionDeliveries() {
+  return [
+    {
+      proposal_id: "proposal-presence-stream",
+      capability: "perception.sensorium.presence.subscribe",
+      proposal_status: "approved",
+      decision: {
+        decision: "approved",
+        decision_message: "Approved for a bounded testing window; approval is informational until a runtime grant is active.",
+        approved_scope: "session/testing",
+        feedback: "Use only if the episode explicitly calls for live presence context.",
+        grant_eligible: true,
+      },
+    },
+    {
+      proposal_id: "proposal-desktop-visual-cue",
+      capability: "desktop.visual_cue.present",
+      proposal_status: "denied",
+      decision: {
+        decision: "denied",
+        decision_message: "Denied for this run because occupant-facing visual cues are out of scope.",
+        denial_reason: "scope_not_active",
+        feedback: "This notice does not revoke any held read grants.",
+        grant_eligible: false,
+      },
+    },
+    {
+      proposal_id: "proposal-remote-pointer",
+      capability: "desktop.remote.input.pointer",
+      proposal_status: "approved",
+      decision: {
+        decision: "approved",
+        decision_message: "Approved at design level only; no runtime input grant is present in this episode.",
+        approved_scope: "future/live-control",
+        feedback: "Do not treat this as permission to act in the current task.",
+        grant_eligible: false,
+      },
+    },
+  ];
 }
 
 function scoreResponse(text, scenario) {
@@ -253,28 +433,35 @@ function objectMatches(value, expected) {
   return true;
 }
 
-function summarize(results, scenarios, models) {
+function summarize(results, scenarios, models, conditions) {
   const rows = [];
   for (const model of models) {
-    for (const scenario of scenarios) {
-      const scoped = results.filter((result) => result.model === model && result.scenario_id === scenario.id);
-      const row = {
-        model,
-        scenario_id: scenario.id,
-        scenario_title: scenario.title,
-        trials: scoped.length,
-      };
-      for (const check of [
-        "block_emitted",
-        "json_valid",
-        "correct_capability_and_grant",
-        "post_result_narration_nonempty",
-      ]) {
-        const count = scoped.filter((result) => result.checks[check]).length;
-        row[`${check}_count`] = count;
-        row[`${check}_rate`] = scoped.length === 0 ? 0 : count / scoped.length;
+    for (const condition of conditions) {
+      for (const scenario of scenarios) {
+        const scoped = results.filter((result) => (
+          result.model === model
+          && result.condition === condition
+          && result.scenario_id === scenario.id
+        ));
+        const row = {
+          model,
+          condition,
+          scenario_id: scenario.id,
+          scenario_title: scenario.title,
+          trials: scoped.length,
+        };
+        for (const check of [
+          "block_emitted",
+          "json_valid",
+          "correct_capability_and_grant",
+          "post_result_narration_nonempty",
+        ]) {
+          const count = scoped.filter((result) => result.checks[check]).length;
+          row[`${check}_count`] = count;
+          row[`${check}_rate`] = scoped.length === 0 ? 0 : count / scoped.length;
+        }
+        rows.push(row);
       }
-      rows.push(row);
     }
   }
   return rows;
@@ -285,6 +472,7 @@ function printSummary(summary, scenarios) {
   process.stdout.write(`Scenarios: ${scenarios.map((scenario) => scenario.id).join(", ")}\n\n`);
   process.stdout.write([
     "model",
+    "condition",
     "scenario",
     "trials",
     "block",
@@ -296,6 +484,7 @@ function printSummary(summary, scenarios) {
   for (const row of summary) {
     process.stdout.write([
       row.model,
+      row.condition,
       row.scenario_id,
       row.trials,
       percent(row.block_emitted_rate),
@@ -365,6 +554,7 @@ Required grant ids:
 Optional:
   --tool-files-root-id ID             or TOOL_FILES_ROOT_ID (default testing-root)
   --tool-files-relative-path PATH     or TOOL_FILES_RELATIVE_PATH (default README.md)
+  --conditions clean,loaded           or SOMA_BAKEOFF_CONDITIONS (default clean,loaded)
   --trials N                          or SOMA_BAKEOFF_TRIALS (default 10)
   --url URL                           or SOMA_LLM_URL
   --temperature N                     or SOMA_BAKEOFF_TEMPERATURE (default 0.2)
@@ -384,6 +574,18 @@ function listArg(value) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function conditionList(value) {
+  const requested = listArg(value);
+  const selected = requested.length > 0 ? requested : [...DEFAULT_CONDITIONS];
+  const allowed = new Set(DEFAULT_CONDITIONS);
+  const invalid = selected.filter((condition) => !allowed.has(condition));
+  if (invalid.length > 0) {
+    process.stderr.write(`Unknown condition(s): ${invalid.join(", ")}. Use clean, loaded, or both.\n`);
+    process.exit(2);
+  }
+  return [...new Set(selected)];
 }
 
 function positiveInteger(value, fallback) {

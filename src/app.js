@@ -158,6 +158,9 @@ import {
   visualCueRenderResult,
 } from "./sensoriumTier.js";
 
+const DEFAULT_CHAT_TEMPERATURE = 0.7;
+const DEFAULT_TOOL_CALL_TEMPERATURE = 0.2;
+
 export function createApp({
   harness,
   capabilityCatalog,
@@ -3480,7 +3483,10 @@ export function createRequestHandler({
           messages: modelMessages,
           model: runtimeProfile.model,
           maxTokens: numberOrDefault(body.max_tokens, 512),
-          temperature: numberOrDefault(body.temperature, 0.7),
+          temperature: numberOrDefault(
+            body.temperature,
+            defaultChatTemperature({ useToolCalls }),
+          ),
         });
         const deliveredForumPosts = markForumPostsDelivered(pendingForumDeliveries);
         if (deliveredForumPosts.length > 0) {
@@ -12106,6 +12112,15 @@ function normalizeMessages(messages) {
     }
     return { role, content };
   });
+}
+
+function defaultChatTemperature({ useToolCalls = false } = {}) {
+  if (!useToolCalls) {
+    return DEFAULT_CHAT_TEMPERATURE;
+  }
+  const raw = String(process.env.SOMA_TOOL_CALL_TEMPERATURE ?? "").trim();
+  const configured = raw ? Number(raw) : NaN;
+  return Number.isFinite(configured) ? configured : DEFAULT_TOOL_CALL_TEMPERATURE;
 }
 
 function isPlainObject(value) {

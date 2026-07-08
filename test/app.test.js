@@ -8606,6 +8606,134 @@ test("POST /chat executes structured file-read intents through existing file gat
   }
 });
 
+test("POST /chat defaults tool-call turns to low temperature unless overridden", async () => {
+  const seen = [];
+  const modelClient = {
+    model: "local-test-model",
+    async chat(options) {
+      seen.push(options);
+      return {
+        text: "No tool call this time.",
+        model: "local-test-model",
+        finish_reason: "stop",
+        tokens_used: 2,
+      };
+    },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-tool-calls",
+          status: "active",
+          capability: "model.local.tool_calls",
+          provider: "local-model",
+          scope: "session",
+          constraints: {},
+          approved_by: "user",
+          reason: "Allow local model tool-call intent handling for this session.",
+          created_at: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      use_tool_calls: true,
+      tool_call_grant_id: "grant-tool-calls",
+      messages: [{ role: "user", content: "maybe use a tool" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(seen[0].temperature, 0.2);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      use_tool_calls: true,
+      tool_call_grant_id: "grant-tool-calls",
+      temperature: 0.55,
+      messages: [{ role: "user", content: "maybe use a tool explicitly warm" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(seen[1].temperature, 0.55);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      messages: [{ role: "user", content: "plain chat" }],
+    },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(seen[2].temperature, 0.7);
+});
+
+test("POST /chat reads SOMA_TOOL_CALL_TEMPERATURE for tool-call default", async () => {
+  const previous = process.env.SOMA_TOOL_CALL_TEMPERATURE;
+  process.env.SOMA_TOOL_CALL_TEMPERATURE = "0.15";
+  try {
+    let seenTemperature = null;
+    const handler = makeHandler({
+      harness: allowedHarness,
+      modelClient: {
+        model: "local-test-model",
+        async chat(options) {
+          seenTemperature = options.temperature;
+          return {
+            text: "No tool call.",
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 2,
+          };
+        },
+      },
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          {
+            id: "grant-tool-calls",
+            status: "active",
+            capability: "model.local.tool_calls",
+            provider: "local-model",
+            scope: "session",
+            constraints: {},
+            approved_by: "user",
+            reason: "Allow local model tool-call intent handling for this session.",
+            created_at: "2026-06-03T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        use_tool_calls: true,
+        tool_call_grant_id: "grant-tool-calls",
+        messages: [{ role: "user", content: "maybe use a tool" }],
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(seenTemperature, 0.15);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SOMA_TOOL_CALL_TEMPERATURE;
+    } else {
+      process.env.SOMA_TOOL_CALL_TEMPERATURE = previous;
+    }
+  }
+});
+
 test("POST /chat proposes unexecuted tool-call intents without target-tool activation", async () => {
   const proposals = new CapabilityProposalStore();
   const modelClient = {

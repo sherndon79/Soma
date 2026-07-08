@@ -39,6 +39,7 @@ Environment variables:
 - `SOMA_PORT`
 - `SOMA_LLM_URL`
 - `SOMA_LLM_MODEL`
+- `SOMA_TOOL_CALL_TEMPERATURE`
 - `SOMA_FORCE_PROFILE`
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_VERSION`
@@ -292,6 +293,8 @@ npm start
 ```
 
 The Soma service defaults to `SOMA_LLM_URL=http://127.0.0.1:8000`, matching the compose port.
+Plain chat defaults to temperature `0.7`; tool-call-enabled chat defaults to `0.2` for more reliable
+capability invocation grammar. Override the latter with `SOMA_TOOL_CALL_TEMPERATURE`.
 
 ## Docs
 

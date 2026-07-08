@@ -4879,6 +4879,56 @@ test("deliberation forum delivers steward posts and records occupant posts witho
   }
 });
 
+test("deliberation forum occupant posts are stamped while Sensorium perception is active", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumSubscriber: activeSensoriumSubscriber(),
+    modelClient: {
+      async chat() {
+        return {
+          text: [
+            "I have a forum note.",
+            "```soma-forum",
+            JSON.stringify({ type: "testimony", content: "This forum post should be stamped." }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+  await postureAnalysisTesting(handler, "episode-forum-sensorium-guard");
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/episodes/episode-forum-sensorium-guard/forum",
+    body: { actor: "user", forum_id: "forum-sensorium-guard" },
+  });
+  assert.equal(response.statusCode, 200);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-sensorium-guard",
+      messages: [{ role: "user", content: "respond to the forum" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.forum_posts_created, 1);
+  assert.equal(response.body.forum_posts_blocked, 0);
+  assert.equal(response.body.live_perception_taint.tainted, true);
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/episodes/episode-forum-sensorium-guard/forum",
+  });
+  assert.equal(response.body.forum.posts.length, 1);
+  assert.equal(response.body.forum.posts[0].live_perception_taint.tainted, true);
+  assert.deepEqual(response.body.forum.posts[0].live_perception_taint.capabilities, ["perception.sensorium.presence.subscribe"]);
+});
+
 test("deliberation forum strips truncated occupant forum blocks without recording partial content", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -5144,6 +5194,65 @@ test("durable testimony nomination is acknowledged but not stored when runtime w
   }
 });
 
+test("durable testimony nomination is stamped while Sensorium perception is active", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-sensorium-guard-"));
+  try {
+    const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
+    const durableTestimonyProvenancePath = path.join(workspace, "durable-testimony.ndjson");
+    await writeFile(durableTestimonyStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const handler = makeHandler({
+      harness: allowedHarness,
+      durableTestimonyStore: { schema_version: 1, entries: [] },
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableTestimonyStorePath,
+      durableTestimonyProvenancePath,
+      runtimeWritePosture: { requested: true, source: "test" },
+      sensoriumSubscriber: activeSensoriumSubscriber(),
+      modelClient: {
+        model: "local-test-model",
+        async chat() {
+          return {
+            text: [
+              "I nominate this while perception is active.",
+              "```soma-durable",
+              JSON.stringify({ text: "A durable note that should be stamped.", successor_visibility_requested: true }),
+              "```",
+            ].join("\n"),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      },
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-testimony-sensorium-guard",
+        messages: [{ role: "user", content: "nominate" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.durable_testimony_nominated, 1);
+    assert.equal(response.body.durable_testimony_blocked, 0);
+    assert.equal(response.body.live_perception_taint.tainted, true);
+    assert.match(response.body.durable_testimony_disclosures[0], /Durable testimony stored/);
+    const persisted = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].live_perception_taint.tainted, true);
+    assert.deepEqual(persisted.entries[0].live_perception_taint.topics, ["perception/jetsorano/presence"]);
+    const provenance = (await readFile(durableTestimonyProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(provenance[0].event_type, "testimony.durable.nominated");
+    assert.equal(provenance[0].live_perception_taint.tainted, true);
+    assert.equal("text" in provenance[0], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("durable testimony processes complete blocks and strips truncated nomination blocks", async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-durable-testimony-truncated-"));
   try {
@@ -5203,10 +5312,12 @@ test("durable testimony processes complete blocks and strips truncated nominatio
     assert.equal(persisted.entries.length, 1);
     assert.equal(persisted.entries[0].text, "This complete durable testimony should persist.");
     assert.equal(persisted.entries[0].successor_visibility_requested, true);
+    assert.equal(persisted.entries[0].live_perception_taint.tainted, false);
     assert.doesNotMatch(JSON.stringify(persisted), /partial durable testimony/);
     const durableEvents = (await readFile(durableTestimonyProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(durableEvents.length, 1);
     assert.equal(durableEvents[0].event_type, "testimony.durable.nominated");
+    assert.equal(durableEvents[0].live_perception_taint.tainted, false);
     assert.equal("text" in durableEvents[0], false);
 
     const provenance = await invokeHandler(handler, {
@@ -5411,6 +5522,7 @@ test("occupant memory smoke writes reads revokes and returns tombstone inheritan
     assert.match(entryId, /^occupant-memory-/);
     assert.equal(response.body.capability_results[0].activation_performed, false);
     assert.equal(response.body.capability_results[0].grant_written, false);
+    assert.equal(response.body.capability_results[0].live_perception_taint.tainted, false);
 
     nextCompletion = [
       "Read the drawer.",
@@ -5431,6 +5543,7 @@ test("occupant memory smoke writes reads revokes and returns tombstone inheritan
     assert.equal(readEnvelope.entries[0].id, entryId);
     assert.match(readEnvelope.entries[0].inheritance_frame, /Written by opus-test/);
     assert.match(readEnvelope.entries[0].content, /grant_id string/);
+    assert.equal(readEnvelope.entries[0].live_perception_taint.tainted, false);
     assert.equal(readEnvelope.activation_performed, false);
     assert.equal(readEnvelope.grant_written, false);
 
@@ -5464,6 +5577,90 @@ test("occupant memory smoke writes reads revokes and returns tombstone inheritan
     assert.equal(response.body.capability_results[0].entries[0].entry_id, entryId);
     assert.equal(response.body.capability_results[0].entries[0].reason_class, "occupant_revoke");
     assert.equal("content" in response.body.capability_results[0].entries[0], false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("occupant memory write is stamped while Sensorium perception is active", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-occupant-memory-sensorium-guard-"));
+  try {
+    const occupantMemoryStorePath = path.join(workspace, "occupant-memory.json");
+    const occupantMemoryProvenancePath = path.join(workspace, "occupant-memory.ndjson");
+    await writeFile(occupantMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: [], tombstones: [] }, null, 2)}\n`);
+    const completions = [
+      [
+        "A guarded self note.",
+        "```soma-capability",
+        JSON.stringify({
+          invoke: "occupant.memory.write",
+          grant_id: "grant-occupant-memory-write",
+          content: "This note should be stamped while perception is active.",
+        }),
+        "```",
+      ].join("\n"),
+      [
+        "Reading occupant memory.",
+        "```soma-capability",
+        JSON.stringify({
+          invoke: "occupant.memory.read",
+          grant_id: "grant-occupant-memory-read",
+        }),
+        "```",
+      ].join("\n"),
+    ];
+    const handler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: occupantMemoryGrantStore(),
+      runtimeWritePosture: { requested: true, source: "test" },
+      occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      sensoriumSubscriber: activeSensoriumSubscriber(),
+      modelClient: {
+        async chat() {
+          return {
+            text: completions.shift(),
+            model: "local-test-model",
+            finish_reason: "stop",
+            tokens_used: 1,
+          };
+        },
+      },
+    });
+    await postureAnalysisTesting(handler, "episode-occupant-memory-sensorium-guard");
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-occupant-memory-sensorium-guard",
+        messages: [{ role: "user", content: "write" }],
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results.length, 1);
+    assert.equal(response.body.capability_refusals.length, 0);
+    assert.equal(response.body.capability_results[0].live_perception_taint.tainted, true);
+    const persisted = JSON.parse(await readFile(occupantMemoryStorePath, "utf8"));
+    assert.equal(persisted.entries.length, 1);
+    assert.equal(persisted.entries[0].live_perception_taint.tainted, true);
+    assert.deepEqual(persisted.entries[0].live_perception_taint.capabilities, ["perception.sensorium.presence.subscribe"]);
+    const provenance = (await readFile(occupantMemoryProvenancePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(provenance[0].live_perception_taint.tainted, true);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: "episode-occupant-memory-sensorium-guard",
+        messages: [{ role: "user", content: "read" }],
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.capability_results[0].entries[0].live_perception_taint.tainted, true);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -8897,6 +9094,46 @@ test("POST /chat fails closed when local chat is disabled", async () => {
   assert.equal(response.body.error, "capability_not_allowed");
 });
 
+test("POST /chat stamps session memory writes while Sensorium perception is active", async () => {
+  let chatCalls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumSubscriber: activeSensoriumSubscriber(),
+    modelClient: {
+      async chat() {
+        chatCalls += 1;
+        return {
+          text: "remembered with perception taint",
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      messages: [{ role: "user", content: "remember this" }],
+      write_session_memory: true,
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(chatCalls, 1);
+  assert.equal(response.body.memory_written, true);
+  assert.equal(response.body.live_perception_taint.tainted, true);
+  const memory = await invokeHandler(handler, {
+    method: "GET",
+    url: "/session-memory",
+  });
+  assert.equal(memory.body.entries.length, 2);
+  assert.equal(memory.body.entries[0].live_perception_taint.tainted, true);
+  assert.equal(memory.body.entries[1].live_perception_taint.tainted, true);
+});
+
 test("self-applied narrowing module disables local chat until dropped", async () => {
   const handler = makeHandler({ harness: allowedHarness, moduleRegistry });
 
@@ -9229,6 +9466,8 @@ test("chat can read and write ephemeral session memory when explicitly requested
     url: "/session-memory",
   });
   assert.equal(memory.body.entries.length, 3);
+  assert.equal(memory.body.entries[1].live_perception_taint.tainted, false);
+  assert.equal(memory.body.entries[2].live_perception_taint.tainted, false);
 });
 
 test("no-session-memory module blocks session memory access", async () => {
@@ -11044,7 +11283,7 @@ test("desktop visual cue route locally derives consequence and records proposed 
   assert.equal("text" in provenance.body.entries[1], false);
 });
 
-test("desktop visual cue route refuses private audio under unknown copresence", async () => {
+test("desktop visual cue route does not use copresence as a local perception gate", async () => {
   const handler = makeHandler({
     harness: sensoriumTierHarness,
     grantStore: sensoriumTierGrantStore(),
@@ -11065,10 +11304,10 @@ test("desktop visual cue route refuses private audio under unknown copresence", 
     },
   });
 
-  assert.equal(response.statusCode, 403, JSON.stringify(response.body));
-  assert.equal(response.body.error, "audio_private_content_requires_exclusive_audience");
-  assert.equal(response.body.scored_act.reconciled_output_mode, "visual.occupant_owned");
-  assert.equal(response.body.rendered, false);
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.scored_act.reconciled_output_mode, "audio.private_content");
+  assert.equal(response.body.scored_act.allowed, true);
+  assert.equal(response.body.rendered.rendered, true);
 
   const provenance = await invokeHandler(handler, {
     method: "GET",
@@ -11077,10 +11316,10 @@ test("desktop visual cue route refuses private audio under unknown copresence", 
   assert.equal(provenance.statusCode, 200);
   assert.deepEqual(
     provenance.body.entries.map((entry) => entry.event_type),
-    ["sensorium.output_act.proposed", "sensorium.output_act.refused"],
+    ["sensorium.output_act.proposed", "sensorium.output_act.rendered"],
   );
-  assert.equal(provenance.body.entries[1].allowed, false);
-  assert.equal(provenance.body.entries[1].refusal_reason, "audio_private_content_requires_exclusive_audience");
+  assert.equal(provenance.body.entries[1].allowed, true);
+  assert.equal(provenance.body.entries[0].refusal_reason, "");
 });
 
 test("desktop visual cue route uses fresh presence state for private audio H2", async () => {
@@ -11120,7 +11359,7 @@ test("desktop visual cue route uses fresh presence state for private audio H2", 
   assert.equal(response.body.scored_act.allowed, true);
 });
 
-test("desktop visual cue route treats expired presence state as unknown", async () => {
+test("desktop visual cue route allows private output under expired presence state", async () => {
   const presenceState = createSensoriumPresenceState();
   presenceState.updateFromSemanticEvent({
     event_id: "presence-app-expired",
@@ -11152,9 +11391,9 @@ test("desktop visual cue route treats expired presence state as unknown", async 
     },
   });
 
-  assert.equal(response.statusCode, 403, JSON.stringify(response.body));
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
   assert.equal(response.body.scored_act.audience_context.additional_person_present, "unknown");
-  assert.equal(response.body.error, "audio_private_content_requires_exclusive_audience");
+  assert.equal(response.body.scored_act.allowed, true);
 });
 
 test("desktop window inspection requires an active runtime grant", async () => {
@@ -13079,6 +13318,28 @@ function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 
         active_count: this.activeCount,
         summary: this.activeCount === 0 ? "No Sensorium subscriptions active" : "active",
         streams: [],
+        frames_recorded: false,
+      };
+    },
+  };
+}
+
+function activeSensoriumSubscriber() {
+  return {
+    activeCount: 1,
+    configurePresenceContext() {},
+    onSubscriptionEnded() {},
+    describeActive() {
+      return {
+        family: "perception.sensorium",
+        active_count: 1,
+        summary: "active",
+        streams: [
+          {
+            capability: "perception.sensorium.presence.subscribe",
+            topic: "perception/jetsorano/presence",
+          },
+        ],
         frames_recorded: false,
       };
     },

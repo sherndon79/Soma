@@ -13,6 +13,7 @@ const ALLOWED_FIELDS = new Set([
   "episode_id",
   "occupant_id",
   "forum_post_ids",
+  "live_perception_taint",
   "reason",
   "timestamp",
   "disclosure_version",
@@ -110,11 +111,32 @@ export function validateDurableTestimonyProvenanceEvent(event = {}) {
     episode_id: String(event.episode_id ?? ""),
     occupant_id: String(event.occupant_id ?? ""),
     forum_post_ids: Array.isArray(event.forum_post_ids) ? event.forum_post_ids.map((id) => String(id)) : [],
+    live_perception_taint: normalizeLivePerceptionTaint(event.live_perception_taint),
     reason: String(event.reason ?? ""),
     timestamp: String(event.timestamp ?? ""),
     disclosure_version: String(event.disclosure_version ?? "durable-testimony-disclosure-v1"),
     activation_performed: false,
   };
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: normalizeStringList(value.capabilities),
+    topics: normalizeStringList(value.topics),
+  };
+}
+
+function normalizeStringList(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+    : [];
 }
 
 async function openWithStage(filePath, flag, stage) {

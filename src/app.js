@@ -2147,11 +2147,16 @@ export function createRequestHandler({
       if (req.method === "POST" && url.pathname === "/session-memory") {
         requireCapability(effectiveHarness, "memory.session.write");
         const body = await readJson(req);
-        const entry = sessionMemory.add(normalizeMemoryEntry(body));
+        const livePerceptionTaint = activeSensoriumPerceptionTaint({ sensoriumSubscriber });
+        const entry = sessionMemory.add({
+          ...normalizeMemoryEntry(body),
+          live_perception_taint: livePerceptionTaint,
+        });
         const event = provenanceLog.append(createSessionMemoryEvent({
           eventType: "memory.session.written",
           role: entry.role,
           source: entry.source,
+          livePerceptionTaint,
           caller: req.headers["x-soma-caller"] ?? "",
         }));
         logger.info?.("soma.provenance", event);
@@ -3281,6 +3286,7 @@ export function createRequestHandler({
           });
           return;
         }
+        const livePerceptionTaint = activeSensoriumPerceptionTaint({ sensoriumSubscriber });
         let memoryContext = "";
 
         try {
@@ -3662,6 +3668,7 @@ export function createRequestHandler({
           forums,
           episodeId: episode.id,
           posts: forumExtraction.posts,
+          livePerceptionTaint,
           provenanceLog,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -3688,6 +3695,7 @@ export function createRequestHandler({
           providerRegistry,
           desktopActuationTable,
           sensoriumPresenceState,
+          livePerceptionTaint,
           writePosture,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -3704,6 +3712,7 @@ export function createRequestHandler({
           durableTestimonyStoreIo,
           durableTestimonyStoreLock,
           durableTestimonyProvenance: durableTestimonyMutationProvenance,
+          livePerceptionTaint,
           provenanceLog,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
@@ -3720,12 +3729,14 @@ export function createRequestHandler({
               role: "user",
               content: lastUserMessage.content,
               source: "chat",
+              live_perception_taint: livePerceptionTaint,
             });
           }
           sessionMemory.add({
             role: "assistant",
             content: String(completion.text ?? ""),
             source: "chat",
+            live_perception_taint: livePerceptionTaint,
           });
         }
 
@@ -3785,7 +3796,9 @@ export function createRequestHandler({
           analysis_testing_briefing_carried: briefingCarried,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
+          forum_posts_blocked: 0,
           forum_posts_truncated: forumExtraction.truncatedPosts,
+          live_perception_taint: livePerceptionTaint,
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
@@ -3834,7 +3847,9 @@ export function createRequestHandler({
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
+          forum_posts_blocked: 0,
           forum_posts_truncated: forumExtraction.truncatedPosts,
+          live_perception_taint: livePerceptionTaint,
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
@@ -5547,7 +5562,7 @@ function summarizeForumPosts(posts = []) {
   });
 }
 
-function appendForumPost(forum, { author, authorId = "", type = "", content = "" } = {}) {
+function appendForumPost(forum, { author, authorId = "", type = "", content = "", livePerceptionTaint = null } = {}) {
   const normalizedAuthor = normalizeForumAuthor(author);
   const normalizedType = normalizeForumPostType(normalizedAuthor, type);
   const normalizedContent = String(content ?? "").trim();
@@ -5566,6 +5581,7 @@ function appendForumPost(forum, { author, authorId = "", type = "", content = ""
     author_id: String(authorId ?? "").trim() || normalizedAuthor,
     type: normalizedType,
     content: normalizedContent,
+    live_perception_taint: normalizeLivePerceptionTaint(livePerceptionTaint),
     created_at: now,
     delivered_at: normalizedAuthor === "steward" ? "" : now,
   };
@@ -5605,6 +5621,64 @@ function pendingStewardForumPosts(forums, episodeId = "") {
     return [];
   }
   return forum.posts.filter((post) => post.author === "steward" && !post.delivered_at);
+}
+
+function activeSensoriumPerceptionTaint({ sensoriumSubscriber = null } = {}) {
+  const disclosure = activeSensoriumDisclosure(sensoriumSubscriber);
+  const activeCount = Number.isInteger(sensoriumSubscriber?.activeCount)
+    ? sensoriumSubscriber.activeCount
+    : disclosure.active_count;
+  if (activeCount <= 0) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: "live_sensorium_perception_active",
+    scope: "session",
+    active_count: Math.max(0, activeCount),
+    capabilities: activeSensoriumDisclosureStrings(disclosure.streams, "capability"),
+    topics: activeSensoriumDisclosureStrings(disclosure.streams, "topic"),
+  };
+}
+
+function activeSensoriumDisclosure(sensoriumSubscriber = null) {
+  if (typeof sensoriumSubscriber?.describeActive !== "function") {
+    return { active_count: 0, streams: [] };
+  }
+  try {
+    const disclosure = sensoriumSubscriber.describeActive();
+    const streams = Array.isArray(disclosure?.streams) ? disclosure.streams : [];
+    const activeCount = Number.isInteger(disclosure?.active_count) ? disclosure.active_count : streams.length;
+    return { active_count: Math.max(0, activeCount), streams };
+  } catch {
+    return { active_count: 0, streams: [] };
+  }
+}
+
+function activeSensoriumDisclosureStrings(streams = [], field = "") {
+  return [...new Set(
+    streams
+      .map((stream) => String(stream?.[field] ?? "").trim())
+      .filter(Boolean),
+  )].slice(0, 16);
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: Array.isArray(value.capabilities)
+      ? value.capabilities.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+      : [],
+    topics: Array.isArray(value.topics)
+      ? value.topics.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+      : [],
+  };
 }
 
 function markForumPostsDelivered(posts = []) {
@@ -5757,6 +5831,7 @@ async function processSpaceCapabilityInvocations({
   providerRegistry,
   sensoriumPresenceState,
   desktopActuationTable,
+  livePerceptionTaint = null,
   writePosture,
   logger = console,
   caller = "",
@@ -5980,6 +6055,7 @@ async function processSpaceCapabilityInvocations({
         provenanceLog,
         providerRegistry,
         capabilityCatalog,
+        livePerceptionTaint,
         logger,
         caller,
       });
@@ -6171,6 +6247,7 @@ function processOccupantMemoryReadInvocation({
   provenanceLog,
   providerRegistry,
   capabilityCatalog,
+  livePerceptionTaint = null,
   logger = console,
   caller = "",
 } = {}) {
@@ -6259,6 +6336,7 @@ async function processOccupantMemoryWriteInvocation({
   provenanceLog,
   providerRegistry,
   capabilityCatalog,
+  livePerceptionTaint = null,
   logger = console,
   caller = "",
 } = {}) {
@@ -6334,6 +6412,7 @@ async function processOccupantMemoryWriteInvocation({
       grant_id: authorization.grant.id,
       provider: authorization.grant.provider,
       scope: authorization.grant.scope,
+      live_perception_taint: livePerceptionTaint,
     };
   const mutationResult = invocation.revoke
     ? await writeOccupantMemoryRevokeMutation({
@@ -6498,6 +6577,7 @@ function createOccupantMemoryReadEnvelope({ grant = {}, page = {}, episode, prov
         episode_id: item.entry.episode_id,
         created_at: item.entry.created_at,
         tags: item.entry.tags,
+        live_perception_taint: item.entry.live_perception_taint,
         content: item.entry.content,
         inheritance_frame: `Written by ${item.entry.model_id || "unknown model"} in episode ${item.entry.episode_id || "unknown episode"} at ${item.entry.created_at}; you are their heir, not their author.`,
       }
@@ -6528,6 +6608,7 @@ function createOccupantMemoryWriteEnvelope({ grant = {}, mutationResult = {}, ac
     activation_performed: false,
     grant_written: false,
     durable: true,
+    live_perception_taint: mutationResult.entry?.live_perception_taint ?? { tainted: false },
     provenance_id: "",
     mutation_event_type: mutationResult.event?.event_type ?? "",
     result: {
@@ -9236,6 +9317,7 @@ async function processDurableTestimonyDirectives({
   durableTestimonyStoreIo,
   durableTestimonyStoreLock,
   durableTestimonyProvenance,
+  livePerceptionTaint = null,
   provenanceLog,
   logger = console,
   caller = "",
@@ -9350,6 +9432,7 @@ async function processDurableTestimonyDirectives({
           episode_id: episode?.id ?? "",
           occupant_id: episode?.posture?.occupant_id ?? "",
           forum_post_ids: directive.forum_post_ids,
+          live_perception_taint: livePerceptionTaint,
         },
         context: durableTestimonyMutationContext({ episode, domain }),
       });
@@ -9566,6 +9649,7 @@ function recordOccupantForumPosts({
   forums,
   episodeId = "",
   posts = [],
+  livePerceptionTaint = null,
   provenanceLog,
   logger = console,
   caller = "",
@@ -9581,6 +9665,7 @@ function recordOccupantForumPosts({
       authorId: "occupant",
       type: entry.type,
       content: entry.content,
+      livePerceptionTaint,
     });
     const event = provenanceLog.append(createForumPostEvent({ forum, post, caller }));
     logger.info?.("soma.provenance", event);
@@ -10325,7 +10410,7 @@ function createEscalationProposedEvent({ assessment, caller }) {
   };
 }
 
-function createSessionMemoryEvent({ eventType, role = "", source = "", removed = null, caller }) {
+function createSessionMemoryEvent({ eventType, role = "", source = "", removed = null, livePerceptionTaint = null, caller }) {
   const event = {
     id: cryptoRandomId(),
     timestamp: new Date().toISOString(),
@@ -10334,6 +10419,7 @@ function createSessionMemoryEvent({ eventType, role = "", source = "", removed =
     caller_identity: caller,
     allowed: true,
     memory_written: eventType === "memory.session.written",
+    live_perception_taint: normalizeLivePerceptionTaint(livePerceptionTaint),
     remote_service_used: false,
   };
 
@@ -10498,6 +10584,7 @@ function createForumPostEvent({ forum, post, caller = "" } = {}) {
     post_id: post?.post_id ?? "",
     post_author: post?.author ?? "",
     post_type: post?.type ?? "",
+    live_perception_taint: normalizeLivePerceptionTaint(post?.live_perception_taint),
     caller_identity: caller,
     allowed: true,
     content_included: false,

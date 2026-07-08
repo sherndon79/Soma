@@ -147,6 +147,7 @@ function createDurableTestimonyNominatedEvent({ entry }) {
     episode_id: entry.episode_id,
     occupant_id: entry.occupant_id,
     forum_post_ids: entry.forum_post_ids,
+    live_perception_taint: entry.live_perception_taint,
     reason: "",
     timestamp: entry.created_at,
     disclosure_version: entry.disclosure_version,

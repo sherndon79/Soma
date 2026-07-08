@@ -933,7 +933,7 @@ test("depth samples with malformed payloads count schema mismatches only", async
   assert.equal("stream_summary_observed" in endSummary, false);
 });
 
-test("presence events update current presence state with active episode context", async () => {
+test("presence events update current presence state without occupant-count derivation", async () => {
   const manager = new FakeManager();
   const presenceState = createSensoriumPresenceState({
     now: () => new Date("2026-06-26T01:00:00.000Z"),
@@ -970,14 +970,14 @@ test("presence events update current presence state with active episode context"
   assert.equal(
     presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
       .additional_person_present,
-    "not_detected",
+    "present",
   );
   const disclosure = subscriber.describeActive();
   assert.equal(disclosure.streams[0].host, "jetsorano");
   assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);
   assert.equal(disclosure.streams[0].presence_summary_observed.person_count, 1);
   assert.equal(disclosure.streams[0].presence_summary_observed.count_bucket, "1");
-  assert.equal(disclosure.streams[0].presence_summary_observed.additional_person_present, "not_detected");
+  assert.equal(disclosure.streams[0].presence_summary_observed.additional_person_present, "present");
   assert.equal(
     disclosure.streams[0].presence_summary_observed.sensorium_schema,
     "perception.presence.v0.1",
@@ -1035,7 +1035,7 @@ test("pose samples surface full bounded pose summary in active disclosure", asyn
   assert.equal(endSummary.last_frame_number, 85204);
 });
 
-test("presence events without active episode keep visitor-when-away floor", async () => {
+test("presence events without active episode remain descriptive", async () => {
   const manager = new FakeManager();
   const presenceState = createSensoriumPresenceState();
   manager.enqueueStartSuccess({
@@ -1061,7 +1061,7 @@ test("presence events without active episode keep visitor-when-away floor", asyn
   assert.equal(
     presenceState.read({ now: () => new Date("2026-06-26T01:00:05.000Z") })
       .additional_person_present,
-    "present",
+    "not_detected",
   );
 });
 

@@ -150,6 +150,7 @@ function createOccupantMemoryWrittenEvent({ entry }) {
     grant_id: entry.grant_id,
     provider: entry.provider,
     scope: entry.scope,
+    live_perception_taint: entry.live_perception_taint,
     activation_performed: false,
   };
 }

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  REVIEWED_DEPTH_FOV_COVERAGE,
   createDepthPresenceSemanticEvent,
   createScreenStructureSemanticEvent,
   deriveOccupantSessionContext,
@@ -33,7 +32,7 @@ test("screen structure semantic event is minimized and short lived", () => {
   assert.deepEqual(event.policy_effects.allowed_output_modes, ["visual.occupant_owned"]);
 });
 
-test("screen structure event reason codes use normalized audience context", () => {
+test("screen structure event does not degrade policy effects for copresence", () => {
   const event = createScreenStructureSemanticEvent({
     inspection: { focus_available: false },
     audienceContext: {
@@ -47,6 +46,7 @@ test("screen structure event reason codes use normalized audience context", () =
 
   assert.equal(event.audience_context.additional_person_present, "not_detected");
   assert.deepEqual(event.policy_effects.reason_codes, []);
+  assert.deepEqual(event.policy_effects.blocked_output_modes, []);
 });
 
 test("output act consequence class is locally derived and caller class is ignored", () => {
@@ -72,7 +72,7 @@ test("output act consequence class is locally derived and caller class is ignore
   assert.equal(scored.authority.requires_lca, false);
 });
 
-test("unknown copresence blocks private audio but allows occupant-owned visual output", () => {
+test("unknown copresence does not block local output by itself", () => {
   const audio = scoreSensoriumOutputAct({
     proposal: {
       act_kind: "visual_cue.show",
@@ -83,9 +83,9 @@ test("unknown copresence blocks private audio but allows occupant-owned visual o
     },
     liveAudienceContext: localAudienceContext(),
   });
-  assert.equal(audio.allowed, false);
-  assert.equal(audio.refusal_reason, "audio_private_content_requires_exclusive_audience");
-  assert.equal(audio.reconciled_output_mode, "visual.occupant_owned");
+  assert.equal(audio.allowed, true);
+  assert.equal(audio.refusal_reason, "");
+  assert.equal(audio.reconciled_output_mode, "audio.private_content");
 
   const visual = scoreSensoriumOutputAct({
     proposal: {
@@ -98,7 +98,7 @@ test("unknown copresence blocks private audio but allows occupant-owned visual o
     liveAudienceContext: localAudienceContext(),
   });
   assert.equal(visual.allowed, true);
-  assert.equal(visual.reconciliation_reason, "visual_mode_allowed_under_unknown_copresence");
+  assert.equal(visual.reconciliation_reason, "local_perception_sink_guarded");
 });
 
 test("normalized audience context preserves explicit not-detected copresence", () => {
@@ -120,12 +120,12 @@ test("normalized audience context preserves explicit not-detected copresence", (
 
   assert.equal(scored.audience_context.additional_person_present, "not_detected");
   assert.equal(scored.allowed, true);
-  assert.equal(scored.reconciliation_reason, "exclusive_audience_observed");
+  assert.equal(scored.reconciliation_reason, "local_perception_sink_guarded");
 });
 
 test("depth presence event is minimized and carries no raw broker fields", () => {
   const event = createDepthPresenceSemanticEvent({
-    brokerEvent: depthBrokerEvent({ count_bucket: "1", additional_person_present: "present" }),
+    brokerEvent: depthBrokerEvent({ person_count: 2, count_bucket: "2_plus", additional_person_present: "present" }),
     episode: activeEpisode(),
     sourceGrant: { id: "grant-depth", provider: "depth-broker" },
     now: () => new Date("2026-06-25T19:00:00.000Z"),
@@ -143,18 +143,17 @@ test("depth presence event is minimized and carries no raw broker fields", () =>
     content_included: false,
   });
   assert.deepEqual(event.payload, {
-    person_count: 1,
-    count_bucket: "1",
+    person_count: 2,
+    count_bucket: "2_plus",
     identity: "not_performed",
     copresence_source: "depth",
-    coverage_scope: "depth_fov",
-    coverage_assumption: "unreviewed_depth_fov",
   });
   assert.equal(JSON.stringify(event).includes("payload_bytes"), false);
-  assert.equal(event.audience_context.additional_person_present, "not_detected");
+  assert.equal(event.audience_context.additional_person_present, "present");
+  assert.deepEqual(event.policy_effects.blocked_output_modes, []);
 });
 
-test("depth presence treats one person with no active occupant as visitor and blocks private audio", () => {
+test("depth presence carries broker copresence without deriving visitor status", () => {
   const event = createDepthPresenceSemanticEvent({
     brokerEvent: depthBrokerEvent({
       count_bucket: "1",
@@ -164,12 +163,12 @@ test("depth presence treats one person with no active occupant as visitor and bl
   const scored = scorePrivateAudio(event.audience_context);
 
   assert.equal(event.audience_context.seth_present, "unknown");
-  assert.equal(event.audience_context.additional_person_present, "present");
-  assert.equal(scored.allowed, false);
-  assert.equal(scored.refusal_reason, "audio_private_content_requires_exclusive_audience");
+  assert.equal(event.audience_context.additional_person_present, "not_detected");
+  assert.equal(scored.allowed, true);
+  assert.equal(scored.refusal_reason, "");
 });
 
-test("depth presence treats one person plus active occupant as occupant alone", () => {
+test("depth presence does not override broker copresence for active occupant", () => {
   const event = createDepthPresenceSemanticEvent({
     brokerEvent: depthBrokerEvent({ count_bucket: "1", additional_person_present: "present" }),
     episode: activeEpisode(),
@@ -177,11 +176,11 @@ test("depth presence treats one person plus active occupant as occupant alone", 
   const scored = scorePrivateAudio(event.audience_context);
 
   assert.equal(event.audience_context.seth_present, "session_assumed_present");
-  assert.equal(event.audience_context.additional_person_present, "not_detected");
+  assert.equal(event.audience_context.additional_person_present, "present");
   assert.equal(scored.allowed, true);
 });
 
-test("depth presence count unknown blocks private audio", () => {
+test("depth presence count unknown does not block local output by itself", () => {
   const event = createDepthPresenceSemanticEvent({
     brokerEvent: depthBrokerEvent({ count_bucket: "unknown" }),
     episode: activeEpisode(),
@@ -189,32 +188,24 @@ test("depth presence count unknown blocks private audio", () => {
   const scored = scorePrivateAudio(event.audience_context);
 
   assert.equal(event.audience_context.additional_person_present, "unknown");
-  assert.equal(scored.allowed, false);
+  assert.equal(scored.allowed, true);
 });
 
-test("depth presence count zero without reviewed coverage remains unknown", () => {
+test("depth presence count zero carries broker audience without coverage assumption", () => {
   const event = createDepthPresenceSemanticEvent({
-    brokerEvent: depthBrokerEvent({ count_bucket: "0", confidence_bucket: "medium" }),
+    brokerEvent: depthBrokerEvent({
+      person_count: 0,
+      count_bucket: "0",
+      additional_person_present: "not_detected",
+      confidence_bucket: "medium",
+    }),
     episode: activeEpisode(),
   });
   const scored = scorePrivateAudio(event.audience_context);
 
-  assert.equal(event.payload.coverage_assumption, "unreviewed_depth_fov");
-  assert.equal(event.audience_context.additional_person_present, "unknown");
-  assert.equal(scored.allowed, false);
-});
-
-test("depth presence count zero with reviewed coverage and active occupant allows private audio", () => {
-  const event = createDepthPresenceSemanticEvent({
-    brokerEvent: depthBrokerEvent({ count_bucket: "0", confidence_bucket: "medium" }),
-    episode: activeEpisode(),
-    coverageAssumption: REVIEWED_DEPTH_FOV_COVERAGE,
-  });
-  const scored = scorePrivateAudio(event.audience_context);
-
-  assert.equal(event.payload.coverage_assumption, REVIEWED_DEPTH_FOV_COVERAGE);
   assert.equal(event.audience_context.additional_person_present, "not_detected");
   assert.equal(scored.allowed, true);
+  assert.equal("coverage_assumption" in event.payload, false);
 });
 
 test("depth presence rejects raw broker fields", () => {
@@ -239,7 +230,7 @@ test("depth presence ejected episode yields unknown rather than private-safe aud
   assert.equal(context.occupant_assumed_present, false);
   assert.equal(context.basis, "episode_ejected");
   assert.equal(event.audience_context.additional_person_present, "unknown");
-  assert.equal(scored.allowed, false);
+  assert.equal(scored.allowed, true);
 });
 
 function depthBrokerEvent(overrides = {}) {

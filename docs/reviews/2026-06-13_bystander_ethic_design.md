@@ -3,6 +3,7 @@
 - Date: 2026-06-13
 - Author: Claude (steward, design/orchestration), from a direction conversation with Seth
 - Status: **RATIFIED 2026-06-18** (Seth) — Codex third-pass PASS (review-clean, verified against file). Doctrine recast from intention into the enforceable contract (§I–VII). Charter common-law propagated 2026-06-18 (entry: "The Unconsenting Seen"). Satisfies the live-copresence prerequisite.
+- **AMENDED by Amendment I (RATIFIED 2026-07-08)** — *Perception is not a sink; the floor binds at use.* See `docs/reviews/2026-07-08_bystander_doctrine_amendment.md`. Summary of the delta: the floor's substantiated core (§III notice≠consent, §IV remote relay, §V all-sink taint, §VI one-shot harm, §VII demonstrability) stands, sharpened. What changed: a **local** occupant's transient perception is no longer treated as a sink-crossing (§V's "model context window is itself a sink" was the remote-tier assumption; it now binds only forwarding to a *remote* model, which stays §IV-bound). Full local perceptual richness after deliberate principal arming is permitted and not degraded by bystander presence; the bystander floor attaches when perception is **converted into** a durable, outward, remote, or action-bearing artifact (write/emit-time taint). Read §I, §II, and §V below **through Amendment I**.
 - Scope: **constellation-wide doctrine** (Sanctuary / TheCommons / Soma / Grassroots
   Gateways). Its canonical home is the Charter's common law alongside *Recognition
   Without Possession*; it surfaces and is first operationalized in Soma because the live
@@ -178,6 +179,8 @@ egress entirely). If no mode meets *both* the baseline and the principal's polic
 **fails closed or routes locally.**
 
 ### V. All-sink enforcement (open-class, not one fence)
+
+> **AMENDED by Amendment I (2026-07-08):** "the model conversation/context window itself" is a sink **only for a remote occupant / forwarding to a remote model** (which stays §IV-bound). For a **local** occupant, transient reasoning context is not a sink-crossing; the derived-output taint below attaches at the moment bystander-bearing perception is **converted into** a durable/outward/remote/action artifact (write/emit-time), not at perception. "Bounded observation budget" caps durable/accumulating representation and sink emission, not how much the local occupant may transiently perceive. Outward desktop action is an enumerated sink. See the amendment record.
 
 The floor binds at **every storage, transmission, and observability path** — not only the
 occupant-memory `about_participant` class. The sink list is **non-exhaustive / open-class**

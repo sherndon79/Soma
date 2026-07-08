@@ -16,6 +16,7 @@ export class SessionMemory {
         durable: true,
         durable_memory_id: entry.id,
         created_at: entry.created_at,
+        live_perception_taint: normalizeLivePerceptionTaint(entry.live_perception_taint),
       });
     }
     if (this.entries.length > this.maxEntries) {
@@ -28,13 +29,14 @@ export class SessionMemory {
     return [...this.entries];
   }
 
-  add({ role, content, source = "manual" }) {
+  add({ role, content, source = "manual", live_perception_taint: livePerceptionTaint = null }) {
     const entry = {
       id: randomUUID(),
       role,
       content,
       source,
       created_at: new Date().toISOString(),
+      live_perception_taint: normalizeLivePerceptionTaint(livePerceptionTaint),
     };
     this.entries.push(entry);
     if (this.entries.length > this.maxEntries) {
@@ -55,4 +57,24 @@ export class SessionMemory {
     }
     return this.entries.map((entry) => `- ${entry.role}: ${entry.content}`).join("\n");
   }
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: normalizeStringList(value.capabilities),
+    topics: normalizeStringList(value.topics),
+  };
+}
+
+function normalizeStringList(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+    : [];
 }

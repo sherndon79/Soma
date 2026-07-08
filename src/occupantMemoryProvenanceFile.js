@@ -18,6 +18,7 @@ const ALLOWED_FIELDS = new Set([
   "grant_id",
   "provider",
   "scope",
+  "live_perception_taint",
   "activation_performed",
 ]);
 
@@ -117,8 +118,29 @@ export function validateOccupantMemoryProvenanceEvent(event = {}) {
     grant_id: String(event.grant_id ?? ""),
     provider: String(event.provider ?? ""),
     scope: String(event.scope ?? ""),
+    live_perception_taint: normalizeLivePerceptionTaint(event.live_perception_taint),
     activation_performed: false,
   };
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: normalizeStringList(value.capabilities),
+    topics: normalizeStringList(value.topics),
+  };
+}
+
+function normalizeStringList(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+    : [];
 }
 
 async function openWithStage(filePath, flag, stage) {

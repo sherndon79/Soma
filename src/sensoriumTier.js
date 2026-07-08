@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 export const SENSORIUM_TIER_PROVIDER_ID = "soma.provider.sensorium-tier";
 export const SENSORIUM_SEMANTIC_EVENT_CAPABILITY = "sensorium.semantic_events.read";
 export const DESKTOP_VISUAL_CUE_CAPABILITY = "desktop.visual_cue.present";
-export const REVIEWED_DEPTH_FOV_COVERAGE = "reviewed_depth_fov_covers_private_audio_risk";
 
 const ALLOWED_SEMANTIC_EVENT_TYPES = new Set(["screen.structure", "presence.depth"]);
 const ALLOWED_VISUAL_ACT_KINDS = new Set(["visual_cue.show", "surface.present"]);
@@ -95,10 +94,8 @@ export function createScreenStructureSemanticEvent({
     payload: screenStructurePayload(inspection),
     policy_effects: {
       allowed_output_modes: ["visual.occupant_owned"],
-      blocked_output_modes: ["audio.private_content"],
-      reason_codes: normalizedAudienceContext.additional_person_present === "not_detected"
-        ? []
-        : ["copresence_not_exclusive"],
+      blocked_output_modes: [],
+      reason_codes: [],
     },
   };
   assertSemanticEvent(event);
@@ -207,40 +204,17 @@ export function deriveOccupantSessionContext({ episode } = {}) {
 export function deriveDepthPresenceAudienceContext({
   brokerEvent = {},
   episode,
-  coverageAssumption = "",
 } = {}) {
   const normalizedEvent = validateBrokerDepthPresenceEvent(brokerEvent);
   const occupantSessionContext = deriveOccupantSessionContext({ episode });
-  const coverage = stringValue(coverageAssumption);
-  let additionalPersonPresent = "unknown";
-
-  if (occupantSessionContext.basis === "episode_ejected") {
-    additionalPersonPresent = "unknown";
-  } else if (normalizedEvent.count_bucket === "unknown") {
-    additionalPersonPresent = "unknown";
-  } else if (normalizedEvent.count_bucket === "2_plus") {
-    additionalPersonPresent = "present";
-  } else if (normalizedEvent.count_bucket === "1") {
-    additionalPersonPresent = occupantSessionContext.occupant_assumed_present
-      ? "not_detected"
-      : "present";
-  } else if (
-    normalizedEvent.count_bucket === "0"
-    && occupantSessionContext.occupant_assumed_present
-    && normalizedEvent.confidence_bucket === "medium"
-    && coverage === REVIEWED_DEPTH_FOV_COVERAGE
-  ) {
-    additionalPersonPresent = "not_detected";
-  }
 
   return Object.freeze({
     audience_context: localAudienceContext({
       sethPresent: occupantSessionContext.seth_present_for_event,
-      additionalPersonPresent,
+      additionalPersonPresent: normalizedEvent.additional_person_present,
       copresenceSource: "depth",
     }),
     occupant_session_context: occupantSessionContext,
-    coverage_assumption: coverage || "unreviewed_depth_fov",
   });
 }
 
@@ -249,7 +223,6 @@ export function createDepthPresenceSemanticEvent({
   episode,
   sourceGrant = {},
   sourceCapability = "perception.sensorium.depth.subscribe",
-  coverageAssumption = "",
   now = () => new Date(),
   idFactory = randomUUID,
 } = {}) {
@@ -258,7 +231,6 @@ export function createDepthPresenceSemanticEvent({
   const derivedAudience = deriveDepthPresenceAudienceContext({
     brokerEvent: normalizedEvent,
     episode,
-    coverageAssumption,
   });
   const event = {
     schema_version: 1,
@@ -287,17 +259,11 @@ export function createDepthPresenceSemanticEvent({
       count_bucket: normalizedEvent.count_bucket,
       identity: "not_performed",
       copresence_source: "depth",
-      coverage_scope: "depth_fov",
-      coverage_assumption: derivedAudience.coverage_assumption,
     },
     policy_effects: {
       allowed_output_modes: ["visual.occupant_owned"],
-      blocked_output_modes: derivedAudience.audience_context.additional_person_present === "not_detected"
-        ? []
-        : ["audio.private_content"],
-      reason_codes: derivedAudience.audience_context.additional_person_present === "not_detected"
-        ? []
-        : ["copresence_not_exclusive"],
+      blocked_output_modes: [],
+      reason_codes: [],
     },
   };
   assertSemanticEvent(event);
@@ -525,25 +491,15 @@ function deriveConsequenceClass({
 }
 
 function reconcileAudience({ requestedAudienceScope, outputMode, audienceContext }) {
-  const exclusive = audienceContext.additional_person_present === "not_detected";
-  if (outputMode === "audio.private_content" && !exclusive) {
-    return {
-      allowed: false,
-      audience_scope: audienceContext.additional_person_present === "present"
-        ? "copresent_room"
-        : "unknown",
-      output_mode: "visual.occupant_owned",
-      private_content_allowed: false,
-      reason: "copresence_not_exclusive",
-      refusal_reason: "audio_private_content_requires_exclusive_audience",
-    };
-  }
+  const normalizedContext = localAudienceContext(audienceContext);
   return {
     allowed: true,
     audience_scope: requestedAudienceScope,
     output_mode: outputMode,
-    private_content_allowed: outputMode === "visual.occupant_owned",
-    reason: exclusive ? "exclusive_audience_observed" : "visual_mode_allowed_under_unknown_copresence",
+    private_content_allowed: outputMode !== "audio.neutral_earcon",
+    reason: normalizedContext.additional_person_present === "present"
+      ? "local_perception_not_degraded_by_copresence"
+      : "local_perception_sink_guarded",
     refusal_reason: "",
   };
 }

@@ -1,6 +1,8 @@
 # Sensorium Tier Contract — System-1 local perception/expression ↔ System-2 foundation deliberation
 
 Status: DESIGN DRAFT (Claude → Codex), 2026-06-23. Not yet built. For critique + build-shaping.
+
+> **RECONCILED 2026-07-08 — read the minimization framing through two later decisions.** This contract was written assuming the deliberating occupant is the *remote* System-2 tier, so "the occupant receives only minimized semantic events" and "input minimization protects bystanders" (§4) were correct *for a remote occupant across the egress seam*. Two ratified/settled decisions moved the seam: (1) the **perception-modalities direction** — the *local* occupant receives FULL perceptual richness (color/depth/presence/pose), gated solely on Seth's deliberate arming, never minimized for being local, because minimize-before-egress binds the boundary to the *remote/frontier* tier, not the on-box occupant; and (2) **Amendment I to the Bystander Doctrine** (RATIFIED 2026-07-08, `docs/reviews/2026-07-08_bystander_doctrine_amendment.md`) — perception is not a sink; the bystander floor binds at **use** (durable/outward/remote/action artifacts), not at what the local occupant perceives. So throughout this doc: the minimization seam is real and stays, but it sits between the **local occupant and the remote frontier tier** (and at durable/outward sinks), NOT between local perception and the occupant. §4's "input minimization protects bystanders" is superseded on the perception layer and preserved at the sink layer. Where this doc says the occupant gets only minimized events, read: *the remote tier* gets only minimized events; the local occupant gets full richness.
 North star: [[project_soma_north_star_narrow_band]] — narrow the band the human *feels* between
 working ON the computer and working WITH the agent, WITHOUT dissolving the mechanism seams that
 hold the bystander floor. Seamless on top, structured underneath.
@@ -79,6 +81,8 @@ through the authority gate AND the provenance/discretion gate as applicable. Bui
 ---
 
 ## 4. Minimization seams (run both ways, asymmetrically)
+
+> **Amendment I / perception-modalities reconciliation (2026-07-08):** this section is the one most affected. "Input minimization protects bystanders" holds at the **egress/sink** boundary (raw never leaves the box; the remote tier gets only minimized events; durable/outward/remote/action artifacts are floor-bound) — NOT at the local occupant's perception. The local occupant receives full richness after Seth arms it. Bystander protection is at **use**, not perception. See the top banner and the amendment record.
 
 - **Input minimization — protects BYSTANDERS.** The raw sensory stream (esp. camera/mic) NEVER
   egresses and never reaches System-2. The local tier's FIRST job on camera/mic, before any handoff

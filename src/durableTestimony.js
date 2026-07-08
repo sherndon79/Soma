@@ -76,6 +76,7 @@ export function durableTestimonyEntryFromInput(input = {}, context = {}) {
     forum_post_ids: Array.isArray(input.forum_post_ids)
       ? input.forum_post_ids.map((id) => boundedString(id, "forum_post_id", 128))
       : [],
+    live_perception_taint: normalizeLivePerceptionTaint(input.live_perception_taint ?? context.live_perception_taint),
     created_at: String(input.created_at ?? context.now?.() ?? new Date().toISOString()),
     created_by: boundedString(input.actor ?? input.created_by ?? "occupant", "actor", 64).trim() || "occupant",
     disclosure_version: boundedString(input.disclosure_version ?? "durable-testimony-disclosure-v1", "disclosure_version", 128),
@@ -95,6 +96,7 @@ export function publicDurableTestimonyEntry(entry = {}) {
     episode_id: String(entry.episode_id ?? ""),
     occupant_id: String(entry.occupant_id ?? ""),
     forum_post_ids: Array.isArray(entry.forum_post_ids) ? entry.forum_post_ids.map((id) => String(id)) : [],
+    live_perception_taint: normalizeLivePerceptionTaint(entry.live_perception_taint),
     created_at: String(entry.created_at ?? ""),
     created_by: String(entry.created_by ?? "occupant"),
     disclosure_version: String(entry.disclosure_version ?? "durable-testimony-disclosure-v1"),
@@ -143,6 +145,26 @@ function boundedString(value, field, maxLength) {
     throw durableTestimonyError(`testimony_durable_${field}_too_large`, `Durable testimony ${field} is too large.`);
   }
   return value;
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: normalizeStringList(value.capabilities),
+    topics: normalizeStringList(value.topics),
+  };
+}
+
+function normalizeStringList(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+    : [];
 }
 
 function durableTestimonyError(code, message) {

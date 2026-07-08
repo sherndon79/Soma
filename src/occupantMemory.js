@@ -139,6 +139,7 @@ export function occupantMemoryEntryFromInput(input = {}, context = {}, store = {
     grant_id: String(input.grant_id ?? context.grant?.id ?? "").trim(),
     provider: String(input.provider ?? context.grant?.provider ?? "").trim(),
     scope: String(input.scope ?? context.grant?.scope ?? "").trim(),
+    live_perception_taint: normalizeLivePerceptionTaint(input.live_perception_taint ?? context.live_perception_taint),
     status: "active",
   });
 }
@@ -190,6 +191,7 @@ export function publicOccupantMemoryEntry(entry = {}) {
     grant_id: String(entry.grant_id ?? ""),
     provider: String(entry.provider ?? ""),
     scope: String(entry.scope ?? ""),
+    live_perception_taint: normalizeLivePerceptionTaint(entry.live_perception_taint),
     status: String(entry.status ?? "active"),
   };
 }
@@ -258,6 +260,26 @@ function normalizeTombstoneReasonClass(value) {
     return reason;
   }
   throw occupantMemoryError("occupant_memory_tombstone_reason_invalid", "Occupant memory tombstone reason class is invalid.");
+}
+
+function normalizeLivePerceptionTaint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
+    return { tainted: false };
+  }
+  return {
+    tainted: true,
+    reason: String(value.reason ?? "live_sensorium_perception_active"),
+    scope: String(value.scope ?? "session"),
+    active_count: Number.isInteger(value.active_count) && value.active_count >= 0 ? value.active_count : 0,
+    capabilities: normalizeStringList(value.capabilities),
+    topics: normalizeStringList(value.topics),
+  };
+}
+
+function normalizeStringList(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
+    : [];
 }
 
 function encodeCursor(offset) {

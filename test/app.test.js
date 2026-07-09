@@ -21,7 +21,7 @@ import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
-import { encodeColorPayload } from "./support/msgpackStatus.js";
+import { encodeColorPayload, encodePresencePayload } from "./support/msgpackStatus.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -1800,9 +1800,21 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
 test("POST /model-visual/attach-requests/controller resolves real Sensorium subscription disclosure ids", async () => {
   const manager = new AppRouteSensoriumFakeManager();
   const nowIso = new Date().toISOString();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date(nowIso),
+  });
   const subscriber = new SensoriumSubscriber({
     manager,
     now: () => new Date(nowIso),
+    presenceState,
+    getPresenceEpisodeContext: () => ({
+      status: "active",
+      occupant_id: "seth",
+      posture: {
+        mode: "analysis_testing",
+        trust_basis: "human_set_episode",
+      },
+    }),
   });
   const subscriptionGrant = {
     ...SENSORIUM_TEST_GRANT_STORE.grants[0],
@@ -1815,6 +1827,22 @@ test("POST /model-visual/attach-requests/controller resolves real Sensorium subs
         ttl_ms: 2_000,
       },
     },
+  };
+  const presenceGrant = {
+    id: "grant-sensorium-presence-test",
+    status: "active",
+    capability: "perception.sensorium.presence.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    scope: "session",
+    constraints: {
+      topic: "perception/jetsorano/presence",
+      max_seconds: 60,
+      max_fps: 5,
+    },
+    approved_by: "user",
+    reason: "test fixture",
+    created_at: "2026-07-09T00:00:00.000Z",
+    activation_performed: false,
   };
   const envelope = modelVisualAttachActivationEnvelope({
     requestPatch: {
@@ -1834,20 +1862,19 @@ test("POST /model-visual/attach-requests/controller resolves real Sensorium subs
   };
   const modelClient = makeModelVisualDeliveryClient();
   const handler = makeHandler({
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
     grantStore: {
       schema_version: 1,
-      grants: [subscriptionGrant, visualGrant],
+      grants: [subscriptionGrant, presenceGrant, visualGrant],
     },
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     modelClient,
     sensoriumSubscriber: subscriber,
-    sensoriumPresenceState: {
-      ...envelope.presenceState,
-      observed_at: nowIso,
-    },
+    sensoriumPresenceState: presenceState,
   });
 
-  const subscription = await invokeHandler(handler, {
+  const colorSubscription = await invokeHandler(handler, {
     method: "POST",
     url: "/sensorium/subscriptions",
     body: {
@@ -1857,9 +1884,22 @@ test("POST /model-visual/attach-requests/controller resolves real Sensorium subs
       constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
     },
   });
-  assert.equal(subscription.statusCode, 201, JSON.stringify(subscription.body));
-  assert.equal(subscription.body.subscription_id, "sub-route-1");
+  assert.equal(colorSubscription.statusCode, 201, JSON.stringify(colorSubscription.body));
+  assert.equal(colorSubscription.body.subscription_id, "sub-route-1");
   assert.equal(subscriber.describeActive().streams[0].subscription_id, "sub-route-1");
+
+  const presenceSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/presence",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(presenceSubscription.statusCode, 201, JSON.stringify(presenceSubscription.body));
+  assert.equal(presenceSubscription.body.subscription_id, "sub-route-2");
 
   manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
     payloadBytes: encodeColorPayload({
@@ -1873,6 +1913,31 @@ test("POST /model-visual/attach-requests/controller resolves real Sensorium subs
     payloadSize: 128,
     captureTimestamp: nowIso,
   });
+  manager.emitSample("sub-route-2", "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      person_count: 1,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    }),
+    payloadSize: 64,
+    captureTimestamp: nowIso,
+  });
+
+  const status = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "operator",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(status.statusCode, 200, JSON.stringify(status.body));
+  assert.equal(status.body.floor_gate_inputs.presence_available, true);
+  assert.equal(status.body.floor_gate_inputs.presence_host_matches, true);
+  assert.equal(status.body.floor_gate_inputs.presence_fresh, true);
 
   const response = await invokeHandler(handler, {
     method: "POST",

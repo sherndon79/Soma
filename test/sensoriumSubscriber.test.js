@@ -1187,6 +1187,11 @@ test("presence events update current presence state without occupant-count deriv
       .additional_person_present,
     "present",
   );
+  assert.equal(
+    presenceState.snapshot({ now: () => new Date("2026-06-26T01:00:05.000Z") })
+      .source_host,
+    "jetsorano",
+  );
   const disclosure = subscriber.describeActive();
   assert.equal(disclosure.streams[0].host, "jetsorano");
   assert.equal(disclosure.streams[0].frames_consumed_so_far, 1);

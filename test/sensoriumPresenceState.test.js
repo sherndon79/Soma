@@ -17,6 +17,7 @@ test("presence state returns fresh audience context until expiry", () => {
 
   state.updateFromSemanticEvent({
     event_id: "presence-1",
+    source_host: "jetsorano",
     observed_at: "2026-06-26T01:00:01.000Z",
     expires_at: "2026-06-26T01:00:10.000Z",
     confidence_bucket: "medium",
@@ -45,6 +46,7 @@ test("presence state returns fresh audience context until expiry", () => {
       count_bucket: "1",
       additional_person_present: "not_detected",
       confidence_bucket: "medium",
+      source_host: "jetsorano",
       observed_at: "2026-06-26T01:00:01.000Z",
       expires_at: "2026-06-26T01:00:10.000Z",
     },
@@ -92,6 +94,7 @@ test("presence state expires to unknown audience on read", () => {
       count_bucket: "unknown",
       additional_person_present: "unknown",
       confidence_bucket: "unknown",
+      source_host: "",
       observed_at: "",
       expires_at: "",
     },

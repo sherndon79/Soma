@@ -612,7 +612,10 @@ export class SensoriumSubscriber {
         sourceCapability: sub.capability,
         now: this.#now,
       });
-      this.#presenceState?.updateFromSemanticEvent?.(semanticEvent);
+      this.#presenceState?.updateFromSemanticEvent?.({
+        ...semanticEvent,
+        source_host: hostFromTopic(sub.topic),
+      });
       sub._stats.streamSummaryObserved = {
         schema_version: semanticEvent.schema_version,
         sensorium_schema: summary.schema,

@@ -12,6 +12,7 @@ export function createSensoriumPresenceState({ now = () => new Date() } = {}) {
       }
       current = Object.freeze({
         audience_context: localAudienceContext(event.audience_context),
+        source_host: stringValue(event.source_host || event.source?.source_host || event.source?.host),
         person_count: normalizePersonCount(event.payload?.person_count),
         count_bucket: normalizeCountBucket(event.payload?.count_bucket),
         confidence_bucket: normalizeConfidenceBucket(event.confidence_bucket),
@@ -60,6 +61,7 @@ export function createSensoriumPresenceState({ now = () => new Date() } = {}) {
       count_bucket: normalizeCountBucket(current.count_bucket),
       additional_person_present: current.audience_context.additional_person_present,
       confidence_bucket: normalizeConfidenceBucket(current.confidence_bucket),
+      source_host: stringValue(current.source_host),
       observed_at: current.observed_at,
       expires_at: current.expires_at,
     });
@@ -78,9 +80,14 @@ function unavailableSnapshot(reason) {
     count_bucket: "unknown",
     additional_person_present: "unknown",
     confidence_bucket: "unknown",
+    source_host: "",
     observed_at: "",
     expires_at: "",
   });
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function normalizeCountBucket(value) {

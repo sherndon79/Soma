@@ -3781,6 +3781,18 @@ export function createRequestHandler({
               episodeId: episode.id,
             })
           : [];
+        const forumPostsBlocked = Math.max(0, forumExtraction.posts.length - occupantForumPosts.length);
+        const harnessFeedback = buildHarnessFeedback({
+          forumPostsAttempted: forumExtraction.posts.length,
+          forumPostsCreated: occupantForumPosts.length,
+          forumPostsBlocked,
+          forumPostsTruncated: forumExtraction.truncatedPosts,
+          durableTestimonyResult,
+          durableTestimonyTruncated: durableTestimonyExtraction.truncatedDirectives,
+          capabilityRefusals: spaceCapabilityResult.refusals,
+          capabilityParseDisclosures,
+        });
+        const occupantVisibleText = appendHarnessFeedback(completion.text, harnessFeedback);
 
         const allowedProvenance = {
           ...provenance,
@@ -3797,7 +3809,7 @@ export function createRequestHandler({
           analysis_testing_briefing_carried: briefingCarried,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
-          forum_posts_blocked: 0,
+          forum_posts_blocked: forumPostsBlocked,
           forum_posts_truncated: forumExtraction.truncatedPosts,
           live_perception_taint: livePerceptionTaint,
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
@@ -3824,7 +3836,7 @@ export function createRequestHandler({
         }
 
         writeJson(res, 200, {
-          text: String(completion.text ?? ""),
+          text: occupantVisibleText,
           model: completion.model,
           model_profile: runtimeProfile.id,
           requested_profile: requestedProfileId,
@@ -3848,7 +3860,7 @@ export function createRequestHandler({
           decision_notifications_delivered: deliveredDecisionDeliveries.length,
           forum_posts_delivered: deliveredForumPosts.length,
           forum_posts_created: occupantForumPosts.length,
-          forum_posts_blocked: 0,
+          forum_posts_blocked: forumPostsBlocked,
           forum_posts_truncated: forumExtraction.truncatedPosts,
           live_perception_taint: livePerceptionTaint,
           durable_testimony_nominated: durableTestimonyResult.nominated.length,
@@ -3865,6 +3877,7 @@ export function createRequestHandler({
           ],
           capability_invocation_parse_errors: spaceCapabilityExtraction.parseErrors,
           capability_invocations_truncated: spaceCapabilityExtraction.truncatedInvocations,
+          harness_feedback: harnessFeedback,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
           escalation_assessment: escalationAssessment
@@ -5801,6 +5814,78 @@ function capabilityBlockParserDisclosure(error = {}) {
     ? error.reason
     : "unknown";
   return `A capability-block-shaped fragment was present but unparseable: ${reason}. No capability was invoked from that fragment, and no fragment content was retained in this disclosure.`;
+}
+
+function buildHarnessFeedback({
+  forumPostsAttempted = 0,
+  forumPostsCreated = 0,
+  forumPostsBlocked = 0,
+  forumPostsTruncated = 0,
+  durableTestimonyResult = {},
+  durableTestimonyTruncated = 0,
+  capabilityRefusals = [],
+  capabilityParseDisclosures = [],
+} = {}) {
+  const feedback = [];
+  if (forumPostsBlocked > 0) {
+    feedback.push([
+      `${pluralizeCount(forumPostsBlocked, "soma-forum post")} did not land.`,
+      forumPostsAttempted > 0 && forumPostsCreated === 0
+        ? "Reason: no active episode forum accepted the post."
+        : "Reason: not every extracted forum post was accepted by the episode forum.",
+      "No forum post was created for the blocked item, and no blocked post content is repeated here.",
+    ].join(" "));
+  }
+  if (forumPostsTruncated > 0) {
+    feedback.push([
+      `${pluralizeCount(forumPostsTruncated, "soma-forum block")} was truncated and ignored.`,
+      "Reason: unclosed soma-forum fence.",
+      "No partial forum content was retained or posted.",
+    ].join(" "));
+  }
+  for (const blocked of durableTestimonyResult.blocked ?? []) {
+    feedback.push(String(blocked.disclosure ?? "").trim());
+  }
+  if (durableTestimonyTruncated > 0) {
+    feedback.push([
+      `${pluralizeCount(durableTestimonyTruncated, "soma-durable block")} was truncated and ignored.`,
+      "Reason: unclosed soma-durable fence.",
+      "No truncated durable content was retained or stored.",
+    ].join(" "));
+  }
+  for (const refusal of capabilityRefusals) {
+    const capability = String(refusal?.capability ?? "capability").trim() || "capability";
+    const reason = String(refusal?.reason || refusal?.authorization_code || "refused").trim();
+    feedback.push([
+      `${capability} was refused.`,
+      `Reason: ${reason}.`,
+      "No refused request content is repeated here.",
+    ].join(" "));
+  }
+  for (const disclosure of capabilityParseDisclosures) {
+    feedback.push(String(disclosure ?? "").trim());
+  }
+  return feedback.filter(Boolean);
+}
+
+function appendHarnessFeedback(text = "", feedback = []) {
+  const lines = Array.isArray(feedback)
+    ? feedback.map((line) => String(line ?? "").trim()).filter(Boolean)
+    : [];
+  if (lines.length === 0) {
+    return String(text ?? "");
+  }
+  const base = String(text ?? "").trim();
+  const block = [
+    "Harness feedback:",
+    ...lines.map((line) => `- ${line}`),
+  ].join("\n");
+  return base ? `${base}\n\n${block}` : block;
+}
+
+function pluralizeCount(count, singular) {
+  const value = Number.isInteger(count) ? count : 0;
+  return `${value} ${singular}${value === 1 ? "" : "s"}`;
 }
 
 const CAPABILITY_BLOCK_PARSE_ERROR_REASONS = new Set([

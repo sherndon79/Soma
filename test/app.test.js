@@ -4981,7 +4981,10 @@ test("deliberation forum strips truncated occupant forum blocks without recordin
     },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "I completed the task and have one complete forum post.");
+  assert.match(response.body.text, /^I completed the task and have one complete forum post\./);
+  assert.match(response.body.text, /Harness feedback:/);
+  assert.match(response.body.text, /1 soma-forum block was truncated and ignored/);
+  assert.match(response.body.text, /No partial forum content was retained or posted/);
   assert.equal(response.body.forum_posts_created, 1);
   assert.equal(response.body.forum_posts_truncated, 1);
   assert.doesNotMatch(response.body.text, /```soma-forum/);
@@ -5003,6 +5006,50 @@ test("deliberation forum strips truncated occupant forum blocks without recordin
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.entries.at(-1).forum_posts_truncated, 1);
+});
+
+test("deliberation forum failed occupant posts speak a content-free refusal to the occupant", async () => {
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      model: "local-test-model",
+      async chat() {
+        return {
+          text: [
+            "I am trying to post to a forum.",
+            "```soma-forum",
+            JSON.stringify({
+              type: "testimony",
+              content: "This should not be repeated in feedback.",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 6,
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-forum-no-active-forum",
+      messages: [{ role: "user", content: "post without opening forum" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.match(response.body.text, /^I am trying to post to a forum\./);
+  assert.match(response.body.text, /Harness feedback:/);
+  assert.match(response.body.text, /1 soma-forum post did not land/);
+  assert.match(response.body.text, /Reason: no active episode forum accepted the post/);
+  assert.match(response.body.text, /No forum post was created/);
+  assert.doesNotMatch(response.body.text, /This should not be repeated/);
+  assert.equal(response.body.forum_posts_created, 0);
+  assert.equal(response.body.forum_posts_blocked, 1);
 });
 
 test("deliberation forum posts are words not actions", async () => {
@@ -5184,7 +5231,11 @@ test("durable testimony nomination is acknowledged but not stored when runtime w
     });
 
     assert.equal(response.statusCode, 200);
-    assert.equal(response.body.text, "I nominate this but writes are disabled.");
+    assert.match(response.body.text, /^I nominate this but writes are disabled\./);
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /Durable testimony nominate was acknowledged but not stored/);
+    assert.match(response.body.text, /writes are disabled/);
+    assert.doesNotMatch(response.body.text, /Preserve this exact reason/);
     assert.equal(response.body.durable_testimony_nominated, 0);
     assert.equal(response.body.durable_testimony_blocked, 1);
     assert.match(response.body.durable_testimony_disclosures[0], /acknowledged but not stored/);
@@ -5313,7 +5364,10 @@ test("durable testimony processes complete blocks and strips truncated nominatio
     });
 
     assert.equal(response.statusCode, 200);
-    assert.equal(response.body.text, "I nominate one preserved line.\n\nThe next nomination is cut off.");
+    assert.match(response.body.text, /^I nominate one preserved line\.\n\nThe next nomination is cut off\./);
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /1 soma-durable block was truncated and ignored/);
+    assert.match(response.body.text, /No truncated durable content was retained or stored/);
     assert.equal(response.body.durable_testimony_nominated, 1);
     assert.equal(response.body.durable_testimony_truncated, 1);
     assert.equal(response.body.durable_testimony_disclosures.length, 1);
@@ -5713,6 +5767,10 @@ test("occupant memory write refusals are content-free for disabled posture scann
     assert.equal(response.statusCode, 200, JSON.stringify(response.body));
     assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_write_not_enabled");
     assert.doesNotMatch(JSON.stringify(response.body.capability_refusals), /This should be refused/);
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /occupant\.memory\.write was refused/);
+    assert.match(response.body.text, /Reason: occupant_memory_write_not_enabled/);
+    assert.doesNotMatch(response.body.text, /This should be refused/);
 
     const enabledHandler = makeHandler({
       harness: occupantMemoryHarness,
@@ -5741,6 +5799,10 @@ test("occupant memory write refusals are content-free for disabled posture scann
       body: { episode_id: "episode-occupant-memory-refusals", messages: [{ role: "user", content: "class" }] },
     });
     assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_class_not_available");
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /occupant\.memory\.write was refused/);
+    assert.match(response.body.text, /Reason: occupant_memory_class_not_available/);
+    assert.doesNotMatch(response.body.text, /Unavailable class/);
 
     completions.push(["```soma-capability", JSON.stringify({
       invoke: "occupant.memory.write",
@@ -5754,6 +5816,10 @@ test("occupant memory write refusals are content-free for disabled posture scann
     });
     assert.equal(response.body.capability_refusals[0].reason, "json_blob");
     assert.doesNotMatch(JSON.stringify(response.body.capability_refusals), /desktop\.inspect\.text/);
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /occupant\.memory\.write was refused/);
+    assert.match(response.body.text, /Reason: json_blob/);
+    assert.doesNotMatch(response.body.text, /desktop\.inspect\.text/);
 
     const fullEntries = Array.from({ length: 256 }, (_, index) => ({
       id: `occupant-memory-full-${index}`,
@@ -5797,6 +5863,10 @@ test("occupant memory write refusals are content-free for disabled posture scann
       body: { episode_id: "episode-occupant-memory-cap", messages: [{ role: "user", content: "cap" }] },
     });
     assert.equal(response.body.capability_refusals[0].reason, "occupant_memory_store_cap_reached");
+    assert.match(response.body.text, /Harness feedback:/);
+    assert.match(response.body.text, /occupant\.memory\.write was refused/);
+    assert.match(response.body.text, /Reason: occupant_memory_store_cap_reached/);
+    assert.doesNotMatch(response.body.text, /cap should refuse/);
     const persisted = JSON.parse(await readFile(occupantMemoryStorePath, "utf8"));
     assert.equal(persisted.entries.length, 256);
   } finally {
@@ -6433,7 +6503,10 @@ test("space.status.read invocation refuses without an active grant and records c
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "I want to read the status.");
+  assert.match(response.body.text, /^I want to read the status\./);
+  assert.match(response.body.text, /Harness feedback:/);
+  assert.match(response.body.text, /space\.status\.read was refused/);
+  assert.match(response.body.text, /Reason: space_status_grant_not_authorized/);
   assert.equal(response.body.capability_results.length, 0);
   assert.equal(response.body.capability_refusals.length, 1);
   assert.equal(response.body.capability_refusals[0].reason, "space_status_grant_not_authorized");
@@ -6983,7 +7056,10 @@ test("space.history.read invocation refuses without an active grant and records 
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.text, "I want to read curated history.");
+  assert.match(response.body.text, /^I want to read curated history\./);
+  assert.match(response.body.text, /Harness feedback:/);
+  assert.match(response.body.text, /space\.history\.read was refused/);
+  assert.match(response.body.text, /Reason: space_history_grant_not_authorized/);
   assert.equal(response.body.capability_results.length, 0);
   assert.equal(response.body.capability_refusals.length, 1);
   assert.equal(response.body.capability_refusals[0].capability, "space.history.read");

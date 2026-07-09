@@ -287,10 +287,20 @@ After the controller-triggered path has live test evidence, add occupant invocat
 
 ## Ratification Checklist
 
+**RATIFIED by Seth 2026-07-09** ("lets move forward with raw-frame vision"). Ratification is of the *design*; no frame egresses on ratification alone — live delivery remains gated behind (a) the built+tested floor gate, (b) Seth arming the source subscription, (c) Seth creating the visual grant, and (d) Seth's fresh active-control attestation, all at delivery time.
+
 - [x] Claude pressure-test of the floor gate — PASS with four crux calls and one load-bearing attestation finding folded.
-- [ ] Seth ratifies the solo attestation + fresh presence composition.
-- [ ] Seth ratifies active-control attestation as Seth/steward-only and structurally non-occupant-writable.
-- [ ] Seth ratifies per-modality one-turn grants and retention `none`.
-- [ ] Seth ratifies that full pose attach includes keypoints on the raw visual path.
-- [ ] Seth ratifies controller-only first activation, with occupant invocation deferred until the gate has live evidence.
-- [ ] Seth ratifies that default summaries remain stripped and raw retention is a separate gated channel.
+- [x] Seth ratifies the solo attestation + fresh presence composition.
+- [x] Seth ratifies active-control attestation as Seth/steward-only and structurally non-occupant-writable. *(load-bearing invariant — if it fails, the gate collapses)*
+- [x] Seth ratifies per-modality one-turn grants and retention `none`.
+- [x] Seth ratifies that full pose attach includes keypoints on the raw visual path.
+- [x] Seth ratifies controller-only first activation, with occupant invocation deferred until the gate has live evidence.
+- [x] Seth ratifies that default summaries remain stripped and raw retention is a separate gated channel.
+
+## Build order (limits-aware, 2026-07-09)
+
+Egress-incapable slices first, so capacity is spent on the floor *enforcement* before any frame-delivery path exists:
+- **Slice 1 (floor-gate model + tests)** — pure decision logic, no payload handling, no egress. Build first.
+- **Slice 2 (raw latest-frame cache)** — local in-memory bytes, no egress. Second.
+- **Slices 3–5 (attach activation, multimodal client, provenance/taint)** — first point where a frame *could* egress; these stay behind Seth's live arming + attestation, and get their own review before first live delivery.
+- **Slice 6 + Later (runbook/controls, then occupant invocation)** — after the controller path has live evidence.

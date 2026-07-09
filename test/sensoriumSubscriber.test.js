@@ -92,6 +92,7 @@ class FakeManager extends EventEmitter {
         topic,
         payload_bytes: payloadBytes,
         payload_size: payloadSize,
+        capture_timestamp: options.capture_timestamp,
       },
     });
   }
@@ -782,6 +783,217 @@ test("color samples decode to bounded stream metadata without retaining frame by
   assert.equal(serialized.includes("payload_bytes"), false);
   assert.equal(serialized.includes("screenshot"), false);
   assert.equal("timestamp" in endSummary.stream_summary_observed, false);
+});
+
+test("raw latest-frame cache is disabled unless source grant explicitly allows it", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-no-raw",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 1,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+    }),
+  });
+
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color" }), null);
+});
+
+test("raw latest-frame cache retains only the latest bounded frame and keeps disclosures byte-free", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-raw",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    rawFrameRetention: {
+      enabled: true,
+      grant_allows_raw_visual_retention: true,
+      retention_mode: "latest_frame_cache",
+      modality: "color",
+      source_grant_id: "grant-test-1",
+      source_host: "jetsorano",
+      max_bytes: 1024,
+      ttl_ms: 2_000,
+    },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 10,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [1, 2, 3],
+    }),
+    payloadSize: 128,
+    capture_timestamp: "2026-07-09T18:00:00.000Z",
+  });
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 11,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [4, 5, 6, 7],
+    }),
+    capture_timestamp: "2026-07-09T18:00:01.000Z",
+  });
+
+  const frame = subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now });
+  assert.equal(frame.subscription_id, subscription_id);
+  assert.equal(frame.source_grant_id, "grant-test-1");
+  assert.equal(frame.modality, "color");
+  assert.equal(frame.source_host, "jetsorano");
+  assert.equal(frame.frame_id, "11");
+  assert.equal(frame.capture_timestamp, "2026-07-09T18:00:01.000Z");
+  assert.equal(frame.payload_bytes instanceof Uint8Array, true);
+  assert.equal(frame.payload_bytes_included, true);
+  assert.equal(frame.disk_persisted, false);
+  assert.equal(frame.provenance_appended, false);
+
+  const disclosureJson = JSON.stringify(subscriber.describeActive());
+  assert.equal(disclosureJson.includes("payload_bytes"), false);
+  assert.equal(disclosureJson.includes("payload_bytes_included"), false);
+  assert.equal(disclosureJson.includes("frame_bytes"), false);
+
+  nowMs += 1_000;
+  const { endSummary } = await subscriber.stop(subscription_id);
+  const endSummaryJson = JSON.stringify(endSummary);
+  assert.equal(endSummaryJson.includes("payload_bytes"), false);
+  assert.equal(endSummaryJson.includes("payload_bytes_included"), false);
+  assert.equal(endSummaryJson.includes("frame_bytes"), false);
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now }), null);
+});
+
+test("raw latest-frame cache expires by ttl and enforces byte cap", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-ttl",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    rawFrameRetention: {
+      enabled: true,
+      grant_allows_raw_visual_retention: true,
+      retention_mode: "latest_frame_cache",
+      modality: "color",
+      max_bytes: 1024,
+      ttl_ms: 500,
+    },
+  });
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 20,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [1, 2],
+    }),
+  });
+  assert.ok(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now }));
+
+  nowMs += 501;
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now }), null);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 21,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: new Array(128).fill(1),
+    }),
+    payloadSize: 2048,
+  });
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now }), null);
+});
+
+test("raw latest-frame cache drops on revoke stopAll and control close", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-drop-1",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-drop-2",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const startWithRaw = {
+    ...COMMON_START,
+    rawFrameRetention: {
+      enabled: true,
+      grant_allows_raw_visual_retention: true,
+      retention_mode: "latest_frame_cache",
+      modality: "color",
+      max_bytes: 1024,
+      ttl_ms: 2_000,
+    },
+  };
+  const first = await subscriber.start(startWithRaw);
+  const second = await subscriber.start({ ...startWithRaw, grantId: "grant-test-2" });
+  for (const id of [first.subscription_id, second.subscription_id]) {
+    manager.emitSample(id, "sensor/jetsorano/realsense/color", {
+      payloadBytes: encodeColorPayload({
+        schema_version: 1,
+        frame_number: 30,
+        width: 16,
+        height: 16,
+        format: "jpeg",
+        data: [1, 2, 3],
+      }),
+    });
+    assert.ok(subscriber.readLatestRawFrame({ subscriptionId: id, modality: "color" }));
+  }
+
+  await subscriber.stopByGrantId("grant-test-1");
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: first.subscription_id, modality: "color" }), null);
+  assert.ok(subscriber.readLatestRawFrame({ subscriptionId: second.subscription_id, modality: "color" }));
+
+  subscriber.dropRawFrames();
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: second.subscription_id, modality: "color" }), null);
+
+  manager.emitSample(second.subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 31,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [1, 2, 3],
+    }),
+  });
+  assert.ok(subscriber.readLatestRawFrame({ subscriptionId: second.subscription_id, modality: "color" }));
+  await subscriber.stopAll({ terminationReason: "runtime_shutdown" });
+  assert.equal(subscriber.readLatestRawFrame({ subscriptionId: second.subscription_id, modality: "color" }), null);
 });
 
 test("color samples with malformed payloads count schema mismatches only", async () => {

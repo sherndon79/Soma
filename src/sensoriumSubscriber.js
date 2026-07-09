@@ -47,6 +47,11 @@ const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
 const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
 const PRESENCE_CAPABILITY = "perception.sensorium.presence.subscribe";
 const POSE_CAPABILITY = "perception.sensorium.pose.subscribe";
+const RAW_FRAME_MODALITY_BY_CAPABILITY = Object.freeze({
+  "perception.sensorium.color.subscribe": "color",
+  "perception.sensorium.depth.subscribe": "depth",
+  "perception.sensorium.pose.subscribe": "pose",
+});
 
 export class SensoriumSubscriber {
   #manager;
@@ -59,6 +64,7 @@ export class SensoriumSubscriber {
   #onSubscriptionEnded;
   #presenceState;
   #getPresenceEpisodeContext;
+  #rawLatestFrames = new Map();
 
   constructor({
     manager,
@@ -93,7 +99,7 @@ export class SensoriumSubscriber {
    * malformed) and asynchronously on helper failure (the helper
    * rejected the request — bad config, Zenoh open error, etc.).
    */
-  async start({ capability, provider, grantId, scope, body } = {}) {
+  async start({ capability, provider, grantId, scope, body, rawFrameRetention = null } = {}) {
     const validated = validateSensoriumSubscriptionRequest(body, { capability });
 
     this.#installNotificationHandlerIfNeeded();
@@ -155,6 +161,12 @@ export class SensoriumSubscriber {
         poseSummaryObserved: null,
         helperErrorClass: "",
       },
+      _rawFrameRetention: normalizeRawFrameRetention(rawFrameRetention, {
+        capability,
+        grantId,
+        topic: validated.topic,
+        now: this.#now,
+      }),
     };
     this.#active.set(subscriptionId, record);
     this.#scheduleTimeout(record, validated.constraints?.max_seconds);
@@ -226,6 +238,7 @@ export class SensoriumSubscriber {
     });
 
     this.#active.delete(subscriptionId);
+    this.#dropRawLatestFrame(record);
     if (record.capability === PRESENCE_CAPABILITY) {
       this.#presenceState?.clear?.();
     }
@@ -322,6 +335,39 @@ export class SensoriumSubscriber {
     return describeActiveSensoriumSubscriptions(subscriptions, { now: now ?? this.#now() });
   }
 
+  readLatestRawFrame({ subscriptionId = "", modality = "", now } = {}) {
+    const key = rawFrameCacheKey(subscriptionId, modality);
+    const entry = this.#rawLatestFrames.get(key);
+    if (!entry) {
+      return null;
+    }
+    const evaluatedAt = resolveDate(now ?? this.#now);
+    if (Date.parse(entry.expires_at) <= evaluatedAt.getTime()) {
+      this.#rawLatestFrames.delete(key);
+      return null;
+    }
+    return {
+      ...entry,
+      payload_bytes: copyPayloadBytes(entry.payload_bytes),
+    };
+  }
+
+  dropRawFrames({ subscriptionId = "", modality = "" } = {}) {
+    if (subscriptionId || modality) {
+      for (const [key, entry] of this.#rawLatestFrames.entries()) {
+        if (subscriptionId && entry.subscription_id !== subscriptionId) {
+          continue;
+        }
+        if (modality && entry.modality !== modality) {
+          continue;
+        }
+        this.#rawLatestFrames.delete(key);
+      }
+      return;
+    }
+    this.#rawLatestFrames.clear();
+  }
+
   /**
    * Number of active subscriptions. Useful for tests and disclosure
    * counters.
@@ -360,11 +406,11 @@ export class SensoriumSubscriber {
     }
     sub._stats.framesConsumed += 1;
     if (sub.capability === "perception.sensorium.color.subscribe") {
-      this.#recordColorSample(sub, msg.params?.payload_bytes);
+      this.#recordColorSample(sub, msg.params);
       return;
     }
     if (sub.capability === "perception.sensorium.depth.subscribe") {
-      this.#recordDepthSample(sub, msg.params?.payload_bytes);
+      this.#recordDepthSample(sub, msg.params);
       return;
     }
     if (sub.capability === PRESENCE_CAPABILITY) {
@@ -372,7 +418,7 @@ export class SensoriumSubscriber {
       return;
     }
     if (sub.capability === POSE_CAPABILITY) {
-      this.#recordPoseSample(sub, msg.params?.payload_bytes);
+      this.#recordPoseSample(sub, msg.params);
       return;
     }
     if (sub.capability !== "perception.sensorium.status.subscribe") {
@@ -465,12 +511,14 @@ export class SensoriumSubscriber {
     }
   }
 
-  #recordColorSample(sub, payloadBytes) {
+  #recordColorSample(sub, params = {}) {
     try {
+      const payloadBytes = params?.payload_bytes;
       const summary = summarizeSensoriumColorPayload(payloadBytes);
       sub._stats.schemaVersionObserved = summary.schema_version;
       if (!summary.schema_matches_expected) {
         sub._stats.schemaMismatches += 1;
+        this.#dropRawLatestFrame(sub);
         return;
       }
       if (sub._stats.firstFrameNumber === null) {
@@ -485,17 +533,25 @@ export class SensoriumSubscriber {
         format: summary.format,
         payload_size: summary.payload_size,
       };
+      this.#storeRawLatestFrame(sub, payloadBytes, {
+        frameId: summary.frame_number,
+        captureTimestamp: params?.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
     } catch {
       sub._stats.schemaMismatches += 1;
+      this.#dropRawLatestFrame(sub);
     }
   }
 
-  #recordDepthSample(sub, payloadBytes) {
+  #recordDepthSample(sub, params = {}) {
     try {
+      const payloadBytes = params?.payload_bytes;
       const summary = summarizeSensoriumDepthPayload(payloadBytes);
       sub._stats.schemaVersionObserved = summary.schema_version;
       if (!summary.schema_matches_expected) {
         sub._stats.schemaMismatches += 1;
+        this.#dropRawLatestFrame(sub);
         return;
       }
       if (sub._stats.firstFrameNumber === null) {
@@ -511,8 +567,14 @@ export class SensoriumSubscriber {
         depth_units: summary.depth_units,
         payload_size: summary.payload_size,
       };
+      this.#storeRawLatestFrame(sub, payloadBytes, {
+        frameId: summary.frame_number,
+        captureTimestamp: params?.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
     } catch {
       sub._stats.schemaMismatches += 1;
+      this.#dropRawLatestFrame(sub);
     }
   }
 
@@ -571,23 +633,74 @@ export class SensoriumSubscriber {
     }
   }
 
-  #recordPoseSample(sub, payloadBytes) {
+  #recordPoseSample(sub, params = {}) {
     try {
+      const payloadBytes = params?.payload_bytes;
       const summary = summarizeSensoriumPosePayload(payloadBytes);
       sub._stats.schemaVersionObserved = summary.schema_matches_expected ? 1 : null;
       if (!summary.schema_matches_expected) {
         sub._stats.schemaMismatches += 1;
         sub._stats.poseSummaryObserved = null;
+        this.#dropRawLatestFrame(sub);
         return;
       }
       sub._stats.firstFrameNumber = sub._stats.firstFrameNumber ?? summary.frameset_sequence;
       sub._stats.lastFrameNumber = summary.frameset_sequence;
       sub._stats.poseSummaryObserved = summary;
+      this.#storeRawLatestFrame(sub, payloadBytes, {
+        frameId: summary.frameset_sequence,
+        captureTimestamp: summary.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
     } catch {
       sub._stats.schemaMismatches += 1;
       sub._stats.helperErrorClass = "pose_payload_rejected";
       sub._stats.poseSummaryObserved = null;
+      this.#dropRawLatestFrame(sub);
     }
+  }
+
+  #storeRawLatestFrame(sub, payloadBytes, { frameId, captureTimestamp, byteLength } = {}) {
+    const retention = sub._rawFrameRetention;
+    if (!retention.enabled) {
+      return;
+    }
+    const payload = copyPayloadBytes(payloadBytes);
+    const effectiveByteLength = Number.isInteger(byteLength) && byteLength >= 0
+      ? byteLength
+      : payload.byteLength;
+    if (effectiveByteLength > retention.max_bytes || payload.byteLength > retention.max_bytes) {
+      this.#dropRawLatestFrame(sub);
+      return;
+    }
+    const storedAt = this.#now();
+    const expiresAt = new Date(storedAt.getTime() + retention.ttl_ms);
+    const modality = retention.modality;
+    this.#rawLatestFrames.set(rawFrameCacheKey(sub.subscription_id, modality), Object.freeze({
+      subscription_id: sub.subscription_id,
+      source_grant_id: sub.grant_id,
+      modality,
+      source_host: hostFromTopic(sub.topic),
+      topic: sub.topic,
+      frame_id: String(frameId ?? ""),
+      capture_timestamp: normalizeCaptureTimestamp(captureTimestamp, storedAt),
+      byte_length: effectiveByteLength,
+      stored_at: storedAt.toISOString(),
+      expires_at: expiresAt.toISOString(),
+      payload_bytes: payload,
+      payload_bytes_included: true,
+      disk_persisted: false,
+      provenance_appended: false,
+      retention_mode: "latest_frame_cache",
+    }));
+  }
+
+  #dropRawLatestFrame(sub) {
+    const modality = sub?._rawFrameRetention?.modality || RAW_FRAME_MODALITY_BY_CAPABILITY[sub?.capability];
+    if (!sub?.subscription_id || !modality) {
+      return;
+    }
+    this.#rawLatestFrames.delete(rawFrameCacheKey(sub.subscription_id, modality));
   }
 }
 
@@ -635,4 +748,90 @@ function sanitizeHelperErrorClass(value) {
     return normalized;
   }
   return "helper_stream_error";
+}
+
+function normalizeRawFrameRetention(rawFrameRetention, { capability, grantId, topic, now } = {}) {
+  const modality = RAW_FRAME_MODALITY_BY_CAPABILITY[capability] ?? "";
+  const disabled = Object.freeze({ enabled: false, modality });
+  if (!modality || !rawFrameRetention || typeof rawFrameRetention !== "object") {
+    return disabled;
+  }
+  if (rawFrameRetention.enabled !== true) {
+    return disabled;
+  }
+  if (rawFrameRetention.grant_allows_raw_visual_retention !== true) {
+    return disabled;
+  }
+  if (rawFrameRetention.retention_mode !== "latest_frame_cache") {
+    return disabled;
+  }
+  if (rawFrameRetention.modality !== modality) {
+    return disabled;
+  }
+  if (rawFrameRetention.source_grant_id && rawFrameRetention.source_grant_id !== grantId) {
+    return disabled;
+  }
+  const sourceHost = String(rawFrameRetention.source_host ?? "").trim();
+  if (sourceHost && sourceHost !== hostFromTopic(topic)) {
+    return disabled;
+  }
+  const maxBytes = rawFrameRetention.max_bytes;
+  const ttlMs = rawFrameRetention.ttl_ms;
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > 50_000_000) {
+    return disabled;
+  }
+  if (!Number.isInteger(ttlMs) || ttlMs <= 0 || ttlMs > 60_000) {
+    return disabled;
+  }
+  return Object.freeze({
+    enabled: true,
+    modality,
+    max_bytes: maxBytes,
+    ttl_ms: ttlMs,
+    configured_at: resolveDate(now).toISOString(),
+  });
+}
+
+function rawFrameCacheKey(subscriptionId, modality) {
+  return `${String(subscriptionId ?? "")}\u0000${String(modality ?? "")}`;
+}
+
+function copyPayloadBytes(value) {
+  if (value instanceof Uint8Array) {
+    return new Uint8Array(value);
+  }
+  if (Array.isArray(value)) {
+    return Uint8Array.from(value);
+  }
+  return new Uint8Array();
+}
+
+function hostFromTopic(topic) {
+  if (typeof topic !== "string") {
+    return "";
+  }
+  const match = topic.match(/^(?:sensor|perception)\/([a-z0-9-]+)\//);
+  return match ? match[1] : "";
+}
+
+function normalizeCaptureTimestamp(value, fallbackDate) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value * 1000).toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+  return fallbackDate.toISOString();
+}
+
+function resolveDate(value) {
+  const candidate = typeof value === "function" ? value() : value;
+  if (candidate instanceof Date && !Number.isNaN(candidate.getTime())) {
+    return candidate;
+  }
+  const parsed = new Date(candidate);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }

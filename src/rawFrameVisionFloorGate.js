@@ -40,18 +40,8 @@ const OCCUPANT_ATTESTATION_ORIGINS = new Set([
   "memory",
   "visual_attach_request",
 ]);
-const LIVE_EPISODE_STATUSES = new Set(["", "active", "running", "open"]);
+const LIVE_EPISODE_STATUSES = new Set(["active", "running", "open"]);
 const CLOSED_EPISODE_STATUSES = new Set(["paused", "distressed", "ejected", "closed", "aborted"]);
-const VISION_DATA_CLASSES = new Set([
-  "image",
-  "images",
-  "vision",
-  "visual",
-  "visual_frame",
-  "raw_visual_frame",
-  "sensorium.raw_visual",
-  "model.context.visual",
-]);
 const MODALITY_CAPABILITY_SUFFIX = Object.freeze({
   color: "color.attach",
   depth: "depth.attach",
@@ -123,6 +113,9 @@ export function decideRawFrameVisionFloorGate({
 
 function evaluateEpisode({ runPosture = {}, episodeStatus = "" } = {}) {
   const status = stringValue(episodeStatus || runPosture.status || runPosture.episode_status);
+  if (!status) {
+    return { ok: false, reason: RAW_FRAME_VISION_FLOOR_REASONS.EPISODE_NOT_LIVE };
+  }
   if (CLOSED_EPISODE_STATUSES.has(status)) {
     return { ok: false, reason: RAW_FRAME_VISION_FLOOR_REASONS.EPISODE_NOT_LIVE };
   }
@@ -164,7 +157,7 @@ function evaluateSourceSubscription({ sourceSubscription = {}, expectedHost = ""
     : [];
   const status = stringValue(sourceSubscription.status || sourceSubscription.subscription_status);
   const active = Boolean(subscriptionId) &&
-    ["active", "running", "open"].includes(status || "active") &&
+    ["active", "running", "open"].includes(status) &&
     (grantSubscriptionIds.length === 0 || grantSubscriptionIds.includes(subscriptionId));
   const host = stringValue(sourceSubscription.source_host || sourceSubscription.host);
   const hostMatches = Boolean(expectedHost && host && host === expectedHost);
@@ -301,8 +294,7 @@ function profileSupportsVision(profile = {}, modality = "") {
   if (supportedModalities.has(modality)) {
     return true;
   }
-  const allowedDataClasses = normalizeStringArray(profile.allowed_data_classes);
-  return allowedDataClasses.some((entry) => VISION_DATA_CLASSES.has(entry));
+  return false;
 }
 
 function isFresh({ observedAt, expiresAt, evaluatedAt, ttlMs } = {}) {

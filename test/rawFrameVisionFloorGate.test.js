@@ -192,6 +192,10 @@ test("raw-frame vision floor gate refuses non-vision profile", () => {
     { profile: { id: "text-only", allowed_data_classes: ["submitted_text"] } },
     RAW_FRAME_VISION_FLOOR_REASONS.PROFILE_NOT_VISION_CAPABLE,
   );
+  assertDecision(
+    { profile: { id: "text-only-with-egress-class", allowed_data_classes: ["submitted_text", "vision"] } },
+    RAW_FRAME_VISION_FLOOR_REASONS.PROFILE_NOT_VISION_CAPABLE,
+  );
 });
 
 test("raw-frame vision floor gate refuses degraded grant recovery", () => {
@@ -202,6 +206,10 @@ test("raw-frame vision floor gate refuses degraded grant recovery", () => {
 });
 
 test("raw-frame vision floor gate refuses paused distressed and ejected episodes", () => {
+  assertDecision(
+    { episodeStatus: "", runPosture: { ...green().runPosture, status: "" } },
+    RAW_FRAME_VISION_FLOOR_REASONS.EPISODE_NOT_LIVE,
+  );
   for (const episodeStatus of ["paused", "distressed", "ejected"]) {
     assertDecision(
       { episodeStatus, runPosture: { ...green().runPosture, status: episodeStatus } },
@@ -222,6 +230,16 @@ test("raw-frame vision floor gate refuses non-none retention and inactive source
   );
   assertDecision(
     { sourceSubscription: { ...green().sourceSubscription, status: "stopped" } },
+    RAW_FRAME_VISION_FLOOR_REASONS.SOURCE_SUBSCRIPTION_NOT_ACTIVE,
+  );
+  assertDecision(
+    {
+      sourceSubscription: {
+        id: green().sourceSubscription.id,
+        source_host: green().sourceSubscription.source_host,
+        modality: green().sourceSubscription.modality,
+      },
+    },
     RAW_FRAME_VISION_FLOOR_REASONS.SOURCE_SUBSCRIPTION_NOT_ACTIVE,
   );
 });

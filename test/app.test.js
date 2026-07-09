@@ -1424,6 +1424,146 @@ test("POST /model-visual/attach-requests/controller records byte-free refusal pr
   assert.equal(subscriber.readCalls.length, 0);
 });
 
+test("raw visual floor status explains closed inputs and never reads frames", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "operator",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.allowed, false);
+  assert.equal(response.body.reason, "solo_attestation_missing");
+  assert.equal(response.body.floor_gate_decision.solo_attestation_present, false);
+  assert.equal(response.body.floor_gate_decision.presence_available, false);
+  assert.equal(response.body.floor_gate_inputs.solo_attestation_present, false);
+  assert.equal(response.body.floor_gate_inputs.presence_available, true);
+  assert.equal(response.body.floor_gate_inputs.presence_fresh, true);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(response.body.frame_read_performed, false);
+  assert.equal(subscriber.readCalls.length, 0);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.attestation.present, true);
+  assert.equal(response.body.payload_bytes_included, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "operator",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.allowed, true);
+  assert.equal(response.body.reason, "allowed");
+  assert.equal(response.body.floor_gate_decision.solo_attestation_present, true);
+  assert.equal(response.body.floor_gate_decision.solo_attestation_fresh, true);
+  assert.equal(response.body.floor_gate_decision.presence_fresh, true);
+  assert.equal(response.body.floor_gate_inputs.solo_attestation_fresh, true);
+  assert.equal(response.body.floor_gate_inputs.presence_fresh, true);
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("raw visual floor attestation alone cannot open without fresh presence", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: {
+      ...envelope.presenceState,
+      observed_at: new Date(Date.now() - 10_000).toISOString(),
+      expires_at: new Date(Date.now() - 5_000).toISOString(),
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: { actor: "operator", source_host: "jetsorano" },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "operator",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.allowed, false);
+  assert.equal(response.body.reason, "presence_stale");
+  assert.equal(response.body.floor_gate_decision.solo_attestation_fresh, true);
+  assert.equal(response.body.floor_gate_decision.presence_fresh, false);
+  assert.equal(response.body.floor_gate_inputs.solo_attestation_fresh, true);
+  assert.equal(response.body.floor_gate_inputs.presence_fresh, false);
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("raw visual floor attestation control rejects occupant-writable callers", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: { actor: "occupant", source_host: "jetsorano" },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_visual_floor_attestation_operator_required");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "occupant",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_visual_floor_status_operator_required");
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(subscriber.dropCalls.length, 0);
+});
+
 test("POST /model-visual/attach-requests/controller refuses text-only model delivery before payload read", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -4655,6 +4795,44 @@ test("POST /chat honors pause and distress as open protective controls", async (
   for (const entry of controlCompletions) {
     assert.equal("text" in entry, false);
     assert.equal("content" in entry, false);
+  }
+});
+
+test("pause distress and eject controls drop cached raw visual frames", async () => {
+  const completions = [
+    "SOMA_CONTROL pause",
+    "SOMA_CONTROL distress",
+    "SOMA_CONTROL eject",
+  ];
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumSubscriber: subscriber,
+    modelClient: {
+      async chat() {
+        return {
+          text: completions.shift(),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+
+  for (const [index, control] of ["pause", "distress", "eject"].entries()) {
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: `episode-raw-control-${control}`,
+        messages: [{ role: "user", content: control }],
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.protective_control.control, control);
+    assert.equal(subscriber.dropCalls.length, index + 1);
+    assert.deepEqual(subscriber.dropCalls[index], { subscriptionId: "sub-color-1", modality: "color" });
   }
 });
 

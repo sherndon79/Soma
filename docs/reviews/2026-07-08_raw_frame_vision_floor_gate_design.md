@@ -269,6 +269,31 @@ Acceptance tests:
 - occupant-writable channels cannot create or refresh attestation;
 - pause/distress/eject immediately closes the floor and drops cached frames.
 
+Implemented operator controls:
+
+- `POST /model-visual/floor/status` accepts the same visual attach request envelope used by controller delivery and returns only byte-free gate state. It reports the enforcing gate decision plus independent per-input status, and it never reads, attaches, or returns a frame.
+- `POST /model-visual/floor/attestations` refreshes a source-host-scoped solo attestation from trusted run-control only. Occupant/model/assistant callers are refused, and the response contains no frame bytes or visual content.
+- Control closure paths call raw-frame cache drop: occupant `pause`, `distress`, `eject`, near-miss auto-pause, and crew abort.
+
+Operator arm sequence for the first live run:
+
+1. Arm the Sensorium source subscription through the normal Sensorium proposal/grant/subscription path.
+2. Create or select the explicit `model.context.visual.*.attach` grant bound to the source subscription, source host, modality, model target, max age/bytes, preview acknowledgement, and `retention_mode: "none"`.
+3. Check `POST /model-visual/floor/status` with `episode_status: "active"` and the current run posture. Before attestation, the expected refusal is `solo_attestation_missing`; this is a closed floor, not a degraded delivery.
+4. Refresh `POST /model-visual/floor/attestations` with the source host while Seth is physically present, consenting, actively controlling the window, and no other person is in frame.
+5. Re-check `POST /model-visual/floor/status`. It opens only if the attestation is fresh, the presence reading is fresh for the same host, exactly one person is detected, no additional person is detected, the grant/subscription/profile match, and the episode is live.
+6. Submit `POST /model-visual/attach-requests/controller` with `model_delivery_requested: true`, the bound request, and the model messages for the one turn that should receive the visual attachment.
+7. After any `pause`, `distress`, `eject`, or crew abort, treat the floor as closed and the latest-frame cache as dropped. Re-arm from status check and attestation refresh before any later delivery.
+
+Common refusal meanings:
+
+- `solo_attestation_missing`, `solo_attestation_stale`, `solo_attestation_untrusted_origin`, `solo_attestation_occupant_writable`, `solo_attestation_not_consenting`: the human active-control key is absent, expired, untrusted, occupant-writable, or not asserting Seth present/consenting/no-other-person.
+- `presence_unavailable`, `presence_host_mismatch`, `presence_stale`, `presence_count_not_exactly_one`, `presence_additional_person_detected`, `presence_confidence_insufficient`: Sensorium presence does not provide a fresh same-host solo reading.
+- `source_subscription_not_active`, `source_subscription_host_mismatch`: the source stream is absent, inactive, not bound to the grant, or not from the requested host.
+- `visual_grant_not_active`, `retention_not_none`: the visual attach grant is absent/inactive/mismatched or is not one-turn/no-retention.
+- `profile_not_vision_capable`: the selected model profile cannot accept the requested visual attachment shape.
+- `episode_not_live`: the episode is paused, distressed, ejected, aborted, closed, or otherwise not in a live delivery state.
+
 ### Later Slice: Occupant Invocation
 
 After the controller-triggered path has live test evidence, add occupant invocation for raw visual attach under the same floor gate. This slice should not loosen any gate inputs; it only changes who requests the one-turn attachment. Acceptance tests must prove an occupant request cannot alter the attestation, widen TTLs, choose a stale frame, change modality, bypass profile vision support, or persist the attachment across turns.

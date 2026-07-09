@@ -335,6 +335,7 @@ export function createRequestHandler({
   const decisionWaiters = new Map();
   const episodes = new Map();
   const forums = new Map();
+  const rawVisualSoloAttestations = new Map();
   if (typeof sensoriumSubscriber?.configurePresenceContext === "function") {
     sensoriumSubscriber.configurePresenceContext({
       presenceState: sensoriumPresenceState,
@@ -667,6 +668,7 @@ export function createRequestHandler({
         episode.status = "ejected";
         episode.updated_at = new Date().toISOString();
         desktopActuationTable.clearEpisode(episode.id);
+        dropRawVisualFramesForControlClose(sensoriumSubscriber);
         const event = provenanceLog.append(createOccupantProtectionEvent({
           eventType: abortType,
           episodeId: episode.id,
@@ -786,6 +788,117 @@ export function createRequestHandler({
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/model-visual/floor/attestations") {
+        const body = await readJson(req);
+        if (isOccupantModelVisualAttachCaller(body)) {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_floor_attestation_operator_required",
+            message: "Raw visual floor attestation refresh is restricted to operator run-control channels.",
+          });
+          return;
+        }
+        const sourceHost = stringValue(body?.source_host);
+        if (!sourceHost) {
+          writeError(res, {
+            statusCode: 400,
+            code: "model_visual_floor_attestation_source_host_required",
+            message: "Raw visual floor attestation refresh requires source_host.",
+          });
+          return;
+        }
+        const attestation = createRawVisualSoloAttestation({
+          sourceHost,
+          actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
+          now: new Date(),
+        });
+        rawVisualSoloAttestations.set(sourceHost, attestation);
+        writeJson(res, 200, {
+          accepted: true,
+          source_host: sourceHost,
+          attestation: byteFreeRawVisualSoloAttestation(attestation),
+          payload_bytes_included: false,
+          content_included: false,
+          activation_performed: false,
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/model-visual/floor/status") {
+        const body = await readJson(req);
+        if (isOccupantModelVisualAttachCaller(body)) {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_floor_status_operator_required",
+            message: "Raw visual floor status is restricted to operator run-control channels.",
+          });
+          return;
+        }
+        const requestBody = isPlainObject(body?.request) ? body.request : body;
+        let request;
+        try {
+          request = validateModelVisualAttachRequest(requestBody, {
+            grants: grantStore.grants ?? [],
+          });
+        } catch (err) {
+          writeError(res, {
+            statusCode: err.statusCode ?? 400,
+            code: err.code ?? "invalid_model_visual_attach_request",
+            message: err.message ?? "Model visual attach request is invalid.",
+            validation_errors: err.validation_errors,
+          });
+          return;
+        }
+        const visualGrant = findGrantById(grantStore, request.grant_id);
+        const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
+        const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
+        const sourceHost = sourceHostForVisualAttachRequest(request);
+        const now = new Date();
+        const soloAttestation = rawVisualSoloAttestations.get(sourceHost) ?? null;
+        const floorGateDecision = decideRawFrameVisionFloorGate({
+          runPosture: body?.run_posture,
+          episodeStatus: body?.episode_status,
+          visualGrant,
+          grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          soloAttestation,
+          presenceState: sensoriumPresenceState,
+          sourceSubscription,
+          profile,
+          modality: request.payload_type,
+          sourceHost,
+          now,
+        });
+        writeJson(res, 200, {
+          allowed: floorGateDecision.allowed,
+          reason: floorGateDecision.reason,
+          floor_gate_decision: summarizeRawFrameVisionFloorGate(floorGateDecision),
+          floor_gate_inputs: summarizeRawVisualFloorGateInputs({
+            runPosture: body?.run_posture,
+            episodeStatus: body?.episode_status,
+            visualGrant,
+            grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+            soloAttestation,
+            presenceState: sensoriumPresenceState,
+            sourceSubscription,
+            profile,
+            modality: request.payload_type,
+            sourceHost,
+            now,
+          }),
+          source_host: sourceHost,
+          source_subscription_id: request.source_subscription_ids[0],
+          modality: request.payload_type,
+          attestation: byteFreeRawVisualSoloAttestation(soloAttestation),
+          payload_bytes_included: false,
+          content_included: false,
+          frame_read_performed: false,
+          activation_performed: false,
+          durable: false,
+        });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/model-visual/attach-requests/dry-run") {
         const body = await readJson(req);
         const authorization = authorizeGrantUse({
@@ -898,6 +1011,8 @@ export function createRequestHandler({
         const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
         const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
         const modelDeliveryRequested = body?.model_delivery_requested === true;
+        const sourceHost = sourceHostForVisualAttachRequest(request);
+        const soloAttestation = rawVisualSoloAttestations.get(sourceHost) ?? body?.solo_attestation;
         let deliveryMessages = [];
         let deliveryProfileClient = null;
         if (modelDeliveryRequested) {
@@ -972,12 +1087,12 @@ export function createRequestHandler({
           episodeStatus: body?.episode_status,
           visualGrant,
           grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
-          soloAttestation: body?.solo_attestation,
+          soloAttestation,
           presenceState: sensoriumPresenceState,
           sourceSubscription,
           profile,
           modality: request.payload_type,
-          sourceHost: sourceHostForVisualAttachRequest(request),
+          sourceHost,
           now,
         });
 
@@ -4033,6 +4148,7 @@ export function createRequestHandler({
           if (updatedEpisode.status === "ejected") {
             desktopActuationTable.clearEpisode(updatedEpisode.id);
           }
+          dropRawVisualFramesForControlClose(sensoriumSubscriber);
           const allowedProvenance = {
             ...provenance,
             event_type: "model.chat.completed",
@@ -4106,6 +4222,7 @@ export function createRequestHandler({
           const occupantText = stripOccupantProtectionNearMissLines(completion.text);
           const episodeStatusBefore = episodeState.status;
           const updatedEpisode = applyOccupantProtectionControl(episodeState, "pause");
+          dropRawVisualFramesForControlClose(sensoriumSubscriber);
           const allowedProvenance = {
             ...provenance,
             event_type: "model.chat.completed",
@@ -6381,6 +6498,134 @@ function summarizeRawFrameVisionFloorGate(decision = null) {
   };
 }
 
+function summarizeRawVisualFloorGateInputs({
+  runPosture = {},
+  episodeStatus = "",
+  visualGrant = {},
+  grantRecoveryReport = null,
+  soloAttestation = null,
+  presenceState = null,
+  sourceSubscription = {},
+  profile = {},
+  modality = "",
+  sourceHost = "",
+  now = new Date(),
+} = {}) {
+  const evaluatedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const presence = typeof presenceState?.snapshot === "function"
+    ? presenceState.snapshot({ now: () => evaluatedAt })
+    : presenceState;
+  const sourceSubscriptionId = stringValue(sourceSubscription?.subscription_id || sourceSubscription?.id);
+  const grantSubscriptionIds = Array.isArray(visualGrant?.constraints?.source_subscription_ids)
+    ? visualGrant.constraints.source_subscription_ids.map(stringValue)
+    : [];
+  const sourceSubscriptionStatus = stringValue(sourceSubscription?.status || sourceSubscription?.subscription_status);
+  const expectedHost = stringValue(sourceHost);
+  const attestationOrigin = stringValue(soloAttestation?.input_origin || soloAttestation?.origin);
+  const attestationIssuedAt = parseRawVisualFloorDate(
+    soloAttestation?.issued_at ||
+    soloAttestation?.attested_at ||
+    soloAttestation?.created_at,
+  );
+  const presenceObservedAt = parseRawVisualFloorDate(presence?.observed_at);
+  const presenceExpiresAt = parseRawVisualFloorDate(presence?.expires_at);
+  const episodeLive = ["active", "running", "open"].includes(
+    stringValue(episodeStatus || runPosture?.status || runPosture?.episode_status),
+  ) && !["paused", "distressed", "ejected", "closed", "aborted"].includes(stringValue(runPosture?.control_state));
+  const soloAttestationPresent = soloAttestation && typeof soloAttestation === "object" && !Array.isArray(soloAttestation);
+  const soloAttestationOccupantWritable = soloAttestation?.occupant_writable === true ||
+    soloAttestation?.occupant_refreshed === true ||
+    soloAttestation?.occupant_influenced === true ||
+    soloAttestation?.refreshed_by === "occupant" ||
+    soloAttestation?.created_by === "occupant";
+  const presenceHost = stringValue(presence?.source_host || presence?.host || presence?.reading_host);
+  const profileModalities = new Set(normalizeRawVisualFloorStringArray(
+    profile?.supported_visual_modalities ||
+    profile?.vision_modalities ||
+    profile?.model_context_visual_modalities,
+  ));
+  const requestedModality = stringValue(modality || visualGrant?.constraints?.payload_type || sourceSubscription?.modality);
+
+  return {
+    evaluated_at: evaluatedAt.toISOString(),
+    source_host: expectedHost,
+    modality: requestedModality,
+    episode_live: episodeLive,
+    grant_recovery_clean: !grantRecoveryReport?.degraded,
+    visual_grant_active: visualGrant?.status === "active",
+    retention_none: stringValue(visualGrant?.constraints?.retention_mode) === "none",
+    source_subscription_active: Boolean(sourceSubscriptionId) &&
+      ["active", "running", "open"].includes(sourceSubscriptionStatus) &&
+      (grantSubscriptionIds.length === 0 || grantSubscriptionIds.includes(sourceSubscriptionId)),
+    source_subscription_host_matches: Boolean(expectedHost && presenceHostForSubscription(sourceSubscription) === expectedHost),
+    solo_attestation_present: Boolean(soloAttestationPresent),
+    solo_attestation_origin: attestationOrigin,
+    solo_attestation_fresh: soloAttestationPresent && rawVisualFloorDateIsFresh({
+      observedAt: attestationIssuedAt,
+      evaluatedAt,
+      ttlMs: 60_000,
+    }),
+    solo_attestation_non_occupant_writable: soloAttestationPresent && !soloAttestationOccupantWritable,
+    solo_attestation_seth_present_and_consenting: soloAttestation?.seth_present === true &&
+      soloAttestation?.seth_consented === true &&
+      soloAttestation?.active_control === true &&
+      soloAttestation?.no_other_person_in_frame === true,
+    presence_available: presence?.status === "available",
+    presence_host_matches: Boolean(expectedHost && presenceHost === expectedHost),
+    presence_fresh: rawVisualFloorDateIsFresh({
+      observedAt: presenceObservedAt,
+      expiresAt: presenceExpiresAt,
+      evaluatedAt,
+      ttlMs: 2_000,
+    }),
+    presence_person_count_exactly_one: presence?.person_count === 1,
+    presence_no_additional_person: presence?.additional_person_present === "not_detected",
+    presence_confidence_sufficient: ["medium", "high"].includes(presence?.confidence_bucket),
+    run_posture_seth_present_and_consenting: runPosture?.seth_present === true &&
+      runPosture?.seth_consented_to_visual_egress === true,
+    profile_vision_capable: profile?.vision_input_supported === true ||
+      profile?.image_input_supported === true ||
+      profileModalities.has(requestedModality),
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
+function presenceHostForSubscription(sourceSubscription = {}) {
+  return stringValue(sourceSubscription?.source_host || sourceSubscription?.host);
+}
+
+function normalizeRawVisualFloorStringArray(value) {
+  return Array.isArray(value) ? value.map(stringValue).filter(Boolean) : [];
+}
+
+function rawVisualFloorDateIsFresh({ observedAt, expiresAt = null, evaluatedAt, ttlMs } = {}) {
+  if (!observedAt) {
+    return false;
+  }
+  if (observedAt.getTime() > evaluatedAt.getTime()) {
+    return false;
+  }
+  if (evaluatedAt.getTime() - observedAt.getTime() > ttlMs) {
+    return false;
+  }
+  if (expiresAt && expiresAt.getTime() <= evaluatedAt.getTime()) {
+    return false;
+  }
+  return true;
+}
+
+function parseRawVisualFloorDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function failedRawFrameVisionFloorGateInput(decision = {}) {
   const reason = stringValue(decision.reason);
   const byReason = {
@@ -6598,6 +6843,78 @@ function activeSensoriumDisclosureStrings(streams = [], field = "") {
       .map((stream) => String(stream?.[field] ?? "").trim())
       .filter(Boolean),
   )].slice(0, 16);
+}
+
+function createRawVisualSoloAttestation({ sourceHost = "", actor = "", now = new Date() } = {}) {
+  const timestamp = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  return {
+    origin: "trusted_run_control",
+    input_origin: "trusted_run_control",
+    source_host: stringValue(sourceHost),
+    issued_at: timestamp.toISOString(),
+    seth_present: true,
+    seth_consented: true,
+    active_control: true,
+    no_other_person_in_frame: true,
+    occupant_writable: false,
+    refreshed_by: stringValue(actor) || "operator",
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
+function byteFreeRawVisualSoloAttestation(attestation = null) {
+  if (!attestation || typeof attestation !== "object" || Array.isArray(attestation)) {
+    return {
+      present: false,
+      source_host: "",
+      issued_at: "",
+      payload_bytes_included: false,
+      content_included: false,
+    };
+  }
+  return {
+    present: true,
+    source_host: stringValue(attestation.source_host),
+    issued_at: stringValue(attestation.issued_at),
+    origin: stringValue(attestation.origin || attestation.input_origin),
+    seth_present: attestation.seth_present === true,
+    seth_consented: attestation.seth_consented === true,
+    active_control: attestation.active_control === true,
+    no_other_person_in_frame: attestation.no_other_person_in_frame === true,
+    occupant_writable: attestation.occupant_writable === true,
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
+function dropRawVisualFramesForControlClose(sensoriumSubscriber = null) {
+  if (typeof sensoriumSubscriber?.dropRawFrames !== "function") {
+    return [];
+  }
+  const disclosure = activeSensoriumDisclosure(sensoriumSubscriber);
+  const dropped = [];
+  for (const stream of disclosure.streams) {
+    const subscriptionId = stringValue(stream.subscription_id || stream.id);
+    const modality = rawVisualModalityForStream(stream);
+    if (!subscriptionId || !modality) {
+      continue;
+    }
+    sensoriumSubscriber.dropRawFrames({ subscriptionId, modality });
+    dropped.push({ subscriptionId, modality });
+  }
+  return dropped;
+}
+
+function rawVisualModalityForStream(stream = {}) {
+  const capability = stringValue(stream.capability);
+  const topic = stringValue(stream.topic);
+  for (const modality of ["color", "depth", "pose"]) {
+    if (capability.includes(`.${modality}.`) || topic.includes(`/${modality}`)) {
+      return modality;
+    }
+  }
+  return "";
 }
 
 function normalizeLivePerceptionTaint(value) {

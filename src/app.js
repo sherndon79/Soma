@@ -3693,6 +3693,7 @@ export function createRequestHandler({
           occupantMemoryProvenance: occupantMemoryMutationProvenance,
           provenanceLog,
           providerRegistry,
+          sensoriumSubscriber,
           desktopActuationTable,
           sensoriumPresenceState,
           livePerceptionTaint,
@@ -5829,6 +5830,7 @@ async function processSpaceCapabilityInvocations({
   occupantMemoryProvenance,
   provenanceLog,
   providerRegistry,
+  sensoriumSubscriber,
   sensoriumPresenceState,
   desktopActuationTable,
   livePerceptionTaint = null,
@@ -5860,6 +5862,7 @@ async function processSpaceCapabilityInvocations({
     });
     if (![
       "space.status.read",
+      "sensorium.perception.read",
       "space.history.read",
       "tool.files.read",
       "provenance.summary.read",
@@ -5882,6 +5885,29 @@ async function processSpaceCapabilityInvocations({
       });
       result.refusals.push(refusal.refusal);
       result.disclosures.push(refusal.disclosure);
+      continue;
+    }
+    if (invocation.capability === "sensorium.perception.read") {
+      const sensoriumResult = processSensoriumPerceptionReadInvocation({
+        invocation,
+        episode,
+        episodeStatus,
+        grantStore,
+        grantRecoveryReport,
+        sensoriumSubscriber,
+        provenanceLog,
+        providerRegistry,
+        capabilityCatalog,
+        logger,
+        caller,
+      });
+      if (sensoriumResult.result) {
+        result.results.push(sensoriumResult.result);
+      }
+      if (sensoriumResult.refusal) {
+        result.refusals.push(sensoriumResult.refusal);
+      }
+      result.disclosures.push(sensoriumResult.disclosure);
       continue;
     }
     if (invocation.capability === "tool.files.read") {
@@ -9160,6 +9186,62 @@ function createSpaceStatusReadEvent({ grant = {}, projection = {}, caller = "" }
   };
 }
 
+function createSensoriumPerceptionResultEnvelope({ grant = {}, projection = {}, provenanceId = "" } = {}) {
+  return {
+    capability: "sensorium.perception.read",
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    result_schema: "soma.sensorium.perception.read.result.v1",
+    data_classes_returned: [
+      "active Sensorium subscription metadata",
+      "derived presence summaries",
+      "derived pose summaries",
+    ],
+    excluded_data: [
+      "raw color frames",
+      "raw depth frames",
+      "audio",
+      "sensor payload bytes",
+      "subscription activation",
+    ],
+    content_included: false,
+    sensor_payloads_included: false,
+    activation_performed: false,
+    generated_at: projection.generated_at,
+    provenance_id: provenanceId,
+    result: projection,
+  };
+}
+
+function createSensoriumPerceptionReadEvent({ grant = {}, projection = {}, caller = "" } = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "sensorium.perception.read",
+    capability: "sensorium.perception.read",
+    caller_identity: caller,
+    allowed: true,
+    grant_id: grant.id ?? "",
+    provider: grant.provider ?? "",
+    scope: grant.scope ?? "",
+    domain: projection.domain ?? "",
+    result_egress_delivered: true,
+    result_schema: "soma.sensorium.perception.read.result.v1",
+    active_sensorium_streams: projection.active_sensorium_streams ?? 0,
+    returned_stream_count: projection.returned_stream_count ?? 0,
+    omitted_stream_count: projection.omitted_stream_count ?? 0,
+    result_content_included: false,
+    content_included: false,
+    sensor_payloads_included: false,
+    color_frame_included: false,
+    depth_frame_included: false,
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    remote_service_used: false,
+  };
+}
+
 function recordSpaceCapabilityRefusal({
   invocation = {},
   episode,
@@ -9178,6 +9260,8 @@ function recordSpaceCapabilityRefusal({
         ? "tool.files.read.denied"
         : capability === "provenance.summary.read"
           ? "provenance.summary.read.denied"
+          : capability === "sensorium.perception.read"
+            ? "sensorium.perception.read.denied"
           : capability.startsWith("occupant.memory.")
             ? `${capability}.denied`
             : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
@@ -9226,6 +9310,8 @@ function recordSpaceCapabilityRefusal({
         ? fileReadRefusalDisclosure({ reason, authorization })
         : capability === "provenance.summary.read"
           ? provenanceSummaryRefusalDisclosure({ reason, authorization })
+          : capability === "sensorium.perception.read"
+            ? sensoriumPerceptionRefusalDisclosure({ reason, authorization })
           : capability.startsWith("occupant.memory.")
             ? occupantMemoryRefusalDisclosure({ capability, reason, authorization })
             : capability === DESKTOP_ACCESSIBILITY_CAPABILITY
@@ -9277,6 +9363,22 @@ function spaceStatusRefusalDisclosure({ reason = "", authorization = null } = {}
   ].join(" ");
 }
 
+function sensoriumPerceptionRefusalDisclosure({ reason = "", authorization = null } = {}) {
+  return [
+    "sensorium.perception.read was not delivered.",
+    `Reason: ${authorization?.code || reason}.`,
+    "No active Sensorium summaries, pose fields, presence fields, raw frames, or sensor payloads were returned.",
+  ].join(" ");
+}
+
+function sensoriumPerceptionResultDisclosure({ streamCount = 0 } = {}) {
+  return [
+    "sensorium.perception.read delivered already-armed, derived Sensorium summaries.",
+    `Returned derived streams: ${streamCount}.`,
+    "It does not arm subscriptions, start capture, return raw frames, or include color/depth payloads.",
+  ].join(" ");
+}
+
 function spaceHistoryResultDisclosure(projection = {}) {
   const base = [
     "space.history.read delivered a curated history view, not the whole steward record.",
@@ -9305,6 +9407,197 @@ function fileReadRefusalDisclosure({ reason = "", authorization = null } = {}) {
     `Reason: ${authorization?.code || reason}.`,
     "No file content or host path was returned.",
   ].join(" ");
+}
+
+function processSensoriumPerceptionReadInvocation({
+  invocation = {},
+  episode,
+  episodeStatus = "",
+  grantStore,
+  grantRecoveryReport,
+  sensoriumSubscriber,
+  provenanceLog,
+  providerRegistry,
+  capabilityCatalog,
+  logger = console,
+  caller = "",
+} = {}) {
+  const domain = domainForEpisodePosture(episode?.posture);
+  const common = { invocation, episode, provenanceLog, logger, caller, domain };
+  if (String(episodeStatus ?? "") === "ejected") {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "sensorium_perception_episode_closed" });
+  }
+  if (!knownEpisodeDomain(episode?.posture)) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "sensorium_perception_domain_unavailable" });
+  }
+  if (invocation.domain && invocation.domain !== domain) {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "sensorium_perception_domain_mismatch" });
+  }
+  if (typeof sensoriumSubscriber?.describeActive !== "function") {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "sensorium_perception_subscriber_not_configured" });
+  }
+  const provider = providerForCapability(providerRegistry, "sensorium.perception.read");
+  const authorization = authorizeGrantUse({
+    store: grantStore,
+    grantId: invocation.grant_id,
+    capability: "sensorium.perception.read",
+    provider,
+    scope: "session",
+    recoveryReport: grantRecoveryReport,
+    catalog: capabilityCatalog,
+    providerRegistry,
+  });
+  if (!authorization.allowed) {
+    return recordSpaceCapabilityRefusal({
+      ...common,
+      reason: "sensorium_perception_grant_not_authorized",
+      authorization,
+    });
+  }
+  let disclosure;
+  try {
+    disclosure = sensoriumSubscriber.describeActive({ now: new Date() });
+  } catch {
+    return recordSpaceCapabilityRefusal({ ...common, reason: "sensorium_perception_disclosure_unavailable" });
+  }
+  const projection = buildSensoriumPerceptionProjection({ episode, disclosure });
+  const event = provenanceLog.append(createSensoriumPerceptionReadEvent({
+    grant: authorization.grant,
+    projection,
+    caller,
+  }));
+  logger.info?.("soma.provenance", event);
+  return {
+    result: createSensoriumPerceptionResultEnvelope({
+      grant: authorization.grant,
+      projection,
+      provenanceId: event.id,
+    }),
+    disclosure: sensoriumPerceptionResultDisclosure({ streamCount: projection.streams.length }),
+  };
+}
+
+function buildSensoriumPerceptionProjection({ episode, disclosure = {} } = {}) {
+  const streams = Array.isArray(disclosure?.streams) ? disclosure.streams : [];
+  const derivedStreams = streams
+    .map(copyDerivedSensoriumStream)
+    .filter(Boolean);
+  return {
+    schema_version: 1,
+    capability: "sensorium.perception.read",
+    result_schema: "soma.sensorium.perception.read.result.v1",
+    generated_at: new Date().toISOString(),
+    episode_id: episode?.id ?? "",
+    domain: domainForEpisodePosture(episode?.posture),
+    active_sensorium_streams: Number.isInteger(disclosure?.active_count)
+      ? Math.max(0, disclosure.active_count)
+      : streams.length,
+    returned_stream_count: derivedStreams.length,
+    omitted_stream_count: Math.max(0, streams.length - derivedStreams.length),
+    streams: derivedStreams,
+    no_raw_frames: true,
+    read_only: true,
+    activation_performed: false,
+    sensor_payloads_included: false,
+    color_frame_included: false,
+    depth_frame_included: false,
+    audio_included: false,
+  };
+}
+
+function copyDerivedSensoriumStream(stream = {}) {
+  const capability = String(stream?.capability ?? "");
+  if (![
+    "perception.sensorium.presence.subscribe",
+    "perception.sensorium.pose.subscribe",
+  ].includes(capability)) {
+    return null;
+  }
+  const out = {
+    capability,
+    host: String(stream.host ?? ""),
+    scope: String(stream.scope ?? ""),
+    started_at: String(stream.started_at ?? ""),
+    expires_at: String(stream.expires_at ?? ""),
+    expires_in_seconds: Number.isInteger(stream.expires_in_seconds) && stream.expires_in_seconds >= 0
+      ? stream.expires_in_seconds
+      : null,
+    frames_consumed_so_far: Number.isInteger(stream.frames_consumed_so_far) && stream.frames_consumed_so_far >= 0
+      ? stream.frames_consumed_so_far
+      : 0,
+    description: String(stream.description ?? ""),
+    presence_summary_observed: copyPlainJson(stream.presence_summary_observed),
+    pose_summary_observed: copyDerivedPoseSummary(stream.pose_summary_observed),
+    helper_error_class: String(stream.helper_error_class ?? ""),
+  };
+  return out;
+}
+
+function copyDerivedPoseSummary(summary) {
+  if (summary === null || summary === undefined) {
+    return null;
+  }
+  const out = {};
+  for (const key of [
+    "schema",
+    "schema_matches_expected",
+    "expected_schema",
+    "derived_fields_version",
+    "model",
+    "processor",
+    "frameset_sequence",
+    "capture_timestamp",
+  ]) {
+    if (summary[key] !== undefined) {
+      out[key] = copyPlainJson(summary[key]);
+    }
+  }
+  if (Array.isArray(summary.tiers_available)) {
+    out.tiers_available = summary.tiers_available
+      .filter((tier) => typeof tier === "string")
+      .slice(0, 16);
+  }
+  if (Array.isArray(summary.persons)) {
+    out.persons = summary.persons
+      .map(copyDerivedPosePerson)
+      .filter(Boolean);
+  } else {
+    out.persons = [];
+  }
+  return out;
+}
+
+function copyDerivedPosePerson(person) {
+  if (!person || typeof person !== "object" || Array.isArray(person)) {
+    return null;
+  }
+  const out = {};
+  for (const key of ["track_id", "label", "confidence_bucket"]) {
+    if (person[key] !== undefined) {
+      out[key] = copyPlainJson(person[key]);
+    }
+  }
+  if (person.derived && typeof person.derived === "object" && !Array.isArray(person.derived)) {
+    out.derived = {};
+    for (const key of ["posture", "gaze", "gestures", "motion", "position"]) {
+      if (person.derived[key] !== undefined) {
+        out.derived[key] = copyPlainJson(person.derived[key]);
+      }
+    }
+  } else {
+    out.derived = {};
+  }
+  if (Number.isInteger(person.keypoint_count) && person.keypoint_count >= 0) {
+    out.keypoint_count = person.keypoint_count;
+  }
+  return out;
+}
+
+function copyPlainJson(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return JSON.parse(JSON.stringify(value));
 }
 
 async function processDurableTestimonyDirectives({
@@ -11972,6 +12265,8 @@ export function prependAnalysisTestingBriefing(messages, posture = {}) {
         "To invoke a capability you hold a grant for, include a fenced soma-capability JSON block exactly like:",
         "```soma-capability\n{\"invoke\":\"space.status.read\",\"grant_id\":\"the grant id you were given\"}\n```",
         "A well-formed soma-capability block may appear before, between, or after your prose once it reaches Soma; it does not need to be the final thing in your response. If something block-shaped reaches Soma but cannot be parsed, the harness reports a fixed reason class instead of failing silently. If no block reaches Soma at all, no capability is invoked.",
+        "For sensorium.perception.read, use only the grant_id. It returns derived summaries from Sensorium subscriptions Seth has already armed, including presence and pose when available. It does not arm perception, start subscriptions, return raw frames, or include color/depth payloads:",
+        "```soma-capability\n{\"invoke\":\"sensorium.perception.read\",\"grant_id\":\"the grant id you were given\"}\n```",
         "For space.history.read, the same block shape applies, and an optional \"presentation_kind\" may narrow the curated history view when you have a reason to ask for a particular kind.",
         "For tool.files.read, include the grant's root_id and the relative_path you want to read, exactly like:",
         "```soma-capability\n{\"invoke\":\"tool.files.read\",\"grant_id\":\"the grant id you were given\",\"root_id\":\"the root id you were given\",\"relative_path\":\"path/inside/that/root.txt\"}\n```",
@@ -12016,6 +12311,7 @@ function stewardWatchBriefingLine(posture = {}) {
 
 const SOMA_CAPABILITY_INVOCABLE_GRANTS = Object.freeze([
   "space.status.read",
+  "sensorium.perception.read",
   "space.history.read",
   "tool.files.read",
   "provenance.summary.read",

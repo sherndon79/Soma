@@ -304,6 +304,15 @@ const capabilityCatalog = {
       activation_policy: "explicit_grant",
     },
     {
+      key: "sensorium.perception.read",
+      name: "Active Sensorium Perception Summary Read",
+      category: "sensorium",
+      risk_class: "sensitive",
+      default_status: "disabled",
+      activation_policy: "explicit_grant",
+      provider_contract: "soma.sensorium.perception.read.v1",
+    },
+    {
       key: "desktop.visual_cue.present",
       name: "Occupant-Owned Desktop Visual Cue",
       category: "desktop",
@@ -571,7 +580,7 @@ const providerRegistry = {
       runtime: "test",
       local_only: true,
       network_access: false,
-      capabilities: ["sensorium.semantic_events.read", "desktop.visual_cue.present"],
+      capabilities: ["sensorium.semantic_events.read", "sensorium.perception.read", "desktop.visual_cue.present"],
     },
     {
       id: "soma.provider.occupant-memory",
@@ -836,9 +845,9 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.summary.total, 25);
+  assert.equal(response.body.summary.total, 26);
   assert.equal(response.body.summary.by_status.active, 3);
-  assert.equal(response.body.summary.by_status.requestable, 22);
+  assert.equal(response.body.summary.by_status.requestable, 23);
   assert.equal(Object.hasOwn(response.body.summary.by_status, "unsupported"), false);
   assert.equal(response.body.grouped.comms.total, 1);
   assert.equal(response.body.grouped.desktop.total, 10);
@@ -850,7 +859,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(response.body.grouped.provenance.total, 1);
   assert.equal(response.body.grouped.space.total, 2);
   assert.equal(response.body.grouped.status.total, 1);
-  assert.equal(response.body.grouped.sensorium.total, 1);
+  assert.equal(response.body.grouped.sensorium.total, 2);
   const localToolCalls = response.body.capabilities.find((capability) => capability.key === "model.local.tool_calls");
   const focus = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.focus");
   const windows = response.body.capabilities.find((capability) => capability.key === "desktop.inspect.windows");
@@ -864,6 +873,7 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   const spaceHistory = response.body.capabilities.find((capability) => capability.key === "space.history.read");
   const remoteChat = response.body.capabilities.find((capability) => capability.key === "model.remote.chat");
   const semanticEvents = response.body.capabilities.find((capability) => capability.key === "sensorium.semantic_events.read");
+  const sensoriumPerception = response.body.capabilities.find((capability) => capability.key === "sensorium.perception.read");
   const visualCue = response.body.capabilities.find((capability) => capability.key === "desktop.visual_cue.present");
   const commsFixture = response.body.capabilities.find((capability) => capability.key === "comms.fixture.send");
   assert.equal(localToolCalls.status, "requestable");
@@ -889,6 +899,8 @@ test("GET /capability-view groups active requestable and unsupported capabilitie
   assert.equal(spaceHistory.providers[0].id, "soma.provider.history-projection");
   assert.equal(semanticEvents.status, "requestable");
   assert.equal(semanticEvents.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(sensoriumPerception.status, "requestable");
+  assert.equal(sensoriumPerception.providers[0].id, "soma.provider.sensorium-tier");
   assert.equal(visualCue.status, "requestable");
   assert.equal(visualCue.providers[0].id, "soma.provider.sensorium-tier");
   assert.equal(commsFixture.status, "requestable");
@@ -15664,6 +15676,170 @@ test("GET /sensorium/subscriptions returns the disclosure shape", async () => {
   assert.equal(response.body.family, "perception.sensorium");
   assert.equal(response.body.active_count, 0);
   assert.equal(response.body.frames_recorded, false);
+});
+
+test("sensorium.perception.read returns active derived presence and pose summaries without arming or raw frames", async () => {
+  let startCalled = false;
+  const subscriber = {
+    activeCount: 2,
+    async start() {
+      startCalled = true;
+      throw new Error("occupant read must not start subscriptions");
+    },
+    describeActive() {
+      return {
+        family: "perception.sensorium",
+        active_count: 3,
+        summary: "perception via Sensorium: 3 streams active",
+        streams: [
+          {
+            capability: "perception.sensorium.presence.subscribe",
+            host: "jetsorano",
+            scope: "session",
+            started_at: "2026-07-08T23:00:00.000Z",
+            expires_at: "2999-01-01T00:00:00.000Z",
+            expires_in_seconds: 60,
+            frames_consumed_so_far: 12,
+            presence_summary_observed: {
+              person_count: 1,
+              count_bucket: "1",
+              additional_person_present: "not_detected",
+              confidence_bucket: "high",
+              frameset_sequence: 77,
+            },
+            pose_summary_observed: null,
+            description: "Receiving presence events from jetsorano",
+          },
+          {
+            capability: "perception.sensorium.pose.subscribe",
+            host: "jetsorano",
+            scope: "session",
+            started_at: "2026-07-08T23:00:01.000Z",
+            expires_at: "2999-01-01T00:00:00.000Z",
+            expires_in_seconds: 59,
+            frames_consumed_so_far: 11,
+            presence_summary_observed: null,
+            pose_summary_observed: {
+              schema: "perception.pose.contract.v0.2",
+              frameset_sequence: 77,
+              color: { width: 1280, height: 720, payload_size: 4096 },
+              depth: { width: 640, height: 480, payload_size: 2048 },
+              persons: [
+                {
+                  track_id: 1,
+                  body_keypoints: Array.from({ length: 17 }, () => [1, 2]),
+                  face_keypoints: Array.from({ length: 68 }, () => [1, 2]),
+                  derived: {
+                    posture: "seated",
+                    gaze: "toward_screen",
+                    gestures: ["open_hand"],
+                    motion: "still",
+                    position: "desk",
+                  },
+                },
+              ],
+            },
+            description: "Receiving pose features from jetsorano",
+          },
+          {
+            capability: "perception.sensorium.color.subscribe",
+            host: "jetsorano",
+            frames_consumed_so_far: 10,
+            stream_summary_observed: {
+              width: 1280,
+              height: 720,
+              format: "jpeg",
+              payload_size: 4096,
+            },
+          },
+        ],
+        frames_recorded: false,
+      };
+    },
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    sensoriumSubscriber: subscriber,
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        spaceCapabilityGrantFixture({
+          id: "grant-sensorium-perception-read",
+          capability: "sensorium.perception.read",
+          provider: "soma.provider.sensorium-tier",
+          constraints: { domain: "testing" },
+        }),
+      ],
+      examples: [],
+    },
+    modelClient: {
+      async chat() {
+        return {
+          text: [
+            "I will read the armed perception summary.",
+            "```soma-capability",
+            JSON.stringify({
+              invoke: "sensorium.perception.read",
+              grant_id: "grant-sensorium-perception-read",
+              domain: "testing",
+            }),
+            "```",
+          ].join("\n"),
+          model: "local-test-model",
+          finish_reason: "stop",
+          tokens_used: 1,
+        };
+      },
+    },
+  });
+  await postureAnalysisTesting(handler, "episode-sensorium-perception-read");
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-sensorium-perception-read",
+      messages: [{ role: "user", content: "read perception" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(startCalled, false);
+  assert.equal(response.body.capability_refusals.length, 0);
+  assert.equal(response.body.capability_results.length, 1);
+  const envelope = response.body.capability_results[0];
+  assert.equal(envelope.capability, "sensorium.perception.read");
+  assert.equal(envelope.content_included, false);
+  assert.equal(envelope.sensor_payloads_included, false);
+  assert.equal(envelope.activation_performed, false);
+  assert.ok(envelope.excluded_data.includes("raw color frames"));
+  assert.ok(envelope.excluded_data.includes("subscription activation"));
+  assert.equal(envelope.result.active_sensorium_streams, 3);
+  assert.equal(envelope.result.returned_stream_count, 2);
+  assert.equal(envelope.result.omitted_stream_count, 1);
+  assert.equal(envelope.result.no_raw_frames, true);
+  assert.equal(envelope.result.color_frame_included, false);
+  assert.equal(envelope.result.depth_frame_included, false);
+  assert.deepEqual(
+    envelope.result.streams.map((stream) => stream.capability),
+    ["perception.sensorium.presence.subscribe", "perception.sensorium.pose.subscribe"],
+  );
+  assert.equal(envelope.result.streams[0].presence_summary_observed.person_count, 1);
+  assert.equal(envelope.result.streams[1].pose_summary_observed.persons[0].derived.posture, "seated");
+  assert.equal(JSON.stringify(envelope).includes("payload_size"), false);
+  assert.equal(JSON.stringify(envelope).includes("body_keypoints"), false);
+  assert.equal(JSON.stringify(envelope).includes("face_keypoints"), false);
+  assert.equal(JSON.stringify(envelope).includes("jpeg"), false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=sensorium.perception.read",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].returned_stream_count, 2);
+  assert.equal(response.body.entries[0].sensor_payloads_included, false);
+  assert.equal(response.body.entries[0].activation_performed, false);
 });
 
 function makeHandler({

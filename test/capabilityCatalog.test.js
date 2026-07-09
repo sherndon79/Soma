@@ -303,6 +303,22 @@ test("local sensorium tier exposes semantic events and visual cues as explicit-g
   assert.ok(semanticEvents.excluded_by_default.includes("screenshots"));
   assert.ok(semanticEvents.excluded_by_default.includes("ambient semantic event persistence"));
 
+  const perceptionRead = view.capabilities.find(
+    (capability) => capability.key === "sensorium.perception.read",
+  );
+  assert.equal(perceptionRead.category, "sensorium");
+  assert.equal(perceptionRead.risk_class, "sensitive");
+  assert.equal(perceptionRead.status, "requestable");
+  assert.equal(perceptionRead.activation_policy, "explicit_grant");
+  assert.equal(perceptionRead.providers[0].id, "soma.provider.sensorium-tier");
+  assert.equal(
+    perceptionRead.providers[0].provider_contract,
+    "soma.sensorium.perception.read.v1",
+  );
+  assert.ok(perceptionRead.data_exposed.includes("derived pose summaries"));
+  assert.ok(perceptionRead.excluded_by_default.includes("raw color frames"));
+  assert.ok(perceptionRead.excluded_by_default.includes("subscription activation"));
+
   const visualCue = view.capabilities.find(
     (capability) => capability.key === "desktop.visual_cue.present",
   );

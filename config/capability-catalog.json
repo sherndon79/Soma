@@ -638,6 +638,31 @@
       "description": "Read short-lived local sensorium semantic events derived from existing authorized desktop inspection without raw sensory egress."
     },
     {
+      "key": "sensorium.perception.read",
+      "name": "Active Sensorium Perception Summary Read",
+      "category": "sensorium",
+      "risk_class": "sensitive",
+      "default_status": "disabled",
+      "allowed_scopes": ["session"],
+      "data_exposed": [
+        "active Sensorium subscription metadata",
+        "derived presence summaries",
+        "derived pose summaries"
+      ],
+      "excluded_by_default": [
+        "raw color frames",
+        "raw depth frames",
+        "audio",
+        "sensor payload bytes",
+        "subscription activation",
+        "grant mutation"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.sensorium.perception.read.v1",
+      "description": "Read already-armed Sensorium derived perception summaries for the occupant without starting subscriptions or returning raw frame payloads."
+    },
+    {
       "key": "desktop.visual_cue.present",
       "name": "Occupant-Owned Desktop Visual Cue",
       "category": "desktop",

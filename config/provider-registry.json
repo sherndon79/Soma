@@ -391,6 +391,11 @@
           "output_schema": "soma.sensorium.semantic_event.v1"
         },
         {
+          "key": "sensorium.perception.read",
+          "provider_contract": "soma.sensorium.perception.read.v1",
+          "output_schema": "soma.sensorium.perception.read.result.v1"
+        },
+        {
           "key": "desktop.visual_cue.present",
           "provider_contract": "soma.desktop.visual_cue.present.v1",
           "output_schema": "soma.desktop.visual_cue.present.response.v1"

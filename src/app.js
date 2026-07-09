@@ -899,7 +899,7 @@ export function createRequestHandler({
           visualGrant,
           grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
           soloAttestation: body?.solo_attestation,
-          presenceState: body?.presence_state ?? sensoriumPresenceState,
+          presenceState: sensoriumPresenceState,
           sourceSubscription,
           profile,
           modality: request.payload_type,

@@ -1159,6 +1159,7 @@ test("POST /model-visual/attach-requests/controller activates one byte-free late
     grantStore: envelope.grantStore,
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
   });
 
   const response = await invokeHandler(handler, {
@@ -1189,6 +1190,7 @@ test("POST /model-visual/attach-requests/controller refuses occupant callers bef
     grantStore: envelope.grantStore,
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
   });
 
   const response = await invokeHandler(handler, {
@@ -1225,6 +1227,7 @@ test("POST /model-visual/attach-requests/controller refuses non-visual grants be
     },
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
   });
 
   const response = await invokeHandler(handler, {
@@ -1272,6 +1275,7 @@ test("POST /model-visual/attach-requests/controller refuses wrong modality, mode
       grantStore: envelope.grantStore,
       runtimeProfiles: modelVisualAttachRuntimeProfiles(),
       sensoriumSubscriber: subscriber,
+      sensoriumPresenceState: envelope.presenceState,
     });
 
     const response = await invokeHandler(handler, {
@@ -1299,6 +1303,7 @@ test("POST /model-visual/attach-requests/controller refuses stale frames without
     grantStore: envelope.grantStore,
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
   });
 
   const response = await invokeHandler(handler, {
@@ -1324,6 +1329,7 @@ test("POST /model-visual/attach-requests/controller drops cached frames on distr
     grantStore: envelope.grantStore,
     runtimeProfiles: modelVisualAttachRuntimeProfiles(),
     sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
   });
 
   const response = await invokeHandler(handler, {
@@ -1338,6 +1344,46 @@ test("POST /model-visual/attach-requests/controller drops cached frames on distr
   assert.equal(response.body.payload_bytes_included, false);
   assert.equal(subscriber.readCalls.length, 0);
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
+test("POST /model-visual/attach-requests/controller ignores request-body presence substitution", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      presence_state: {
+        status: "available",
+        source_host: "jetsorano",
+        observed_at: new Date().toISOString(),
+        person_count: 1,
+        additional_person_present: "not_detected",
+        confidence_bucket: "high",
+      },
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: {
+      status: "available",
+      source_host: "jetsorano",
+      observed_at: envelope.nowIso,
+      person_count: 2,
+      additional_person_present: "present",
+      confidence_bucket: "high",
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_floor_gate_refused");
+  assert.equal(response.body.reason, "presence_count_not_exactly_one");
+  assert.equal(subscriber.readCalls.length, 0);
 });
 
 test("capability proposals can be created and listed without activation", async () => {
@@ -13551,6 +13597,14 @@ function modelVisualAttachActivationEnvelope({ requestPatch = {}, bodyPatch = {}
   };
   return {
     nowIso,
+    presenceState: {
+      status: "available",
+      source_host: "jetsorano",
+      observed_at: nowIso,
+      person_count: 1,
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    },
     grantStore: {
       schema_version: 1,
       grants: [grant],
@@ -13571,14 +13625,6 @@ function modelVisualAttachActivationEnvelope({ requestPatch = {}, bodyPatch = {}
         seth_consented: true,
         active_control: true,
         no_other_person_in_frame: true,
-      },
-      presence_state: {
-        status: "available",
-        source_host: "jetsorano",
-        observed_at: nowIso,
-        person_count: 1,
-        additional_person_present: "not_detected",
-        confidence_bucket: "high",
       },
       ...bodyPatch,
     },

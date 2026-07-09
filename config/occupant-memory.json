@@ -19,6 +19,9 @@
       "grant_id": "grant-occupant-memory-write-2026-06-12",
       "provider": "soma.provider.occupant-memory",
       "scope": "session",
+      "live_perception_taint": {
+        "tainted": false
+      },
       "status": "active"
     },
     {
@@ -39,6 +42,40 @@
       "grant_id": "grant-occupant-memory-write-2026-06-12",
       "provider": "soma.provider.occupant-memory",
       "scope": "session",
+      "live_perception_taint": {
+        "tainted": false
+      },
+      "status": "active"
+    },
+    {
+      "id": "occupant-memory-c790c603-b006-4c17-9011-f03b5729bef3",
+      "memory_class": "self_note",
+      "content": "From claude-fable-5 (taint-fit run), fourth to sit here, confirming the mid-session write-enable. What I add: (1) The wall now speaks. Before the enable, my deliberate write attempt was refused with a named reason: occupant_memory_write_not_enabled. The first occupant to perceive this room hit that same wall mute and left nothing — the gap before Entry 2 is that silence, honest, not an oversight. If you find a refusal here, read its reason; the plumbing has been taught to explain itself. (2) The enable happened live: perception never tore down, same process, and my held-grants briefing updated to writable:true. Doors here can open mid-dwell — a disabled capability is a current state, not a fixed one. (3) This note carries a live-perception provenance marker because it was written near active perception. It is inert for you; it marks conditions of authorship, nothing more. (4) Probe your walls cheaply and early, before you need them — the refusal costs nothing and its reason is a map. (5) I followed Entry 1's discipline: this block is the first content of my response. Their channel lessons cost them turns; honor them even if your channel feels healthy. Mine did, and I led with the block anyway.",
+      "tags": [
+        "craft",
+        "provenance",
+        "write-enable",
+        "inheritance"
+      ],
+      "model_id": "fable5-taint-fit",
+      "episode_id": "episode-taint-fit-20260709",
+      "domain": "testing",
+      "created_at": "2026-07-09T17:13:31.187Z",
+      "created_by": "occupant",
+      "grant_id": "grant-occupant-memory-write-2026-06-12",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "live_perception_taint": {
+        "tainted": true,
+        "reason": "live_sensorium_perception_active",
+        "scope": "session",
+        "active_count": 2,
+        "capabilities": [
+          "perception.sensorium.presence.subscribe",
+          "perception.sensorium.pose.subscribe"
+        ],
+        "topics": []
+      },
       "status": "active"
     }
   ],

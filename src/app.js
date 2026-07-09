@@ -139,6 +139,7 @@ import {
 } from "./sensoriumGrantCreateCandidate.js";
 import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
 import { createSensoriumPresenceState } from "./sensoriumPresenceState.js";
+import { decodeSensoriumMessagePack } from "./sensoriumMessagePack.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import {
   modelVisualAttachGrantCandidateReviewText,
@@ -1003,11 +1004,32 @@ export function createRequestHandler({
         }
 
         let completion = null;
+        let deliveredAttachment = null;
+        if (modelDeliveryRequested) {
+          try {
+            deliveredAttachment = modelVisualAttachmentFromFrame({ request, frame });
+          } catch (err) {
+            sensoriumSubscriber.dropRawFrames?.({
+              subscriptionId: request.source_subscription_ids[0],
+              modality: request.payload_type,
+            });
+            writeJson(res, 409, {
+              error: "model_visual_attach_payload_mismatch",
+              reason: err.code ?? "visual_payload_mismatch",
+              activation_performed: false,
+              subscription_activated: false,
+              model_delivery_performed: false,
+              payload_attached: false,
+              payload_bytes_included: false,
+            });
+            return;
+          }
+        }
         try {
           if (modelDeliveryRequested) {
             completion = await deliveryProfileClient.chatWithVisualAttachments({
               messages: deliveryMessages,
-              attachments: [modelVisualAttachmentFromFrame({ request, frame })],
+              attachments: [deliveredAttachment],
               model: profile.model,
               maxTokens: numberOrDefault(body.max_tokens, 512),
               temperature: numberOrDefault(body.temperature, DEFAULT_CHAT_TEMPERATURE),
@@ -1058,7 +1080,8 @@ export function createRequestHandler({
             topic: frame.topic,
             frame_id: frame.frame_id,
             capture_timestamp: frame.capture_timestamp,
-            byte_length: frame.byte_length,
+            byte_length: deliveredAttachment?.byte_length ?? frame.byte_length,
+            envelope_byte_length: frame.byte_length,
             declared_byte_length: frame.declared_byte_length ?? null,
             retention_mode: frame.retention_mode,
             payload_bytes_included: false,
@@ -6055,16 +6078,43 @@ function modelVisualProfileSupportsModality(profile = {}, modality = "") {
 }
 
 function modelVisualAttachmentFromFrame({ request = {}, frame = {} } = {}) {
+  const extracted = extractModelVisualPayload({ request, frame });
   return {
     modality: request.payload_type,
-    media_type: mediaTypeForModelVisualAttachment(request),
-    payload_bytes: frame.payload_bytes,
+    media_type: extracted.media_type,
+    payload_bytes: extracted.payload_bytes,
+    byte_length: extracted.payload_bytes.byteLength,
+    envelope_byte_length: frame.byte_length,
   };
 }
 
-function mediaTypeForModelVisualAttachment(request = {}) {
+function extractModelVisualPayload({ request = {}, frame = {} } = {}) {
   const modality = stringValue(request.payload_type);
   const format = stringValue(request.format_required);
+  if (modality === "pose") {
+    return {
+      media_type: "application/vnd.soma.pose+msgpack",
+      payload_bytes: copyVisualPayloadBytes(frame.payload_bytes),
+    };
+  }
+  const decoded = decodeSensoriumMessagePack(frame.payload_bytes, {
+    errorPrefix: `model_visual_${modality}_msgpack`,
+  });
+  if (!isPlainObject(decoded)) {
+    throwModelVisualPayloadError("visual_payload_not_object", "visual payload envelope must decode to an object");
+  }
+  const decodedFormat = stringValue(decoded.format);
+  if (decodedFormat !== format) {
+    throwModelVisualPayloadError("visual_payload_format_mismatch", "visual payload format must match request format_required");
+  }
+  const payloadBytes = copyVisualPayloadBytes(decoded.data);
+  return {
+    media_type: mediaTypeForModelVisualAttachment({ modality, format }),
+    payload_bytes: payloadBytes,
+  };
+}
+
+function mediaTypeForModelVisualAttachment({ modality = "", format = "" } = {}) {
   if (modality === "color" && format === "jpeg") {
     return "image/jpeg";
   }
@@ -6078,6 +6128,22 @@ function mediaTypeForModelVisualAttachment(request = {}) {
     return "application/vnd.soma.pose+json";
   }
   return "application/octet-stream";
+}
+
+function copyVisualPayloadBytes(value) {
+  if (value instanceof Uint8Array) {
+    return new Uint8Array(value);
+  }
+  if (Array.isArray(value)) {
+    return Uint8Array.from(value);
+  }
+  throwModelVisualPayloadError("visual_payload_data_invalid", "visual payload data must be binary bytes");
+}
+
+function throwModelVisualPayloadError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
 }
 
 function sourceHostForVisualAttachRequest(request = {}) {

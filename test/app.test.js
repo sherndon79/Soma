@@ -19,6 +19,7 @@ import { loadGrantAuthority } from "../src/grantAuthority.js";
 import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
+import { encodeColorPayload } from "./support/msgpackStatus.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -1437,10 +1438,15 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
       messages: [{ role: "user", content: "look once" }],
     },
   });
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0xff, 0xd9],
+  }));
   const subscriber = makeModelVisualAttachSubscriber({
     frame: {
       capture_timestamp: envelope.nowIso,
-      payload_bytes: Uint8Array.from([1, 2, 3]),
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
     },
   });
   const modelClient = makeModelVisualDeliveryClient();
@@ -1472,7 +1478,11 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
   assert.equal(modelClient.calls[0].args.attachments.length, 1);
   assert.equal(modelClient.calls[0].args.attachments[0].modality, "color");
   assert.equal(modelClient.calls[0].args.attachments[0].media_type, "image/jpeg");
-  assert.deepEqual([...modelClient.calls[0].args.attachments[0].payload_bytes], [1, 2, 3]);
+  assert.deepEqual([...modelClient.calls[0].args.attachments[0].payload_bytes], [0xff, 0xd8, 0xff, 0xd9]);
+  assert.equal(modelClient.calls[0].args.attachments[0].byte_length, 4);
+  assert.ok(modelClient.calls[0].args.attachments[0].envelope_byte_length > 4);
+  assert.equal(first.body.frame.byte_length, 4);
+  assert.ok(first.body.frame.envelope_byte_length > 4);
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
 
   const second = await invokeHandler(handler, {
@@ -1494,10 +1504,15 @@ test("POST /model-visual/attach-requests/controller consumes the frame even when
       messages: [{ role: "user", content: "look once" }],
     },
   });
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0xff, 0xd9],
+  }));
   const subscriber = makeModelVisualAttachSubscriber({
     frame: {
       capture_timestamp: envelope.nowIso,
-      payload_bytes: Uint8Array.from([1, 2, 3]),
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
     },
   });
   const handler = makeHandler({
@@ -1524,6 +1539,49 @@ test("POST /model-visual/attach-requests/controller consumes the frame even when
   });
   assert.equal(second.statusCode, 409);
   assert.equal(second.body.error, "model_visual_attach_frame_unavailable");
+});
+
+test("POST /model-visual/attach-requests/controller refuses color envelope format drift before model delivery", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look once" }],
+    },
+  });
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "png",
+    data: [0x89, 0x50, 0x4e, 0x47],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_payload_mismatch");
+  assert.equal(response.body.reason, "visual_payload_format_mismatch");
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(modelClient.calls.length, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
 });
 
 test("capability proposals can be created and listed without activation", async () => {

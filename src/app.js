@@ -2271,6 +2271,11 @@ export function createRequestHandler({
                 topic: boundedRequest.topic,
                 constraints: boundedRequest.constraints,
               },
+              rawFrameRetention: rawFrameRetentionFromSensoriumGrant({
+                grant,
+                capability,
+                topic: boundedRequest.topic,
+              }),
             });
           } catch (err) {
             writeError(res, {
@@ -13703,6 +13708,36 @@ function providerHostMatchesTopic(provider = {}, topic = "") {
 function grantTopicMatchesTopic(grant = {}, topic = "") {
   const grantTopic = typeof grant.constraints?.topic === "string" ? grant.constraints.topic : "";
   return !grantTopic || grantTopic === topic;
+}
+
+function rawFrameRetentionFromSensoriumGrant({ grant = {}, capability = "", topic = "" } = {}) {
+  const retention = grant?.constraints?.raw_frame_retention;
+  if (!retention || typeof retention !== "object" || Array.isArray(retention)) {
+    return null;
+  }
+  return {
+    enabled: retention.enabled === true,
+    max_bytes: retention.max_bytes,
+    ttl_ms: retention.ttl_ms,
+    retention_mode: retention.retention_mode,
+    grant_allows_raw_visual_retention: true,
+    modality: rawFrameModalityForSensoriumCapability(capability),
+    source_grant_id: stringValue(grant.id),
+    source_host: sensoriumHostFromTopic(topic),
+  };
+}
+
+function rawFrameModalityForSensoriumCapability(capability = "") {
+  const normalized = stringValue(capability);
+  if (normalized === "perception.sensorium.color.subscribe") return "color";
+  if (normalized === "perception.sensorium.depth.subscribe") return "depth";
+  if (normalized === "perception.sensorium.pose.subscribe") return "pose";
+  return "";
+}
+
+function sensoriumHostFromTopic(topic = "") {
+  const match = stringValue(topic).match(/^(?:sensor|perception)\/([a-z0-9-]+)\//);
+  return match ? match[1] : "";
 }
 
 function isSensoriumSubscribeCapability(capability = "") {

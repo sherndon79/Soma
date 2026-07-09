@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -19,6 +20,7 @@ import { loadGrantAuthority } from "../src/grantAuthority.js";
 import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
+import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
 import { encodeColorPayload } from "./support/msgpackStatus.js";
 
 const traversalEndpointActivationCasesPath = new URL(
@@ -14640,6 +14642,53 @@ function makeFakeSensoriumSubscriber({ subscriptionId = "sub-test", startedAt = 
   };
 }
 
+class AppRouteSensoriumFakeManager extends EventEmitter {
+  constructor() {
+    super();
+    this.calls = [];
+    this.nextStartId = 1;
+  }
+
+  async send(method, params = {}) {
+    this.calls.push({ method, params });
+    if (method === "sensorium.subscribe.start") {
+      return {
+        subscription_id: `sub-route-${this.nextStartId++}`,
+        topic: params.topic,
+        started_at: 1_700_000_000.0,
+      };
+    }
+    if (method === "sensorium.subscribe.stop") {
+      return {
+        subscription_id: params.subscription_id,
+        topic: "unknown",
+        stopped: true,
+      };
+    }
+    if (method === "sensorium.subscribe.status") {
+      return { subscriptions: [], count: 0 };
+    }
+    throw new Error(`fake manager has no handler for method ${method}`);
+  }
+
+  emitSample(subscriptionId, topic, {
+    payloadBytes = new Uint8Array(),
+    payloadSize = payloadBytes.byteLength,
+    captureTimestamp = "2026-07-09T18:00:00.000Z",
+  } = {}) {
+    this.emit("notification", {
+      method: "sensorium.subscription.sample",
+      params: {
+        subscription_id: subscriptionId,
+        topic,
+        payload_bytes: payloadBytes,
+        payload_size: payloadSize,
+        capture_timestamp: captureTimestamp,
+      },
+    });
+  }
+}
+
 function activeSensoriumSubscriber() {
   return {
     activeCount: 1,
@@ -16794,6 +16843,118 @@ test("POST /sensorium/subscriptions succeeds when an active grant exists", async
     format_required: "jpeg",
     downsample_to: [640, 480],
   });
+});
+
+test("POST /sensorium/subscriptions enables raw latest-frame cache only from grant retention constraints", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  let nowMs = 1_700_000_000_000;
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowMs),
+  });
+  const rawRetentionGrantStore = {
+    schema_version: 1,
+    grants: [
+      {
+        ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+        constraints: {
+          ...SENSORIUM_TEST_GRANT_STORE.grants[0].constraints,
+          raw_frame_retention: {
+            enabled: true,
+            retention_mode: "latest_frame_cache",
+            max_bytes: 1024,
+            ttl_ms: 2_000,
+          },
+        },
+      },
+    ],
+  };
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: rawRetentionGrantStore,
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  manager.emitSample(response.body.subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 23,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: "2026-07-09T18:00:00.000Z",
+  });
+
+  const frame = subscriber.readLatestRawFrame({
+    subscriptionId: response.body.subscription_id,
+    modality: "color",
+    now: () => new Date(nowMs),
+  });
+  assert.equal(frame.source_grant_id, "grant-sensorium-color-test");
+  assert.equal(frame.modality, "color");
+  assert.equal(frame.source_host, "jetsorano");
+  assert.equal(frame.frame_id, "23");
+  assert.equal(frame.payload_bytes_included, true);
+});
+
+test("POST /sensorium/subscriptions leaves raw latest-frame cache disabled without grant retention constraints", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  let nowMs = 1_700_000_000_000;
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowMs),
+  });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: SENSORIUM_TEST_GRANT_STORE,
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  manager.emitSample(response.body.subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 24,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x02, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: "2026-07-09T18:00:00.000Z",
+  });
+
+  assert.equal(subscriber.readLatestRawFrame({
+    subscriptionId: response.body.subscription_id,
+    modality: "color",
+    now: () => new Date(nowMs),
+  }), null);
 });
 
 test("POST /sensorium/subscriptions rejects topic mismatch before subscriber invocation", async () => {

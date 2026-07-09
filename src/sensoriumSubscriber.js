@@ -666,10 +666,10 @@ export class SensoriumSubscriber {
       return;
     }
     const payload = copyPayloadBytes(payloadBytes);
-    const effectiveByteLength = Number.isInteger(byteLength) && byteLength >= 0
+    const declaredByteLength = Number.isInteger(byteLength) && byteLength >= 0
       ? byteLength
-      : payload.byteLength;
-    if (effectiveByteLength > retention.max_bytes || payload.byteLength > retention.max_bytes) {
+      : null;
+    if ((declaredByteLength !== null && declaredByteLength > retention.max_bytes) || payload.byteLength > retention.max_bytes) {
       this.#dropRawLatestFrame(sub);
       return;
     }
@@ -684,7 +684,8 @@ export class SensoriumSubscriber {
       topic: sub.topic,
       frame_id: String(frameId ?? ""),
       capture_timestamp: normalizeCaptureTimestamp(captureTimestamp, storedAt),
-      byte_length: effectiveByteLength,
+      byte_length: payload.byteLength,
+      declared_byte_length: declaredByteLength,
       stored_at: storedAt.toISOString(),
       expires_at: expiresAt.toISOString(),
       payload_bytes: payload,

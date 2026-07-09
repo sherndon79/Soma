@@ -66,8 +66,14 @@ function describeStream(subscription, now) {
   });
 
   return {
+    subscription_id: stringOrEmpty(subscription.subscription_id),
     capability: subscription.capability,
+    provider: stringOrEmpty(subscription.provider),
+    grant_id: stringOrEmpty(subscription.grant_id),
+    topic: stringOrEmpty(subscription.topic),
     host,
+    source_host: host,
+    status: "active",
     scope: stringOrEmpty(subscription.scope),
     started_at: stringOrEmpty(subscription.started_at),
     expires_at: stringOrEmpty(subscription.expires_at),

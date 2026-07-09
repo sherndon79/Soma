@@ -1145,6 +1145,201 @@ test("POST /model-visual/attach-requests/dry-run fails closed on unsupported gra
   assert.equal(response.body.error, "model_visual_attach_grant_store_schema_unsupported");
 });
 
+test("POST /model-visual/attach-requests/controller activates one byte-free latest-frame turn", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: 3,
+      declared_byte_length: 128,
+      payload_bytes: Uint8Array.from([1, 2, 3]),
+    },
+  });
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.accepted, true);
+  assert.equal(response.body.one_turn, true);
+  assert.equal(response.body.activation_performed, true);
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, true);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(response.body.frame.byte_length, 3);
+  assert.equal(response.body.frame.declared_byte_length, 128);
+  assert.equal(response.body.frame.payload_bytes_included, false);
+  assert.equal(JSON.stringify(response.body).includes("[1,2,3]"), false);
+  assert.equal(subscriber.readCalls.length, 1);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
+test("POST /model-visual/attach-requests/controller refuses occupant callers before payload read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: {
+      ...envelope.body,
+      actor: "occupant",
+    },
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, "model_visual_attach_occupant_activation_disabled");
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(subscriber.dropCalls.length, 0);
+});
+
+test("POST /model-visual/attach-requests/controller refuses non-visual grants before payload read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: {
+      schema_version: 1,
+      grants: [
+        {
+          id: "grant-visual-color",
+          status: "active",
+          capability: "perception.sensorium.color.subscribe",
+          provider: "soma.provider.sensorium.jetsorano",
+          scope: "session",
+          constraints: {},
+        },
+      ],
+    },
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "invalid_model_visual_attach_request");
+  assert.ok(response.body.validation_errors.some((entry) => entry.includes("model visual attach grant")));
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("POST /model-visual/attach-requests/controller refuses wrong modality, model drift, retention, and payload metadata before payload read", async () => {
+  const cases = [
+    {
+      name: "wrong modality",
+      requestPatch: { payload_type: "depth" },
+      expected: "payload_type must match grant constraints",
+    },
+    {
+      name: "model target drift",
+      requestPatch: { model_target: "local.other" },
+      expected: "model_target must match grant constraints",
+    },
+    {
+      name: "retention mode",
+      requestPatch: { retention_mode: "latest_frame_cache" },
+      expected: "retention_mode must be none",
+    },
+    {
+      name: "payload-shaped metadata",
+      requestPatch: { payload_bytes: [1, 2, 3] },
+      expected: "request.payload_bytes is forbidden",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const envelope = modelVisualAttachActivationEnvelope({
+      requestPatch: testCase.requestPatch,
+    });
+    const subscriber = makeModelVisualAttachSubscriber();
+    const handler = makeHandler({
+      grantStore: envelope.grantStore,
+      runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+      sensoriumSubscriber: subscriber,
+    });
+
+    const response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/attach-requests/controller",
+      body: envelope.body,
+    });
+
+    assert.equal(response.statusCode, 400, testCase.name);
+    assert.equal(response.body.error, "invalid_model_visual_attach_request", testCase.name);
+    assert.ok(response.body.validation_errors.some((entry) => entry.includes(testCase.expected)), testCase.name);
+    assert.equal(subscriber.readCalls.length, 0, testCase.name);
+  }
+});
+
+test("POST /model-visual/attach-requests/controller refuses stale frames without delivery", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: new Date(Date.now() - 10_000).toISOString(),
+      payload_bytes: Uint8Array.from([1, 2, 3]),
+    },
+  });
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_frame_stale");
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 1);
+});
+
+test("POST /model-visual/attach-requests/controller drops cached frames on distress before payload read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: { episode_status: "distressed" },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_floor_gate_refused");
+  assert.equal(response.body.reason, "episode_not_live");
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -13320,6 +13515,133 @@ function modelVisualAttachRequestFixture() {
     preview_acknowledged: true,
     preview_cleanup_required: true,
     retention_mode: "none",
+  };
+}
+
+function modelVisualAttachRuntimeProfiles() {
+  return {
+    schema_version: 1,
+    default_profile: "gemma4-vision",
+    profiles: [
+      {
+        id: "gemma4-vision",
+        route: "local",
+        model: "local.gemma4",
+        remote_service: false,
+        supported_visual_modalities: ["color"],
+        allowed_data_classes: ["submitted_text"],
+      },
+    ],
+  };
+}
+
+function modelVisualAttachActivationEnvelope({ requestPatch = {}, bodyPatch = {} } = {}) {
+  const nowIso = new Date().toISOString();
+  const request = {
+    ...modelVisualAttachRequestFixture(),
+    preview_acknowledged_at: nowIso,
+    ...requestPatch,
+  };
+  const grant = {
+    ...modelVisualGrantFixture(),
+    constraints: {
+      ...modelVisualGrantFixture().constraints,
+      preview_acknowledged_at: nowIso,
+    },
+  };
+  return {
+    nowIso,
+    grantStore: {
+      schema_version: 1,
+      grants: [grant],
+    },
+    body: {
+      actor: "controller",
+      request,
+      episode_status: "active",
+      run_posture: {
+        status: "active",
+        seth_present: true,
+        seth_consented_to_visual_egress: true,
+      },
+      solo_attestation: {
+        origin: "trusted_run_control",
+        issued_at: nowIso,
+        seth_present: true,
+        seth_consented: true,
+        active_control: true,
+        no_other_person_in_frame: true,
+      },
+      presence_state: {
+        status: "available",
+        source_host: "jetsorano",
+        observed_at: nowIso,
+        person_count: 1,
+        additional_person_present: "not_detected",
+        confidence_bucket: "high",
+      },
+      ...bodyPatch,
+    },
+  };
+}
+
+function makeModelVisualAttachSubscriber({ frame = {} } = {}) {
+  const readCalls = [];
+  const dropCalls = [];
+  let cachedFrame = {
+    subscription_id: "sub-color-1",
+    source_grant_id: "grant-color-1",
+    modality: "color",
+    source_host: "jetsorano",
+    topic: "sensor/jetsorano/realsense/color",
+    frame_id: "42",
+    capture_timestamp: new Date().toISOString(),
+    byte_length: 3,
+    declared_byte_length: null,
+    payload_bytes: Uint8Array.from([1, 2, 3]),
+    payload_bytes_included: true,
+    retention_mode: "latest_frame_cache",
+    ...frame,
+  };
+  return {
+    readCalls,
+    dropCalls,
+    configurePresenceContext() {},
+    onSubscriptionEnded() {},
+    describeActive() {
+      return {
+        family: "perception.sensorium",
+        active_count: 1,
+        summary: "active",
+        streams: [
+          {
+            subscription_id: "sub-color-1",
+            capability: "perception.sensorium.color.subscribe",
+            provider: "soma.provider.sensorium.jetsorano",
+            grant_id: "grant-color-1",
+            topic: "sensor/jetsorano/realsense/color",
+            host: "jetsorano",
+            source_host: "jetsorano",
+            status: "active",
+          },
+        ],
+        frames_recorded: false,
+      };
+    },
+    readLatestRawFrame(args) {
+      readCalls.push(args);
+      if (!cachedFrame) {
+        return null;
+      }
+      return {
+        ...cachedFrame,
+        payload_bytes: new Uint8Array(cachedFrame.payload_bytes),
+      };
+    },
+    dropRawFrames(args) {
+      dropCalls.push(args);
+      cachedFrame = null;
+    },
   };
 }
 

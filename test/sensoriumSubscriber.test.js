@@ -854,6 +854,7 @@ test("raw latest-frame cache retains only the latest bounded frame and keeps dis
       format: "jpeg",
       data: [4, 5, 6, 7],
     }),
+    payloadSize: 128,
     capture_timestamp: "2026-07-09T18:00:01.000Z",
   });
 
@@ -865,6 +866,8 @@ test("raw latest-frame cache retains only the latest bounded frame and keeps dis
   assert.equal(frame.frame_id, "11");
   assert.equal(frame.capture_timestamp, "2026-07-09T18:00:01.000Z");
   assert.equal(frame.payload_bytes instanceof Uint8Array, true);
+  assert.equal(frame.byte_length, frame.payload_bytes.byteLength);
+  assert.equal(frame.declared_byte_length, 128);
   assert.equal(frame.payload_bytes_included, true);
   assert.equal(frame.disk_persisted, false);
   assert.equal(frame.provenance_appended, false);

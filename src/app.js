@@ -146,6 +146,7 @@ import {
 } from "./modelVisualAttachReviewSurface.js";
 import { validateModelVisualAttachRequest } from "./modelVisualAttachRequest.js";
 import { createModelVisualAttachmentProvenanceSummary } from "./modelVisualAttachmentProvenance.js";
+import { decideRawFrameVisionFloorGate } from "./rawFrameVisionFloorGate.js";
 import { SessionMemory } from "./sessionMemory.js";
 import {
   DESKTOP_VISUAL_CUE_CAPABILITY,
@@ -824,6 +825,178 @@ export function createRequestHandler({
           model_delivery_performed: false,
           payload_attached: false,
           payload_bytes_included: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/model-visual/attach-requests/controller") {
+        if (!sensoriumSubscriber) {
+          writeError(res, {
+            statusCode: 503,
+            code: "sensorium_subscriber_not_configured",
+            message: "Model visual attach activation requires Sensorium subscriber support.",
+          });
+          return;
+        }
+
+        const body = await readJson(req);
+        if (isOccupantModelVisualAttachCaller(body)) {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_attach_occupant_activation_disabled",
+            message: "Occupant-invoked raw visual attachment is disabled before payload read.",
+          });
+          return;
+        }
+
+        const requestBody = isPlainObject(body?.request) ? body.request : body;
+        const authorization = authorizeGrantUse({
+          store: grantStore,
+          grantId: requestBody?.grant_id,
+          capability: requestBody?.capability,
+          scope: "once",
+          recoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+        });
+        if (authorization.code === "grant_recovery_degraded") {
+          writeJson(res, 403, {
+            error: "model_visual_attach_grant_recovery_required",
+            message: `Grant ${authorization.details.grant_id} requires recovery inspection before it can authorize model visual attachment.`,
+            findings: authorization.findings,
+          });
+          return;
+        }
+        if (authorization.code === "grant_store_schema_unsupported") {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_attach_grant_store_schema_unsupported",
+            message: "Model visual attachment requires a supported grant-store schema.",
+          });
+          return;
+        }
+
+        let request;
+        try {
+          request = validateModelVisualAttachRequest(requestBody, {
+            grants: grantStore.grants ?? [],
+          });
+        } catch (err) {
+          writeError(res, {
+            statusCode: err.statusCode ?? 400,
+            code: err.code ?? "invalid_model_visual_attach_request",
+            message: err.message ?? "Model visual attach request is invalid.",
+            validation_errors: err.validation_errors,
+          });
+          return;
+        }
+
+        const visualGrant = findGrantById(grantStore, request.grant_id);
+        const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
+        const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
+        const now = new Date();
+        const floorGateDecision = decideRawFrameVisionFloorGate({
+          runPosture: body?.run_posture,
+          episodeStatus: body?.episode_status,
+          visualGrant,
+          grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          soloAttestation: body?.solo_attestation,
+          presenceState: body?.presence_state ?? sensoriumPresenceState,
+          sourceSubscription,
+          profile,
+          modality: request.payload_type,
+          sourceHost: sourceHostForVisualAttachRequest(request),
+          now,
+        });
+
+        if (!floorGateDecision.allowed) {
+          if (floorGateDecision.reason === "episode_not_live" && typeof sensoriumSubscriber.dropRawFrames === "function") {
+            sensoriumSubscriber.dropRawFrames({
+              subscriptionId: request.source_subscription_ids[0],
+              modality: request.payload_type,
+            });
+          }
+          writeJson(res, 409, {
+            error: "model_visual_attach_floor_gate_refused",
+            reason: floorGateDecision.reason,
+            floor_gate_decision: floorGateDecision,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
+        }
+
+        const frame = sensoriumSubscriber.readLatestRawFrame({
+          subscriptionId: request.source_subscription_ids[0],
+          modality: request.payload_type,
+          now,
+        });
+        if (!frame) {
+          writeJson(res, 409, {
+            error: "model_visual_attach_frame_unavailable",
+            reason: "raw_latest_frame_unavailable",
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
+        }
+
+        const frameAgeMs = now.getTime() - Date.parse(frame.capture_timestamp);
+        if (!Number.isFinite(frameAgeMs) || frameAgeMs < 0 || frameAgeMs > request.max_frame_age_ms) {
+          writeJson(res, 409, {
+            error: "model_visual_attach_frame_stale",
+            reason: "raw_latest_frame_stale",
+            frame_age_ms: Number.isFinite(frameAgeMs) ? frameAgeMs : null,
+            max_frame_age_ms: request.max_frame_age_ms,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
+        }
+
+        sensoriumSubscriber.dropRawFrames?.({
+          subscriptionId: request.source_subscription_ids[0],
+          modality: request.payload_type,
+        });
+
+        writeJson(res, 200, {
+          request: {
+            ...request,
+            activation_performed: true,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: true,
+            payload_bytes_included: false,
+          },
+          accepted: true,
+          one_turn: true,
+          activation_performed: true,
+          subscription_activated: false,
+          model_delivery_performed: false,
+          payload_attached: true,
+          payload_bytes_included: false,
+          payload_bytes_returned: false,
+          floor_gate_decision: floorGateDecision,
+          frame: {
+            subscription_id: frame.subscription_id,
+            source_grant_id: frame.source_grant_id,
+            modality: frame.modality,
+            source_host: frame.source_host,
+            topic: frame.topic,
+            frame_id: frame.frame_id,
+            capture_timestamp: frame.capture_timestamp,
+            byte_length: frame.byte_length,
+            declared_byte_length: frame.declared_byte_length ?? null,
+            retention_mode: frame.retention_mode,
+            payload_bytes_included: false,
+          },
         });
         return;
       }
@@ -5729,6 +5902,50 @@ function activeSensoriumDisclosure(sensoriumSubscriber = null) {
   } catch {
     return { active_count: 0, streams: [] };
   }
+}
+
+function isOccupantModelVisualAttachCaller(body = {}) {
+  const actor = stringValue(body?.actor || body?.caller || body?.caller_class || body?.requested_by);
+  return ["occupant", "assistant", "model"].includes(actor);
+}
+
+function findGrantById(store = {}, grantId = "") {
+  if (!Array.isArray(store?.grants) || !grantId) {
+    return null;
+  }
+  return store.grants.find((grant) => grant?.id === grantId) ?? null;
+}
+
+function findActiveSensoriumStream(sensoriumSubscriber, subscriptionId = "") {
+  if (!subscriptionId || typeof sensoriumSubscriber?.describeActive !== "function") {
+    return {};
+  }
+  const disclosure = activeSensoriumDisclosure(sensoriumSubscriber);
+  const stream = disclosure.streams.find((candidate) => candidate?.subscription_id === subscriptionId);
+  if (!stream) {
+    return {};
+  }
+  return {
+    ...stream,
+    id: stream.subscription_id,
+    source_host: stream.source_host || stream.host,
+    status: stream.status || "active",
+  };
+}
+
+function resolveModelVisualAttachProfile(runtimeProfiles = {}, modelTarget = "", requestedProfileId = "") {
+  const profiles = Array.isArray(runtimeProfiles?.profiles) ? runtimeProfiles.profiles : [];
+  const requested = stringValue(requestedProfileId);
+  if (requested) {
+    return profiles.find((profile) => profile?.id === requested) ?? {};
+  }
+  return profiles.find((profile) => profile?.model === modelTarget || profile?.id === modelTarget) ?? {};
+}
+
+function sourceHostForVisualAttachRequest(request = {}) {
+  const topic = stringValue(request.source_topic);
+  const match = topic.match(/^(?:sensor|perception)\/([a-z0-9-]+)\//);
+  return match ? match[1] : "";
 }
 
 function activeSensoriumDisclosureStrings(streams = [], field = "") {
@@ -12782,6 +12999,10 @@ function defaultChatTemperature({ useToolCalls = false } = {}) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function numberOrDefault(value, fallback) {

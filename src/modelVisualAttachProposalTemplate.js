@@ -281,12 +281,19 @@ function validateConstraints(constraints, visualDefinition, errors) {
   if (visualDefinition && formatRequired !== visualDefinition.format_required) {
     errors.push(`constraints.format_required must be ${visualDefinition.format_required}`);
   }
+  const depthRepresentation = stringValue(constraints.depth_representation) || "depth_png";
+  if (visualDefinition?.payload_type === "depth" && !["depth_png", "colorized_png"].includes(depthRepresentation)) {
+    errors.push("constraints.depth_representation must be depth_png or colorized_png");
+  }
 
   return {
     max_frame_count: maxFrameCount,
     max_frame_age_ms: maxFrameAgeMs,
     transformed_dimensions: Array.isArray(transformedDimensions) ? [...transformedDimensions] : [],
     format_required: formatRequired,
+    ...(visualDefinition?.payload_type === "depth"
+      ? { depth_representation: depthRepresentation }
+      : {}),
   };
 }
 

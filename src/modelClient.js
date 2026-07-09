@@ -284,7 +284,7 @@ function normalizeVisualAttachments(attachments = []) {
 
 function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
-  if (attachment.modality !== "color") {
+  if (!["color", "depth"].includes(attachment.modality) || !attachment.media_type.startsWith("image/")) {
     throw unsupportedVisualSchema("openai_chat_image_url");
   }
   return appendTypedContentToLastUserMessage(messages, {
@@ -298,7 +298,7 @@ function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
 
 function buildAnthropicVisualMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
-  if (attachment.modality !== "color") {
+  if (!["color", "depth"].includes(attachment.modality) || !attachment.media_type.startsWith("image/")) {
     throw unsupportedVisualSchema("anthropic_messages_image");
   }
   return appendTypedContentToLastUserMessage(messages, {

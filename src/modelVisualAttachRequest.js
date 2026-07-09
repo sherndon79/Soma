@@ -15,6 +15,7 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "max_frame_age_ms",
   "transformed_dimensions",
   "format_required",
+  "depth_representation",
   "preview_artifact_id",
   "preview_acknowledgement_id",
   "preview_acknowledged_by",
@@ -75,6 +76,7 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
       ? [...body.transformed_dimensions]
       : [],
     format_required: stringValue(body.format_required),
+    depth_representation: stringValue(body.depth_representation),
     preview_artifact_id: stringValue(body.preview_artifact_id),
     preview_acknowledgement_id: stringValue(body.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(body.preview_acknowledged_by),
@@ -97,7 +99,7 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
     throwModelVisualAttachRequestError(errors);
   }
 
-  return {
+  const validated = {
     ...request,
     grant_id: grant.id,
     provider: grant.provider,
@@ -108,6 +110,10 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
     payload_attached: false,
     payload_bytes_included: false,
   };
+  if (!validated.depth_representation) {
+    delete validated.depth_representation;
+  }
+  return validated;
 }
 
 function validateRequestShape(request, errors) {
@@ -157,6 +163,12 @@ function validateRequestShape(request, errors) {
   if (!validDimensions(request.transformed_dimensions)) {
     errors.push("transformed_dimensions must be [width,height] positive integers");
   }
+  if (request.payload_type === "depth" && !["depth_png", "colorized_png"].includes(request.depth_representation)) {
+    errors.push("depth_representation must be depth_png or colorized_png for depth payloads");
+  }
+  if (request.payload_type !== "depth" && request.depth_representation) {
+    errors.push("depth_representation is only allowed for depth payloads");
+  }
 }
 
 function validateGrantAuthority({ request, grant, errors }) {
@@ -185,6 +197,7 @@ function validateGrantAuthority({ request, grant, errors }) {
     "model_target",
     "payload_type",
     "format_required",
+    "depth_representation",
     "preview_artifact_id",
     "preview_acknowledgement_id",
     "preview_acknowledged_by",

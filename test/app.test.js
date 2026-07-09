@@ -21,7 +21,8 @@ import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
-import { encodeColorPayload, encodePresencePayload } from "./support/msgpackStatus.js";
+import { encodeDepthPng16 } from "../src/depthColorize.js";
+import { encodeColorPayload, encodeDepthPayload, encodePresencePayload } from "./support/msgpackStatus.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -1664,6 +1665,83 @@ test("POST /model-visual/attach-requests/controller refuses text-only model deli
   assert.equal(modelClient.calls.length, 0);
 });
 
+test("POST /model-visual/attach-requests/controller refuses depth representation drift before payload read", async () => {
+  const depthRequestPatch = {
+    capability: "model.context.visual.depth.attach",
+    grant_id: "grant-visual-depth",
+    source_subscription_ids: ["sub-depth-1"],
+    source_capabilities: ["perception.sensorium.depth.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/depth",
+    source_grant_id: "grant-depth-1",
+    payload_type: "depth",
+    transformed_dimensions: [384, 384],
+    format_required: "png",
+    depth_representation: "colorized_png",
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: depthRequestPatch,
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look at depth once" }],
+      runtime_profile_id: "depth-raw-only",
+    },
+  });
+  const visualGrant = {
+    id: "grant-visual-depth",
+    status: "active",
+    capability: "model.context.visual.depth.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      ...envelope.body.request,
+    },
+  };
+  const subscriber = makeModelVisualAttachSubscriber();
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: {
+      schema_version: 1,
+      grants: [visualGrant],
+    },
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "depth-raw-only",
+      profiles: [
+        {
+          id: "depth-raw-only",
+          route: "local",
+          model: "local.gemma4",
+          remote_service: false,
+          supported_visual_modalities: ["depth"],
+          visual_attachment_schema: "soma_typed_multimodal",
+          visual_attachment_modalities: ["depth"],
+          depth_representation: "depth_png",
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_profile_not_multimodal");
+  assert.equal(response.body.reason, "profile_depth_representation_mismatch");
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(modelClient.calls.length, 0);
+});
+
 test("POST /model-visual/attach-requests/controller requires episode_id for model delivery when an episode is active", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -1959,6 +2037,231 @@ test("POST /model-visual/attach-requests/controller resolves real Sensorium subs
     modality: "color",
     now: () => new Date(nowIso),
   }), null);
+});
+
+test("POST /model-visual/attach-requests/controller delivers colorized depth PNG through real subscriber route", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  const nowIso = new Date().toISOString();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date(nowIso),
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowIso),
+    presenceState,
+    getPresenceEpisodeContext: () => ({
+      status: "active",
+      occupant_id: "seth",
+      posture: {
+        mode: "analysis_testing",
+        trust_basis: "human_set_episode",
+      },
+    }),
+  });
+  const depthSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-depth-test",
+    capability: "perception.sensorium.depth.subscribe",
+    constraints: {
+      topic: "sensor/jetsorano/realsense/depth",
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "png",
+      downsample_to: [16, 16],
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 4096,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const presenceGrant = {
+    id: "grant-sensorium-presence-test",
+    status: "active",
+    capability: "perception.sensorium.presence.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    scope: "session",
+    constraints: {
+      topic: "perception/jetsorano/presence",
+      max_seconds: 60,
+      max_fps: 5,
+    },
+    approved_by: "user",
+    reason: "test fixture",
+    created_at: "2026-07-09T00:00:00.000Z",
+    activation_performed: false,
+  };
+  const depthRequestPatch = {
+    capability: "model.context.visual.depth.attach",
+    grant_id: "grant-visual-depth",
+    source_subscription_ids: ["sub-route-1"],
+    source_capabilities: ["perception.sensorium.depth.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/depth",
+    source_grant_id: "grant-sensorium-depth-test",
+    payload_type: "depth",
+    transformed_dimensions: [16, 16],
+    format_required: "png",
+    depth_representation: "colorized_png",
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: depthRequestPatch,
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look at depth once" }],
+      runtime_profile_id: "anthropic-depth-colorized",
+    },
+  });
+  const visualGrant = {
+    id: "grant-visual-depth",
+    status: "active",
+    capability: "model.context.visual.depth.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      ...envelope.body.request,
+    },
+  };
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
+    grantStore: {
+      schema_version: 1,
+      grants: [depthSourceGrant, presenceGrant, visualGrant],
+    },
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "anthropic-depth-colorized",
+      profiles: [
+        {
+          id: "anthropic-depth-colorized",
+          route: "remote",
+          runtime: "anthropic-messages",
+          model: "claude-depth-test",
+          remote_service: true,
+          supported_visual_modalities: ["depth"],
+          visual_attachment_schema: "anthropic_messages_image",
+          visual_attachment_modalities: ["depth"],
+          depth_representation: "colorized_png",
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: presenceState,
+  });
+
+  const depthSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.depth.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: {
+        max_seconds: 60,
+        max_fps: 5,
+        format_required: "png",
+        downsample_to: [16, 16],
+      },
+    },
+  });
+  assert.equal(depthSubscription.statusCode, 201, JSON.stringify(depthSubscription.body));
+  assert.equal(depthSubscription.body.subscription_id, "sub-route-1");
+
+  const presenceSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/presence",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(presenceSubscription.statusCode, 201, JSON.stringify(presenceSubscription.body));
+
+  manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frame_number: 77,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: nowIso,
+  });
+  manager.emitSample("sub-route-2", "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      person_count: 1,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    }),
+    payloadSize: 64,
+    captureTimestamp: nowIso,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_delivery_performed, true);
+  assert.equal(response.body.frame.modality, "depth");
+  assert.equal(response.body.frame.frame_id, "77");
+  assert.equal(response.body.frame.visual_representation, "colorized_png");
+  assert.equal(response.body.frame.depth_colormap, "grayscale");
+  assert.deepEqual(response.body.frame.depth_normalization, {
+    rule: "fixed_metric_range",
+    min_depth_meters: 0.25,
+    max_depth_meters: 5,
+    invalid_depth_value: 0,
+  });
+  assert.equal(response.body.frame.depth_units, 0.001);
+  assert.equal(modelClient.calls.length, 1);
+  assert.equal(modelClient.calls[0].profile.id, "anthropic-depth-colorized");
+  assert.equal(modelClient.calls[0].args.attachments.length, 1);
+  assert.equal(modelClient.calls[0].args.attachments[0].modality, "depth");
+  assert.equal(modelClient.calls[0].args.attachments[0].media_type, "image/png");
+  assert.equal(modelClient.calls[0].args.attachments[0].representation, "colorized_png");
+  assert.deepEqual(
+    [...modelClient.calls[0].args.attachments[0].payload_bytes.slice(0, 4)],
+    [0x89, 0x50, 0x4e, 0x47],
+  );
+  assert.equal(response.body.live_perception_taint.raw_visual_taint.representation, "colorized_png");
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attached",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].visual_representation, "colorized_png");
+  assert.equal(provenance.body.entries[0].depth_colormap, "grayscale");
+  assert.equal(provenance.body.entries[0].depth_units, 0.001);
+  assert.deepEqual(provenance.body.entries[0].depth_normalization, {
+    rule: "fixed_metric_range",
+    min_depth_meters: 0.25,
+    max_depth_meters: 5,
+    invalid_depth_value: 0,
+  });
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
 });
 
 test("POST /model-visual/attach-requests/controller consumes the frame even when typed model delivery fails", async () => {

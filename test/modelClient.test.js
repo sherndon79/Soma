@@ -256,6 +256,59 @@ test("ModelClient sends depth attachments only through explicit Soma typed multi
   ]);
 });
 
+test("ModelClient sends colorized depth PNG as an image block for Anthropic schemas", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  try {
+    let captured;
+    const client = new ModelClient({
+      runtime: "anthropic-messages",
+      model: "claude-depth",
+      async fetchImpl(url, options) {
+        captured = { url, options };
+        return {
+          ok: true,
+          async json() {
+            return {
+              model: "claude-depth",
+              content: [{ type: "text", text: "depth ok" }],
+              stop_reason: "end_turn",
+              usage: { input_tokens: 3, output_tokens: 4 },
+            };
+          },
+        };
+      },
+    });
+
+    await client.chatWithVisualAttachments({
+      messages: [{ role: "user", content: "depth once" }],
+      attachments: [
+        {
+          modality: "depth",
+          media_type: "image/png",
+          payload_bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+        },
+      ],
+      visualAttachmentSchema: "anthropic_messages_image",
+    });
+
+    const body = JSON.parse(captured.options.body);
+    assert.deepEqual(body.messages[0].content, [
+      { type: "text", text: "depth once" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "iVBORw==",
+        },
+      },
+    ]);
+  } finally {
+    restoreEnv("ANTHROPIC_API_KEY", previousKey);
+  }
+});
+
 test("ModelClient refuses depth attachments on image-url schemas before fetch", async () => {
   let calls = 0;
   const client = new ModelClient({

@@ -129,7 +129,7 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
   intent = {},
   approvalProvenanceId = "",
 } = {}) {
-  return {
+  const summary = {
     event_type: "model.context.visual.grant_candidate_built",
     proposal_id: stringValue(proposal.id),
     capability: stringValue(proposal.capability),
@@ -142,6 +142,7 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
     source_grant_id: stringValue(review.source?.grant_id),
     model_target: stringValue(intent.model_target),
     payload_type: stringValue(intent.payload_type),
+    depth_representation: stringValue(intent.constraints?.depth_representation),
     preview_artifact_id: stringValue(intent.preview_artifact_id),
     preview_acknowledgement_id: stringValue(intent.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(intent.preview_acknowledged_by),
@@ -161,6 +162,10 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
     model_delivery_performed: false,
     payload_attached: false,
   };
+  if (!summary.depth_representation) {
+    delete summary.depth_representation;
+  }
+  return summary;
 }
 
 function validateReviewAndIntent({ proposal, review, intent, errors }) {

@@ -140,6 +140,7 @@ import {
 import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTemplate.js";
 import { createSensoriumPresenceState } from "./sensoriumPresenceState.js";
 import { decodeSensoriumMessagePack } from "./sensoriumMessagePack.js";
+import { colorizeDepthPng } from "./depthColorize.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import {
   modelVisualAttachGrantCandidateReviewText,
@@ -1045,7 +1046,7 @@ export function createRequestHandler({
         let deliveryMessages = [];
         let deliveryProfileClient = null;
         if (modelDeliveryRequested) {
-          const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type);
+          const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type, request);
           if (!deliveryProfile.allowed) {
             const event = appendModelVisualAttachProvenanceEvent({
               provenanceLog,
@@ -1261,7 +1262,7 @@ export function createRequestHandler({
         let deliveredAttachment = null;
         if (modelDeliveryRequested) {
           try {
-            deliveredAttachment = modelVisualAttachmentFromFrame({ request, frame });
+            deliveredAttachment = modelVisualAttachmentFromFrame({ request, frame, profile });
           } catch (err) {
             sensoriumSubscriber.dropRawFrames?.({
               subscriptionId: request.source_subscription_ids[0],
@@ -1419,6 +1420,10 @@ export function createRequestHandler({
             byte_length: deliveredAttachment?.byte_length ?? frame.byte_length,
             envelope_byte_length: frame.byte_length,
             declared_byte_length: frame.declared_byte_length ?? null,
+            visual_representation: stringValue(deliveredAttachment?.representation),
+            depth_colormap: stringValue(deliveredAttachment?.depth_colormap),
+            depth_normalization: deliveredAttachment?.depth_normalization ?? null,
+            depth_units: Number.isFinite(deliveredAttachment?.depth_units) ? deliveredAttachment.depth_units : null,
             retention_mode: frame.retention_mode,
             payload_bytes_included: false,
           },
@@ -6371,6 +6376,10 @@ function createRawVisualTaint({
     capture_timestamp: frame.capture_timestamp,
     byte_length: attachment?.byte_length ?? frame.byte_length ?? null,
     envelope_byte_length: attachment?.envelope_byte_length ?? frame.byte_length ?? null,
+    representation: stringValue(attachment?.representation),
+    depth_colormap: stringValue(attachment?.depth_colormap),
+    depth_normalization: attachment?.depth_normalization ?? null,
+    depth_units: Number.isFinite(attachment?.depth_units) ? attachment.depth_units : null,
     floor_gate_reason: floorGateDecision.reason ?? "",
     payload_bytes_included: false,
     content_included: false,
@@ -6429,6 +6438,10 @@ function normalizeRawVisualTaint(value = null) {
     capture_timestamp: stringValue(value.capture_timestamp),
     byte_length: Number.isFinite(value.byte_length) ? value.byte_length : null,
     envelope_byte_length: Number.isFinite(value.envelope_byte_length) ? value.envelope_byte_length : null,
+    representation: stringValue(value.representation),
+    depth_colormap: stringValue(value.depth_colormap),
+    depth_normalization: isPlainObject(value.depth_normalization) ? { ...value.depth_normalization } : null,
+    depth_units: Number.isFinite(value.depth_units) ? value.depth_units : null,
     floor_gate_reason: stringValue(value.floor_gate_reason),
     payload_bytes_included: false,
     content_included: false,
@@ -6482,6 +6495,10 @@ function appendModelVisualAttachProvenanceEvent({
     envelope_byte_length: Number.isFinite(attachment?.envelope_byte_length)
       ? attachment.envelope_byte_length
       : (Number.isFinite(frame?.byte_length) ? frame.byte_length : null),
+    visual_representation: stringValue(attachment?.representation),
+    depth_colormap: stringValue(attachment?.depth_colormap),
+    depth_normalization: attachment?.depth_normalization ?? null,
+    depth_units: Number.isFinite(attachment?.depth_units) ? attachment.depth_units : null,
     floor_gate_decision: summarizeRawFrameVisionFloorGate(floorGateDecision),
     floor_gate_failed_input: stringValue(failedGateInput),
     refusal_reason: stringValue(reason),
@@ -6750,10 +6767,19 @@ function resolveModelVisualAttachProfile(runtimeProfiles = {}, modelTarget = "",
   return profiles.find((profile) => profile?.model === modelTarget || profile?.id === modelTarget) ?? {};
 }
 
-function validateModelVisualDeliveryProfile(profile = {}, modality = "") {
+function validateModelVisualDeliveryProfile(profile = {}, modality = "", request = {}) {
   const requestedModality = stringValue(modality);
   if (!modelVisualProfileSupportsModality(profile, requestedModality)) {
     return { allowed: false, reason: "profile_not_vision_capable" };
+  }
+  if (requestedModality === "depth") {
+    const requestRepresentation = stringValue(request.depth_representation);
+    if (!requestRepresentation) {
+      return { allowed: false, reason: "request_lacks_explicit_depth_representation" };
+    }
+    if (requestRepresentation !== stringValue(profile.depth_representation)) {
+      return { allowed: false, reason: "profile_depth_representation_mismatch" };
+    }
   }
   const schema = stringValue(profile.visual_attachment_schema);
   if (!schema) {
@@ -6770,7 +6796,8 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "") {
     return { allowed: false, reason: "profile_lacks_requested_visual_modality" };
   }
   if (["openai_chat_image_url", "anthropic_messages_image"].includes(schema)) {
-    return requestedModality === "color"
+    return requestedModality === "color" ||
+      (requestedModality === "depth" && stringValue(profile.depth_representation) === "colorized_png")
       ? { allowed: true, schema }
       : { allowed: false, reason: "profile_schema_does_not_support_depth_or_pose" };
   }
@@ -6796,18 +6823,22 @@ function modelVisualProfileSupportsModality(profile = {}, modality = "") {
   return supported.includes(modality);
 }
 
-function modelVisualAttachmentFromFrame({ request = {}, frame = {} } = {}) {
-  const extracted = extractModelVisualPayload({ request, frame });
+function modelVisualAttachmentFromFrame({ request = {}, frame = {}, profile = {} } = {}) {
+  const extracted = extractModelVisualPayload({ request, frame, profile });
   return {
     modality: request.payload_type,
     media_type: extracted.media_type,
     payload_bytes: extracted.payload_bytes,
     byte_length: extracted.payload_bytes.byteLength,
     envelope_byte_length: frame.byte_length,
+    representation: extracted.representation,
+    depth_units: extracted.depth_units ?? null,
+    depth_colormap: extracted.depth_colormap ?? "",
+    depth_normalization: extracted.depth_normalization ?? null,
   };
 }
 
-function extractModelVisualPayload({ request = {}, frame = {} } = {}) {
+function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = {}) {
   const modality = stringValue(request.payload_type);
   const format = stringValue(request.format_required);
   if (modality === "pose") {
@@ -6827,9 +6858,27 @@ function extractModelVisualPayload({ request = {}, frame = {} } = {}) {
     throwModelVisualPayloadError("visual_payload_format_mismatch", "visual payload format must match request format_required");
   }
   const payloadBytes = copyVisualPayloadBytes(decoded.data);
+  if (modality === "depth" && stringValue(request.depth_representation) === "colorized_png") {
+    if (stringValue(profile.depth_representation) !== "colorized_png") {
+      throwModelVisualPayloadError("visual_depth_representation_profile_mismatch", "profile must explicitly declare depth_representation=colorized_png");
+    }
+    const colorized = colorizeDepthPng(payloadBytes, {
+      depthUnits: Number(decoded.depth_units),
+    });
+    return {
+      media_type: colorized.media_type,
+      payload_bytes: colorized.payload_bytes,
+      representation: colorized.representation,
+      depth_units: colorized.depth_units,
+      depth_colormap: colorized.colormap,
+      depth_normalization: colorized.normalization,
+    };
+  }
   return {
     media_type: mediaTypeForModelVisualAttachment({ modality, format }),
     payload_bytes: payloadBytes,
+    representation: representationForModelVisualAttachment({ modality, format, request }),
+    depth_units: modality === "depth" && Number.isFinite(decoded.depth_units) ? decoded.depth_units : null,
   };
 }
 
@@ -6847,6 +6896,19 @@ function mediaTypeForModelVisualAttachment({ modality = "", format = "" } = {}) 
     return "application/vnd.soma.pose+json";
   }
   return "application/octet-stream";
+}
+
+function representationForModelVisualAttachment({ modality = "", format = "", request = {} } = {}) {
+  if (modality === "depth") {
+    return stringValue(request.depth_representation) || (format === "png" ? "depth_png" : format);
+  }
+  if (modality === "color") {
+    return `${format || "unknown"}_image`;
+  }
+  if (modality === "pose") {
+    return "pose_msgpack";
+  }
+  return stringValue(format) || "unknown";
 }
 
 function copyVisualPayloadBytes(value) {

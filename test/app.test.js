@@ -1797,6 +1797,105 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
   assert.equal(modelClient.calls.length, 1);
 });
 
+test("POST /model-visual/attach-requests/controller resolves real Sensorium subscription disclosure ids", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  const nowIso = new Date().toISOString();
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowIso),
+  });
+  const subscriptionGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    constraints: {
+      ...SENSORIUM_TEST_GRANT_STORE.grants[0].constraints,
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 1024,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: {
+      source_subscription_ids: ["sub-route-1"],
+    },
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look through real subscriber" }],
+    },
+  });
+  const visualGrant = {
+    ...envelope.grantStore.grants[0],
+    constraints: {
+      ...envelope.grantStore.grants[0].constraints,
+      source_subscription_ids: ["sub-route-1"],
+    },
+  };
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: {
+      schema_version: 1,
+      grants: [subscriptionGrant, visualGrant],
+    },
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: {
+      ...envelope.presenceState,
+      observed_at: nowIso,
+    },
+  });
+
+  const subscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+  assert.equal(subscription.statusCode, 201, JSON.stringify(subscription.body));
+  assert.equal(subscription.body.subscription_id, "sub-route-1");
+  assert.equal(subscriber.describeActive().streams[0].subscription_id, "sub-route-1");
+
+  manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 31,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x03, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: nowIso,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_delivery_performed, true);
+  assert.equal(response.body.request.source_subscription_ids[0], "sub-route-1");
+  assert.equal(response.body.frame.frame_id, "31");
+  assert.equal(modelClient.calls.length, 1);
+  assert.deepEqual(
+    [...modelClient.calls[0].args.attachments[0].payload_bytes],
+    [0xff, 0xd8, 0x03, 0xff, 0xd9],
+  );
+  assert.equal(subscriber.readLatestRawFrame({
+    subscriptionId: "sub-route-1",
+    modality: "color",
+    now: () => new Date(nowIso),
+  }), null);
+});
+
 test("POST /model-visual/attach-requests/controller consumes the frame even when typed model delivery fails", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {

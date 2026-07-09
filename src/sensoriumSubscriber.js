@@ -317,6 +317,7 @@ export class SensoriumSubscriber {
    */
   describeActive({ now } = {}) {
     const subscriptions = Array.from(this.#active.values()).map((record) => ({
+      subscription_id: record.subscription_id,
       capability: record.capability,
       provider: record.provider,
       grant_id: record.grant_id,

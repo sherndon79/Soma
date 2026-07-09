@@ -40,7 +40,7 @@ export function summarizeSensoriumPosePayload(payloadBytes) {
     capture_timestamp: numberValue(decoded.capture_timestamp, "capture_timestamp"),
     color: copyBoundedJson(decoded.color, "color", 0),
     depth: copyBoundedJson(decoded.depth, "depth", 0),
-    tiers_available: copyStringArray(decoded.tiers_available, "tiers_available", 16),
+    tiers_available: copyBooleanMap(decoded.tiers_available, "tiers_available", 16),
     tracker: copyBoundedJson(decoded.tracker, "tracker", 0),
     persons: copyPersons(decoded.persons),
     detections: copyDetections(decoded.detections),
@@ -140,23 +140,31 @@ function copyNumericArray(value, expectedLength, field) {
   return [...value];
 }
 
-function copyStringArray(value, field, maxLength) {
-  if (!Array.isArray(value) || value.length > maxLength) {
+function copyBooleanMap(value, field, maxKeys) {
+  if (!isPlainObject(value)) {
     throwPoseDecodeError(
       `sensorium_pose_${field}_invalid`,
-      `pose payload ${field} must be an array with at most ${maxLength} strings`,
+      `pose payload ${field} must be an object with at most ${maxKeys} boolean entries`,
     );
   }
-  return value.map((item, index) => {
-    const text = stringValue(item);
-    if (!text) {
+  const entries = Object.entries(value);
+  if (entries.length > maxKeys) {
+    throwPoseDecodeError(
+      `sensorium_pose_${field}_invalid`,
+      `pose payload ${field} must be an object with at most ${maxKeys} boolean entries`,
+    );
+  }
+  const out = {};
+  for (const [key, item] of entries) {
+    if (typeof key !== "string" || key.length === 0 || key.length > 64 || typeof item !== "boolean") {
       throwPoseDecodeError(
         `sensorium_pose_${field}_invalid`,
-        `pose payload ${field}[${index}] must be a non-empty string`,
+        `pose payload ${field} must be an object with at most ${maxKeys} boolean entries`,
       );
     }
-    return text;
-  });
+    out[key] = item;
+  }
+  return out;
 }
 
 function copyBoundedJson(value, field, depth) {

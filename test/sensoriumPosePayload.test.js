@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -37,6 +38,7 @@ test("pose payload parser preserves the full derived pose contract", () => {
   assert.equal(summary.schema, SENSORIUM_POSE_SCHEMA);
   assert.equal(summary.schema_matches_expected, true);
   assert.equal(summary.frameset_sequence, 99);
+  assert.deepEqual(summary.tiers_available, { body: true, face: true, hands: true, position_3d: true });
   assert.equal(summary.persons.length, 1);
   assert.equal(summary.persons[0].track_id, 42);
   assert.equal(summary.persons[0].body_keypoints.length, 17);
@@ -46,6 +48,33 @@ test("pose payload parser preserves the full derived pose contract", () => {
   assert.deepEqual(summary.persons[0].derived.gestures, ["open_hand"]);
   assert.equal(summary.detections[0].xyxy.length, 4);
   assert.equal(JSON.stringify(summary).includes("raw color"), false);
+});
+
+test("pose payload parser accepts a captured live jetsorano pose payload", () => {
+  const summary = summarizeSensoriumPosePayload(
+    readFileSync(new URL("./fixtures/live_pose_sample.msgpack", import.meta.url)),
+  );
+
+  assert.equal(summary.schema, SENSORIUM_POSE_SCHEMA);
+  assert.equal(summary.schema_matches_expected, true);
+  assert.deepEqual(summary.tiers_available, {
+    body: true,
+    face: true,
+    hands: true,
+    position_3d: true,
+  });
+  assert.equal(summary.persons.length, 1);
+  assert.equal(summary.persons[0].body_keypoints.length, 17);
+  assert.equal(summary.persons[0].face_keypoints.length, 68);
+  assert.equal(summary.persons[0].left_hand_keypoints.length, 21);
+  assert.equal(summary.persons[0].right_hand_keypoints.length, 21);
+  assert.equal(typeof summary.persons[0].person_index, "number");
+  assert.equal(typeof summary.persons[0].track_id, "number");
+  assert.ok("orientation" in summary.persons[0].derived);
+  assert.ok("temporal_state" in summary.persons[0].derived);
+  assert.ok("track_lifecycle" in summary.persons[0].derived);
+  assert.equal(summary.detections.length, 1);
+  assert.equal(summary.detections[0].xyxy.length, 4);
 });
 
 test("pose payload parser rejects oversized person arrays before disclosure", () => {

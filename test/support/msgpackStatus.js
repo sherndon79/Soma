@@ -129,7 +129,7 @@ export function encodePosePayload(overrides = {}) {
     capture_timestamp: 1_783_447_952.14,
     color: { width: 1280, height: 720, fps: 15 },
     depth: { width: 1280, height: 720, depth_units: 0.001 },
-    tiers_available: ["body", "face", "left_hand", "right_hand"],
+    tiers_available: { body: true, face: true, hands: true, position_3d: true },
     tracker: { active: true, next_track_id: 8 },
     persons: [
       {

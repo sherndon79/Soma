@@ -326,7 +326,7 @@ export function createRequestHandler({
       ? createHistoryProjectionProvenanceFile({ path: historyProjectionProvenancePath })
       : null);
   sessionMemory.loadDurable?.(listDurableMemoryEntries(durableMemoryStore));
-  const writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
+  let writePosture = normalizeRuntimeWritePosture(runtimeWritePosture);
   const decisionWaiters = new Map();
   const episodes = new Map();
   const forums = new Map();
@@ -374,6 +374,68 @@ export function createRequestHandler({
           runtime_writes_enabled: writePosture.runtime_writes_enabled,
           runtime_write_posture: writePosture,
           force_profile: forceProfileDisclosure(forceProfile),
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/runtime-write-posture") {
+        const body = await readJson(req);
+        if (String(body?.actor ?? "").trim() !== "user") {
+          writeError(res, {
+            statusCode: 400,
+            code: "runtime_write_posture_requires_user_actor",
+            message: "Runtime write posture changes require actor=user.",
+          });
+          return;
+        }
+        const update = evaluateRuntimeWritePostureUpdate({
+          current: writePosture,
+          body,
+          grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          occupantMemoryRecoveryReport,
+          occupantMemoryStore,
+          durableTestimonyRecoveryReport,
+          durableTestimonyStore,
+        });
+        if (!update.allowed) {
+          const event = provenanceLog.append(createRuntimeWritePostureEvent({
+            previous: writePosture,
+            next: writePosture,
+            requested: update.requestedPosture,
+            actor: "user",
+            allowed: false,
+            reason: update.reason,
+            caller: req.headers["x-soma-caller"] ?? "",
+          }));
+          logger.info?.("soma.provenance", event);
+          writeJson(res, 409, {
+            error: update.reason,
+            message: "Runtime write posture was not changed.",
+            runtime_write_posture: writePosture,
+            requested_runtime_write_posture: update.requestedPosture,
+            provenance_id: event.id,
+            durable: false,
+          });
+          return;
+        }
+        const previous = writePosture;
+        writePosture = update.nextPosture;
+        const event = provenanceLog.append(createRuntimeWritePostureEvent({
+          previous,
+          next: writePosture,
+          requested: update.requestedPosture,
+          actor: "user",
+          allowed: true,
+          reason: "runtime_write_posture_changed",
+          caller: req.headers["x-soma-caller"] ?? "",
+        }));
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          runtime_writes_enabled: writePosture.runtime_writes_enabled,
+          runtime_write_posture: writePosture,
+          previous_runtime_write_posture: previous,
+          provenance_id: event.id,
+          durable: false,
         });
         return;
       }
@@ -10932,6 +10994,36 @@ function createEpisodePostureEvent({ episode, result, actor = "", caller = "" } 
   };
 }
 
+function createRuntimeWritePostureEvent({
+  previous = {},
+  next = {},
+  requested = {},
+  actor = "",
+  allowed = false,
+  reason = "",
+  caller = "",
+} = {}) {
+  return {
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    event_type: "runtime.write_posture.set",
+    capability: "runtime.write_posture.configure",
+    caller_identity: String(caller ?? ""),
+    allowed: Boolean(allowed),
+    actor,
+    reason: String(reason ?? ""),
+    previous_runtime_write_posture: normalizeRuntimeWritePosture(previous),
+    runtime_write_posture: normalizeRuntimeWritePosture(next),
+    requested_runtime_write_posture: normalizeRuntimeWritePosture(requested),
+    activation_performed: false,
+    grant_written: false,
+    durable: false,
+    memory_written: false,
+    remote_service_used: false,
+    content_included: false,
+  };
+}
+
 function createForumOpenedEvent({ forum, actor = "", caller = "" } = {}) {
   return {
     id: cryptoRandomId(),
@@ -12205,11 +12297,96 @@ function summarizeGrantRecoveryInspection(report, { grantStore, runtimeWritePost
   };
 }
 
+function evaluateRuntimeWritePostureUpdate({
+  current,
+  body = {},
+  grantRecoveryReport,
+  occupantMemoryRecoveryReport,
+  occupantMemoryStore,
+  durableTestimonyRecoveryReport,
+  durableTestimonyStore,
+} = {}) {
+  const previous = normalizeRuntimeWritePosture(current);
+  const requestedPosture = resolveRuntimeWritePosture({
+    requested: true,
+    source: "runtime:user",
+    durable_grant_mutation_enabled: requestedBooleanOrCurrent(
+      body.durable_grant_mutation_enabled,
+      previous.durable_grant_mutation_enabled,
+    ),
+    durable_memory_write_enabled: requestedBooleanOrCurrent(
+      body.durable_memory_write_enabled,
+      previous.durable_memory_write_enabled,
+    ),
+    occupant_memory_write_enabled: requestedBooleanOrCurrent(
+      body.occupant_memory_write_enabled,
+      previous.occupant_memory_write_enabled,
+    ),
+    durable_testimony_write_enabled: requestedBooleanOrCurrent(
+      body.durable_testimony_write_enabled,
+      previous.durable_testimony_write_enabled,
+    ),
+    history_projection_write_enabled: requestedBooleanOrCurrent(
+      body.history_projection_write_enabled,
+      previous.history_projection_write_enabled,
+    ),
+  });
+  const enabling = {
+    durable_grant_mutation_enabled: !previous.durable_grant_mutation_enabled &&
+      requestedPosture.durable_grant_mutation_enabled,
+    durable_memory_write_enabled: !previous.durable_memory_write_enabled &&
+      requestedPosture.durable_memory_write_enabled,
+    occupant_memory_write_enabled: !previous.occupant_memory_write_enabled &&
+      requestedPosture.occupant_memory_write_enabled,
+    durable_testimony_write_enabled: !previous.durable_testimony_write_enabled &&
+      requestedPosture.durable_testimony_write_enabled,
+    history_projection_write_enabled: !previous.history_projection_write_enabled &&
+      requestedPosture.history_projection_write_enabled,
+  };
+  if (enabling.durable_grant_mutation_enabled && grantRecoveryReport?.degraded) {
+    return { allowed: false, reason: "durable_grant_recovery_required", requestedPosture };
+  }
+  if (enabling.durable_memory_write_enabled) {
+    return { allowed: false, reason: "durable_memory_runtime_toggle_not_supported", requestedPosture };
+  }
+  if (enabling.history_projection_write_enabled) {
+    return { allowed: false, reason: "history_projection_runtime_toggle_not_supported", requestedPosture };
+  }
+  if (enabling.occupant_memory_write_enabled) {
+    const recovery = summarizeOccupantMemoryRecoveryInspection(
+      occupantMemoryRecoveryReport,
+      { occupantMemoryStore, runtimeWritePosture: requestedPosture },
+    );
+    if (recovery.degraded) {
+      return { allowed: false, reason: "occupant_memory_recovery_required", requestedPosture };
+    }
+  }
+  if (enabling.durable_testimony_write_enabled) {
+    const recovery = summarizeDurableTestimonyRecoveryInspection(
+      durableTestimonyRecoveryReport,
+      { durableTestimonyStore, runtimeWritePosture: requestedPosture },
+    );
+    if (recovery.degraded) {
+      return { allowed: false, reason: "testimony_durable_recovery_required", requestedPosture };
+    }
+  }
+  return { allowed: true, nextPosture: requestedPosture, requestedPosture };
+}
+
+function requestedBooleanOrCurrent(value, current) {
+  return value === undefined ? Boolean(current) : value === true;
+}
+
 function normalizeRuntimeWritePosture(posture) {
   if (posture && typeof posture === "object") {
     return resolveRuntimeWritePosture({
       requested: posture.requested === true,
       source: posture.source ?? "injected",
+      durable_grant_mutation_enabled: posture.durable_grant_mutation_enabled,
+      durable_memory_write_enabled: posture.durable_memory_write_enabled,
+      occupant_memory_write_enabled: posture.occupant_memory_write_enabled,
+      durable_testimony_write_enabled: posture.durable_testimony_write_enabled,
+      history_projection_write_enabled: posture.history_projection_write_enabled,
     });
   }
   return resolveRuntimeWritePosture();

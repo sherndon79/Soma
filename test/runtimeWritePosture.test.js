@@ -36,6 +36,27 @@ test("resolveRuntimeWritePosture enables durable grant mutation only when explic
   assert.equal(posture.status, "enabled");
 });
 
+test("resolveRuntimeWritePosture supports selected write surfaces without grant mutation", () => {
+  const posture = resolveRuntimeWritePosture({
+    requested: true,
+    source: "runtime:user",
+    occupant_memory_write_enabled: true,
+    durable_testimony_write_enabled: true,
+    durable_grant_mutation_enabled: false,
+  });
+
+  assert.equal(posture.runtime_writes_enabled, true);
+  assert.equal(posture.durable_grant_mutation_enabled, false);
+  assert.equal(posture.durable_memory_write_enabled, false);
+  assert.equal(posture.occupant_memory_write_enabled, true);
+  assert.equal(posture.durable_testimony_write_enabled, true);
+  assert.equal(posture.history_projection_write_enabled, false);
+  assert.equal(posture.activation_supported, true);
+  assert.equal(posture.requested, true);
+  assert.equal(posture.source, "runtime:user");
+  assert.equal(posture.status, "partial");
+});
+
 test("runtimeWritePostureFromEnv treats SOMA_RUNTIME_WRITES_ENABLED as durable write opt-in", () => {
   const posture = runtimeWritePostureFromEnv({ SOMA_RUNTIME_WRITES_ENABLED: "true" });
 

@@ -828,6 +828,108 @@ test("GET /health reports explicitly enabled runtime writes posture", async () =
   assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, true);
 });
 
+test("POST /runtime-write-posture requires user actor", async () => {
+  const response = await invoke({
+    method: "POST",
+    url: "/runtime-write-posture",
+    body: {
+      actor: "assistant",
+      occupant_memory_write_enabled: true,
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "runtime_write_posture_requires_user_actor");
+});
+
+test("POST /runtime-write-posture enables selected write surfaces without grant mutation", async () => {
+  const handler = makeHandler({
+    occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+    occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+    durableTestimonyStore: { schema_version: 1, entries: [] },
+    durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/runtime-write-posture",
+    body: {
+      actor: "user",
+      occupant_memory_write_enabled: true,
+      durable_testimony_write_enabled: true,
+      durable_grant_mutation_enabled: false,
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.runtime_writes_enabled, true);
+  assert.equal(response.body.runtime_write_posture.status, "partial");
+  assert.equal(response.body.runtime_write_posture.occupant_memory_write_enabled, true);
+  assert.equal(response.body.runtime_write_posture.durable_testimony_write_enabled, true);
+  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
+  assert.equal(response.body.previous_runtime_write_posture.status, "disabled");
+  assert.equal(response.body.durable, false);
+
+  response = await invokeHandler(handler, { method: "GET", url: "/health" });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.runtime_write_posture.status, "partial");
+  assert.equal(response.body.runtime_write_posture.occupant_memory_write_enabled, true);
+  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=runtime.write_posture.set",
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.entries.length, 1);
+  assert.equal(response.body.entries[0].allowed, true);
+  assert.equal(response.body.entries[0].content_included, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/runtime-write-posture",
+    body: {
+      actor: "user",
+      occupant_memory_write_enabled: false,
+      durable_testimony_write_enabled: false,
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
+  assert.equal(response.body.runtime_write_posture.occupant_memory_write_enabled, false);
+  assert.equal(response.body.runtime_write_posture.durable_testimony_write_enabled, false);
+  assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
+});
+
+test("POST /runtime-write-posture refuses enable when selected surface recovery is degraded", async () => {
+  const handler = makeHandler({
+    occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+    occupantMemoryRecoveryReport: {
+      ok: false,
+      degraded: true,
+      entry_count: 0,
+      tombstone_count: 0,
+      finding_count: 1,
+      findings: [{ code: "occupant_memory_write_provenance_missing", authorizing_safe: false }],
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/runtime-write-posture",
+    body: {
+      actor: "user",
+      occupant_memory_write_enabled: true,
+    },
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "occupant_memory_recovery_required");
+  assert.equal(response.body.runtime_write_posture.status, "disabled");
+  assert.equal(response.body.requested_runtime_write_posture.occupant_memory_write_enabled, true);
+});
+
 test("GET /harness returns active harness", async () => {
   const response = await invoke({ method: "GET", url: "/harness", harness: allowedHarness });
   assert.equal(response.statusCode, 200);
@@ -5695,9 +5797,23 @@ test("occupant memory write is stamped while Sensorium perception is active", as
         },
       },
     });
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/runtime-write-posture",
+      body: {
+        actor: "user",
+        occupant_memory_write_enabled: true,
+        durable_grant_mutation_enabled: false,
+      },
+    });
+
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.runtime_write_posture.occupant_memory_write_enabled, true);
+    assert.equal(response.body.runtime_write_posture.durable_grant_mutation_enabled, false);
+
     await postureAnalysisTesting(handler, "episode-occupant-memory-sensorium-guard");
 
-    let response = await invokeHandler(handler, {
+    response = await invokeHandler(handler, {
       method: "POST",
       url: "/chat",
       body: {

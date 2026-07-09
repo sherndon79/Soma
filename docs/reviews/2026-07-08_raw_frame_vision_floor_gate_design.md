@@ -272,7 +272,7 @@ Acceptance tests:
 Implemented operator controls:
 
 - `POST /model-visual/floor/status` accepts the same visual attach request envelope used by controller delivery and returns only byte-free gate state. It reports the enforcing gate decision plus independent per-input status, and it never reads, attaches, or returns a frame.
-- `POST /model-visual/floor/attestations` refreshes a source-host-scoped solo attestation from trusted run-control only. Occupant/model/assistant callers are refused, and the response contains no frame bytes or visual content.
+- `POST /model-visual/floor/attestations` refreshes a source-host-scoped solo attestation from trusted run-control only. The operator request must explicitly assert `seth_present: true`, `seth_consented: true`, `active_control: true`, and `no_other_person_in_frame: true`; absent or non-true assertions refuse byte-free. Occupant/model/assistant callers are refused, and the response contains no frame bytes or visual content.
 - Control closure paths call raw-frame cache drop: occupant `pause`, `distress`, `eject`, near-miss auto-pause, and crew abort.
 
 Operator arm sequence for the first live run:
@@ -280,7 +280,19 @@ Operator arm sequence for the first live run:
 1. Arm the Sensorium source subscription through the normal Sensorium proposal/grant/subscription path.
 2. Create or select the explicit `model.context.visual.*.attach` grant bound to the source subscription, source host, modality, model target, max age/bytes, preview acknowledgement, and `retention_mode: "none"`.
 3. Check `POST /model-visual/floor/status` with `episode_status: "active"` and the current run posture. Before attestation, the expected refusal is `solo_attestation_missing`; this is a closed floor, not a degraded delivery.
-4. Refresh `POST /model-visual/floor/attestations` with the source host while Seth is physically present, consenting, actively controlling the window, and no other person is in frame.
+4. Refresh `POST /model-visual/floor/attestations` while Seth is physically present, consenting, actively controlling the window, and no other person is in frame. The operator command is the attestation:
+   ```bash
+   curl -sS -X POST "$SOMA_URL/model-visual/floor/attestations" \
+     -H 'content-type: application/json' \
+     -d '{
+       "actor": "operator",
+       "source_host": "jetsorano",
+       "seth_present": true,
+       "seth_consented": true,
+       "active_control": true,
+       "no_other_person_in_frame": true
+     }'
+   ```
 5. Re-check `POST /model-visual/floor/status`. It opens only if the attestation is fresh, the presence reading is fresh for the same host, exactly one person is detected, no additional person is detected, the grant/subscription/profile match, and the episode is live.
 6. Submit `POST /model-visual/attach-requests/controller` with `model_delivery_requested: true`, the bound request, and the model messages for the one turn that should receive the visual attachment.
 7. After any `pause`, `distress`, `eject`, or crew abort, treat the floor as closed and the latest-frame cache as dropped. Re-arm from status check and attestation refresh before any later delivery.

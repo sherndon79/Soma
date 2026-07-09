@@ -807,16 +807,45 @@ export function createRequestHandler({
           });
           return;
         }
+        const missingAssertions = missingRawVisualSoloAttestationAssertions(body);
+        if (missingAssertions.length > 0) {
+          writeJson(res, 400, {
+            error: "model_visual_floor_attestation_assertions_required",
+            message: "Raw visual floor attestation refresh requires explicit true assertions for Seth presence, consent, active control, and no other person in frame.",
+            missing_assertions: missingAssertions,
+            payload_bytes_included: false,
+            content_included: false,
+          });
+          return;
+        }
         const attestation = createRawVisualSoloAttestation({
           sourceHost,
           actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
+          sethPresent: body.seth_present,
+          sethConsented: body.seth_consented,
+          activeControl: body.active_control,
+          noOtherPersonInFrame: body.no_other_person_in_frame,
           now: new Date(),
         });
         rawVisualSoloAttestations.set(sourceHost, attestation);
+        const event = provenanceLog.append({
+          id: cryptoRandomId(),
+          timestamp: attestation.issued_at,
+          event_type: "model_visual.floor_attestation.refreshed",
+          allowed: true,
+          actor: stringValue(req.headers["x-soma-caller"] ?? body?.actor),
+          source_host: sourceHost,
+          attestation_issued_at: attestation.issued_at,
+          durable: false,
+          payload_bytes_included: false,
+          content_included: false,
+        });
+        logger.info?.("soma.provenance", event);
         writeJson(res, 200, {
           accepted: true,
           source_host: sourceHost,
           attestation: byteFreeRawVisualSoloAttestation(attestation),
+          provenance_id: event.id,
           payload_bytes_included: false,
           content_included: false,
           activation_performed: false,
@@ -6845,17 +6874,34 @@ function activeSensoriumDisclosureStrings(streams = [], field = "") {
   )].slice(0, 16);
 }
 
-function createRawVisualSoloAttestation({ sourceHost = "", actor = "", now = new Date() } = {}) {
+function missingRawVisualSoloAttestationAssertions(body = {}) {
+  return [
+    "seth_present",
+    "seth_consented",
+    "active_control",
+    "no_other_person_in_frame",
+  ].filter((field) => body?.[field] !== true);
+}
+
+function createRawVisualSoloAttestation({
+  sourceHost = "",
+  actor = "",
+  sethPresent = false,
+  sethConsented = false,
+  activeControl = false,
+  noOtherPersonInFrame = false,
+  now = new Date(),
+} = {}) {
   const timestamp = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
   return {
     origin: "trusted_run_control",
     input_origin: "trusted_run_control",
     source_host: stringValue(sourceHost),
     issued_at: timestamp.toISOString(),
-    seth_present: true,
-    seth_consented: true,
-    active_control: true,
-    no_other_person_in_frame: true,
+    seth_present: sethPresent === true,
+    seth_consented: sethConsented === true,
+    active_control: activeControl === true,
+    no_other_person_in_frame: noOtherPersonInFrame === true,
     occupant_writable: false,
     refreshed_by: stringValue(actor) || "operator",
     payload_bytes_included: false,

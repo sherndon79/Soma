@@ -1462,6 +1462,10 @@ test("raw visual floor status explains closed inputs and never reads frames", as
     body: {
       actor: "operator",
       source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
     },
   });
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
@@ -1506,7 +1510,14 @@ test("raw visual floor attestation alone cannot open without fresh presence", as
   let response = await invokeHandler(handler, {
     method: "POST",
     url: "/model-visual/floor/attestations",
-    body: { actor: "operator", source_host: "jetsorano" },
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
   });
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
 
@@ -1562,6 +1573,49 @@ test("raw visual floor attestation control rejects occupant-writable callers", a
   assert.equal(response.body.error, "model_visual_floor_status_operator_required");
   assert.equal(subscriber.readCalls.length, 0);
   assert.equal(subscriber.dropCalls.length, 0);
+});
+
+test("raw visual floor attestation requires explicit operator assertions", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: { actor: "operator", source_host: "jetsorano" },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "model_visual_floor_attestation_assertions_required");
+  assert.deepEqual(response.body.missing_assertions, [
+    "seth_present",
+    "seth_consented",
+    "active_control",
+    "no_other_person_in_frame",
+  ]);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(response.body.content_included, false);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: false,
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body.missing_assertions, ["no_other_person_in_frame"]);
+  assert.equal(subscriber.readCalls.length, 0);
 });
 
 test("POST /model-visual/attach-requests/controller refuses text-only model delivery before payload read", async () => {

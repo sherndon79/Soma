@@ -22,8 +22,51 @@ export class ModelClient {
     return this.#openAiCompatibleChat({ messages, maxTokens, temperature, model });
   }
 
-  async #openAiCompatibleChat({ messages, maxTokens, temperature, model }) {
-    const normalizedMessages = coalesceSystemMessages(messages);
+  async chatWithVisualAttachments({
+    messages,
+    attachments,
+    maxTokens = 512,
+    temperature = 0.7,
+    model = this.model,
+    visualAttachmentSchema = "",
+  }) {
+    const normalizedAttachments = normalizeVisualAttachments(attachments);
+    const schema = String(visualAttachmentSchema ?? "").trim();
+    if (this.runtime === "anthropic-messages") {
+      if (schema !== "anthropic_messages_image") {
+        throw unsupportedVisualSchema(schema);
+      }
+      return this.#anthropicMessagesChat({
+        messages: buildAnthropicVisualMessages(messages, normalizedAttachments),
+        maxTokens,
+        temperature,
+        model,
+        contentAlreadyTyped: true,
+      });
+    }
+    if (schema === "openai_chat_image_url") {
+      return this.#openAiCompatibleChat({
+        messages: buildOpenAiImageUrlMessages(messages, normalizedAttachments),
+        maxTokens,
+        temperature,
+        model,
+        contentAlreadyTyped: true,
+      });
+    }
+    if (schema === "soma_typed_multimodal") {
+      return this.#openAiCompatibleChat({
+        messages: buildSomaTypedVisualMessages(messages, normalizedAttachments),
+        maxTokens,
+        temperature,
+        model,
+        contentAlreadyTyped: true,
+      });
+    }
+    throw unsupportedVisualSchema(schema);
+  }
+
+  async #openAiCompatibleChat({ messages, maxTokens, temperature, model, contentAlreadyTyped = false }) {
+    const normalizedMessages = contentAlreadyTyped ? messages : coalesceSystemMessages(messages);
     const response = await this.fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
@@ -56,7 +99,7 @@ export class ModelClient {
     };
   }
 
-  async #anthropicMessagesChat({ messages, maxTokens, model }) {
+  async #anthropicMessagesChat({ messages, maxTokens, model, contentAlreadyTyped = false }) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       const error = new Error("Anthropic API key is not configured.");
@@ -65,7 +108,9 @@ export class ModelClient {
       throw error;
     }
 
-    const { system, messages: anthropicMessages } = toAnthropicMessages(messages);
+    const { system, messages: anthropicMessages } = contentAlreadyTyped
+      ? toAnthropicTypedMessages(messages)
+      : toAnthropicMessages(messages);
     // Newer Anthropic models (e.g. Opus 4.8) reject the deprecated `temperature`
     // parameter, returning HTTP 400. Omit it on the Anthropic path.
     const body = {
@@ -148,6 +193,29 @@ function toAnthropicMessages(messages = []) {
   };
 }
 
+function toAnthropicTypedMessages(messages = []) {
+  const system = [];
+  const mapped = [];
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const role = String(message?.role ?? "").trim();
+    if (role === "system") {
+      const text = textFromTypedContent(message.content);
+      if (text) {
+        system.push(text);
+      }
+      continue;
+    }
+    mapped.push({
+      role: role === "assistant" ? "assistant" : "user",
+      content: Array.isArray(message?.content) ? message.content : [{ type: "text", text: String(message?.content ?? "") }],
+    });
+  }
+  return {
+    system: system.join("\n\n"),
+    messages: mapped,
+  };
+}
+
 export function coalesceSystemMessages(messages = []) {
   const systemContents = [];
   const nonSystemMessages = [];
@@ -186,6 +254,126 @@ export function coalesceSystemMessages(messages = []) {
     }));
   const afterSystem = nonSystemMessages.slice(beforeSystem.length);
   return [...beforeSystem, systemMessage, ...afterSystem];
+}
+
+function normalizeVisualAttachments(attachments = []) {
+  if (!Array.isArray(attachments) || attachments.length !== 1) {
+    throw invalidVisualAttachment("exactly one visual attachment is required");
+  }
+  const attachment = attachments[0];
+  const modality = String(attachment?.modality ?? "").trim();
+  const mediaType = String(attachment?.media_type ?? "").trim();
+  const payload = attachment?.payload_bytes;
+  if (!["color", "depth", "pose"].includes(modality)) {
+    throw invalidVisualAttachment("visual attachment modality must be color, depth, or pose");
+  }
+  if (!(payload instanceof Uint8Array) || payload.byteLength === 0) {
+    throw invalidVisualAttachment("visual attachment payload must be non-empty bytes");
+  }
+  if (!mediaType) {
+    throw invalidVisualAttachment("visual attachment media_type is required");
+  }
+  return [
+    {
+      modality,
+      media_type: mediaType,
+      payload_bytes: new Uint8Array(payload),
+    },
+  ];
+}
+
+function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
+  const attachment = attachments[0];
+  if (attachment.modality !== "color") {
+    throw unsupportedVisualSchema("openai_chat_image_url");
+  }
+  return appendTypedContentToLastUserMessage(messages, {
+    type: "image_url",
+    image_url: {
+      url: dataUrl(attachment),
+      detail: "auto",
+    },
+  });
+}
+
+function buildAnthropicVisualMessages(messages = [], attachments = []) {
+  const attachment = attachments[0];
+  if (attachment.modality !== "color") {
+    throw unsupportedVisualSchema("anthropic_messages_image");
+  }
+  return appendTypedContentToLastUserMessage(messages, {
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: attachment.media_type,
+      data: base64Payload(attachment.payload_bytes),
+    },
+  });
+}
+
+function buildSomaTypedVisualMessages(messages = [], attachments = []) {
+  const attachment = attachments[0];
+  const blockType = attachment.modality === "depth"
+    ? "input_depth"
+    : attachment.modality === "pose"
+      ? "input_pose"
+      : "input_image";
+  return appendTypedContentToLastUserMessage(messages, {
+    type: blockType,
+    source: {
+      type: "base64",
+      media_type: attachment.media_type,
+      data: base64Payload(attachment.payload_bytes),
+    },
+  });
+}
+
+function appendTypedContentToLastUserMessage(messages = [], visualBlock) {
+  const normalized = coalesceSystemMessages(messages).map((message) => ({
+    role: String(message?.role ?? "").trim(),
+    content: [{ type: "text", text: String(message?.content ?? "") }],
+  }));
+  const lastUserIndex = normalized.map((message) => message.role).lastIndexOf("user");
+  if (lastUserIndex < 0) {
+    throw invalidVisualAttachment("a user message is required for visual attachment");
+  }
+  return normalized.map((message, index) => (
+    index === lastUserIndex
+      ? { ...message, content: [...message.content, visualBlock] }
+      : message
+  ));
+}
+
+function textFromTypedContent(content) {
+  if (Array.isArray(content)) {
+    return content
+      .filter((block) => block?.type === "text")
+      .map((block) => String(block.text ?? ""))
+      .join("\n");
+  }
+  return String(content ?? "");
+}
+
+function dataUrl(attachment) {
+  return `data:${attachment.media_type};base64,${base64Payload(attachment.payload_bytes)}`;
+}
+
+function base64Payload(payload) {
+  return Buffer.from(payload).toString("base64");
+}
+
+function invalidVisualAttachment(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.code = "invalid_visual_attachment";
+  return error;
+}
+
+function unsupportedVisualSchema(schema) {
+  const error = new Error(`Visual attachment schema ${schema || "(missing)"} is not supported for this runtime.`);
+  error.statusCode = 400;
+  error.code = "visual_attachment_schema_unsupported";
+  return error;
 }
 
 function anthropicText(content = []) {

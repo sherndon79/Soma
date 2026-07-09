@@ -158,6 +158,133 @@ test("ModelClient refuses anthropic-messages chat when ANTHROPIC_API_KEY is miss
   }
 });
 
+test("ModelClient sends color attachments as typed OpenAI-compatible image content", async () => {
+  let captured;
+  const client = new ModelClient({
+    baseUrl: "http://model.test/",
+    model: "vision-model",
+    async fetchImpl(url, options) {
+      captured = { url, options };
+      return {
+        ok: true,
+        async json() {
+          return {
+            model: "vision-model",
+            choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+            usage: { total_tokens: 5 },
+          };
+        },
+      };
+    },
+  });
+
+  const result = await client.chatWithVisualAttachments({
+    messages: [{ role: "user", content: "look once" }],
+    attachments: [
+      {
+        modality: "color",
+        media_type: "image/jpeg",
+        payload_bytes: Uint8Array.from([1, 2, 3]),
+      },
+    ],
+    visualAttachmentSchema: "openai_chat_image_url",
+  });
+
+  assert.equal(captured.url, "http://model.test/v1/chat/completions");
+  const body = JSON.parse(captured.options.body);
+  assert.deepEqual(body.messages, [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "look once" },
+        {
+          type: "image_url",
+          image_url: {
+            url: "data:image/jpeg;base64,AQID",
+            detail: "auto",
+          },
+        },
+      ],
+    },
+  ]);
+  assert.equal(result.text, "ok");
+});
+
+test("ModelClient sends depth attachments only through explicit Soma typed multimodal schema", async () => {
+  let captured;
+  const client = new ModelClient({
+    baseUrl: "http://model.test/",
+    model: "depth-model",
+    async fetchImpl(url, options) {
+      captured = { url, options };
+      return {
+        ok: true,
+        async json() {
+          return {
+            model: "depth-model",
+            choices: [{ message: { content: "depth ok" }, finish_reason: "stop" }],
+            usage: { total_tokens: 6 },
+          };
+        },
+      };
+    },
+  });
+
+  await client.chatWithVisualAttachments({
+    messages: [{ role: "user", content: "depth once" }],
+    attachments: [
+      {
+        modality: "depth",
+        media_type: "application/vnd.soma.depth+png",
+        payload_bytes: Uint8Array.from([4, 5, 6]),
+      },
+    ],
+    visualAttachmentSchema: "soma_typed_multimodal",
+  });
+
+  const body = JSON.parse(captured.options.body);
+  assert.deepEqual(body.messages[0].content, [
+    { type: "text", text: "depth once" },
+    {
+      type: "input_depth",
+      source: {
+        type: "base64",
+        media_type: "application/vnd.soma.depth+png",
+        data: "BAUG",
+      },
+    },
+  ]);
+});
+
+test("ModelClient refuses depth attachments on image-url schemas before fetch", async () => {
+  let calls = 0;
+  const client = new ModelClient({
+    async fetchImpl() {
+      calls += 1;
+      return { ok: true };
+    },
+  });
+
+  await assert.rejects(
+    () => client.chatWithVisualAttachments({
+      messages: [{ role: "user", content: "depth once" }],
+      attachments: [
+        {
+          modality: "depth",
+          media_type: "application/vnd.soma.depth+png",
+          payload_bytes: Uint8Array.from([4, 5, 6]),
+        },
+      ],
+      visualAttachmentSchema: "openai_chat_image_url",
+    }),
+    (error) => {
+      assert.equal(error.code, "visual_attachment_schema_unsupported");
+      return true;
+    },
+  );
+  assert.equal(calls, 0);
+});
+
 function restoreEnv(name, value) {
   if (value === undefined) {
     delete process.env[name];

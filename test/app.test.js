@@ -1386,6 +1386,146 @@ test("POST /model-visual/attach-requests/controller ignores request-body presenc
   assert.equal(subscriber.readCalls.length, 0);
 });
 
+test("POST /model-visual/attach-requests/controller refuses text-only model delivery before payload read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look once" }],
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "text-only",
+      profiles: [
+        {
+          id: "text-only",
+          route: "local",
+          model: "local.gemma4",
+          remote_service: false,
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_profile_not_multimodal");
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(modelClient.calls.length, 0);
+});
+
+test("POST /model-visual/attach-requests/controller delivers exactly one typed visual attachment for one turn", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look once" }],
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      payload_bytes: Uint8Array.from([1, 2, 3]),
+    },
+  });
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const first = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.model_delivery_performed, true);
+  assert.equal(first.body.request.model_delivery_performed, true);
+  assert.equal(first.body.visual_attachment_count, 1);
+  assert.equal(first.body.typed_visual_content, true);
+  assert.equal(first.body.attachment_persisted, false);
+  assert.equal(first.body.completion.text, "saw one frame");
+  assert.equal(first.body.payload_bytes_included, false);
+  assert.equal(modelClient.calls.length, 1);
+  assert.equal(modelClient.calls[0].profile.model, "local.gemma4");
+  assert.deepEqual(modelClient.calls[0].args.messages, [{ role: "user", content: "look once" }]);
+  assert.equal(modelClient.calls[0].args.attachments.length, 1);
+  assert.equal(modelClient.calls[0].args.attachments[0].modality, "color");
+  assert.equal(modelClient.calls[0].args.attachments[0].media_type, "image/jpeg");
+  assert.deepEqual([...modelClient.calls[0].args.attachments[0].payload_bytes], [1, 2, 3]);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+
+  const second = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(second.statusCode, 409);
+  assert.equal(second.body.error, "model_visual_attach_frame_unavailable");
+  assert.equal(second.body.model_delivery_performed, false);
+  assert.equal(modelClient.calls.length, 1);
+});
+
+test("POST /model-visual/attach-requests/controller consumes the frame even when typed model delivery fails", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look once" }],
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      payload_bytes: Uint8Array.from([1, 2, 3]),
+    },
+  });
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    modelClient: makeModelVisualDeliveryClient({ fail: true }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const failed = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(failed.statusCode, 500);
+  assert.equal(failed.body.error, "internal_error");
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+  const second = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+  assert.equal(second.statusCode, 409);
+  assert.equal(second.body.error, "model_visual_attach_frame_unavailable");
+});
+
 test("capability proposals can be created and listed without activation", async () => {
   const handler = makeHandler({ harness: allowedHarness });
 
@@ -13575,6 +13715,8 @@ function modelVisualAttachRuntimeProfiles() {
         model: "local.gemma4",
         remote_service: false,
         supported_visual_modalities: ["color"],
+        visual_attachment_schema: "openai_chat_image_url",
+        visual_attachment_modalities: ["color"],
         allowed_data_classes: ["submitted_text"],
       },
     ],
@@ -13687,6 +13829,29 @@ function makeModelVisualAttachSubscriber({ frame = {} } = {}) {
     dropRawFrames(args) {
       dropCalls.push(args);
       cachedFrame = null;
+    },
+  };
+}
+
+function makeModelVisualDeliveryClient({ fail = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    withProfile(profile) {
+      return {
+        async chatWithVisualAttachments(args) {
+          calls.push({ profile, args });
+          if (fail) {
+            throw new Error("typed delivery failed");
+          }
+          return {
+            text: "saw one frame",
+            model: profile.model,
+            finish_reason: "stop",
+            tokens_used: 7,
+          };
+        },
+      };
     },
   };
 }

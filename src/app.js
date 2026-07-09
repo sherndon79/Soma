@@ -892,6 +892,47 @@ export function createRequestHandler({
         const visualGrant = findGrantById(grantStore, request.grant_id);
         const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
         const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
+        const modelDeliveryRequested = body?.model_delivery_requested === true;
+        let deliveryMessages = [];
+        let deliveryProfileClient = null;
+        if (modelDeliveryRequested) {
+          const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type);
+          if (!deliveryProfile.allowed) {
+            writeJson(res, 409, {
+              error: "model_visual_attach_profile_not_multimodal",
+              reason: deliveryProfile.reason,
+              activation_performed: false,
+              subscription_activated: false,
+              model_delivery_performed: false,
+              payload_attached: false,
+              payload_bytes_included: false,
+            });
+            return;
+          }
+          deliveryProfileClient = modelClient.withProfile ? modelClient.withProfile(profile) : modelClient;
+          if (typeof deliveryProfileClient.chatWithVisualAttachments !== "function") {
+            writeJson(res, 409, {
+              error: "model_visual_attach_profile_not_multimodal",
+              reason: "model_client_lacks_typed_visual_path",
+              activation_performed: false,
+              subscription_activated: false,
+              model_delivery_performed: false,
+              payload_attached: false,
+              payload_bytes_included: false,
+            });
+            return;
+          }
+          try {
+            deliveryMessages = normalizeMessages(body?.messages);
+          } catch (err) {
+            writeError(res, {
+              statusCode: err.statusCode ?? 400,
+              code: err.code ?? "invalid_messages",
+              message: err.message ?? "Messages are invalid.",
+            });
+            return;
+          }
+        }
         const now = new Date();
         const floorGateDecision = decideRawFrameVisionFloorGate({
           runPosture: body?.run_posture,
@@ -961,17 +1002,31 @@ export function createRequestHandler({
           return;
         }
 
-        sensoriumSubscriber.dropRawFrames?.({
-          subscriptionId: request.source_subscription_ids[0],
-          modality: request.payload_type,
-        });
+        let completion = null;
+        try {
+          if (modelDeliveryRequested) {
+            completion = await deliveryProfileClient.chatWithVisualAttachments({
+              messages: deliveryMessages,
+              attachments: [modelVisualAttachmentFromFrame({ request, frame })],
+              model: profile.model,
+              maxTokens: numberOrDefault(body.max_tokens, 512),
+              temperature: numberOrDefault(body.temperature, DEFAULT_CHAT_TEMPERATURE),
+              visualAttachmentSchema: profile.visual_attachment_schema,
+            });
+          }
+        } finally {
+          sensoriumSubscriber.dropRawFrames?.({
+            subscriptionId: request.source_subscription_ids[0],
+            modality: request.payload_type,
+          });
+        }
 
         writeJson(res, 200, {
           request: {
             ...request,
             activation_performed: true,
             subscription_activated: false,
-            model_delivery_performed: false,
+            model_delivery_performed: modelDeliveryRequested,
             payload_attached: true,
             payload_bytes_included: false,
           },
@@ -979,10 +1034,21 @@ export function createRequestHandler({
           one_turn: true,
           activation_performed: true,
           subscription_activated: false,
-          model_delivery_performed: false,
+          model_delivery_performed: modelDeliveryRequested,
           payload_attached: true,
           payload_bytes_included: false,
           payload_bytes_returned: false,
+          visual_attachment_count: modelDeliveryRequested ? 1 : 0,
+          typed_visual_content: modelDeliveryRequested,
+          attachment_persisted: false,
+          completion: completion
+            ? {
+              text: completion.text ?? "",
+              model: completion.model ?? profile.model ?? "",
+              finish_reason: completion.finish_reason ?? "",
+              tokens_used: completion.tokens_used ?? 0,
+            }
+            : null,
           floor_gate_decision: floorGateDecision,
           frame: {
             subscription_id: frame.subscription_id,
@@ -5940,6 +6006,78 @@ function resolveModelVisualAttachProfile(runtimeProfiles = {}, modelTarget = "",
     return profiles.find((profile) => profile?.id === requested) ?? {};
   }
   return profiles.find((profile) => profile?.model === modelTarget || profile?.id === modelTarget) ?? {};
+}
+
+function validateModelVisualDeliveryProfile(profile = {}, modality = "") {
+  const requestedModality = stringValue(modality);
+  if (!modelVisualProfileSupportsModality(profile, requestedModality)) {
+    return { allowed: false, reason: "profile_not_vision_capable" };
+  }
+  const schema = stringValue(profile.visual_attachment_schema);
+  if (!schema) {
+    return { allowed: false, reason: "profile_lacks_typed_visual_schema" };
+  }
+  const deliveryModalities = normalizeCatalogStringArray(
+    profile.visual_attachment_modalities ||
+    profile.supported_visual_modalities ||
+    profile.vision_modalities ||
+    profile.model_context_visual_modalities,
+    [],
+  );
+  if (!deliveryModalities.includes(requestedModality)) {
+    return { allowed: false, reason: "profile_lacks_requested_visual_modality" };
+  }
+  if (["openai_chat_image_url", "anthropic_messages_image"].includes(schema)) {
+    return requestedModality === "color"
+      ? { allowed: true, schema }
+      : { allowed: false, reason: "profile_schema_does_not_support_depth_or_pose" };
+  }
+  if (schema === "soma_typed_multimodal") {
+    if (requestedModality === "depth" && stringValue(profile.depth_representation) !== "depth_png") {
+      return { allowed: false, reason: "profile_lacks_explicit_depth_representation" };
+    }
+    return { allowed: true, schema };
+  }
+  return { allowed: false, reason: "profile_visual_schema_unsupported" };
+}
+
+function modelVisualProfileSupportsModality(profile = {}, modality = "") {
+  if (profile.vision_input_supported === true || profile.image_input_supported === true) {
+    return true;
+  }
+  const supported = normalizeCatalogStringArray(
+    profile.supported_visual_modalities ||
+    profile.vision_modalities ||
+    profile.model_context_visual_modalities,
+    [],
+  );
+  return supported.includes(modality);
+}
+
+function modelVisualAttachmentFromFrame({ request = {}, frame = {} } = {}) {
+  return {
+    modality: request.payload_type,
+    media_type: mediaTypeForModelVisualAttachment(request),
+    payload_bytes: frame.payload_bytes,
+  };
+}
+
+function mediaTypeForModelVisualAttachment(request = {}) {
+  const modality = stringValue(request.payload_type);
+  const format = stringValue(request.format_required);
+  if (modality === "color" && format === "jpeg") {
+    return "image/jpeg";
+  }
+  if (modality === "color" && format === "png") {
+    return "image/png";
+  }
+  if (modality === "depth" && format === "png") {
+    return "application/vnd.soma.depth+png";
+  }
+  if (modality === "pose") {
+    return "application/vnd.soma.pose+json";
+  }
+  return "application/octet-stream";
 }
 
 function sourceHostForVisualAttachRequest(request = {}) {

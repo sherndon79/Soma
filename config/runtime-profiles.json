@@ -27,8 +27,8 @@
       "tool_calls_supported": false,
       "tool_calls_enabled": false,
       "remote_service": true,
-      "allowed_data_classes": ["submitted_text"],
-      "description": "Remote Anthropic Messages API profile for first-breath harness evaluation. Requires an explicit model.remote.chat grant and ANTHROPIC_API_KEY."
+      "allowed_data_classes": ["submitted_text", "capability_decision_context"],
+      "description": "Remote Anthropic Messages API profile for first-breath/co-inhabitation harness evaluation. Requires an explicit model.remote.chat grant and ANTHROPIC_API_KEY. Allows capability_decision_context egress so the occupant receives its held-grant briefing and the results of capabilities it invokes (incl. armed perception summaries under a solo, user-consented dwell — the bystander floor is held by the run's solo constraint, not by starving the occupant of its own capability context)."
     }
   ]
 }

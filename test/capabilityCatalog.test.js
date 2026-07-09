@@ -369,6 +369,10 @@ const MODEL_VISUAL_ATTACH_CAPABILITIES = [
     key: "model.context.visual.composite.attach",
     contract: "soma.model.context.visual.composite.attach.v1",
   },
+  {
+    key: "model.context.visual.pose.attach",
+    contract: "soma.model.context.visual.pose.attach.v1",
+  },
 ];
 
 test("model-facing visual attach capabilities are requestable without activating delivery", async () => {
@@ -394,6 +398,11 @@ test("model-facing visual attach capabilities are requestable without activating
     assert.equal(cap.providers[0].output_schema, "soma.model.context.visual.attach.proposal.v1");
     assert.ok(cap.excluded_by_default.includes("background delivery without preview"));
   }
+
+  const pose = view.capabilities.find((c) => c.key === "model.context.visual.pose.attach");
+  assert.ok(pose.data_exposed.includes("68 face keypoints"));
+  assert.ok(pose.data_exposed.includes("42 hand keypoints across left and right hands"));
+  assert.ok(pose.data_exposed.some((entry) => entry.includes("identity-adjacent")));
 });
 
 const REMOTE_GRAPHICAL_CAPABILITIES = [

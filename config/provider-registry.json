@@ -33,6 +33,11 @@
           "key": "model.context.visual.composite.attach",
           "provider_contract": "soma.model.context.visual.composite.attach.v1",
           "output_schema": "soma.model.context.visual.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.pose.attach",
+          "provider_contract": "soma.model.context.visual.pose.attach.v1",
+          "output_schema": "soma.model.context.visual.attach.proposal.v1"
         }
       ]
     },

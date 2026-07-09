@@ -150,6 +150,35 @@
       "description": "Review-only scaffold for attaching a bounded fused color/depth visual payload to one model turn. Composite delivery remains inactive until a later validator and prompt-assembly slice."
     },
     {
+      "key": "model.context.visual.pose.attach",
+      "name": "Model Context Full Pose Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": ["once"],
+      "data_exposed": [
+        "one full pose keypoint payload from an approved Sensorium subscription",
+        "body pose keypoints",
+        "68 face keypoints",
+        "42 hand keypoints across left and right hands",
+        "identity-adjacent biometric and behavioral visual context",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed frames",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.pose.attach.v1",
+      "description": "Review-only scaffold for attaching a single full pose keypoint payload to one model turn. Pose exposes identity-adjacent body, face, and hand keypoints; a Sensorium subscription grant alone does not authorize this capability."
+    },
+    {
       "key": "memory.session.read",
       "name": "Session Memory Read",
       "category": "memory",

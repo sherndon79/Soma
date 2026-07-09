@@ -147,7 +147,10 @@ import {
 } from "./modelVisualAttachReviewSurface.js";
 import { validateModelVisualAttachRequest } from "./modelVisualAttachRequest.js";
 import { createModelVisualAttachmentProvenanceSummary } from "./modelVisualAttachmentProvenance.js";
-import { decideRawFrameVisionFloorGate } from "./rawFrameVisionFloorGate.js";
+import {
+  RAW_FRAME_VISION_FLOOR_REASONS,
+  decideRawFrameVisionFloorGate,
+} from "./rawFrameVisionFloorGate.js";
 import { SessionMemory } from "./sessionMemory.js";
 import {
   DESKTOP_VISUAL_CUE_CAPABILITY,
@@ -851,6 +854,7 @@ export function createRequestHandler({
         }
 
         const requestBody = isPlainObject(body?.request) ? body.request : body;
+        const episodeId = stringValue(body?.episode_id);
         const authorization = authorizeGrantUse({
           store: grantStore,
           grantId: requestBody?.grant_id,
@@ -899,9 +903,23 @@ export function createRequestHandler({
         if (modelDeliveryRequested) {
           const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type);
           if (!deliveryProfile.allowed) {
+            const event = appendModelVisualAttachProvenanceEvent({
+              provenanceLog,
+              logger,
+              eventType: "model.context.visual.attach_refused",
+              allowed: false,
+              request,
+              profile,
+              reason: deliveryProfile.reason,
+              failedGateInput: "runtime_profile",
+              modelDeliveryPerformed: false,
+              episodeId,
+              caller: req.headers["x-soma-caller"] ?? "",
+            });
             writeJson(res, 409, {
               error: "model_visual_attach_profile_not_multimodal",
               reason: deliveryProfile.reason,
+              provenance_id: event.id,
               activation_performed: false,
               subscription_activated: false,
               model_delivery_performed: false,
@@ -912,9 +930,23 @@ export function createRequestHandler({
           }
           deliveryProfileClient = modelClient.withProfile ? modelClient.withProfile(profile) : modelClient;
           if (typeof deliveryProfileClient.chatWithVisualAttachments !== "function") {
+            const event = appendModelVisualAttachProvenanceEvent({
+              provenanceLog,
+              logger,
+              eventType: "model.context.visual.attach_refused",
+              allowed: false,
+              request,
+              profile,
+              reason: "model_client_lacks_typed_visual_path",
+              failedGateInput: "model_client",
+              modelDeliveryPerformed: false,
+              episodeId,
+              caller: req.headers["x-soma-caller"] ?? "",
+            });
             writeJson(res, 409, {
               error: "model_visual_attach_profile_not_multimodal",
               reason: "model_client_lacks_typed_visual_path",
+              provenance_id: event.id,
               activation_performed: false,
               subscription_activated: false,
               model_delivery_performed: false,
@@ -956,10 +988,54 @@ export function createRequestHandler({
               modality: request.payload_type,
             });
           }
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.attach_refused",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            floorGateDecision,
+            reason: floorGateDecision.reason,
+            failedGateInput: failedRawFrameVisionFloorGateInput(floorGateDecision),
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
           writeJson(res, 409, {
             error: "model_visual_attach_floor_gate_refused",
             reason: floorGateDecision.reason,
+            provenance_id: event.id,
             floor_gate_decision: floorGateDecision,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
+        }
+        if (modelDeliveryRequested && !episodeId && hasActiveEpisode(episodes)) {
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.attach_refused",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            floorGateDecision,
+            reason: "model_visual_attach_episode_id_required",
+            failedGateInput: "episode_id",
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          writeJson(res, 409, {
+            error: "model_visual_attach_episode_id_required",
+            reason: "model_visual_attach_episode_id_required",
+            provenance_id: event.id,
             activation_performed: false,
             subscription_activated: false,
             model_delivery_performed: false,
@@ -975,9 +1051,25 @@ export function createRequestHandler({
           now,
         });
         if (!frame) {
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.attach_refused",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            floorGateDecision,
+            reason: "raw_latest_frame_unavailable",
+            failedGateInput: "latest_frame_cache",
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
           writeJson(res, 409, {
             error: "model_visual_attach_frame_unavailable",
             reason: "raw_latest_frame_unavailable",
+            provenance_id: event.id,
             activation_performed: false,
             subscription_activated: false,
             model_delivery_performed: false,
@@ -989,9 +1081,27 @@ export function createRequestHandler({
 
         const frameAgeMs = now.getTime() - Date.parse(frame.capture_timestamp);
         if (!Number.isFinite(frameAgeMs) || frameAgeMs < 0 || frameAgeMs > request.max_frame_age_ms) {
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.attach_refused",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            frame,
+            floorGateDecision,
+            reason: "raw_latest_frame_stale",
+            failedGateInput: "frame_age",
+            frameAgeMs,
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
           writeJson(res, 409, {
             error: "model_visual_attach_frame_stale",
             reason: "raw_latest_frame_stale",
+            provenance_id: event.id,
             frame_age_ms: Number.isFinite(frameAgeMs) ? frameAgeMs : null,
             max_frame_age_ms: request.max_frame_age_ms,
             activation_performed: false,
@@ -1013,9 +1123,27 @@ export function createRequestHandler({
               subscriptionId: request.source_subscription_ids[0],
               modality: request.payload_type,
             });
+            const event = appendModelVisualAttachProvenanceEvent({
+              provenanceLog,
+              logger,
+              eventType: "model.context.visual.attach_refused",
+              allowed: false,
+              request,
+              profile,
+              sourceSubscription,
+              frame,
+              floorGateDecision,
+              reason: err.code ?? "visual_payload_mismatch",
+              failedGateInput: "payload_envelope",
+              frameAgeMs,
+              modelDeliveryPerformed: false,
+              episodeId,
+              caller: req.headers["x-soma-caller"] ?? "",
+            });
             writeJson(res, 409, {
               error: "model_visual_attach_payload_mismatch",
               reason: err.code ?? "visual_payload_mismatch",
+              provenance_id: event.id,
               activation_performed: false,
               subscription_activated: false,
               model_delivery_performed: false,
@@ -1036,12 +1164,75 @@ export function createRequestHandler({
               visualAttachmentSchema: profile.visual_attachment_schema,
             });
           }
+        } catch (err) {
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.model_delivery_failed",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            frame,
+            attachment: deliveredAttachment,
+            floorGateDecision,
+            reason: "model_delivery_failed",
+            errorClass: err.code ?? err.name ?? "model_delivery_error",
+            failedGateInput: "model_delivery",
+            frameAgeMs,
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          writeJson(res, err.statusCode && err.statusCode < 500 ? err.statusCode : 502, {
+            error: "model_visual_attach_model_delivery_failed",
+            reason: "model_delivery_failed",
+            error_class: err.code ?? err.name ?? "model_delivery_error",
+            provenance_id: event.id,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
         } finally {
           sensoriumSubscriber.dropRawFrames?.({
             subscriptionId: request.source_subscription_ids[0],
             modality: request.payload_type,
           });
         }
+
+        const rawVisualTaint = modelDeliveryRequested
+          ? createRawVisualTaint({
+            request,
+            frame,
+            attachment: deliveredAttachment,
+            profile,
+            floorGateDecision,
+          })
+          : null;
+        if (rawVisualTaint && episodeId) {
+          const visualEpisodeState = ensureEpisodeState(episodes, episodeId);
+          activateRawVisualTaint(visualEpisodeState, rawVisualTaint);
+        }
+        const event = appendModelVisualAttachProvenanceEvent({
+          provenanceLog,
+          logger,
+          eventType: "model.context.visual.attached",
+          allowed: true,
+          request,
+          profile,
+          sourceSubscription,
+          frame,
+          attachment: deliveredAttachment,
+          floorGateDecision,
+          frameAgeMs,
+          rawVisualTaint,
+          modelDeliveryPerformed: modelDeliveryRequested,
+          episodeId,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
 
         writeJson(res, 200, {
           request: {
@@ -1053,6 +1244,7 @@ export function createRequestHandler({
             payload_bytes_included: false,
           },
           accepted: true,
+          provenance_id: event.id,
           one_turn: true,
           activation_performed: true,
           subscription_activated: false,
@@ -1086,6 +1278,9 @@ export function createRequestHandler({
             retention_mode: frame.retention_mode,
             payload_bytes_included: false,
           },
+          live_perception_taint: rawVisualTaint
+            ? composeLivePerceptionTaint({ tainted: false }, rawVisualTaint)
+            : { tainted: false },
         });
         return;
       }
@@ -3610,7 +3805,10 @@ export function createRequestHandler({
           });
           return;
         }
-        const livePerceptionTaint = activeSensoriumPerceptionTaint({ sensoriumSubscriber });
+        const livePerceptionTaint = composeLivePerceptionTaint(
+          activeSensoriumPerceptionTaint({ sensoriumSubscriber }),
+          consumeRawVisualTaint(episodeState),
+        );
         let memoryContext = "";
 
         try {
@@ -5979,6 +6177,248 @@ function activeSensoriumPerceptionTaint({ sensoriumSubscriber = null } = {}) {
   };
 }
 
+function composeLivePerceptionTaint(sensoriumTaint = null, rawVisualTaint = null) {
+  const normalizedSensorium = normalizeLivePerceptionTaint(sensoriumTaint);
+  if (!rawVisualTaint || rawVisualTaint.active !== true) {
+    return normalizedSensorium;
+  }
+  return {
+    tainted: true,
+    reason: "sensorium_raw_visual_delivered",
+    scope: "delivery_turn",
+    active_count: normalizedSensorium.active_count,
+    capabilities: normalizedSensorium.capabilities,
+    topics: normalizedSensorium.topics,
+    raw_visual_taint: normalizeRawVisualTaint(rawVisualTaint),
+  };
+}
+
+function createRawVisualTaint({
+  request = {},
+  frame = {},
+  attachment = null,
+  profile = {},
+  floorGateDecision = {},
+} = {}) {
+  return normalizeRawVisualTaint({
+    active: true,
+    source: "sensorium.raw_visual",
+    modalities: [request.payload_type],
+    remote_visual_egress: true,
+    bystander_floor: "solo_gate_passed",
+    scope: "delivery_turn",
+    duration: "one_turn_plus_causal_output",
+    one_turn: true,
+    source_subscription_id: request.source_subscription_ids?.[0],
+    source_host: frame.source_host || sourceHostForVisualAttachRequest(request),
+    source_topic: frame.topic || request.source_topic,
+    grant_id: request.grant_id,
+    source_grant_id: frame.source_grant_id || request.source_grant_id,
+    model_profile_id: profile.id,
+    model_target: request.model_target || profile.model,
+    frame_id: frame.frame_id,
+    capture_timestamp: frame.capture_timestamp,
+    byte_length: attachment?.byte_length ?? frame.byte_length ?? null,
+    envelope_byte_length: attachment?.envelope_byte_length ?? frame.byte_length ?? null,
+    floor_gate_reason: floorGateDecision.reason ?? "",
+    payload_bytes_included: false,
+    content_included: false,
+    retention_mode: "none",
+  });
+}
+
+function activateRawVisualTaint(episodeState, rawVisualTaint = null) {
+  if (!episodeState || !rawVisualTaint || rawVisualTaint.active !== true) {
+    return episodeState;
+  }
+  episodeState.raw_visual_taint = {
+    ...normalizeRawVisualTaint(rawVisualTaint),
+    opened_at: new Date().toISOString(),
+    consumed_at: "",
+  };
+  episodeState.updated_at = new Date().toISOString();
+  return episodeState;
+}
+
+function consumeRawVisualTaint(episodeState = null) {
+  const rawVisualTaint = episodeState?.raw_visual_taint;
+  if (!rawVisualTaint || rawVisualTaint.active !== true || rawVisualTaint.consumed_at) {
+    return null;
+  }
+  const consumed = {
+    ...rawVisualTaint,
+    consumed_at: new Date().toISOString(),
+  };
+  episodeState.raw_visual_taint = consumed;
+  episodeState.updated_at = consumed.consumed_at;
+  return consumed;
+}
+
+function normalizeRawVisualTaint(value = null) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.active !== true) {
+    return { active: false };
+  }
+  return {
+    active: true,
+    source: "sensorium.raw_visual",
+    modalities: normalizeCatalogStringArray(value.modalities, []).slice(0, 4),
+    remote_visual_egress: value.remote_visual_egress === true,
+    bystander_floor: stringValue(value.bystander_floor) || "solo_gate_passed",
+    scope: stringValue(value.scope) || "delivery_turn",
+    duration: stringValue(value.duration) || "one_turn_plus_causal_output",
+    one_turn: value.one_turn !== false,
+    source_subscription_id: stringValue(value.source_subscription_id),
+    source_host: stringValue(value.source_host),
+    source_topic: stringValue(value.source_topic),
+    grant_id: stringValue(value.grant_id),
+    source_grant_id: stringValue(value.source_grant_id),
+    model_profile_id: stringValue(value.model_profile_id),
+    model_target: stringValue(value.model_target),
+    frame_id: stringValue(value.frame_id),
+    capture_timestamp: stringValue(value.capture_timestamp),
+    byte_length: Number.isFinite(value.byte_length) ? value.byte_length : null,
+    envelope_byte_length: Number.isFinite(value.envelope_byte_length) ? value.envelope_byte_length : null,
+    floor_gate_reason: stringValue(value.floor_gate_reason),
+    payload_bytes_included: false,
+    content_included: false,
+    retention_mode: "none",
+    opened_at: stringValue(value.opened_at),
+    consumed_at: stringValue(value.consumed_at),
+  };
+}
+
+function appendModelVisualAttachProvenanceEvent({
+  provenanceLog,
+  logger,
+  eventType = "model.context.visual.attached",
+  allowed = false,
+  request = {},
+  profile = {},
+  sourceSubscription = {},
+  frame = null,
+  attachment = null,
+  floorGateDecision = null,
+  reason = "",
+  failedGateInput = "",
+  errorClass = "",
+  frameAgeMs = null,
+  rawVisualTaint = null,
+  modelDeliveryPerformed = false,
+  episodeId = "",
+  caller = "",
+} = {}) {
+  const summary = createModelVisualAttachmentProvenanceSummary({ request });
+  const event = provenanceLog.append({
+    id: cryptoRandomId(),
+    timestamp: new Date().toISOString(),
+    ...summary,
+    event_type: eventType,
+    allowed,
+    caller_identity: stringValue(caller),
+    episode_id: stringValue(episodeId),
+    capability: stringValue(request.capability) || "model.context.visual.attach",
+    grant_id: stringValue(request.grant_id),
+    source_subscription_id: stringValue(request.source_subscription_ids?.[0]),
+    source_host: stringValue(frame?.source_host || sourceSubscription?.source_host || sourceHostForVisualAttachRequest(request)),
+    modality: stringValue(request.payload_type),
+    model_profile_id: stringValue(profile.id),
+    model_profile_vision_supported: modelVisualProfileSupportsModality(profile, request.payload_type),
+    model_visual_attachment_schema: stringValue(profile.visual_attachment_schema),
+    frame_id: stringValue(frame?.frame_id),
+    capture_timestamp: stringValue(frame?.capture_timestamp),
+    frame_age_ms: Number.isFinite(frameAgeMs) ? frameAgeMs : null,
+    byte_length: Number.isFinite(attachment?.byte_length) ? attachment.byte_length : null,
+    envelope_byte_length: Number.isFinite(attachment?.envelope_byte_length)
+      ? attachment.envelope_byte_length
+      : (Number.isFinite(frame?.byte_length) ? frame.byte_length : null),
+    floor_gate_decision: summarizeRawFrameVisionFloorGate(floorGateDecision),
+    floor_gate_failed_input: stringValue(failedGateInput),
+    refusal_reason: stringValue(reason),
+    model_delivery_failure_class: stringValue(errorClass),
+    model_delivery_performed: modelDeliveryPerformed === true,
+    payload_attached: allowed === true,
+    attachment_persisted: false,
+    visual_memory_written: false,
+    payload_bytes_included: false,
+    content_included: false,
+    retention_mode: "none",
+    one_turn: true,
+    remote_service_used: modelDeliveryPerformed === true,
+    live_perception_taint: rawVisualTaint
+      ? composeLivePerceptionTaint({ tainted: false }, rawVisualTaint)
+      : { tainted: false },
+  });
+  logger.info?.("soma.provenance", event);
+  return event;
+}
+
+function summarizeRawFrameVisionFloorGate(decision = null) {
+  if (!decision || typeof decision !== "object" || Array.isArray(decision)) {
+    return null;
+  }
+  const checks = isPlainObject(decision.checks) ? decision.checks : {};
+  return {
+    allowed: decision.allowed === true,
+    reason: stringValue(decision.reason),
+    episode_live: checks.episode_live === true,
+    grant_recovery_clean: checks.grant_recovery_clean === true,
+    visual_grant_active: checks.visual_grant_active === true,
+    retention_none: checks.retention_none === true,
+    source_subscription_active: checks.source_subscription_active === true,
+    source_subscription_host_matches: checks.source_subscription_host_matches === true,
+    solo_attestation_present: checks.solo_attestation_present === true,
+    solo_attestation_fresh: checks.solo_attestation_fresh === true,
+    solo_attestation_non_occupant_writable: checks.solo_attestation_non_occupant_writable === true,
+    solo_attestation_seth_present_and_consenting: checks.solo_attestation_seth_present_and_consenting === true,
+    presence_available: checks.presence_available === true,
+    presence_host_matches: checks.presence_host_matches === true,
+    presence_fresh: checks.presence_fresh === true,
+    presence_person_count_exactly_one: checks.presence_person_count_exactly_one === true,
+    presence_no_additional_person: checks.presence_no_additional_person === true,
+    presence_confidence_sufficient: checks.presence_confidence_sufficient === true,
+    run_posture_seth_present_and_consenting: checks.run_posture_seth_present_and_consenting === true,
+    profile_vision_capable: checks.profile_vision_capable === true,
+  };
+}
+
+function failedRawFrameVisionFloorGateInput(decision = {}) {
+  const reason = stringValue(decision.reason);
+  const byReason = {
+    [RAW_FRAME_VISION_FLOOR_REASONS.EPISODE_NOT_LIVE]: "episode_status",
+    [RAW_FRAME_VISION_FLOOR_REASONS.GRANT_RECOVERY_DEGRADED]: "grant_recovery",
+    [RAW_FRAME_VISION_FLOOR_REASONS.VISUAL_GRANT_NOT_ACTIVE]: "visual_grant",
+    [RAW_FRAME_VISION_FLOOR_REASONS.RETENTION_NOT_NONE]: "retention_mode",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOURCE_SUBSCRIPTION_NOT_ACTIVE]: "source_subscription",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOURCE_SUBSCRIPTION_HOST_MISMATCH]: "source_subscription_host",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_MISSING]: "solo_attestation",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_UNTRUSTED_ORIGIN]: "solo_attestation_origin",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_OCCUPANT_WRITABLE]: "solo_attestation_origin",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_NOT_CONSENTING]: "solo_attestation_consent",
+    [RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_STALE]: "solo_attestation_freshness",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_UNAVAILABLE]: "presence_state",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_HOST_MISMATCH]: "presence_host",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_STALE]: "presence_freshness",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_COUNT_NOT_EXACTLY_ONE]: "presence_person_count",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_ADDITIONAL_PERSON_DETECTED]: "presence_additional_person",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PRESENCE_CONFIDENCE_INSUFFICIENT]: "presence_confidence",
+    [RAW_FRAME_VISION_FLOOR_REASONS.RUN_POSTURE_SETH_NOT_CONSENTING]: "run_posture",
+    [RAW_FRAME_VISION_FLOOR_REASONS.PROFILE_NOT_VISION_CAPABLE]: "runtime_profile",
+  };
+  return byReason[reason] ?? reason;
+}
+
+function hasActiveEpisode(episodes) {
+  if (!episodes || typeof episodes.values !== "function") {
+    return false;
+  }
+  for (const episode of episodes.values()) {
+    if (episode?.status === "active") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function activeSensoriumDisclosure(sensoriumSubscriber = null) {
   if (typeof sensoriumSubscriber?.describeActive !== "function") {
     return { active_count: 0, streams: [] };
@@ -6164,7 +6604,7 @@ function normalizeLivePerceptionTaint(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || value.tainted !== true) {
     return { tainted: false };
   }
-  return {
+  const normalized = {
     tainted: true,
     reason: String(value.reason ?? "live_sensorium_perception_active"),
     scope: String(value.scope ?? "session"),
@@ -6176,6 +6616,11 @@ function normalizeLivePerceptionTaint(value) {
       ? value.topics.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 16)
       : [],
   };
+  const rawVisualTaint = normalizeRawVisualTaint(value.raw_visual_taint);
+  if (rawVisualTaint.active) {
+    normalized.raw_visual_taint = rawVisualTaint;
+  }
+  return normalized;
 }
 
 function markForumPostsDelivered(posts = []) {

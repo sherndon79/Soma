@@ -1387,6 +1387,43 @@ test("POST /model-visual/attach-requests/controller ignores request-body presenc
   assert.equal(subscriber.readCalls.length, 0);
 });
 
+test("POST /model-visual/attach-requests/controller records byte-free refusal provenance", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: { episode_status: "distressed" },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_floor_gate_refused");
+  assert.match(response.body.provenance_id, /^[0-9a-f-]{36}$/);
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attach_refused",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].id, response.body.provenance_id);
+  assert.equal(provenance.body.entries[0].refusal_reason, "episode_not_live");
+  assert.equal(provenance.body.entries[0].floor_gate_failed_input, "episode_status");
+  assert.equal(provenance.body.entries[0].floor_gate_decision.episode_live, false);
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal("payload_bytes" in provenance.body.entries[0], false);
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
 test("POST /model-visual/attach-requests/controller refuses text-only model delivery before payload read", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -1431,6 +1468,56 @@ test("POST /model-visual/attach-requests/controller refuses text-only model deli
   assert.equal(modelClient.calls.length, 0);
 });
 
+test("POST /model-visual/attach-requests/controller requires episode_id for model delivery when an episode is active", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look once" }],
+    },
+  });
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0xff, 0xd9],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+  await postureAnalysisTesting(handler, "episode-raw-visual-active");
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_episode_id_required");
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(modelClient.calls.length, 0);
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attach_refused",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].refusal_reason, "model_visual_attach_episode_id_required");
+  assert.equal(provenance.body.entries[0].floor_gate_failed_input, "episode_id");
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+});
+
 test("POST /model-visual/attach-requests/controller delivers exactly one typed visual attachment for one turn", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -1472,6 +1559,9 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
   assert.equal(first.body.attachment_persisted, false);
   assert.equal(first.body.completion.text, "saw one frame");
   assert.equal(first.body.payload_bytes_included, false);
+  assert.match(first.body.provenance_id, /^[0-9a-f-]{36}$/);
+  assert.equal(first.body.live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+  assert.equal(first.body.live_perception_taint.raw_visual_taint.payload_bytes_included, false);
   assert.equal(modelClient.calls.length, 1);
   assert.equal(modelClient.calls[0].profile.model, "local.gemma4");
   assert.deepEqual(modelClient.calls[0].args.messages, [{ role: "user", content: "look once" }]);
@@ -1484,6 +1574,20 @@ test("POST /model-visual/attach-requests/controller delivers exactly one typed v
   assert.equal(first.body.frame.byte_length, 4);
   assert.ok(first.body.frame.envelope_byte_length > 4);
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attached",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].id, first.body.provenance_id);
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal(provenance.body.entries[0].byte_length, 4);
+  assert.ok(provenance.body.entries[0].envelope_byte_length > 4);
+  assert.equal(provenance.body.entries[0].live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+  assert.equal(JSON.stringify(provenance.body.entries[0]).includes("/9j/"), false);
 
   const second = await invokeHandler(handler, {
     method: "POST",
@@ -1529,9 +1633,21 @@ test("POST /model-visual/attach-requests/controller consumes the frame even when
     body: envelope.body,
   });
 
-  assert.equal(failed.statusCode, 500);
-  assert.equal(failed.body.error, "internal_error");
+  assert.equal(failed.statusCode, 502);
+  assert.equal(failed.body.error, "model_visual_attach_model_delivery_failed");
+  assert.equal(failed.body.payload_bytes_included, false);
+  assert.match(failed.body.provenance_id, /^[0-9a-f-]{36}$/);
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.model_delivery_failed",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].id, failed.body.provenance_id);
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal("model_response" in provenance.body.entries[0], false);
   const second = await invokeHandler(handler, {
     method: "POST",
     url: "/model-visual/attach-requests/controller",
@@ -1539,6 +1655,179 @@ test("POST /model-visual/attach-requests/controller consumes the frame even when
   });
   assert.equal(second.statusCode, 409);
   assert.equal(second.body.error, "model_visual_attach_frame_unavailable");
+});
+
+test("raw visual delivery taint is inherited by next write turn only", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-raw-visual-taint-"));
+  try {
+    const occupantMemoryStorePath = path.join(workspace, "occupant-memory.json");
+    const occupantMemoryProvenancePath = path.join(workspace, "occupant-memory.ndjson");
+    const durableTestimonyStorePath = path.join(workspace, "durable-testimony.json");
+    const durableTestimonyProvenancePath = path.join(workspace, "durable-testimony.ndjson");
+    await writeFile(occupantMemoryStorePath, `${JSON.stringify({ schema_version: 1, entries: [], tombstones: [] }, null, 2)}\n`);
+    await writeFile(durableTestimonyStorePath, `${JSON.stringify({ schema_version: 1, entries: [] }, null, 2)}\n`);
+    const episodeId = "episode-raw-visual-taint";
+    const envelope = modelVisualAttachActivationEnvelope({
+      bodyPatch: {
+        episode_id: episodeId,
+        model_delivery_requested: true,
+        messages: [{ role: "user", content: "look once" }],
+      },
+    });
+    const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+      format: "jpeg",
+      data: [0xff, 0xd8, 0xff, 0xd9],
+    }));
+    const subscriber = makeModelVisualAttachSubscriber({
+      frame: {
+        capture_timestamp: envelope.nowIso,
+        byte_length: payloadEnvelope.byteLength,
+        payload_bytes: payloadEnvelope,
+      },
+    });
+    const completions = [
+      [
+        "I will write derived notes.",
+        "```soma-forum",
+        JSON.stringify({ type: "testimony", content: "Forum note derived after raw visual delivery." }),
+        "```",
+        "```soma-durable",
+        JSON.stringify({ text: "Durable testimony derived after raw visual delivery.", successor_visibility_requested: true }),
+        "```",
+        "```soma-capability",
+        JSON.stringify({
+          invoke: "occupant.memory.write",
+          grant_id: "grant-occupant-memory-write",
+          content: "Occupant memory derived after raw visual delivery.",
+        }),
+        "```",
+      ].join("\n"),
+      "second turn has no raw visual dependency",
+    ];
+    const handler = makeHandler({
+      harness: occupantMemoryHarness,
+      grantStore: {
+        schema_version: 1,
+        grants: [
+          ...envelope.grantStore.grants,
+          ...occupantMemoryGrantStore().grants,
+        ],
+      },
+      runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+      runtimeWritePosture: {
+        requested: true,
+        source: "test",
+        durable_testimony_write_enabled: true,
+        occupant_memory_write_enabled: true,
+      },
+      occupantMemoryStore: { schema_version: 1, entries: [], tombstones: [] },
+      occupantMemoryRecoveryReport: { ok: true, degraded: false, entry_count: 0, tombstone_count: 0, finding_count: 0, findings: [] },
+      occupantMemoryStorePath,
+      occupantMemoryProvenancePath,
+      durableTestimonyStore: { schema_version: 1, entries: [] },
+      durableTestimonyRecoveryReport: { ok: true, degraded: false, entry_count: 0, finding_count: 0, findings: [] },
+      durableTestimonyStorePath,
+      durableTestimonyProvenancePath,
+      modelClient: {
+        withProfile(profile) {
+          return {
+            async chatWithVisualAttachments(args) {
+              return {
+                text: "saw one frame",
+                model: profile.model,
+                finish_reason: "stop",
+                tokens_used: args.attachments.length,
+              };
+            },
+            async chat() {
+              return {
+                text: completions.shift(),
+                model: profile.model,
+                finish_reason: "stop",
+                tokens_used: 1,
+              };
+            },
+          };
+        },
+      },
+      sensoriumSubscriber: subscriber,
+      sensoriumPresenceState: envelope.presenceState,
+    });
+    await postureAnalysisTesting(handler, episodeId);
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: `/episodes/${episodeId}/forum`,
+      body: { actor: "user", forum_id: "forum-raw-visual-taint" },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/attach-requests/controller",
+      body: envelope.body,
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: episodeId,
+        write_session_memory: true,
+        messages: [{ role: "user", content: "write all derived notes" }],
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+    assert.equal(response.body.live_perception_taint.raw_visual_taint.remote_visual_egress, true);
+    assert.equal(response.body.forum_posts_created, 1);
+    assert.equal(response.body.durable_testimony_nominated, 1);
+    assert.equal(response.body.capability_results.length, 1);
+
+    const sessionMemory = await invokeHandler(handler, { method: "GET", url: "/session-memory" });
+    assert.equal(sessionMemory.statusCode, 200);
+    const taintedSessionEntries = sessionMemory.body.entries.filter((entry) => [
+      "write all derived notes",
+      response.body.text,
+    ].includes(entry.content));
+    assert.equal(taintedSessionEntries.length, 2);
+    assert.deepEqual(
+      taintedSessionEntries.map((entry) => entry.live_perception_taint.raw_visual_taint?.source),
+      ["sensorium.raw_visual", "sensorium.raw_visual"],
+    );
+
+    const forum = await invokeHandler(handler, { method: "GET", url: `/episodes/${episodeId}/forum` });
+    assert.equal(forum.statusCode, 200);
+    assert.equal(forum.body.forum.posts[0].live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+
+    const occupantMemoryStore = JSON.parse(await readFile(occupantMemoryStorePath, "utf8"));
+    assert.equal(occupantMemoryStore.entries[0].live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+    const durableTestimonyStore = JSON.parse(await readFile(durableTestimonyStorePath, "utf8"));
+    assert.equal(durableTestimonyStore.entries[0].live_perception_taint.raw_visual_taint.source, "sensorium.raw_visual");
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/chat",
+      body: {
+        episode_id: episodeId,
+        write_session_memory: true,
+        messages: [{ role: "user", content: "second turn" }],
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal("raw_visual_taint" in response.body.live_perception_taint, false);
+    const afterSecondTurnMemory = await invokeHandler(handler, { method: "GET", url: "/session-memory" });
+    const untaintedSessionEntries = afterSecondTurnMemory.body.entries.filter((entry) => [
+      "second turn",
+      "second turn has no raw visual dependency",
+    ].includes(entry.content));
+    assert.equal(untaintedSessionEntries.length, 2);
+    assert.equal("raw_visual_taint" in untaintedSessionEntries[0].live_perception_taint, false);
+    assert.equal("raw_visual_taint" in untaintedSessionEntries[1].live_perception_taint, false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("POST /model-visual/attach-requests/controller refuses color envelope format drift before model delivery", async () => {

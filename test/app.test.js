@@ -9064,6 +9064,14 @@ test("model visual occupant invocation performs immediate second call with redac
         return {
           async chat(args) {
             calls.push({ kind: "chat", profile, args });
+            if (calls.filter((call) => call.kind === "chat").length > 1) {
+              return {
+                text: "Continuing from byte-free visual context.",
+                model: profile.model,
+                finish_reason: "stop",
+                tokens_used: 3,
+              };
+            }
             return {
               text: [
                 "I will look once.",
@@ -9131,6 +9139,38 @@ test("model visual occupant invocation performs immediate second call with redac
   assert.equal(JSON.stringify(response.body).includes("payload_bytes\":"), false);
   assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 0);
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+
+  const markerMessage = calls[1].args.messages.find((message) =>
+    String(message.content ?? "").includes("Harness visual capability result:"));
+  assert.ok(markerMessage, "visual marker should be present in second-call messages");
+  assert.match(markerMessage.content, /model\.context\.visual\.color\.attach delivered one current color frame/);
+  assert.match(markerMessage.content, /Frame id: 42/);
+  assert.match(markerMessage.content, /Visual bytes are attached out-of-band/);
+
+  const secondTransactionStart = calls.length;
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-success",
+      model_profile: "gemma4-vision",
+      messages: [
+        ...calls[1].args.messages,
+        { role: "assistant", content: response.body.text },
+        { role: "user", content: "continue from that marker" },
+      ],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "Continuing from byte-free visual context.");
+  const secondTransactionCalls = calls.slice(secondTransactionStart);
+  assert.equal(secondTransactionCalls.length, 1);
+  assert.equal(secondTransactionCalls[0].kind, "chat");
+  const secondTransactionJson = JSON.stringify(secondTransactionCalls);
+  assert.match(secondTransactionJson, /Harness visual capability result/);
+  assert.doesNotMatch(secondTransactionJson, /soma-capability/);
+  assert.doesNotMatch(secondTransactionJson, /payload_bytes/);
 });
 
 test("model visual occupant invocation strict block refuses before frame read", async () => {
@@ -9199,6 +9239,8 @@ test("model visual occupant invocation rate-limits repeated closed-floor refusal
       episode_id: "episode-visual-occupant-rate",
     },
   });
+  envelope.grantStore.grants[0].scope = "window";
+  envelope.grantStore.grants[0].constraints.window_frame_budget = 1;
   const subscriber = makeModelVisualAttachSubscriber();
   const handler = makeHandler({
     harness: allowedHarness,
@@ -9255,12 +9297,202 @@ test("model visual occupant invocation rate-limits repeated closed-floor refusal
   response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
   assert.equal(response.body.capability_refusals[0].reason, "presence_count_not_exactly_one");
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 1);
   assert.equal(subscriber.readCalls.length, 0);
 
   response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
   assert.equal(response.body.capability_refusals[0].reason, "raw_visual_invocation_rate_limited");
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 1);
   assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("model visual occupant invocation refuses exhausted window budget without handoff spend", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-budget",
+    },
+  });
+  envelope.grantStore.grants[0].scope = "window";
+  envelope.grantStore.grants[0].constraints.window_frame_budget = 1;
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will look.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.attach", grant_id: "grant-visual-color" }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments(args) {
+            calls.push({ kind: "visual", profile, args });
+            return {
+              text: "I saw the frame.",
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: args.attachments.length,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  const body = {
+    episode_id: "episode-visual-occupant-budget",
+    model_profile: "gemma4-vision",
+    messages: [{ role: "user", content: "look" }],
+  };
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, true);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 0);
+  assert.equal(calls.filter((call) => call.kind === "visual").length, 1);
+  assert.equal(subscriber.readCalls.length, 1);
+
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "model_visual_window_frame_budget_exhausted");
+  assert.equal(response.body.model_visual_invocation.provenance_id.length > 0, true);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 0);
+  assert.equal(calls.filter((call) => call.kind === "visual").length, 1);
+  assert.equal(subscriber.readCalls.length, 1);
+
+  response = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attach_refused",
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.entries.some((entry) =>
+    entry.refusal_reason === "model_visual_window_frame_budget_exhausted" &&
+      entry.floor_gate_failed_input === "window_frame_budget" &&
+      entry.model_delivery_performed === false &&
+      entry.payload_bytes_included === false), true);
+});
+
+test("model visual occupant invocation aborts delivery when protective control closes the floor", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-control-close",
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      payload_bytes: Uint8Array.from(encodeColorPayload({
+        format: "jpeg",
+        data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+      })),
+    },
+  });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I need to stop before visual delivery.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.attach", grant_id: "grant-visual-color" }),
+                "```",
+                "SOMA_CONTROL pause",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 6,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver after protective control");
+          },
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-control-close",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look if useful" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.protective_control.control, "pause");
+  assert.equal(response.body.model_visual_invocation.handled, true);
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "protective_control_closed_visual_delivery");
+  assert.equal(response.body.text.includes("soma-capability"), false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, "chat");
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
 });
 
 test("POST /chat rejects inbound visual payload-shaped fields before model call", async () => {

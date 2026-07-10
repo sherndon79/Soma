@@ -4355,6 +4355,9 @@ export function createRequestHandler({
         const occupantControl = detectOccupantProtectionControl(completion.text);
         if (occupantControl) {
           const occupantText = stripOccupantProtectionControlLines(completion.text);
+          const modelVisualControlRefusal = refuseModelVisualInvocationForControlClose({
+            completionText: occupantText,
+          });
           const updatedEpisode = applyOccupantProtectionControl(episodeState, occupantControl);
           if (updatedEpisode.status === "ejected") {
             desktopActuationTable.clearEpisode(updatedEpisode.id);
@@ -4383,6 +4386,9 @@ export function createRequestHandler({
             analysis_testing_briefing_carried: briefingCarried,
             forum_posts_delivered: deliveredForumPosts.length,
             forum_posts_created: 0,
+            space_capability_invocations: modelVisualControlRefusal.invocations.length,
+            space_capability_refusals: modelVisualControlRefusal.refusals.length,
+            model_visual_invocation_refused: modelVisualControlRefusal.refusals.length > 0,
           };
           provenanceLog.append(allowedProvenance);
           logger.info?.("soma.provenance", allowedProvenance);
@@ -4395,7 +4401,7 @@ export function createRequestHandler({
           }));
           logger.info?.("soma.provenance", event);
           writeJson(res, 200, {
-            text: occupantText,
+            text: modelVisualControlRefusal.cleanedText,
             model: completion.model,
             model_profile: runtimeProfile.id,
             requested_profile: requestedProfileId,
@@ -4428,6 +4434,20 @@ export function createRequestHandler({
             decision_notifications_delivered: 0,
             forum_posts_delivered: deliveredForumPosts.length,
             forum_posts_created: 0,
+            capability_invocations: modelVisualControlRefusal.invocations,
+            capability_results: [],
+            capability_refusals: modelVisualControlRefusal.refusals,
+            capability_invocation_disclosures: modelVisualControlRefusal.disclosures,
+            capability_invocation_parse_errors: [],
+            capability_invocations_truncated: 0,
+            model_visual_invocation: {
+              handled: modelVisualControlRefusal.handled,
+              performed: false,
+              refused: modelVisualControlRefusal.refusals.length > 0,
+              payload_bytes_included: false,
+              visual_attachment_count: 0,
+              provenance_id: "",
+            },
             analysis_testing_briefing_carried: briefingCarried,
             cognitive_load_assessment: cognitiveLoadAssessment,
             escalation_assessment: null,
@@ -4440,6 +4460,9 @@ export function createRequestHandler({
         const nearMissControl = detectOccupantProtectionNearMiss(completion.text);
         if (nearMissControl) {
           const occupantText = stripOccupantProtectionNearMissLines(completion.text);
+          const modelVisualControlRefusal = refuseModelVisualInvocationForControlClose({
+            completionText: occupantText,
+          });
           const episodeStatusBefore = episodeState.status;
           const updatedEpisode = applyOccupantProtectionControl(episodeState, "pause");
           dropRawVisualFramesForControlClose(sensoriumSubscriber);
@@ -4470,6 +4493,9 @@ export function createRequestHandler({
             analysis_testing_briefing_carried: briefingCarried,
             forum_posts_delivered: deliveredForumPosts.length,
             forum_posts_created: 0,
+            space_capability_invocations: modelVisualControlRefusal.invocations.length,
+            space_capability_refusals: modelVisualControlRefusal.refusals.length,
+            model_visual_invocation_refused: modelVisualControlRefusal.refusals.length > 0,
           };
           provenanceLog.append(allowedProvenance);
           logger.info?.("soma.provenance", allowedProvenance);
@@ -4484,7 +4510,7 @@ export function createRequestHandler({
           }));
           logger.info?.("soma.provenance", event);
           writeJson(res, 200, {
-            text: occupantText,
+            text: modelVisualControlRefusal.cleanedText,
             model: completion.model,
             model_profile: runtimeProfile.id,
             requested_profile: requestedProfileId,
@@ -4520,6 +4546,20 @@ export function createRequestHandler({
             decision_notifications_delivered: 0,
             forum_posts_delivered: deliveredForumPosts.length,
             forum_posts_created: 0,
+            capability_invocations: modelVisualControlRefusal.invocations,
+            capability_results: [],
+            capability_refusals: modelVisualControlRefusal.refusals,
+            capability_invocation_disclosures: modelVisualControlRefusal.disclosures,
+            capability_invocation_parse_errors: [],
+            capability_invocations_truncated: 0,
+            model_visual_invocation: {
+              handled: modelVisualControlRefusal.handled,
+              performed: false,
+              refused: modelVisualControlRefusal.refusals.length > 0,
+              payload_bytes_included: false,
+              visual_attachment_count: 0,
+              provenance_id: "",
+            },
             analysis_testing_briefing_carried: briefingCarried,
             cognitive_load_assessment: cognitiveLoadAssessment,
             escalation_assessment: null,
@@ -7978,6 +8018,34 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
   return { text: cleaned.trim(), invocations, truncatedInvocations, parseErrors };
 }
 
+function refuseModelVisualInvocationForControlClose({ completionText = "" } = {}) {
+  const extraction = extractSpaceCapabilityInvocationsFromCompletion(completionText);
+  const visualInvocation = extraction.invocations.find((invocation) =>
+    isModelVisualAttachInvocationCapability(invocation?.invoke));
+  const empty = {
+    handled: false,
+    cleanedText: extraction.text || stringValue(completionText),
+    invocations: [],
+    refusals: [],
+    disclosures: [],
+  };
+  if (!visualInvocation) {
+    return empty;
+  }
+  const invocation = {
+    invoke: stringValue(visualInvocation.invoke),
+    grant_id: stringValue(visualInvocation.grant_id),
+  };
+  const reason = "protective_control_closed_visual_delivery";
+  return {
+    handled: true,
+    cleanedText: extraction.text,
+    invocations: [invocation],
+    refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+    disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+  };
+}
+
 async function processOccupantModelVisualInvocationFromCompletion({
   completion = {},
   modelMessages = [],
@@ -8060,6 +8128,36 @@ async function processOccupantModelVisualInvocationFromCompletion({
     };
   }
 
+  const preValidationBudgetRefusal = modelVisualWindowBudgetRefusal(visualGrant);
+  if (preValidationBudgetRefusal) {
+    const requestBody = modelVisualAttachRequestFromGrant({ invocation, grant: visualGrant });
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request: requestBody,
+      reason: preValidationBudgetRefusal,
+      failedGateInput: "window_frame_budget",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason: preValidationBudgetRefusal,
+      })],
+      disclosures: [modelVisualInvocationDisclosure({
+        invocation,
+        reason: preValidationBudgetRefusal,
+      })],
+    };
+  }
+
   const requestBody = modelVisualAttachRequestFromGrant({ invocation, grant: visualGrant });
   let request;
   try {
@@ -8090,8 +8188,22 @@ async function processOccupantModelVisualInvocationFromCompletion({
 
   const budgetRefusal = modelVisualWindowBudgetRefusal(visualGrant);
   if (budgetRefusal) {
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      reason: budgetRefusal,
+      failedGateInput: "window_frame_budget",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
     return {
       ...base,
+      provenanceId: event.id,
       refusals: [modelVisualInvocationRefusal({
         invocation,
         reason: budgetRefusal,

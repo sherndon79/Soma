@@ -98,7 +98,7 @@ shape refusals before handoff do not spend; a model-call failure *after* handoff
 repeated closed-floor invocations could poll presence/attestation state for free. The
 first refusal in a window carries its full honest reason class; subsequent refusals
 within the cooldown (per episode + grant; on the order of 3/minute — build pins the
-constant) refuse with an honest `visual_invocation_rate_limited` class. Reason classes
+constant) refuse with an honest `raw_visual_invocation_rate_limited` class. Reason classes
 are never blurred; only cadence is limited. Rate-limited refusals do not spend the grant.
 
 ## What the occupant can and cannot influence
@@ -245,7 +245,7 @@ Codex additions (folded from pressure-test, all binding):
 17. **Control-close race**: pause/distress/eject firing between invocation and the
     second call drops cached frames and aborts the delivery.
 18. **Rate bound**: first refusal fully reasoned; repeated closed-floor invocations
-    within the cooldown refuse `visual_invocation_rate_limited` (honest class, no
+    within the cooldown refuse `raw_visual_invocation_rate_limited` (honest class, no
     blurring), without spending the grant.
 19. **Composite happy path is sequence-primary**: with `81e16e5` deployed, the
     composite occupant-look test asserts `pairing_method: frameset_sequence`; the
@@ -275,7 +275,7 @@ folded above (2026-07-10):**
    sibling argument to the second call) with fail-closed inbound rejection *before*
    normalization and full negative-check coverage including telemetry/logs. Folded.
 4. **Rate bound on refused retries** (per episode + grant, honest
-   `visual_invocation_rate_limited` class, no reason blurring, no grant spend) — the
+   `raw_visual_invocation_rate_limited` class, no reason blurring, no grant spend) — the
    answer to the presence-probe side channel. Folded.
 
 Codex also confirmed: refusal-now over deliver-on-next-attest ("would let the occupant

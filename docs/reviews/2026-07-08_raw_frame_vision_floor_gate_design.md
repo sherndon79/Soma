@@ -375,17 +375,23 @@ this design allowed, for image-only provider schemas (Anthropic/OpenAI):
   0 exclusively for invalid, map valid depths into 1–255, and prefer near = bright so a
   close subject is not confusable with no-data pixels.
 
-### Authorized and in build (constraints binding, details land with the commits)
+### Built and reviewed (continued) — arc completed 2026-07-10
 
-**Pose JSON** — a second pose representation so text-capable remote models can read
-keypoints. Binding constraints: explicit profile + grant declaration (the pose analog
-of colorized depth — a rendering decision, not silent stringification, which remains
-prohibited); delivered as its own clearly-labeled content block, never mixed into the
-user's prose; size-bounded with delivered `byte_length` recorded; representation in
-provenance. The exact block shape for `anthropic_messages_image` profiles is a named
-design decision owed with the implementation report.
+**Pose JSON** (`485e021`) — a second pose representation so text-capable remote models
+can read keypoints. `pose_representation` is triple-declared (request + grant + profile;
+allowed values `pose_msgpack` | `pose_json`; mismatch refuses before frame read). The
+cached msgpack frame converts through the bounded pose summarizer — the FULL 133
+keypoints + scores per person, exact-count enforced, honoring the ratified
+"full pose attach includes keypoints" — then JSON-encodes under a 256,000-byte egress
+bound. **Settled block shape** (the owed design decision): a separate typed text block
+appended after the preserved user prose, delimited
+`SOMA_VISUAL_ATTACHMENT_BEGIN`/`END` and labeled with `representation`, `media_type`
+(`application/vnd.soma.pose+json`), and a content warning naming the identity-adjacent
+face/hand keypoints — an explicit rendering decision, never silent stringification.
+Representation and delivered `byte_length` in provenance; taint carries the
+representation.
 
-**Composite** — **the pair as the atomic unit: one `composite.attach` grant, one turn,
+**Composite** (`c62caf8` + `ab2bf38`) — **the pair as the atomic unit: one `composite.attach` grant, one turn,
 delivering exactly TWO provider-native image blocks** — the original color JPEG
 (untouched bytes) and the derived colorized-depth PNG, appended adjacently in that
 order, both-or-nothing. *(Amended 2026-07-10 from "single stitched side-by-side image":
@@ -396,13 +402,22 @@ stitched composite could never deliver to the providers it exists to serve. The
 one-attachment invariant's PURPOSE — one decision, one disclosure, one turn — is
 preserved by the pair-as-unit; only its letter changed, and this note is the record of
 that deviation. Composite is the ONLY modality permitted two attachment blocks.)*
-Binding constraints: the two halves MUST be paired by `frameset_sequence` as primary
-(authoritative when equal; capture-timestamp fallback within a documented max skew only
-when sequence is absent; refuse beyond skew — "latest of each" is two unrelated moments,
-not a composite; provenance records `pairing_method`); requires both modalities cached
-under their own grant-scoped retention; delivered only under its own explicit
-`composite.attach` grant (combined disclosure volume); provenance records both source
-frame ids, the pairing skew, and `visual_attachment_count: 2` honestly.
+Binding constraints, as built: `composite_representation: "paired_image_blocks"`
+triple-declared; the two halves paired by `frameset_sequence` as primary (authoritative
+when both present — equality pairs, skew recorded but not gated; mismatch refuses
+`composite_frameset_sequence_mismatch`), capture-timestamp fallback within
+`max_pairing_skew_ms` only when either sequence is absent (beyond-skew refuses
+`composite_pairing_skew_exceeded` — "latest of each" is two unrelated moments, not a
+composite); `frameset_sequence` carried optionally through the color/depth summaries
+and cache entries; both modalities cached under their own grant-scoped retention;
+delivered only under its own explicit `composite.attach` grant (combined disclosure
+volume); model client enforces block order/roles (color `image/*` first, colorized
+depth `image/png` second, both-or-nothing; single-block composite refuses;
+`soma_typed_multimodal` refuses composite); provenance, response metadata, and taint
+record both source frame ids with sequences, `pairing_skew_ms`, `pairing_method`
+(`frameset_sequence` | `capture_timestamp_fallback`), and
+`visual_attachment_count: 2` honestly. Extraction-failure cleanup drops BOTH source
+caches, not a synthetic composite id.
 
 ### Standing rule from the first live run
 

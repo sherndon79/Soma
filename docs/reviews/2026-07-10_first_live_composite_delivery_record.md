@@ -89,11 +89,13 @@ reproducibly. Evidence trail:
 
 ## Follow-ups
 
-1. **`frameset_sequence` absent on live envelopes** — pairing fell back to capture timestamp
-   (39 ms, well-paired; the fallback worked as designed and said so in provenance). But
-   Sensorium's envelopes have carried `frameset_sequence` since `21af301`; the running
-   jetsorano image may predate it, or the broker may not forward the field. Chase the
-   vintage; sequence-primary pairing should engage once live envelopes carry it.
+1. **`frameset_sequence` absent on live envelopes** — **RESOLVED 2026-07-10 (`81e16e5`).**
+   The live envelopes carried it all along; the broker's downsample-transform structs
+   dropped the field on re-encode — and the transform path engages whenever
+   `downsample_to` is present, even at native resolution, which is why these deliveries
+   fell back despite the camera pairing perfectly (identical frame ids). Six-line fix,
+   live-verified: transformed frames now carry the sequence; sequence-primary pairing
+   engages on the next delivery.
 2. **stdio JSON encoding of binary frames** — the release build bought the headroom, but
    serializing ~200 KB binary payloads as JSON through stdio remains architecturally heavy.
    Candidate: length-prefixed binary or msgpack framing for sample notifications (Codex's

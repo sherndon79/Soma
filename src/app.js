@@ -2445,6 +2445,11 @@ export function createRequestHandler({
                 capability,
                 topic: boundedRequest.topic,
               }),
+              rawFrameSequenceRetention: rawFrameSequenceRetentionFromSensoriumGrant({
+                grant,
+                capability,
+                topic: boundedRequest.topic,
+              }),
             });
           } catch (err) {
             writeError(res, {
@@ -16068,6 +16073,25 @@ function rawFrameRetentionFromSensoriumGrant({ grant = {}, capability = "", topi
     ttl_ms: retention.ttl_ms,
     retention_mode: retention.retention_mode,
     grant_allows_raw_visual_retention: true,
+    modality: rawFrameModalityForSensoriumCapability(capability),
+    source_grant_id: stringValue(grant.id),
+    source_host: sensoriumHostFromTopic(topic),
+  };
+}
+
+function rawFrameSequenceRetentionFromSensoriumGrant({ grant = {}, capability = "", topic = "" } = {}) {
+  const retention = grant?.constraints?.raw_frame_sequence_retention;
+  if (!retention || typeof retention !== "object" || Array.isArray(retention)) {
+    return null;
+  }
+  return {
+    enabled: retention.enabled === true,
+    max_frames: retention.max_frames,
+    max_total_bytes: retention.max_total_bytes,
+    ttl_ms: retention.ttl_ms,
+    retention_mode: retention.retention_mode,
+    grant_allows_raw_visual_sequence_retention:
+      grant?.constraints?.grant_allows_raw_visual_sequence_retention === true,
     modality: rawFrameModalityForSensoriumCapability(capability),
     source_grant_id: stringValue(grant.id),
     source_host: sensoriumHostFromTopic(topic),

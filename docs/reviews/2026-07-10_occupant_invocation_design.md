@@ -3,7 +3,12 @@
 - Date: 2026-07-10 (Revision 2, same day — Revision 1 superseded before ratification)
 - Author: Claude (steward, design/orchestration); Seth directed the design and the
   revision.
-- Status: **RATIFIED by Seth 2026-07-10** ("ratified, proceed with the build") — R1
+- Status: **RATIFIED by Seth 2026-07-10, BUILT same day (W1–W5 complete)** — W1
+  perception windows (`020f82e`+`21a2a9c`), W2 sequence vocabulary (`75b4fb0`), W3
+  ring + coverage floor (`43a3fef`+`0dd5019`), W4 occupant invocation
+  (`9ba096e`+`ce370cf`), W5 sequence delivery (`867e082`+`fc6d911`); every slice
+  Claude-reviewed, every must-fix folded. Dormant until Seth arms a window; first live
+  occupant look gets its own run protocol. — R1
   pressure-tested (4 folds), restructured on Seth's corrections, R2 re-tested by Codex
   ("passes on architecture", tightenings folded), then ratified in full.
 - Depends on: the raw-frame vision floor gate (RATIFIED 2026-07-09, slices 1–6 built),

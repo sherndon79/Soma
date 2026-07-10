@@ -143,6 +143,7 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
     model_target: stringValue(intent.model_target),
     payload_type: stringValue(intent.payload_type),
     depth_representation: stringValue(intent.constraints?.depth_representation),
+    pose_representation: stringValue(intent.constraints?.pose_representation),
     preview_artifact_id: stringValue(intent.preview_artifact_id),
     preview_acknowledgement_id: stringValue(intent.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(intent.preview_acknowledged_by),
@@ -164,6 +165,9 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
   };
   if (!summary.depth_representation) {
     delete summary.depth_representation;
+  }
+  if (!summary.pose_representation) {
+    delete summary.pose_representation;
   }
   return summary;
 }

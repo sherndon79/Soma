@@ -22,7 +22,7 @@ import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
 import { SensoriumSubscriber } from "../src/sensoriumSubscriber.js";
 import { encodeDepthPng16 } from "../src/depthColorize.js";
-import { encodeColorPayload, encodeDepthPayload, encodePresencePayload } from "./support/msgpackStatus.js";
+import { encodeColorPayload, encodeDepthPayload, encodePosePayload, encodePresencePayload } from "./support/msgpackStatus.js";
 
 const traversalEndpointActivationCasesPath = new URL(
   "../docs/fixtures/desktop-traversal-endpoint-activation-cases.json",
@@ -1742,6 +1742,83 @@ test("POST /model-visual/attach-requests/controller refuses depth representation
   assert.equal(modelClient.calls.length, 0);
 });
 
+test("POST /model-visual/attach-requests/controller refuses pose representation drift before payload read", async () => {
+  const poseRequestPatch = {
+    capability: "model.context.visual.pose.attach",
+    grant_id: "grant-visual-pose",
+    source_subscription_ids: ["sub-pose-1"],
+    source_capabilities: ["perception.sensorium.pose.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "perception/jetsorano/pose/features",
+    source_grant_id: "grant-pose-1",
+    payload_type: "pose",
+    transformed_dimensions: [1280, 720],
+    format_required: "msgpack",
+    pose_representation: "pose_json",
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: poseRequestPatch,
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look at pose once" }],
+      runtime_profile_id: "pose-raw-only",
+    },
+  });
+  const visualGrant = {
+    id: "grant-visual-pose",
+    status: "active",
+    capability: "model.context.visual.pose.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      ...envelope.body.request,
+    },
+  };
+  const subscriber = makeModelVisualAttachSubscriber();
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    grantStore: {
+      schema_version: 1,
+      grants: [visualGrant],
+    },
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "pose-raw-only",
+      profiles: [
+        {
+          id: "pose-raw-only",
+          route: "local",
+          model: "local.gemma4",
+          remote_service: false,
+          supported_visual_modalities: ["pose"],
+          visual_attachment_schema: "soma_typed_multimodal",
+          visual_attachment_modalities: ["pose"],
+          pose_representation: "pose_msgpack",
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, "model_visual_attach_profile_not_multimodal");
+  assert.equal(response.body.reason, "profile_pose_representation_mismatch");
+  assert.equal(response.body.model_delivery_performed, false);
+  assert.equal(response.body.payload_attached, false);
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(modelClient.calls.length, 0);
+});
+
 test("POST /model-visual/attach-requests/controller requires episode_id for model delivery when an episode is active", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -2262,6 +2339,203 @@ test("POST /model-visual/attach-requests/controller delivers colorized depth PNG
   });
   assert.equal(provenance.body.entries[0].payload_bytes_included, false);
   assert.equal(provenance.body.entries[0].content_included, false);
+});
+
+test("POST /model-visual/attach-requests/controller delivers pose JSON through real subscriber route", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  const nowIso = new Date().toISOString();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date(nowIso),
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowIso),
+    presenceState,
+    getPresenceEpisodeContext: () => ({
+      status: "active",
+      occupant_id: "seth",
+      posture: {
+        mode: "analysis_testing",
+        trust_basis: "human_set_episode",
+      },
+    }),
+  });
+  const poseSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-pose-test",
+    capability: "perception.sensorium.pose.subscribe",
+    constraints: {
+      topic: "perception/jetsorano/pose/features",
+      max_seconds: 60,
+      max_fps: 5,
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 256_000,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const presenceGrant = {
+    id: "grant-sensorium-presence-test",
+    status: "active",
+    capability: "perception.sensorium.presence.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    scope: "session",
+    constraints: {
+      topic: "perception/jetsorano/presence",
+      max_seconds: 60,
+      max_fps: 5,
+    },
+    approved_by: "user",
+    reason: "test fixture",
+    created_at: "2026-07-09T00:00:00.000Z",
+    activation_performed: false,
+  };
+  const poseRequestPatch = {
+    capability: "model.context.visual.pose.attach",
+    grant_id: "grant-visual-pose",
+    source_subscription_ids: ["sub-route-1"],
+    source_capabilities: ["perception.sensorium.pose.subscribe"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "perception/jetsorano/pose/features",
+    source_grant_id: "grant-sensorium-pose-test",
+    payload_type: "pose",
+    transformed_dimensions: [1280, 720],
+    format_required: "msgpack",
+    pose_representation: "pose_json",
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: poseRequestPatch,
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look at pose once" }],
+      runtime_profile_id: "anthropic-pose-json",
+    },
+  });
+  const visualGrant = {
+    id: "grant-visual-pose",
+    status: "active",
+    capability: "model.context.visual.pose.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      ...envelope.body.request,
+    },
+  };
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
+    grantStore: {
+      schema_version: 1,
+      grants: [poseSourceGrant, presenceGrant, visualGrant],
+    },
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "anthropic-pose-json",
+      profiles: [
+        {
+          id: "anthropic-pose-json",
+          route: "remote",
+          runtime: "anthropic-messages",
+          model: "claude-pose-test",
+          remote_service: true,
+          supported_visual_modalities: ["pose"],
+          visual_attachment_schema: "anthropic_messages_image",
+          visual_attachment_modalities: ["pose"],
+          pose_representation: "pose_json",
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: presenceState,
+  });
+
+  const poseSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.pose.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/pose/features",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(poseSubscription.statusCode, 201, JSON.stringify(poseSubscription.body));
+  assert.equal(poseSubscription.body.subscription_id, "sub-route-1");
+
+  const presenceSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/presence",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(presenceSubscription.statusCode, 201, JSON.stringify(presenceSubscription.body));
+
+  manager.emitSample("sub-route-1", "perception/jetsorano/pose/features", {
+    payloadBytes: encodePosePayload({
+      frameset_sequence: 88_001,
+      capture_timestamp: Date.parse(nowIso) / 1000,
+    }),
+    payloadSize: 4096,
+    captureTimestamp: nowIso,
+  });
+  manager.emitSample("sub-route-2", "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      person_count: 1,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    }),
+    payloadSize: 64,
+    captureTimestamp: nowIso,
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_delivery_performed, true);
+  assert.equal(response.body.frame.modality, "pose");
+  assert.equal(response.body.frame.frame_id, "88001");
+  assert.equal(response.body.frame.visual_representation, "pose_json");
+  assert.equal(modelClient.calls.length, 1);
+  assert.equal(modelClient.calls[0].profile.id, "anthropic-pose-json");
+  assert.equal(modelClient.calls[0].args.attachments.length, 1);
+  const attachment = modelClient.calls[0].args.attachments[0];
+  assert.equal(attachment.modality, "pose");
+  assert.equal(attachment.media_type, "application/vnd.soma.pose+json");
+  assert.equal(attachment.representation, "pose_json");
+  const deliveredJson = JSON.parse(new TextDecoder().decode(attachment.payload_bytes));
+  assert.equal(deliveredJson.schema, "perception.pose.contract.v0.2");
+  assert.equal(deliveredJson.frameset_sequence, 88_001);
+  assert.equal(deliveredJson.persons[0].face_keypoints.length, 68);
+  assert.equal(deliveredJson.persons[0].left_hand_keypoints.length, 21);
+  assert.equal(deliveredJson.persons[0].right_hand_keypoints.length, 21);
+  assert.equal(response.body.frame.byte_length, attachment.payload_bytes.byteLength);
+  assert.equal(response.body.live_perception_taint.raw_visual_taint.representation, "pose_json");
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attached",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].visual_representation, "pose_json");
+  assert.equal(provenance.body.entries[0].byte_length, attachment.payload_bytes.byteLength);
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal(JSON.stringify(provenance.body.entries[0]).includes("body_keypoints"), false);
 });
 
 test("POST /model-visual/attach-requests/controller consumes the frame even when typed model delivery fails", async () => {
@@ -15245,6 +15519,7 @@ const sensoriumPresenceProviderRegistry = {
       capabilities: [
         ...provider.capabilities,
         "perception.sensorium.presence.subscribe",
+        "perception.sensorium.pose.subscribe",
       ],
     };
   }),

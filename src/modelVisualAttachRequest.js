@@ -16,6 +16,7 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "transformed_dimensions",
   "format_required",
   "depth_representation",
+  "pose_representation",
   "preview_artifact_id",
   "preview_acknowledgement_id",
   "preview_acknowledged_by",
@@ -77,6 +78,7 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
       : [],
     format_required: stringValue(body.format_required),
     depth_representation: stringValue(body.depth_representation),
+    pose_representation: stringValue(body.pose_representation),
     preview_artifact_id: stringValue(body.preview_artifact_id),
     preview_acknowledgement_id: stringValue(body.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(body.preview_acknowledged_by),
@@ -112,6 +114,9 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
   };
   if (!validated.depth_representation) {
     delete validated.depth_representation;
+  }
+  if (!validated.pose_representation) {
+    delete validated.pose_representation;
   }
   return validated;
 }
@@ -169,6 +174,12 @@ function validateRequestShape(request, errors) {
   if (request.payload_type !== "depth" && request.depth_representation) {
     errors.push("depth_representation is only allowed for depth payloads");
   }
+  if (request.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(request.pose_representation)) {
+    errors.push("pose_representation must be pose_msgpack or pose_json for pose payloads");
+  }
+  if (request.payload_type !== "pose" && request.pose_representation) {
+    errors.push("pose_representation is only allowed for pose payloads");
+  }
 }
 
 function validateGrantAuthority({ request, grant, errors }) {
@@ -198,6 +209,7 @@ function validateGrantAuthority({ request, grant, errors }) {
     "payload_type",
     "format_required",
     "depth_representation",
+    "pose_representation",
     "preview_artifact_id",
     "preview_acknowledgement_id",
     "preview_acknowledged_by",

@@ -309,6 +309,56 @@ test("ModelClient sends colorized depth PNG as an image block for Anthropic sche
   }
 });
 
+test("ModelClient sends pose JSON as a separate labeled Anthropic text block", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  try {
+    let captured;
+    const client = new ModelClient({
+      runtime: "anthropic-messages",
+      model: "claude-pose",
+      async fetchImpl(url, options) {
+        captured = { url, options };
+        return {
+          ok: true,
+          async json() {
+            return {
+              model: "claude-pose",
+              content: [{ type: "text", text: "pose ok" }],
+              stop_reason: "end_turn",
+              usage: { input_tokens: 3, output_tokens: 4 },
+            };
+          },
+        };
+      },
+    });
+
+    await client.chatWithVisualAttachments({
+      messages: [{ role: "user", content: "pose once" }],
+      attachments: [
+        {
+          modality: "pose",
+          media_type: "application/vnd.soma.pose+json",
+          payload_bytes: new TextEncoder().encode("{\"schema\":\"perception.pose.contract.v0.2\"}"),
+        },
+      ],
+      visualAttachmentSchema: "anthropic_messages_image",
+    });
+
+    const body = JSON.parse(captured.options.body);
+    assert.equal(body.messages[0].content.length, 2);
+    assert.deepEqual(body.messages[0].content[0], { type: "text", text: "pose once" });
+    assert.equal(body.messages[0].content[1].type, "text");
+    assert.match(body.messages[0].content[1].text, /^SOMA_VISUAL_ATTACHMENT_BEGIN\nrepresentation: pose_json/m);
+    assert.match(body.messages[0].content[1].text, /media_type: application\/vnd\.soma\.pose\+json/);
+    assert.match(body.messages[0].content[1].text, /identity-adjacent body, face, and hand keypoints/);
+    assert.match(body.messages[0].content[1].text, /payload_json:\n\{"schema":"perception\.pose\.contract\.v0\.2"\}/);
+    assert.match(body.messages[0].content[1].text, /SOMA_VISUAL_ATTACHMENT_END$/);
+  } finally {
+    restoreEnv("ANTHROPIC_API_KEY", previousKey);
+  }
+});
+
 test("ModelClient refuses depth attachments on image-url schemas before fetch", async () => {
   let calls = 0;
   const client = new ModelClient({

@@ -141,6 +141,7 @@ import { buildSensoriumGrantProposalTemplate } from "./sensoriumGrantProposalTem
 import { createSensoriumPresenceState } from "./sensoriumPresenceState.js";
 import { decodeSensoriumMessagePack } from "./sensoriumMessagePack.js";
 import { colorizeDepthPng } from "./depthColorize.js";
+import { summarizeSensoriumPosePayload } from "./sensoriumPosePayload.js";
 import { validateSensoriumSubscriptionRequest } from "./sensoriumSubscriptionRequest.js";
 import {
   modelVisualAttachGrantCandidateReviewText,
@@ -166,6 +167,7 @@ import {
 
 const DEFAULT_CHAT_TEMPERATURE = 0.7;
 const DEFAULT_TOOL_CALL_TEMPERATURE = 0.2;
+const MAX_POSE_JSON_BYTES = 256_000;
 
 export function createApp({
   harness,
@@ -6781,6 +6783,15 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
       return { allowed: false, reason: "profile_depth_representation_mismatch" };
     }
   }
+  if (requestedModality === "pose") {
+    const requestRepresentation = stringValue(request.pose_representation);
+    if (!requestRepresentation) {
+      return { allowed: false, reason: "request_lacks_explicit_pose_representation" };
+    }
+    if (requestRepresentation !== stringValue(profile.pose_representation)) {
+      return { allowed: false, reason: "profile_pose_representation_mismatch" };
+    }
+  }
   const schema = stringValue(profile.visual_attachment_schema);
   if (!schema) {
     return { allowed: false, reason: "profile_lacks_typed_visual_schema" };
@@ -6797,13 +6808,17 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
   }
   if (["openai_chat_image_url", "anthropic_messages_image"].includes(schema)) {
     return requestedModality === "color" ||
-      (requestedModality === "depth" && stringValue(profile.depth_representation) === "colorized_png")
+      (requestedModality === "depth" && stringValue(profile.depth_representation) === "colorized_png") ||
+      (requestedModality === "pose" && stringValue(profile.pose_representation) === "pose_json")
       ? { allowed: true, schema }
       : { allowed: false, reason: "profile_schema_does_not_support_depth_or_pose" };
   }
   if (schema === "soma_typed_multimodal") {
     if (requestedModality === "depth" && stringValue(profile.depth_representation) !== "depth_png") {
       return { allowed: false, reason: "profile_lacks_explicit_depth_representation" };
+    }
+    if (requestedModality === "pose" && stringValue(profile.pose_representation) !== "pose_msgpack") {
+      return { allowed: false, reason: "profile_lacks_explicit_pose_representation" };
     }
     return { allowed: true, schema };
   }
@@ -6842,9 +6857,23 @@ function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = 
   const modality = stringValue(request.payload_type);
   const format = stringValue(request.format_required);
   if (modality === "pose") {
+    const representation = stringValue(request.pose_representation) || "pose_msgpack";
+    if (representation === "pose_json") {
+      if (stringValue(profile.pose_representation) !== "pose_json") {
+        throwModelVisualPayloadError("visual_pose_representation_profile_mismatch", "profile must explicitly declare pose_representation=pose_json");
+      }
+      const summary = summarizeSensoriumPosePayload(frame.payload_bytes);
+      const jsonBytes = jsonBytesForPoseSummary(summary);
+      return {
+        media_type: "application/vnd.soma.pose+json",
+        payload_bytes: jsonBytes,
+        representation,
+      };
+    }
     return {
       media_type: "application/vnd.soma.pose+msgpack",
       payload_bytes: copyVisualPayloadBytes(frame.payload_bytes),
+      representation,
     };
   }
   const decoded = decodeSensoriumMessagePack(frame.payload_bytes, {
@@ -6906,9 +6935,21 @@ function representationForModelVisualAttachment({ modality = "", format = "", re
     return `${format || "unknown"}_image`;
   }
   if (modality === "pose") {
-    return "pose_msgpack";
+    return stringValue(request.pose_representation) || "pose_msgpack";
   }
   return stringValue(format) || "unknown";
+}
+
+function jsonBytesForPoseSummary(summary = {}) {
+  const json = JSON.stringify(summary);
+  const bytes = new TextEncoder().encode(json);
+  if (bytes.byteLength > MAX_POSE_JSON_BYTES) {
+    throwModelVisualPayloadError(
+      "visual_pose_json_too_large",
+      `pose_json payload exceeds ${MAX_POSE_JSON_BYTES} bytes`,
+    );
+  }
+  return bytes;
 }
 
 function copyVisualPayloadBytes(value) {

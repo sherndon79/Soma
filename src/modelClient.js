@@ -284,6 +284,9 @@ function normalizeVisualAttachments(attachments = []) {
 
 function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
+  if (attachment.modality === "pose" && attachment.media_type === "application/vnd.soma.pose+json") {
+    return appendTypedContentToLastUserMessage(messages, poseJsonTextBlock(attachment));
+  }
   if (!["color", "depth"].includes(attachment.modality) || !attachment.media_type.startsWith("image/")) {
     throw unsupportedVisualSchema("openai_chat_image_url");
   }
@@ -298,6 +301,9 @@ function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
 
 function buildAnthropicVisualMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
+  if (attachment.modality === "pose" && attachment.media_type === "application/vnd.soma.pose+json") {
+    return appendTypedContentToLastUserMessage(messages, poseJsonTextBlock(attachment));
+  }
   if (!["color", "depth"].includes(attachment.modality) || !attachment.media_type.startsWith("image/")) {
     throw unsupportedVisualSchema("anthropic_messages_image");
   }
@@ -360,6 +366,22 @@ function dataUrl(attachment) {
 
 function base64Payload(payload) {
   return Buffer.from(payload).toString("base64");
+}
+
+function poseJsonTextBlock(attachment) {
+  const json = Buffer.from(attachment.payload_bytes).toString("utf8");
+  return {
+    type: "text",
+    text: [
+      "SOMA_VISUAL_ATTACHMENT_BEGIN",
+      "representation: pose_json",
+      "media_type: application/vnd.soma.pose+json",
+      "content_warning: identity-adjacent body, face, and hand keypoints",
+      "payload_json:",
+      json,
+      "SOMA_VISUAL_ATTACHMENT_END",
+    ].join("\n"),
+  };
 }
 
 function invalidVisualAttachment(message) {

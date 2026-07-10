@@ -17,6 +17,11 @@ const VISUAL_ATTACH_CAPABILITIES = {
     ],
     format_required: "composite",
   },
+  "model.context.visual.pose.attach": {
+    payload_type: "pose",
+    source_capabilities: ["perception.sensorium.pose.subscribe"],
+    format_required: "msgpack",
+  },
 };
 
 const ONCE_SCOPE = "once";
@@ -285,6 +290,10 @@ function validateConstraints(constraints, visualDefinition, errors) {
   if (visualDefinition?.payload_type === "depth" && !["depth_png", "colorized_png"].includes(depthRepresentation)) {
     errors.push("constraints.depth_representation must be depth_png or colorized_png");
   }
+  const poseRepresentation = stringValue(constraints.pose_representation) || "pose_msgpack";
+  if (visualDefinition?.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(poseRepresentation)) {
+    errors.push("constraints.pose_representation must be pose_msgpack or pose_json");
+  }
 
   return {
     max_frame_count: maxFrameCount,
@@ -293,6 +302,9 @@ function validateConstraints(constraints, visualDefinition, errors) {
     format_required: formatRequired,
     ...(visualDefinition?.payload_type === "depth"
       ? { depth_representation: depthRepresentation }
+      : {}),
+    ...(visualDefinition?.payload_type === "pose"
+      ? { pose_representation: poseRepresentation }
       : {}),
   };
 }

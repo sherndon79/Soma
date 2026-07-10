@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
 import { CapabilityProposalStore } from "../src/capabilityProposals.js";
@@ -1568,6 +1568,130 @@ test("raw visual perception window disarm closes floor and drops cached frames",
   assert.equal(response.body.attestation.present, false);
   assert.equal(response.body.frame_read_performed, false);
   assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("raw visual perception window authorizes delivery beyond one-shot ttl", async () => {
+  const base = new Date("2026-07-10T12:00:00.000Z");
+  const delivery = new Date(base.getTime() + 10 * 60 * 1000);
+  mock.timers.enable({ apis: ["Date"], now: base });
+  try {
+    const envelope = modelVisualAttachActivationEnvelope();
+    envelope.presenceState.observed_at = delivery.toISOString();
+    envelope.presenceState.expires_at = new Date(delivery.getTime() + 1_000).toISOString();
+    const subscriber = makeModelVisualAttachSubscriber({
+      frame: {
+        capture_timestamp: delivery.toISOString(),
+      },
+    });
+    const handler = makeHandler({
+      grantStore: envelope.grantStore,
+      runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+      sensoriumSubscriber: subscriber,
+      sensoriumPresenceState: envelope.presenceState,
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/floor/attestations",
+      body: {
+        actor: "operator",
+        source_host: "jetsorano",
+        window_ttl_seconds: 60 * 60,
+        seth_present: true,
+        seth_consented: true,
+        active_control: true,
+        no_other_person_in_frame: true,
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.perception_window.active, true);
+
+    mock.timers.setTime(delivery.getTime());
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/attach-requests/controller",
+      body: envelope.body,
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.accepted, true);
+    assert.equal(response.body.payload_attached, true);
+    assert.equal(response.body.floor_gate_decision.checks.solo_attestation_fresh, true);
+    assert.equal(subscriber.readCalls.length, 1);
+    assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("raw visual perception window expiry refuses delivery and clears fallback attestation", async () => {
+  const base = new Date("2026-07-10T12:00:00.000Z");
+  const expiredAt = new Date(base.getTime() + 2 * 60 * 1000);
+  mock.timers.enable({ apis: ["Date"], now: base });
+  try {
+    const envelope = modelVisualAttachActivationEnvelope();
+    envelope.presenceState.observed_at = expiredAt.toISOString();
+    envelope.presenceState.expires_at = new Date(expiredAt.getTime() + 1_000).toISOString();
+    const subscriber = makeModelVisualAttachSubscriber({
+      frame: {
+        capture_timestamp: expiredAt.toISOString(),
+      },
+    });
+    const handler = makeHandler({
+      grantStore: envelope.grantStore,
+      runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+      sensoriumSubscriber: subscriber,
+      sensoriumPresenceState: envelope.presenceState,
+    });
+
+    let response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/floor/attestations",
+      body: {
+        actor: "operator",
+        source_host: "jetsorano",
+        window_ttl_ms: 1_000,
+        seth_present: true,
+        seth_consented: true,
+        active_control: true,
+        no_other_person_in_frame: true,
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.perception_window.active, true);
+
+    mock.timers.setTime(expiredAt.getTime());
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/attach-requests/controller",
+      body: envelope.body,
+    });
+    assert.equal(response.statusCode, 409, JSON.stringify(response.body));
+    assert.equal(response.body.error, "model_visual_attach_floor_gate_refused");
+    assert.equal(response.body.reason, "solo_attestation_stale");
+    assert.equal(response.body.floor_gate_decision.checks.solo_attestation_fresh, false);
+    assert.equal(subscriber.readCalls.length, 0);
+    assert.equal(subscriber.dropCalls.length, 0);
+
+    response = await invokeHandler(handler, {
+      method: "POST",
+      url: "/model-visual/floor/status",
+      body: {
+        actor: "operator",
+        request: envelope.body.request,
+        episode_status: "active",
+        run_posture: envelope.body.run_posture,
+      },
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+    assert.equal(response.body.allowed, false);
+    assert.equal(response.body.reason, "solo_attestation_missing");
+    assert.equal(response.body.perception_window.active, false);
+    assert.equal(response.body.perception_window.close_reason, "expired");
+    assert.equal(response.body.attestation.present, false);
+    assert.equal(response.body.frame_read_performed, false);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("raw visual floor attestation alone cannot open without fresh presence", async () => {

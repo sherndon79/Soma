@@ -342,6 +342,7 @@ export function createRequestHandler({
   const forums = new Map();
   const rawVisualSoloAttestations = new Map();
   const rawVisualPerceptionWindows = new Map();
+  const rawVisualClosedPerceptionWindows = new Map();
   const perceptionWindowBootFact = {
     event_type: "perception_window_closed_by_process_restart",
     windows_resumed: false,
@@ -688,6 +689,7 @@ export function createRequestHandler({
           provenanceLog,
           logger,
           caller: req.headers["x-soma-caller"] ?? actor,
+          closedWindows: rawVisualClosedPerceptionWindows,
         });
         rawVisualSoloAttestations.clear();
         const event = provenanceLog.append(createOccupantProtectionEvent({
@@ -850,6 +852,7 @@ export function createRequestHandler({
           now,
         });
         rawVisualSoloAttestations.set(sourceHost, attestation);
+        rawVisualClosedPerceptionWindows.delete(sourceHost);
         const windowTtlMs = body?.window_ttl_ms !== undefined
           ? normalizePerceptionWindowTtlMs(body.window_ttl_ms, { unit: "milliseconds" })
           : normalizePerceptionWindowTtlMs(body?.window_ttl_seconds, { unit: "seconds" });
@@ -915,6 +918,7 @@ export function createRequestHandler({
           reason: "disarmed",
           now,
           actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
+          closedWindows: rawVisualClosedPerceptionWindows,
         });
         rawVisualSoloAttestations.delete(sourceHost);
         dropRawVisualFramesForControlClose(sensoriumSubscriber);
@@ -980,12 +984,16 @@ export function createRequestHandler({
           provenanceLog,
           logger,
           caller: req.headers["x-soma-caller"] ?? "",
+          closedWindows: rawVisualClosedPerceptionWindows,
         });
         for (const expired of expiredWindows) {
           rawVisualSoloAttestations.delete(expired.source_host);
         }
-        const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
-        const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
+        const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost)
+          ?? rawVisualClosedPerceptionWindows.get(sourceHost)
+          ?? null;
+        const activePerceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
+        const soloAttestation = perceptionWindowAttestation(activePerceptionWindow, { now })
           ?? rawVisualSoloAttestations.get(sourceHost)
           ?? null;
         const floorGateDecision = decideRawFrameVisionFloorGate({
@@ -1146,7 +1154,21 @@ export function createRequestHandler({
         const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
         const modelDeliveryRequested = body?.model_delivery_requested === true;
         const sourceHost = sourceHostForVisualAttachRequest(request);
-        const soloAttestation = rawVisualSoloAttestations.get(sourceHost) ?? body?.solo_attestation;
+        const now = new Date();
+        const expiredWindows = expireRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+          now,
+          provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? "",
+          closedWindows: rawVisualClosedPerceptionWindows,
+        });
+        for (const expired of expiredWindows) {
+          rawVisualSoloAttestations.delete(expired.source_host);
+        }
+        const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
+        const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
+          ?? rawVisualSoloAttestations.get(sourceHost)
+          ?? body?.solo_attestation;
         let deliveryMessages = [];
         let deliveryProfileClient = null;
         if (modelDeliveryRequested) {
@@ -1215,7 +1237,6 @@ export function createRequestHandler({
             return;
           }
         }
-        const now = new Date();
         const floorGateDecision = decideRawFrameVisionFloorGate({
           runPosture: body?.run_posture,
           episodeStatus: body?.episode_status,
@@ -4334,6 +4355,7 @@ export function createRequestHandler({
             provenanceLog,
             logger,
             caller: req.headers["x-soma-caller"] ?? "",
+            closedWindows: rawVisualClosedPerceptionWindows,
           });
           rawVisualSoloAttestations.clear();
           const allowedProvenance = {
@@ -4416,6 +4438,7 @@ export function createRequestHandler({
             provenanceLog,
             logger,
             caller: req.headers["x-soma-caller"] ?? "",
+            closedWindows: rawVisualClosedPerceptionWindows,
           });
           rawVisualSoloAttestations.clear();
           const allowedProvenance = {
@@ -7555,6 +7578,7 @@ function closeRawVisualPerceptionWindow(windows, sourceHost = "", {
   reason = "closed",
   now = new Date(),
   actor = "",
+  closedWindows = null,
 } = {}) {
   const existing = windows.get(sourceHost);
   const closedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
@@ -7577,6 +7601,7 @@ function closeRawVisualPerceptionWindow(windows, sourceHost = "", {
     content_included: false,
   };
   windows.delete(sourceHost);
+  closedWindows?.set?.(sourceHost, closed);
   return closed;
 }
 
@@ -7586,6 +7611,7 @@ function closeRawVisualPerceptionWindows(windows, {
   provenanceLog = null,
   logger = console,
   caller = "",
+  closedWindows = null,
 } = {}) {
   const closed = [];
   for (const sourceHost of Array.from(windows.keys())) {
@@ -7593,6 +7619,7 @@ function closeRawVisualPerceptionWindows(windows, {
       reason,
       now,
       actor: caller,
+      closedWindows,
     });
     closed.push(entry);
     const event = provenanceLog?.append?.({
@@ -7620,6 +7647,7 @@ function expireRawVisualPerceptionWindows(windows, {
   provenanceLog = null,
   logger = console,
   caller = "",
+  closedWindows = null,
 } = {}) {
   const evaluatedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
   const expired = [];
@@ -7629,6 +7657,7 @@ function expireRawVisualPerceptionWindows(windows, {
         reason: "expired",
         now: evaluatedAt,
         actor: caller,
+        closedWindows,
       });
       expired.push(closed);
       const event = provenanceLog?.append?.({

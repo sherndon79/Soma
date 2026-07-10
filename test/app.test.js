@@ -9264,6 +9264,282 @@ test("model visual occupant invocation performs immediate second call with redac
   assert.doesNotMatch(secondTransactionJson, /payload_bytes/);
 });
 
+test("model visual occupant composite invocation uses real subscriber envelopes without body run_posture", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  const nowIso = new Date().toISOString();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date(nowIso),
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowIso),
+    presenceState,
+  });
+  const colorSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-color-test",
+    capability: "perception.sensorium.color.subscribe",
+    constraints: {
+      topic: "sensor/jetsorano/realsense/color",
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "jpeg",
+      downsample_to: [16, 16],
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 4096,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const depthSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-depth-test",
+    capability: "perception.sensorium.depth.subscribe",
+    constraints: {
+      topic: "sensor/jetsorano/realsense/depth",
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "png",
+      downsample_to: [16, 16],
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 4096,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const presenceGrant = {
+    id: "grant-sensorium-presence-test",
+    status: "active",
+    capability: "perception.sensorium.presence.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    scope: "session",
+    constraints: {
+      topic: "perception/jetsorano/presence",
+      max_seconds: 60,
+      max_fps: 5,
+    },
+    approved_by: "user",
+    reason: "test fixture",
+    created_at: "2026-07-09T00:00:00.000Z",
+    activation_performed: false,
+  };
+  const visualGrant = {
+    id: "grant-visual-composite-occupant",
+    status: "active",
+    capability: "model.context.visual.composite.attach",
+    provider: "soma.provider.local-model",
+    scope: "window",
+    constraints: {
+      max_frame_count: 1,
+      max_frame_age_ms: 5_000,
+      transformed_dimensions: [32, 16],
+      source_subscription_ids: ["sub-route-1", "sub-route-2"],
+      source_capabilities: [
+        "perception.sensorium.color.subscribe",
+        "perception.sensorium.depth.subscribe",
+      ],
+      source_topics: [
+        "sensor/jetsorano/realsense/color",
+        "sensor/jetsorano/realsense/depth",
+      ],
+      source_grant_ids: [
+        "grant-sensorium-color-test",
+        "grant-sensorium-depth-test",
+      ],
+      source_provider: "soma.provider.sensorium.jetsorano",
+      source_topic: "sensor/jetsorano/realsense/composite",
+      source_grant_id: "grant-sensorium-composite-test",
+      model_target: "local.gemma4",
+      payload_type: "composite",
+      format_required: "composite",
+      composite_representation: "paired_image_blocks",
+      max_pairing_skew_ms: 250,
+      preview_artifact_id: "preview-composite-occupant",
+      preview_acknowledgement_id: "ack-preview-composite-occupant",
+      preview_acknowledged_by: "user",
+      preview_acknowledged_at: nowIso,
+      preview_acknowledged: true,
+      preview_cleanup_required: true,
+      retention_mode: "none",
+      window_frame_budget: 2,
+    },
+  };
+  const calls = [];
+  const handler = makeHandler({
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
+    grantStore: {
+      schema_version: 1,
+      grants: [colorSourceGrant, depthSourceGrant, presenceGrant, visualGrant],
+    },
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 4 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will inspect the paired scene.",
+                "```soma-capability",
+                JSON.stringify({
+                  invoke: "model.context.visual.composite.attach",
+                  grant_id: "grant-visual-composite-occupant",
+                }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments(args) {
+            calls.push({ kind: "visual", profile, args });
+            return {
+              text: "I saw the paired scene.",
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: args.attachments.length,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.depth.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "png" },
+    },
+  });
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/presence",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+
+  response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: nowIso,
+  });
+  manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: new Date(Date.parse(nowIso) + 500).toISOString(),
+  });
+  manager.emitSample("sub-route-3", "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      person_count: 1,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    }),
+    payloadSize: 64,
+    captureTimestamp: nowIso,
+  });
+
+  const chatBody = {
+    episode_id: "episode-visual-occupant-composite-real",
+    model_profile: "gemma4-vision",
+    messages: [{ role: "user", content: "look at the paired scene" }],
+  };
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body: chatBody });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "composite_pairing_skew_exceeded");
+  assert.equal(JSON.stringify(response.body).includes("model_visual_color_msgpack_invalid_bytes"), false);
+  assert.equal(calls.filter((call) => call.kind === "visual").length, 0);
+  assert.equal(visualGrant.constraints.window_frame_budget, 2);
+
+  manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: new Date(Date.parse(nowIso) + 120).toISOString(),
+  });
+
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body: chatBody });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "I saw the paired scene.");
+  assert.equal(response.body.model_visual_invocation.performed, true);
+  assert.equal(response.body.capability_results[0].frame.modality, "composite");
+  assert.equal(response.body.capability_results[0].frame.visual_representation, "paired_image_blocks");
+  assert.equal(visualGrant.constraints.window_frame_budget, 0);
+  const visualCall = calls.find((call) => call.kind === "visual");
+  assert.equal(visualCall.args.attachments.length, 2);
+  assert.equal(visualCall.args.attachments[0].composite_role, "color");
+  assert.deepEqual([...visualCall.args.attachments[0].payload_bytes], [0xff, 0xd8, 0x01, 0xff, 0xd9]);
+  assert.equal(visualCall.args.attachments[1].composite_role, "colorized_depth");
+  assert.deepEqual([...visualCall.args.attachments[1].payload_bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+});
+
 test("model visual occupant invocation strict block refuses before frame read", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {

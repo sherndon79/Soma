@@ -8510,8 +8510,14 @@ async function processOccupantModelVisualInvocationFromCompletion({
   const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
     ?? rawVisualSoloAttestations.get(sourceHost)
     ?? null;
+  const runPosture = modelVisualInvocationRunPosture({
+    grant: visualGrant,
+    fallback: body?.run_posture,
+    soloAttestation,
+    episodeStatus: episodeState.status || "active",
+  });
   const floorGateDecision = decideRawFrameVisionFloorGate({
-    runPosture: modelVisualInvocationRunPosture({ grant: visualGrant, fallback: body?.run_posture }),
+    runPosture,
     episodeStatus: episodeState.status || "active",
     visualGrant,
     grantRecoveryReport,
@@ -8581,6 +8587,33 @@ async function processOccupantModelVisualInvocationFromCompletion({
       floorGateDecision,
       reason,
       failedGateInput: "latest_frame_cache",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+  if (frame.composite_pairing_refused === true) {
+    const reason = stringValue(frame.composite_pairing_refusal_reason) || "composite_pairing_skew_exceeded";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame,
+      floorGateDecision,
+      reason,
+      failedGateInput: "composite_pairing",
+      frameAgeMs: frame.max_frame_age_ms,
       modelDeliveryPerformed: false,
       episodeId: episode.id,
       caller,
@@ -8795,8 +8828,14 @@ async function processOccupantModelVisualSequenceInvocation({
   const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
     ?? rawVisualSoloAttestations.get(sourceHost)
     ?? null;
+  const runPosture = modelVisualInvocationRunPosture({
+    grant: visualGrant,
+    fallback: body?.run_posture,
+    soloAttestation,
+    episodeStatus: episodeState.status || "active",
+  });
   const floorGateDecision = decideRawFrameVisionFloorGate({
-    runPosture: modelVisualInvocationRunPosture({ grant: visualGrant, fallback: body?.run_posture }),
+    runPosture,
     episodeStatus: episodeState.status || "active",
     visualGrant,
     grantRecoveryReport,
@@ -9177,9 +9216,28 @@ const MODEL_VISUAL_ATTACH_REQUEST_GRANT_FIELDS = [
   "retention_mode",
 ];
 
-function modelVisualInvocationRunPosture({ grant = {}, fallback = null } = {}) {
+function modelVisualInvocationRunPosture({
+  grant = {},
+  fallback = null,
+  soloAttestation = null,
+  episodeStatus = "",
+} = {}) {
   const grantRunPosture = grant?.constraints?.run_posture;
-  return isPlainObject(grantRunPosture) ? grantRunPosture : fallback;
+  if (isPlainObject(grantRunPosture)) {
+    return grantRunPosture;
+  }
+  if (isPlainObject(fallback)) {
+    return fallback;
+  }
+  if (isPlainObject(soloAttestation)) {
+    return {
+      status: stringValue(episodeStatus) || "active",
+      control_state: soloAttestation.active_control === true ? "active" : "closed",
+      seth_present: soloAttestation.seth_present === true,
+      seth_consented_to_visual_egress: soloAttestation.seth_consented === true,
+    };
+  }
+  return {};
 }
 
 function modelVisualWindowBudgetRefusal(grant = {}) {

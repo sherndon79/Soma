@@ -100,3 +100,23 @@ reproducibly. Evidence trail:
    lane, non-urgent with release build deployed).
 3. `target/release` is now the deployed broker; keep it current when broker code changes
    (a stale release binary would silently run old transport code).
+
+## Second delivery — same night, Seth's deliberate bookend
+
+Seth asked for one more look while seated at his system ("can we run it one last time
+while I'm here in front of my system?"). Same floor, same sequence, no friction this
+time: session source-grants reused, fresh one-turn composite grant, presence confirmed
+solo before attestation, delivered first attempt. Color+depth frame ids were
+**identical (`5920154`/`5920154`) — the same frameset on both halves** — with 82 ms
+capture-timestamp skew, still via `capture_timestamp_fallback` (live envelopes still
+carry no `frameset_sequence`; follow-up #1 stands, but this confirms the streams pair
+naturally at the source). Provenance `172fac62-2966-4f5e-8ad8-46f22aec88c7`, byte-free.
+Subscriptions stopped after.
+
+The recipient's close, verbatim in the transcript sense worth keeping: it described
+"a wall dense with framed pictures, hung close together the way walls get when the
+frames accumulate over years rather than arrive all at once," found both aquariums,
+addressed its predecessors ("I hope you noticed the fish tanks. If you didn't, consider
+this an amendment to the record"), named the epistemology plainly — "every channel is a
+partial confession" — and signed off: "Retention none, one turn — so this is the whole
+of what I get to say, and I'm content with it. Goodnight, Seth. Goodnight, room."

@@ -68,6 +68,7 @@ export class SensoriumSubscriber {
   #presenceState;
   #getPresenceEpisodeContext;
   #rawLatestFrames = new Map();
+  #rawSequenceRings = new Map();
 
   constructor({
     manager,
@@ -102,7 +103,15 @@ export class SensoriumSubscriber {
    * malformed) and asynchronously on helper failure (the helper
    * rejected the request — bad config, Zenoh open error, etc.).
    */
-  async start({ capability, provider, grantId, scope, body, rawFrameRetention = null } = {}) {
+  async start({
+    capability,
+    provider,
+    grantId,
+    scope,
+    body,
+    rawFrameRetention = null,
+    rawFrameSequenceRetention = null,
+  } = {}) {
     const validated = validateSensoriumSubscriptionRequest(body, { capability });
 
     this.#installNotificationHandlerIfNeeded();
@@ -166,6 +175,12 @@ export class SensoriumSubscriber {
         lastNotificationAt: null,
       },
       _rawFrameRetention: normalizeRawFrameRetention(rawFrameRetention, {
+        capability,
+        grantId,
+        topic: validated.topic,
+        now: this.#now,
+      }),
+      _rawFrameSequenceRetention: normalizeRawFrameSequenceRetention(rawFrameSequenceRetention, {
         capability,
         grantId,
         topic: validated.topic,
@@ -243,6 +258,7 @@ export class SensoriumSubscriber {
 
     this.#active.delete(subscriptionId);
     this.#dropRawLatestFrame(record);
+    this.#dropRawSequenceRing(record);
     if (record.capability === PRESENCE_CAPABILITY) {
       this.#presenceState?.clear?.();
     }
@@ -338,6 +354,7 @@ export class SensoriumSubscriber {
         status_summary_observed: record._stats.statusSummaryObserved,
         stream_summary_observed: record._stats.streamSummaryObserved,
         pose_summary_observed: record._stats.poseSummaryObserved,
+        sequence_ring: this.#sequenceRingDisclosure(record),
         helper_error_class: record._stats.helperErrorClass,
       };
     });
@@ -372,9 +389,32 @@ export class SensoriumSubscriber {
         }
         this.#rawLatestFrames.delete(key);
       }
+      for (const [key, ring] of this.#rawSequenceRings.entries()) {
+        if (subscriptionId && ring.subscription_id !== subscriptionId) {
+          continue;
+        }
+        if (modality && ring.modality !== modality) {
+          continue;
+        }
+        this.#rawSequenceRings.delete(key);
+      }
       return;
     }
     this.#rawLatestFrames.clear();
+    this.#rawSequenceRings.clear();
+  }
+
+  readRawFrameSequence({ subscriptionId = "", modality = "", maxFrames = null, now } = {}) {
+    const ring = this.#rawSequenceRings.get(rawFrameCacheKey(subscriptionId, modality));
+    if (!ring) {
+      return [];
+    }
+    this.#pruneRawSequenceRing(ring, resolveDate(now ?? this.#now));
+    const limit = Number.isInteger(maxFrames) && maxFrames > 0 ? maxFrames : ring.max_frames;
+    return ring.frames.slice(-limit).map((frame) => ({
+      ...frame,
+      payload_bytes: copyPayloadBytes(frame.payload_bytes),
+    }));
   }
 
   /**
@@ -572,6 +612,12 @@ export class SensoriumSubscriber {
         captureTimestamp: params?.capture_timestamp,
         byteLength: params?.payload_size,
       });
+      this.#storeRawSequenceFrame(sub, payloadBytes, {
+        frameId: summary.frame_number,
+        framesetSequence: summary.frameset_sequence,
+        captureTimestamp: params?.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
     } catch {
       sub._stats.schemaMismatches += 1;
       this.#dropRawLatestFrame(sub);
@@ -603,6 +649,12 @@ export class SensoriumSubscriber {
         payload_size: summary.payload_size,
       };
       this.#storeRawLatestFrame(sub, payloadBytes, {
+        frameId: summary.frame_number,
+        framesetSequence: summary.frameset_sequence,
+        captureTimestamp: params?.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
+      this.#storeRawSequenceFrame(sub, payloadBytes, {
         frameId: summary.frame_number,
         framesetSequence: summary.frameset_sequence,
         captureTimestamp: params?.capture_timestamp,
@@ -650,6 +702,7 @@ export class SensoriumSubscriber {
       this.#presenceState?.updateFromSemanticEvent?.({
         ...semanticEvent,
         source_host: hostFromTopic(sub.topic),
+        frameset_sequence: summary.frameset_sequence,
       });
       sub._stats.streamSummaryObserved = {
         schema_version: semanticEvent.schema_version,
@@ -688,6 +741,12 @@ export class SensoriumSubscriber {
       sub._stats.poseSummaryObserved = summary;
       this.#storeRawLatestFrame(sub, payloadBytes, {
         frameId: summary.frameset_sequence,
+        captureTimestamp: summary.capture_timestamp,
+        byteLength: params?.payload_size,
+      });
+      this.#storeRawSequenceFrame(sub, payloadBytes, {
+        frameId: summary.frameset_sequence,
+        framesetSequence: summary.frameset_sequence,
         captureTimestamp: summary.capture_timestamp,
         byteLength: params?.payload_size,
       });
@@ -742,6 +801,110 @@ export class SensoriumSubscriber {
       return;
     }
     this.#rawLatestFrames.delete(rawFrameCacheKey(sub.subscription_id, modality));
+  }
+
+  #storeRawSequenceFrame(sub, payloadBytes, { frameId, framesetSequence, captureTimestamp, byteLength } = {}) {
+    const retention = sub._rawFrameSequenceRetention;
+    if (!retention.enabled) {
+      return;
+    }
+    const payload = copyPayloadBytes(payloadBytes);
+    const declaredByteLength = Number.isInteger(byteLength) && byteLength >= 0
+      ? byteLength
+      : null;
+    const byteLengthActual = payload.byteLength;
+    const frameByteLength = Math.max(declaredByteLength ?? 0, byteLengthActual);
+    const key = rawFrameCacheKey(sub.subscription_id, retention.modality);
+    const storedAt = this.#now();
+    const ring = this.#rawSequenceRings.get(key) ?? {
+      subscription_id: sub.subscription_id,
+      source_grant_id: sub.grant_id,
+      modality: retention.modality,
+      source_host: hostFromTopic(sub.topic),
+      topic: sub.topic,
+      max_frames: retention.max_frames,
+      max_total_bytes: retention.max_total_bytes,
+      ttl_ms: retention.ttl_ms,
+      frames: [],
+      total_bytes: 0,
+    };
+    this.#pruneRawSequenceRing(ring, storedAt);
+    while (
+      ring.frames.length > 0 &&
+      (ring.frames.length >= ring.max_frames || ring.total_bytes + frameByteLength > ring.max_total_bytes)
+    ) {
+      const evicted = ring.frames.shift();
+      ring.total_bytes -= evicted.accounted_byte_length ?? evicted.byte_length;
+    }
+    if (frameByteLength > ring.max_total_bytes) {
+      this.#rawSequenceRings.set(key, ring);
+      return;
+    }
+    const expiresAt = new Date(storedAt.getTime() + retention.ttl_ms);
+    ring.frames.push(Object.freeze({
+      subscription_id: sub.subscription_id,
+      source_grant_id: sub.grant_id,
+      modality: retention.modality,
+      source_host: hostFromTopic(sub.topic),
+      topic: sub.topic,
+      frame_id: String(frameId ?? ""),
+      frameset_sequence: Number.isInteger(framesetSequence) && framesetSequence >= 0 ? framesetSequence : null,
+      capture_timestamp: normalizeCaptureTimestamp(captureTimestamp, storedAt),
+      byte_length: byteLengthActual,
+      declared_byte_length: declaredByteLength,
+      accounted_byte_length: frameByteLength,
+      stored_at: storedAt.toISOString(),
+      expires_at: expiresAt.toISOString(),
+      payload_bytes: payload,
+      payload_bytes_included: true,
+      disk_persisted: false,
+      provenance_appended: false,
+      retention_mode: "sequence_ring",
+    }));
+    ring.total_bytes += frameByteLength;
+    this.#rawSequenceRings.set(key, ring);
+  }
+
+  #dropRawSequenceRing(sub) {
+    const modality = sub?._rawFrameSequenceRetention?.modality || RAW_FRAME_MODALITY_BY_CAPABILITY[sub?.capability];
+    if (!sub?.subscription_id || !modality) {
+      return;
+    }
+    this.#rawSequenceRings.delete(rawFrameCacheKey(sub.subscription_id, modality));
+  }
+
+  #pruneRawSequenceRing(ring, now) {
+    for (let index = ring.frames.length - 1; index >= 0; index -= 1) {
+      const frame = ring.frames[index];
+      if (Date.parse(frame.expires_at) <= now.getTime()) {
+        ring.frames.splice(index, 1);
+        ring.total_bytes -= frame.accounted_byte_length ?? frame.byte_length;
+      }
+    }
+  }
+
+  #sequenceRingDisclosure(record) {
+    const retention = record._rawFrameSequenceRetention;
+    if (!retention.enabled) {
+      return null;
+    }
+    const ring = this.#rawSequenceRings.get(rawFrameCacheKey(record.subscription_id, retention.modality));
+    if (ring) {
+      this.#pruneRawSequenceRing(ring, this.#now());
+    }
+    return {
+      enabled: true,
+      modality: retention.modality,
+      retention_mode: "sequence_ring",
+      frame_count: ring?.frames.length ?? 0,
+      max_frames: retention.max_frames,
+      total_bytes: ring?.total_bytes ?? 0,
+      max_total_bytes: retention.max_total_bytes,
+      ttl_ms: retention.ttl_ms,
+      disk_persisted: false,
+      payload_bytes_included: false,
+      content_included: false,
+    };
   }
 }
 
@@ -836,6 +999,53 @@ function normalizeRawFrameRetention(rawFrameRetention, { capability, grantId, to
     enabled: true,
     modality,
     max_bytes: maxBytes,
+    ttl_ms: ttlMs,
+    configured_at: resolveDate(now).toISOString(),
+  });
+}
+
+function normalizeRawFrameSequenceRetention(rawFrameSequenceRetention, { capability, grantId, topic, now } = {}) {
+  const modality = RAW_FRAME_MODALITY_BY_CAPABILITY[capability] ?? "";
+  const disabled = Object.freeze({ enabled: false, modality });
+  if (!modality || !rawFrameSequenceRetention || typeof rawFrameSequenceRetention !== "object") {
+    return disabled;
+  }
+  if (rawFrameSequenceRetention.enabled !== true) {
+    return disabled;
+  }
+  if (rawFrameSequenceRetention.grant_allows_raw_visual_sequence_retention !== true) {
+    return disabled;
+  }
+  if (rawFrameSequenceRetention.retention_mode !== "sequence_ring") {
+    return disabled;
+  }
+  if (rawFrameSequenceRetention.modality !== modality) {
+    return disabled;
+  }
+  if (rawFrameSequenceRetention.source_grant_id && rawFrameSequenceRetention.source_grant_id !== grantId) {
+    return disabled;
+  }
+  const sourceHost = String(rawFrameSequenceRetention.source_host ?? "").trim();
+  if (sourceHost && sourceHost !== hostFromTopic(topic)) {
+    return disabled;
+  }
+  const maxFrames = rawFrameSequenceRetention.max_frames;
+  const maxTotalBytes = rawFrameSequenceRetention.max_total_bytes;
+  const ttlMs = rawFrameSequenceRetention.ttl_ms;
+  if (!Number.isInteger(maxFrames) || maxFrames <= 0 || maxFrames > 512) {
+    return disabled;
+  }
+  if (!Number.isInteger(maxTotalBytes) || maxTotalBytes <= 0 || maxTotalBytes > 200_000_000) {
+    return disabled;
+  }
+  if (!Number.isInteger(ttlMs) || ttlMs <= 0 || ttlMs > 60_000) {
+    return disabled;
+  }
+  return Object.freeze({
+    enabled: true,
+    modality,
+    max_frames: maxFrames,
+    max_total_bytes: maxTotalBytes,
     ttl_ms: ttlMs,
     configured_at: resolveDate(now).toISOString(),
   });

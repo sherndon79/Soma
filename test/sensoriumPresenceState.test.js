@@ -101,6 +101,51 @@ test("presence state expires to unknown audience on read", () => {
   );
 });
 
+test("presence state keeps a byte-free frameset timeline until expiry", () => {
+  const state = createSensoriumPresenceState({
+    now: () => new Date("2026-06-26T01:00:00.000Z"),
+  });
+
+  state.updateFromSemanticEvent({
+    event_id: "presence-frameset-7",
+    source_host: "jetsorano",
+    frameset_sequence: 7,
+    observed_at: "2026-06-26T01:00:01.000Z",
+    expires_at: "2026-06-26T01:00:10.000Z",
+    confidence_bucket: "high",
+    audience_context: {
+      seth_present: "session_assumed_present",
+      additional_person_present: "not_detected",
+      copresence_source: "depth",
+    },
+    payload: {
+      person_count: 1,
+      count_bucket: "1",
+    },
+  });
+
+  assert.deepEqual(
+    state.timeline({ now: () => new Date("2026-06-26T01:00:09.999Z") }),
+    [
+      {
+        source_host: "jetsorano",
+        frameset_sequence: 7,
+        person_count: 1,
+        count_bucket: "1",
+        additional_person_present: "not_detected",
+        confidence_bucket: "high",
+        observed_at: "2026-06-26T01:00:01.000Z",
+        expires_at: "2026-06-26T01:00:10.000Z",
+      },
+    ],
+  );
+  assert.equal(JSON.stringify(state.timeline()).includes("payload"), false);
+  assert.deepEqual(
+    state.timeline({ now: () => new Date("2026-06-26T01:00:10.000Z") }),
+    [],
+  );
+});
+
 test("presence state clear returns to unknown audience", () => {
   const state = createSensoriumPresenceState();
 

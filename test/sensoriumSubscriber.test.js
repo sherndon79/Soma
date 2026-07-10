@@ -860,6 +860,34 @@ test("raw latest-frame cache is disabled unless source grant explicitly allows i
   assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color" }), null);
 });
 
+test("raw sequence ring is disabled unless source grant explicitly allows it", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-no-sequence",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const { subscription_id } = await subscriber.start(COMMON_START);
+
+  manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 1,
+      frameset_sequence: 1,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    capture_timestamp: "2026-07-09T18:00:00.000Z",
+  });
+
+  assert.deepEqual(subscriber.readRawFrameSequence({ subscriptionId: subscription_id, modality: "color" }), []);
+  assert.equal(subscriber.describeActive().streams[0].sequence_ring, null);
+});
+
 test("raw latest-frame cache retains only the latest bounded frame and keeps disclosures byte-free", async () => {
   const manager = new FakeManager();
   manager.enqueueStartSuccess({
@@ -935,6 +963,130 @@ test("raw latest-frame cache retains only the latest bounded frame and keeps dis
   assert.equal(endSummaryJson.includes("payload_bytes_included"), false);
   assert.equal(endSummaryJson.includes("frame_bytes"), false);
   assert.equal(subscriber.readLatestRawFrame({ subscriptionId: subscription_id, modality: "color", now }), null);
+});
+
+test("raw sequence ring keeps bounded oldest-first frames and byte-free disclosure", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-sequence",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  let nowMs = 1_700_000_000_000;
+  const now = () => new Date(nowMs);
+  const subscriber = new SensoriumSubscriber({ manager, now });
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    rawFrameSequenceRetention: {
+      enabled: true,
+      grant_allows_raw_visual_sequence_retention: true,
+      retention_mode: "sequence_ring",
+      modality: "color",
+      source_grant_id: "grant-test-1",
+      source_host: "jetsorano",
+      max_frames: 2,
+      max_total_bytes: 4096,
+      ttl_ms: 2_000,
+    },
+  });
+
+  const payloads = [10, 11, 12].map((frameNumber) => ({
+    frameNumber,
+    bytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: frameNumber,
+      frameset_sequence: frameNumber,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [frameNumber],
+    }),
+  }));
+  for (const { frameNumber, bytes } of payloads) {
+    manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+      payloadBytes: bytes,
+      capture_timestamp: `2026-07-09T18:00:0${frameNumber - 10}.000Z`,
+    });
+  }
+
+  const frames = subscriber.readRawFrameSequence({ subscriptionId: subscription_id, modality: "color", now });
+  assert.deepEqual(frames.map((frame) => frame.frame_id), ["11", "12"]);
+  assert.deepEqual(frames.map((frame) => frame.frameset_sequence), [11, 12]);
+  assert.equal(frames[0].payload_bytes instanceof Uint8Array, true);
+  assert.equal(frames[0].retention_mode, "sequence_ring");
+  assert.equal(frames[0].disk_persisted, false);
+  assert.equal(frames[0].provenance_appended, false);
+
+  const ring = subscriber.describeActive().streams[0].sequence_ring;
+  assert.deepEqual(ring, {
+    enabled: true,
+    modality: "color",
+    retention_mode: "sequence_ring",
+    frame_count: 2,
+    max_frames: 2,
+    total_bytes: payloads[1].bytes.length + payloads[2].bytes.length,
+    max_total_bytes: 4096,
+    ttl_ms: 2_000,
+    disk_persisted: false,
+    payload_bytes_included: false,
+    content_included: false,
+  });
+  const disclosureJson = JSON.stringify(subscriber.describeActive());
+  assert.equal(disclosureJson.includes("\"payload_bytes\":"), false);
+  assert.equal(disclosureJson.includes("screenshot"), false);
+
+  nowMs += 2_001;
+  assert.deepEqual(subscriber.readRawFrameSequence({ subscriptionId: subscription_id, modality: "color", now }), []);
+});
+
+test("raw sequence ring enforces total byte cap and drops on control cleanup", async () => {
+  const manager = new FakeManager();
+  manager.enqueueStartSuccess({
+    subscriptionId: "sub-color-sequence-bytes",
+    topic: "sensor/jetsorano/realsense/color",
+    startedAt: 1_700_000_000.0,
+  });
+  const subscriber = new SensoriumSubscriber({ manager });
+  const payloads = [20, 21, 22].map((frameNumber) => ({
+    frameNumber,
+    bytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: frameNumber,
+      frameset_sequence: frameNumber,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [frameNumber],
+    }),
+  }));
+  const maxOneFrameBytes = Math.max(...payloads.map((payload) => payload.bytes.length)) + 1;
+  const { subscription_id } = await subscriber.start({
+    ...COMMON_START,
+    rawFrameSequenceRetention: {
+      enabled: true,
+      grant_allows_raw_visual_sequence_retention: true,
+      retention_mode: "sequence_ring",
+      modality: "color",
+      max_frames: 8,
+      max_total_bytes: maxOneFrameBytes,
+      ttl_ms: 2_000,
+    },
+  });
+
+  for (const { frameNumber, bytes } of payloads) {
+    manager.emitSample(subscription_id, "sensor/jetsorano/realsense/color", {
+      payloadBytes: bytes,
+    });
+  }
+
+  assert.deepEqual(
+    subscriber.readRawFrameSequence({ subscriptionId: subscription_id, modality: "color" })
+      .map((frame) => frame.frame_id),
+    ["22"],
+  );
+
+  subscriber.dropRawFrames({ subscriptionId: subscription_id, modality: "color" });
+  assert.deepEqual(subscriber.readRawFrameSequence({ subscriptionId: subscription_id, modality: "color" }), []);
 });
 
 test("raw latest-frame cache expires by ttl and enforces byte cap", async () => {

@@ -95,6 +95,7 @@ function describeStream(subscription, now) {
           ? subscription.stream_summary_observed
           : null),
     ),
+    sequence_ring: copySequenceRing(subscription.sequence_ring),
     helper_error_class: copyHelperErrorClass(subscription.helper_error_class),
     description,
   };
@@ -331,6 +332,42 @@ function copyPoseSummary(summary) {
   return copyBoundedJson(summary, "pose_summary_observed", 0);
 }
 
+function copySequenceRing(ring) {
+  if (!isPlainObject(ring) || ring.enabled !== true) {
+    return null;
+  }
+  const modality = stringOrEmpty(ring.modality);
+  const frameCount = nonNegativeIntegerOrNull(ring.frame_count);
+  const maxFrames = positiveIntegerOrNull(ring.max_frames);
+  const totalBytes = nonNegativeIntegerOrNull(ring.total_bytes);
+  const maxTotalBytes = positiveIntegerOrNull(ring.max_total_bytes);
+  const ttlMs = positiveIntegerOrNull(ring.ttl_ms);
+  if (
+    modality.length === 0 ||
+    frameCount === null ||
+    maxFrames === null ||
+    totalBytes === null ||
+    maxTotalBytes === null ||
+    ttlMs === null ||
+    ring.retention_mode !== "sequence_ring"
+  ) {
+    return null;
+  }
+  return {
+    enabled: true,
+    modality,
+    retention_mode: "sequence_ring",
+    frame_count: frameCount,
+    max_frames: maxFrames,
+    total_bytes: totalBytes,
+    max_total_bytes: maxTotalBytes,
+    ttl_ms: ttlMs,
+    disk_persisted: false,
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
 function copyBoundedJson(value, field, depth) {
   if (value === null || typeof value === "boolean" || Number.isFinite(value)) {
     return value;
@@ -368,6 +405,14 @@ function numberOrNull(value) {
 
 function integerOrNull(value) {
   return Number.isInteger(value) ? value : null;
+}
+
+function nonNegativeIntegerOrNull(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function positiveIntegerOrNull(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function nonNegativeIntOrZero(value) {

@@ -653,6 +653,9 @@ fn parse_optional_sample_transform(
     match (downsample, format_required) {
         (None, None) => Ok(None),
         (Some((max_width, max_height)), Some(format_required)) => {
+            // Any declared downsample routes through the transform, even
+            // when the bounds equal native dimensions; keep transforms
+            // metadata-preserving.
             if topic.ends_with("/realsense/depth") {
                 Ok(Some(SampleTransformConfig::Depth(DepthTransformConfig {
                     max_width,

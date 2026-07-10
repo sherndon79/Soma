@@ -37,11 +37,14 @@
       "vision_input_supported": true,
       "visual_attachment_schema": "anthropic_messages_image",
       "visual_attachment_modalities": [
-        "color"
+        "color",
+        "composite"
       ],
       "supported_visual_modalities": [
-        "color"
-      ]
+        "color",
+        "composite"
+      ],
+      "composite_representation": "paired_image_blocks"
     }
   ]
 }

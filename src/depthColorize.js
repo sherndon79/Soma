@@ -37,7 +37,7 @@ export function colorizeDepthPng(depthPngBytes, {
     }
     const meters = raw * normalizedDepthUnits;
     const normalized = clamp((meters - minMeters) / (maxMeters - minMeters), 0, 1);
-    output[pixel] = Math.round(normalized * 255);
+    output[pixel] = 1 + Math.round((1 - normalized) * 254);
   }
   const payloadBytes = encodeGrayscalePng({
     width: decoded.width,
@@ -54,6 +54,9 @@ export function colorizeDepthPng(depthPngBytes, {
       min_depth_meters: minMeters,
       max_depth_meters: maxMeters,
       invalid_depth_value: 0,
+      valid_depth_value_range: [1, 255],
+      near_depth_value: 255,
+      far_depth_value: 1,
     },
     depth_units: normalizedDepthUnits,
     width: decoded.width,

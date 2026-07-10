@@ -6,6 +6,8 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "grant_id",
   "source_subscription_ids",
   "source_capabilities",
+  "source_topics",
+  "source_grant_ids",
   "source_provider",
   "source_topic",
   "source_grant_id",
@@ -17,6 +19,8 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "format_required",
   "depth_representation",
   "pose_representation",
+  "composite_representation",
+  "max_pairing_skew_ms",
   "preview_artifact_id",
   "preview_acknowledgement_id",
   "preview_acknowledged_by",
@@ -66,6 +70,8 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
     grant_id: stringValue(body.grant_id),
     source_subscription_ids: normalizeStringList(body.source_subscription_ids),
     source_capabilities: normalizeStringList(body.source_capabilities),
+    source_topics: normalizeStringList(body.source_topics),
+    source_grant_ids: normalizeStringList(body.source_grant_ids),
     source_provider: stringValue(body.source_provider),
     source_topic: stringValue(body.source_topic),
     source_grant_id: stringValue(body.source_grant_id),
@@ -79,6 +85,8 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
     format_required: stringValue(body.format_required),
     depth_representation: stringValue(body.depth_representation),
     pose_representation: stringValue(body.pose_representation),
+    composite_representation: stringValue(body.composite_representation),
+    max_pairing_skew_ms: body.max_pairing_skew_ms,
     preview_artifact_id: stringValue(body.preview_artifact_id),
     preview_acknowledgement_id: stringValue(body.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(body.preview_acknowledged_by),
@@ -117,6 +125,18 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
   }
   if (!validated.pose_representation) {
     delete validated.pose_representation;
+  }
+  if (!validated.composite_representation) {
+    delete validated.composite_representation;
+  }
+  if (!Number.isInteger(validated.max_pairing_skew_ms)) {
+    delete validated.max_pairing_skew_ms;
+  }
+  if (validated.source_topics.length === 0) {
+    delete validated.source_topics;
+  }
+  if (validated.source_grant_ids.length === 0) {
+    delete validated.source_grant_ids;
   }
   return validated;
 }
@@ -180,6 +200,38 @@ function validateRequestShape(request, errors) {
   if (request.payload_type !== "pose" && request.pose_representation) {
     errors.push("pose_representation is only allowed for pose payloads");
   }
+  if (request.payload_type === "composite") {
+    if (request.source_subscription_ids.length < 2) {
+      errors.push("composite payloads require color and depth source subscriptions");
+    }
+    for (const capability of ["perception.sensorium.color.subscribe", "perception.sensorium.depth.subscribe"]) {
+      if (!request.source_capabilities.includes(capability)) {
+        errors.push(`composite source_capabilities must include ${capability}`);
+      }
+    }
+    if (request.source_topics.length < 2) {
+      errors.push("composite payloads require source_topics for color and depth");
+    }
+    if (request.source_grant_ids.length < 2) {
+      errors.push("composite payloads require source_grant_ids for color and depth");
+    }
+    if (request.composite_representation !== "side_by_side_svg") {
+      errors.push("composite_representation must be side_by_side_svg for composite payloads");
+    }
+    if (!Number.isInteger(request.max_pairing_skew_ms) || request.max_pairing_skew_ms < 0) {
+      errors.push("max_pairing_skew_ms must be a non-negative integer for composite payloads");
+    }
+    if (Number.isInteger(request.max_pairing_skew_ms) && request.max_pairing_skew_ms > request.max_frame_age_ms) {
+      errors.push("max_pairing_skew_ms must not exceed max_frame_age_ms");
+    }
+  } else {
+    if (request.composite_representation) {
+      errors.push("composite_representation is only allowed for composite payloads");
+    }
+    if (Number.isInteger(request.max_pairing_skew_ms)) {
+      errors.push("max_pairing_skew_ms is only allowed for composite payloads");
+    }
+  }
 }
 
 function validateGrantAuthority({ request, grant, errors }) {
@@ -201,6 +253,17 @@ function validateGrantAuthority({ request, grant, errors }) {
   if (!sameStringSet(request.source_capabilities, normalizeStringList(constraints.source_capabilities))) {
     errors.push("source_capabilities must match grant constraints");
   }
+  if (request.payload_type === "composite") {
+    if (!sameStringSet(request.source_topics, normalizeStringList(constraints.source_topics))) {
+      errors.push("source_topics must match grant constraints");
+    }
+    if (!sameStringSet(request.source_grant_ids, normalizeStringList(constraints.source_grant_ids))) {
+      errors.push("source_grant_ids must match grant constraints");
+    }
+    if (request.max_pairing_skew_ms !== constraints.max_pairing_skew_ms) {
+      errors.push("max_pairing_skew_ms must match grant constraints");
+    }
+  }
   for (const field of [
     "source_provider",
     "source_topic",
@@ -210,6 +273,7 @@ function validateGrantAuthority({ request, grant, errors }) {
     "format_required",
     "depth_representation",
     "pose_representation",
+    "composite_representation",
     "preview_artifact_id",
     "preview_acknowledgement_id",
     "preview_acknowledged_by",

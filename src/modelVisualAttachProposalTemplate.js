@@ -294,6 +294,17 @@ function validateConstraints(constraints, visualDefinition, errors) {
   if (visualDefinition?.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(poseRepresentation)) {
     errors.push("constraints.pose_representation must be pose_msgpack or pose_json");
   }
+  const compositeRepresentation = stringValue(constraints.composite_representation) || "side_by_side_svg";
+  if (visualDefinition?.payload_type === "composite" && compositeRepresentation !== "side_by_side_svg") {
+    errors.push("constraints.composite_representation must be side_by_side_svg");
+  }
+  const maxPairingSkewMs = constraints.max_pairing_skew_ms;
+  if (
+    visualDefinition?.payload_type === "composite" &&
+    (!Number.isInteger(maxPairingSkewMs) || maxPairingSkewMs < 0 || maxPairingSkewMs > maxFrameAgeMs)
+  ) {
+    errors.push("constraints.max_pairing_skew_ms must be an integer from 0 to max_frame_age_ms");
+  }
 
   return {
     max_frame_count: maxFrameCount,
@@ -305,6 +316,12 @@ function validateConstraints(constraints, visualDefinition, errors) {
       : {}),
     ...(visualDefinition?.payload_type === "pose"
       ? { pose_representation: poseRepresentation }
+      : {}),
+    ...(visualDefinition?.payload_type === "composite"
+      ? {
+        composite_representation: compositeRepresentation,
+        max_pairing_skew_ms: maxPairingSkewMs,
+      }
       : {}),
   };
 }

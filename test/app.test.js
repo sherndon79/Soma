@@ -2308,6 +2308,9 @@ test("POST /model-visual/attach-requests/controller delivers colorized depth PNG
     min_depth_meters: 0.25,
     max_depth_meters: 5,
     invalid_depth_value: 0,
+    valid_depth_value_range: [1, 255],
+    near_depth_value: 255,
+    far_depth_value: 1,
   });
   assert.equal(response.body.frame.depth_units, 0.001);
   assert.equal(modelClient.calls.length, 1);
@@ -2336,7 +2339,305 @@ test("POST /model-visual/attach-requests/controller delivers colorized depth PNG
     min_depth_meters: 0.25,
     max_depth_meters: 5,
     invalid_depth_value: 0,
+    valid_depth_value_range: [1, 255],
+    near_depth_value: 255,
+    far_depth_value: 1,
   });
+  assert.equal(provenance.body.entries[0].payload_bytes_included, false);
+  assert.equal(provenance.body.entries[0].content_included, false);
+});
+
+test("POST /model-visual/attach-requests/controller delivers paired color-depth composite through real subscriber route", async () => {
+  const manager = new AppRouteSensoriumFakeManager();
+  const nowIso = new Date().toISOString();
+  const presenceState = createSensoriumPresenceState({
+    now: () => new Date(nowIso),
+  });
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowIso),
+    presenceState,
+    getPresenceEpisodeContext: () => ({
+      status: "active",
+      occupant_id: "seth",
+      posture: {
+        mode: "analysis_testing",
+        trust_basis: "human_set_episode",
+      },
+    }),
+  });
+  const colorSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-color-test",
+    capability: "perception.sensorium.color.subscribe",
+    constraints: {
+      topic: "sensor/jetsorano/realsense/color",
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "jpeg",
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 4096,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const depthSourceGrant = {
+    ...SENSORIUM_TEST_GRANT_STORE.grants[0],
+    id: "grant-sensorium-depth-test",
+    capability: "perception.sensorium.depth.subscribe",
+    constraints: {
+      topic: "sensor/jetsorano/realsense/depth",
+      max_seconds: 60,
+      max_fps: 5,
+      format_required: "png",
+      raw_frame_retention: {
+        enabled: true,
+        retention_mode: "latest_frame_cache",
+        max_bytes: 4096,
+        ttl_ms: 2_000,
+      },
+    },
+  };
+  const presenceGrant = {
+    id: "grant-sensorium-presence-test",
+    status: "active",
+    capability: "perception.sensorium.presence.subscribe",
+    provider: "soma.provider.sensorium.jetsorano",
+    scope: "session",
+    constraints: {
+      topic: "perception/jetsorano/presence",
+      max_seconds: 60,
+      max_fps: 5,
+    },
+    approved_by: "user",
+    reason: "test fixture",
+    created_at: "2026-07-09T00:00:00.000Z",
+    activation_performed: false,
+  };
+  const compositeRequestPatch = {
+    capability: "model.context.visual.composite.attach",
+    grant_id: "grant-visual-composite",
+    source_subscription_ids: ["sub-route-1", "sub-route-2"],
+    source_capabilities: [
+      "perception.sensorium.color.subscribe",
+      "perception.sensorium.depth.subscribe",
+    ],
+    source_topics: [
+      "sensor/jetsorano/realsense/color",
+      "sensor/jetsorano/realsense/depth",
+    ],
+    source_grant_ids: [
+      "grant-sensorium-color-test",
+      "grant-sensorium-depth-test",
+    ],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/composite",
+    source_grant_id: "grant-sensorium-composite-test",
+    payload_type: "composite",
+    transformed_dimensions: [32, 16],
+    format_required: "composite",
+    composite_representation: "side_by_side_svg",
+    max_pairing_skew_ms: 250,
+  };
+  const envelope = modelVisualAttachActivationEnvelope({
+    requestPatch: compositeRequestPatch,
+    bodyPatch: {
+      model_delivery_requested: true,
+      messages: [{ role: "user", content: "look at paired scene once" }],
+      runtime_profile_id: "anthropic-composite-svg",
+    },
+  });
+  const visualGrant = {
+    id: "grant-visual-composite",
+    status: "active",
+    capability: "model.context.visual.composite.attach",
+    provider: "soma.provider.local-model",
+    scope: "once",
+    constraints: {
+      ...envelope.body.request,
+    },
+  };
+  const modelClient = makeModelVisualDeliveryClient();
+  const handler = makeHandler({
+    capabilityCatalog: sensoriumPresenceCapabilityCatalog,
+    providerRegistry: sensoriumPresenceProviderRegistry,
+    grantStore: {
+      schema_version: 1,
+      grants: [colorSourceGrant, depthSourceGrant, presenceGrant, visualGrant],
+    },
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "anthropic-composite-svg",
+      profiles: [
+        {
+          id: "anthropic-composite-svg",
+          route: "remote",
+          runtime: "anthropic-messages",
+          model: "claude-composite-test",
+          remote_service: true,
+          supported_visual_modalities: ["composite"],
+          visual_attachment_schema: "anthropic_messages_image",
+          visual_attachment_modalities: ["composite"],
+          composite_representation: "side_by_side_svg",
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    modelClient,
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: presenceState,
+  });
+
+  const colorSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.color.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/color",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "jpeg" },
+    },
+  });
+  assert.equal(colorSubscription.statusCode, 201, JSON.stringify(colorSubscription.body));
+  assert.equal(colorSubscription.body.subscription_id, "sub-route-1");
+
+  const depthSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.depth.subscribe",
+      scope: "session",
+      topic: "sensor/jetsorano/realsense/depth",
+      constraints: { max_seconds: 60, max_fps: 5, format_required: "png" },
+    },
+  });
+  assert.equal(depthSubscription.statusCode, 201, JSON.stringify(depthSubscription.body));
+  assert.equal(depthSubscription.body.subscription_id, "sub-route-2");
+
+  const presenceSubscription = await invokeHandler(handler, {
+    method: "POST",
+    url: "/sensorium/subscriptions",
+    body: {
+      capability: "perception.sensorium.presence.subscribe",
+      scope: "session",
+      topic: "perception/jetsorano/presence",
+      constraints: { max_seconds: 60, max_fps: 5 },
+    },
+  });
+  assert.equal(presenceSubscription.statusCode, 201, JSON.stringify(presenceSubscription.body));
+
+  manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: nowIso,
+  });
+  manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: new Date(Date.parse(nowIso) + 500).toISOString(),
+  });
+  manager.emitSample("sub-route-3", "perception/jetsorano/presence", {
+    payloadBytes: encodePresencePayload({
+      person_count: 1,
+      count_bucket: "1",
+      additional_person_present: "not_detected",
+      confidence_bucket: "high",
+    }),
+    payloadSize: 64,
+    captureTimestamp: nowIso,
+  });
+
+  const skewRefusal = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+  assert.equal(skewRefusal.statusCode, 409, JSON.stringify(skewRefusal.body));
+  assert.equal(skewRefusal.body.reason, "composite_pairing_skew_exceeded");
+  assert.equal(skewRefusal.body.pairing_skew_ms, 500);
+  assert.equal(skewRefusal.body.max_pairing_skew_ms, 250);
+  assert.equal(modelClient.calls.length, 0);
+
+  manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frame_number: 91,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: new Date(Date.parse(nowIso) + 120).toISOString(),
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.visual_attachment_count, 1);
+  assert.equal(response.body.frame.modality, "composite");
+  assert.equal(response.body.frame.visual_representation, "side_by_side_svg");
+  assert.equal(response.body.frame.pairing_skew_ms, 120);
+  assert.deepEqual(response.body.frame.source_frame_ids, ["91", "91"]);
+  assert.equal(response.body.frame.source_frames.length, 2);
+  assert.equal(modelClient.calls.length, 1);
+  assert.equal(modelClient.calls[0].args.attachments.length, 1);
+  const attachment = modelClient.calls[0].args.attachments[0];
+  assert.equal(attachment.modality, "composite");
+  assert.equal(attachment.media_type, "image/svg+xml");
+  assert.equal(attachment.representation, "side_by_side_svg");
+  assert.equal(attachment.pairing_skew_ms, 120);
+  const svg = new TextDecoder().decode(attachment.payload_bytes);
+  assert.match(svg, /^<svg /);
+  assert.match(svg, /data:image\/jpeg;base64,/);
+  assert.match(svg, /data:image\/png;base64,/);
+  assert.equal(response.body.live_perception_taint.raw_visual_taint.representation, "side_by_side_svg");
+  assert.deepEqual(response.body.live_perception_taint.raw_visual_taint.source_frame_ids, ["91", "91"]);
+
+  const provenance = await invokeHandler(handler, {
+    method: "GET",
+    url: "/provenance?event_type=model.context.visual.attached",
+  });
+  assert.equal(provenance.statusCode, 200);
+  assert.equal(provenance.body.entries.length, 1);
+  assert.equal(provenance.body.entries[0].visual_representation, "side_by_side_svg");
+  assert.deepEqual(provenance.body.entries[0].source_frame_ids, ["91", "91"]);
+  assert.equal(provenance.body.entries[0].source_frames.length, 2);
+  assert.equal(provenance.body.entries[0].pairing_skew_ms, 120);
   assert.equal(provenance.body.entries[0].payload_bytes_included, false);
   assert.equal(provenance.body.entries[0].content_included, false);
 });

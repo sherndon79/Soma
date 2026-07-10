@@ -1192,11 +1192,7 @@ export function createRequestHandler({
           return;
         }
 
-        const frame = sensoriumSubscriber.readLatestRawFrame({
-          subscriptionId: request.source_subscription_ids[0],
-          modality: request.payload_type,
-          now,
-        });
+        const frame = readModelVisualAttachFrame({ request, sensoriumSubscriber, now });
         if (!frame) {
           const event = appendModelVisualAttachProvenanceEvent({
             provenanceLog,
@@ -1225,8 +1221,42 @@ export function createRequestHandler({
           });
           return;
         }
+        if (frame.composite_pairing_refused === true) {
+          const event = appendModelVisualAttachProvenanceEvent({
+            provenanceLog,
+            logger,
+            eventType: "model.context.visual.attach_refused",
+            allowed: false,
+            request,
+            profile,
+            sourceSubscription,
+            frame,
+            floorGateDecision,
+            reason: "composite_pairing_skew_exceeded",
+            failedGateInput: "composite_pairing",
+            frameAgeMs: frame.max_frame_age_ms,
+            modelDeliveryPerformed: false,
+            episodeId,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          writeJson(res, 409, {
+            error: "model_visual_attach_frame_unavailable",
+            reason: "composite_pairing_skew_exceeded",
+            provenance_id: event.id,
+            pairing_skew_ms: frame.pairing_skew_ms,
+            max_pairing_skew_ms: request.max_pairing_skew_ms,
+            activation_performed: false,
+            subscription_activated: false,
+            model_delivery_performed: false,
+            payload_attached: false,
+            payload_bytes_included: false,
+          });
+          return;
+        }
 
-        const frameAgeMs = now.getTime() - Date.parse(frame.capture_timestamp);
+        const frameAgeMs = Number.isFinite(frame.max_frame_age_ms)
+          ? frame.max_frame_age_ms
+          : now.getTime() - Date.parse(frame.capture_timestamp);
         if (!Number.isFinite(frameAgeMs) || frameAgeMs < 0 || frameAgeMs > request.max_frame_age_ms) {
           const event = appendModelVisualAttachProvenanceEvent({
             provenanceLog,
@@ -1267,8 +1297,8 @@ export function createRequestHandler({
             deliveredAttachment = modelVisualAttachmentFromFrame({ request, frame, profile });
           } catch (err) {
             sensoriumSubscriber.dropRawFrames?.({
-              subscriptionId: request.source_subscription_ids[0],
-              modality: request.payload_type,
+              subscriptionId: frame.subscription_id,
+              modality: frame.modality,
             });
             const event = appendModelVisualAttachProvenanceEvent({
               provenanceLog,
@@ -1344,10 +1374,7 @@ export function createRequestHandler({
           });
           return;
         } finally {
-          sensoriumSubscriber.dropRawFrames?.({
-            subscriptionId: request.source_subscription_ids[0],
-            modality: request.payload_type,
-          });
+          dropModelVisualAttachFrames({ request, frame, sensoriumSubscriber });
         }
 
         const rawVisualTaint = modelDeliveryRequested
@@ -1426,6 +1453,11 @@ export function createRequestHandler({
             depth_colormap: stringValue(deliveredAttachment?.depth_colormap),
             depth_normalization: deliveredAttachment?.depth_normalization ?? null,
             depth_units: Number.isFinite(deliveredAttachment?.depth_units) ? deliveredAttachment.depth_units : null,
+            source_frames: normalizeCompositeSourceFrames(frame.source_frames),
+            source_frame_ids: normalizeCatalogStringArray(deliveredAttachment?.source_frame_ids || frame.source_frame_ids, []),
+            pairing_skew_ms: Number.isFinite(deliveredAttachment?.pairing_skew_ms)
+              ? deliveredAttachment.pairing_skew_ms
+              : (Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null),
             retention_mode: frame.retention_mode,
             payload_bytes_included: false,
           },
@@ -6382,6 +6414,11 @@ function createRawVisualTaint({
     depth_colormap: stringValue(attachment?.depth_colormap),
     depth_normalization: attachment?.depth_normalization ?? null,
     depth_units: Number.isFinite(attachment?.depth_units) ? attachment.depth_units : null,
+    source_frame_ids: normalizeCatalogStringArray(attachment?.source_frame_ids || frame.source_frame_ids, []),
+    source_frames: normalizeCompositeSourceFrames(frame.source_frames),
+    pairing_skew_ms: Number.isFinite(attachment?.pairing_skew_ms)
+      ? attachment.pairing_skew_ms
+      : (Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null),
     floor_gate_reason: floorGateDecision.reason ?? "",
     payload_bytes_included: false,
     content_included: false,
@@ -6444,6 +6481,9 @@ function normalizeRawVisualTaint(value = null) {
     depth_colormap: stringValue(value.depth_colormap),
     depth_normalization: isPlainObject(value.depth_normalization) ? { ...value.depth_normalization } : null,
     depth_units: Number.isFinite(value.depth_units) ? value.depth_units : null,
+    source_frame_ids: normalizeCatalogStringArray(value.source_frame_ids, []),
+    source_frames: normalizeCompositeSourceFrames(value.source_frames),
+    pairing_skew_ms: Number.isFinite(value.pairing_skew_ms) ? value.pairing_skew_ms : null,
     floor_gate_reason: stringValue(value.floor_gate_reason),
     payload_bytes_included: false,
     content_included: false,
@@ -6501,6 +6541,11 @@ function appendModelVisualAttachProvenanceEvent({
     depth_colormap: stringValue(attachment?.depth_colormap),
     depth_normalization: attachment?.depth_normalization ?? null,
     depth_units: Number.isFinite(attachment?.depth_units) ? attachment.depth_units : null,
+    source_frame_ids: normalizeCatalogStringArray(attachment?.source_frame_ids || frame?.source_frame_ids, []),
+    source_frames: normalizeCompositeSourceFrames(frame?.source_frames),
+    pairing_skew_ms: Number.isFinite(attachment?.pairing_skew_ms)
+      ? attachment.pairing_skew_ms
+      : (Number.isFinite(frame?.pairing_skew_ms) ? frame.pairing_skew_ms : null),
     floor_gate_decision: summarizeRawFrameVisionFloorGate(floorGateDecision),
     floor_gate_failed_input: stringValue(failedGateInput),
     refusal_reason: stringValue(reason),
@@ -6792,6 +6837,15 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
       return { allowed: false, reason: "profile_pose_representation_mismatch" };
     }
   }
+  if (requestedModality === "composite") {
+    const requestRepresentation = stringValue(request.composite_representation);
+    if (!requestRepresentation) {
+      return { allowed: false, reason: "request_lacks_explicit_composite_representation" };
+    }
+    if (requestRepresentation !== stringValue(profile.composite_representation)) {
+      return { allowed: false, reason: "profile_composite_representation_mismatch" };
+    }
+  }
   const schema = stringValue(profile.visual_attachment_schema);
   if (!schema) {
     return { allowed: false, reason: "profile_lacks_typed_visual_schema" };
@@ -6809,7 +6863,8 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
   if (["openai_chat_image_url", "anthropic_messages_image"].includes(schema)) {
     return requestedModality === "color" ||
       (requestedModality === "depth" && stringValue(profile.depth_representation) === "colorized_png") ||
-      (requestedModality === "pose" && stringValue(profile.pose_representation) === "pose_json")
+      (requestedModality === "pose" && stringValue(profile.pose_representation) === "pose_json") ||
+      (requestedModality === "composite" && stringValue(profile.composite_representation) === "side_by_side_svg")
       ? { allowed: true, schema }
       : { allowed: false, reason: "profile_schema_does_not_support_depth_or_pose" };
   }
@@ -6819,6 +6874,9 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
     }
     if (requestedModality === "pose" && stringValue(profile.pose_representation) !== "pose_msgpack") {
       return { allowed: false, reason: "profile_lacks_explicit_pose_representation" };
+    }
+    if (requestedModality === "composite") {
+      return { allowed: false, reason: "profile_schema_does_not_support_composite" };
     }
     return { allowed: true, schema };
   }
@@ -6838,6 +6896,147 @@ function modelVisualProfileSupportsModality(profile = {}, modality = "") {
   return supported.includes(modality);
 }
 
+function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, now = new Date() } = {}) {
+  if (request.payload_type !== "composite") {
+    return sensoriumSubscriber.readLatestRawFrame({
+      subscriptionId: request.source_subscription_ids[0],
+      modality: request.payload_type,
+      now,
+    });
+  }
+  const colorSubscriptionId = sourceSubscriptionIdForCapability(request, "perception.sensorium.color.subscribe");
+  const depthSubscriptionId = sourceSubscriptionIdForCapability(request, "perception.sensorium.depth.subscribe");
+  const colorFrame = sensoriumSubscriber.readLatestRawFrame({
+    subscriptionId: colorSubscriptionId,
+    modality: "color",
+    now,
+  });
+  const depthFrame = sensoriumSubscriber.readLatestRawFrame({
+    subscriptionId: depthSubscriptionId,
+    modality: "depth",
+    now,
+  });
+  if (!colorFrame || !depthFrame) {
+    return null;
+  }
+  const colorTime = Date.parse(colorFrame.capture_timestamp);
+  const depthTime = Date.parse(depthFrame.capture_timestamp);
+  const pairingSkewMs = Math.abs(colorTime - depthTime);
+  if (!Number.isFinite(pairingSkewMs) || pairingSkewMs > request.max_pairing_skew_ms) {
+    return {
+      subscription_id: `${colorSubscriptionId}+${depthSubscriptionId}`,
+      source_grant_id: stringValue(request.source_grant_id),
+      modality: "composite",
+      source_host: colorFrame.source_host || depthFrame.source_host || sourceHostForVisualAttachRequest(request),
+      topic: stringValue(request.source_topic),
+      frame_id: `${colorFrame.frame_id}|${depthFrame.frame_id}`,
+      capture_timestamp: laterIso(colorFrame.capture_timestamp, depthFrame.capture_timestamp),
+      byte_length: 0,
+      declared_byte_length: null,
+      payload_bytes_included: false,
+      retention_mode: "latest_frame_cache",
+      source_frames: compositeSourceFrames(colorFrame, depthFrame),
+      source_frame_ids: [stringValue(colorFrame.frame_id), stringValue(depthFrame.frame_id)],
+      pairing_skew_ms: Number.isFinite(pairingSkewMs) ? pairingSkewMs : null,
+      max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
+      composite_pairing_refused: true,
+    };
+  }
+  return {
+    subscription_id: `${colorSubscriptionId}+${depthSubscriptionId}`,
+    source_grant_id: stringValue(request.source_grant_id),
+    modality: "composite",
+    source_host: colorFrame.source_host || depthFrame.source_host || sourceHostForVisualAttachRequest(request),
+    topic: stringValue(request.source_topic),
+    frame_id: `${colorFrame.frame_id}|${depthFrame.frame_id}`,
+    capture_timestamp: laterIso(colorFrame.capture_timestamp, depthFrame.capture_timestamp),
+    byte_length: colorFrame.byte_length + depthFrame.byte_length,
+    declared_byte_length: null,
+    payload_bytes_included: true,
+    retention_mode: "latest_frame_cache",
+    source_frames: compositeSourceFrames(colorFrame, depthFrame),
+    source_frame_ids: [stringValue(colorFrame.frame_id), stringValue(depthFrame.frame_id)],
+    pairing_skew_ms: pairingSkewMs,
+    max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
+    color_frame: colorFrame,
+    depth_frame: depthFrame,
+  };
+}
+
+function dropModelVisualAttachFrames({ request = {}, frame = {}, sensoriumSubscriber = null } = {}) {
+  if (request.payload_type !== "composite") {
+    sensoriumSubscriber.dropRawFrames?.({
+      subscriptionId: request.source_subscription_ids[0],
+      modality: request.payload_type,
+    });
+    return;
+  }
+  for (const [capability, modality] of [
+    ["perception.sensorium.color.subscribe", "color"],
+    ["perception.sensorium.depth.subscribe", "depth"],
+  ]) {
+    sensoriumSubscriber.dropRawFrames?.({
+      subscriptionId: sourceSubscriptionIdForCapability(request, capability),
+      modality,
+    });
+  }
+}
+
+function sourceSubscriptionIdForCapability(request = {}, capability = "") {
+  const index = request.source_capabilities?.findIndex((candidate) => candidate === capability) ?? -1;
+  if (index >= 0 && request.source_subscription_ids?.[index]) {
+    return request.source_subscription_ids[index];
+  }
+  return request.source_subscription_ids?.[capability.includes(".depth.") ? 1 : 0] ?? "";
+}
+
+function compositeSourceFrames(colorFrame = {}, depthFrame = {}) {
+  return [
+    compositeSourceFrame("color", colorFrame),
+    compositeSourceFrame("depth", depthFrame),
+  ];
+}
+
+function compositeSourceFrame(modality, frame = {}) {
+  return {
+    modality,
+    subscription_id: stringValue(frame.subscription_id),
+    source_grant_id: stringValue(frame.source_grant_id),
+    topic: stringValue(frame.topic),
+    frame_id: stringValue(frame.frame_id),
+    capture_timestamp: stringValue(frame.capture_timestamp),
+  };
+}
+
+function normalizeCompositeSourceFrames(value = []) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((frame) => ({
+      modality: stringValue(frame?.modality),
+      subscription_id: stringValue(frame?.subscription_id),
+      source_grant_id: stringValue(frame?.source_grant_id),
+      topic: stringValue(frame?.topic),
+      frame_id: stringValue(frame?.frame_id),
+      capture_timestamp: stringValue(frame?.capture_timestamp),
+    }))
+    .filter((frame) => frame.modality && frame.frame_id);
+}
+
+function frameAgeMs(frame = {}, now = new Date()) {
+  const age = now.getTime() - Date.parse(frame.capture_timestamp);
+  return Number.isFinite(age) ? age : Number.POSITIVE_INFINITY;
+}
+
+function laterIso(left = "", right = "") {
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  if (!Number.isFinite(leftMs)) return stringValue(right);
+  if (!Number.isFinite(rightMs)) return stringValue(left);
+  return new Date(Math.max(leftMs, rightMs)).toISOString();
+}
+
 function modelVisualAttachmentFromFrame({ request = {}, frame = {}, profile = {} } = {}) {
   const extracted = extractModelVisualPayload({ request, frame, profile });
   return {
@@ -6850,6 +7049,8 @@ function modelVisualAttachmentFromFrame({ request = {}, frame = {}, profile = {}
     depth_units: extracted.depth_units ?? null,
     depth_colormap: extracted.depth_colormap ?? "",
     depth_normalization: extracted.depth_normalization ?? null,
+    source_frame_ids: extracted.source_frame_ids ?? [],
+    pairing_skew_ms: extracted.pairing_skew_ms ?? null,
   };
 }
 
@@ -6875,6 +7076,15 @@ function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = 
       payload_bytes: copyVisualPayloadBytes(frame.payload_bytes),
       representation,
     };
+  }
+  if (modality === "composite") {
+    if (stringValue(request.composite_representation) !== "side_by_side_svg") {
+      throwModelVisualPayloadError("visual_composite_representation_mismatch", "composite_representation must be side_by_side_svg");
+    }
+    if (stringValue(profile.composite_representation) !== "side_by_side_svg") {
+      throwModelVisualPayloadError("visual_composite_representation_profile_mismatch", "profile must explicitly declare composite_representation=side_by_side_svg");
+    }
+    return compositeSvgPayload({ request, frame });
   }
   const decoded = decodeSensoriumMessagePack(frame.payload_bytes, {
     errorPrefix: `model_visual_${modality}_msgpack`,
@@ -6909,6 +7119,64 @@ function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = 
     representation: representationForModelVisualAttachment({ modality, format, request }),
     depth_units: modality === "depth" && Number.isFinite(decoded.depth_units) ? decoded.depth_units : null,
   };
+}
+
+function compositeSvgPayload({ request = {}, frame = {} } = {}) {
+  const colorDecoded = decodeVisualFrameEnvelope(frame.color_frame, "color");
+  const depthDecoded = decodeVisualFrameEnvelope(frame.depth_frame, "depth");
+  const colorFormat = stringValue(colorDecoded.format);
+  if (!["jpeg", "png"].includes(colorFormat)) {
+    throwModelVisualPayloadError("visual_composite_color_format_unsupported", "composite color half must be jpeg or png");
+  }
+  if (stringValue(depthDecoded.format) !== "png") {
+    throwModelVisualPayloadError("visual_composite_depth_format_mismatch", "composite depth half must be png");
+  }
+  const colorBytes = copyVisualPayloadBytes(colorDecoded.data);
+  const colorized = colorizeDepthPng(copyVisualPayloadBytes(depthDecoded.data), {
+    depthUnits: Number(depthDecoded.depth_units),
+  });
+  const colorWidth = positiveInteger(colorDecoded.width) || 1;
+  const colorHeight = positiveInteger(colorDecoded.height) || 1;
+  const depthWidth = colorized.width || positiveInteger(depthDecoded.width) || 1;
+  const depthHeight = colorized.height || positiveInteger(depthDecoded.height) || 1;
+  const height = Math.max(colorHeight, depthHeight);
+  const width = colorWidth + depthWidth;
+  const colorMediaType = colorFormat === "png" ? "image/png" : "image/jpeg";
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<rect width="${width}" height="${height}" fill="black"/>`,
+    `<image x="0" y="0" width="${colorWidth}" height="${colorHeight}" preserveAspectRatio="xMidYMid meet" href="data:${colorMediaType};base64,${base64Payload(colorBytes)}"/>`,
+    `<image x="${colorWidth}" y="0" width="${depthWidth}" height="${depthHeight}" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,${base64Payload(colorized.payload_bytes)}"/>`,
+    "</svg>",
+  ].join("");
+  return {
+    media_type: "image/svg+xml",
+    payload_bytes: new TextEncoder().encode(svg),
+    representation: stringValue(request.composite_representation),
+    depth_units: colorized.depth_units,
+    depth_colormap: colorized.colormap,
+    depth_normalization: colorized.normalization,
+    source_frame_ids: normalizeCatalogStringArray(frame.source_frame_ids, []),
+    pairing_skew_ms: Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null,
+  };
+}
+
+function decodeVisualFrameEnvelope(frame = {}, modality = "") {
+  const decoded = decodeSensoriumMessagePack(frame.payload_bytes, {
+    errorPrefix: `model_visual_${modality}_msgpack`,
+  });
+  if (!isPlainObject(decoded)) {
+    throwModelVisualPayloadError("visual_payload_not_object", "visual payload envelope must decode to an object");
+  }
+  return decoded;
+}
+
+function positiveInteger(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function base64Payload(payload) {
+  return Buffer.from(payload).toString("base64");
 }
 
 function mediaTypeForModelVisualAttachment({ modality = "", format = "" } = {}) {

@@ -7,9 +7,15 @@
       "category": "model",
       "risk_class": "low",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["submitted text"],
-      "excluded_by_default": ["remote service use"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "submitted text"
+      ],
+      "excluded_by_default": [
+        "remote service use"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.model.chat.v1",
@@ -21,9 +27,17 @@
       "category": "model",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["tool arguments", "tool results"],
-      "excluded_by_default": ["unapproved tool execution"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "tool arguments",
+        "tool results"
+      ],
+      "excluded_by_default": [
+        "unapproved tool execution"
+      ],
       "reversible": true,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.tool_calls.v1",
@@ -35,9 +49,18 @@
       "category": "model",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["submitted text", "selected context"],
-      "excluded_by_default": ["hidden memory export", "hidden training use"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "submitted text",
+        "selected context"
+      ],
+      "excluded_by_default": [
+        "hidden memory export",
+        "hidden training use"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.chat.v1",
@@ -49,7 +72,10 @@
       "category": "model",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "submitted task",
         "active harness manifest",
@@ -72,7 +98,9 @@
       "category": "model",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
+      "allowed_scopes": [
+        "once"
+      ],
       "data_exposed": [
         "one transformed color frame from an approved Sensorium subscription",
         "source subscription metadata",
@@ -89,7 +117,11 @@
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.context.visual.color.attach.v1",
-      "description": "Review-only scaffold for attaching a single helper-minimized color frame to one model turn. A Sensorium subscription grant alone does not authorize this capability."
+      "description": "Review-only scaffold for attaching a single helper-minimized color frame to one model turn. A Sensorium subscription grant alone does not authorize this capability.",
+      "bridge_state": false,
+      "default_bounds": {
+        "max_frame_count": 1
+      }
     },
     {
       "key": "model.context.visual.depth.attach",
@@ -97,7 +129,9 @@
       "category": "model",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
+      "allowed_scopes": [
+        "once"
+      ],
       "data_exposed": [
         "one transformed depth frame from an approved Sensorium subscription",
         "depth units metadata",
@@ -117,7 +151,11 @@
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.context.visual.depth.attach.v1",
-      "description": "Review-only scaffold for attaching a single helper-minimized depth map to one model turn. A Sensorium subscription grant alone does not authorize this capability."
+      "description": "Review-only scaffold for attaching a single helper-minimized depth map to one model turn. A Sensorium subscription grant alone does not authorize this capability.",
+      "bridge_state": false,
+      "default_bounds": {
+        "max_frame_count": 1
+      }
     },
     {
       "key": "model.context.visual.composite.attach",
@@ -125,7 +163,9 @@
       "category": "model",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
+      "allowed_scopes": [
+        "once"
+      ],
       "data_exposed": [
         "one bounded fused color/depth visual payload from approved Sensorium subscriptions",
         "depth units metadata when present",
@@ -147,7 +187,11 @@
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.context.visual.composite.attach.v1",
-      "description": "Review-only scaffold for attaching a bounded fused color/depth visual payload to one model turn. Composite delivery remains inactive until a later validator and prompt-assembly slice."
+      "description": "Review-only scaffold for attaching a bounded fused color/depth visual payload to one model turn. Composite delivery remains inactive until a later validator and prompt-assembly slice.",
+      "bridge_state": false,
+      "default_bounds": {
+        "max_frame_count": 1
+      }
     },
     {
       "key": "model.context.visual.pose.attach",
@@ -155,7 +199,9 @@
       "category": "model",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
+      "allowed_scopes": [
+        "once"
+      ],
       "data_exposed": [
         "one full pose keypoint payload from an approved Sensorium subscription",
         "body pose keypoints",
@@ -176,7 +222,198 @@
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.model.context.visual.pose.attach.v1",
-      "description": "Review-only scaffold for attaching a single full pose keypoint payload to one model turn. Pose exposes identity-adjacent body, face, and hand keypoints; a Sensorium subscription grant alone does not authorize this capability."
+      "description": "Review-only scaffold for attaching a single full pose keypoint payload to one model turn. Pose exposes identity-adjacent body, face, and hand keypoints; a Sensorium subscription grant alone does not authorize this capability.",
+      "bridge_state": false,
+      "default_bounds": {
+        "max_frame_count": 1
+      }
+    },
+    {
+      "key": "model.context.visual.color.sequence.attach",
+      "name": "Model Context Color Frame Sequence Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "window"
+      ],
+      "data_exposed": [
+        "bounded transformed color frame sequence from an approved Sensorium subscription",
+        "motion and behavior visible across the burst span",
+        "gesture and intent-adjacent visual context inferred from temporal change",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed frames",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview",
+        "forward camera capture beyond the trailing ring"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.color.sequence.attach.v1",
+      "bridge_state": true,
+      "egress_boundary": "remote_bridge_state",
+      "budget_unit": "frames",
+      "client_attachment_unit": "image_blocks",
+      "default_bounds": {
+        "effective_sampling_fps": 5,
+        "burst_max_frames": 16,
+        "burst_span_ms": 3200,
+        "burst_downsample": [
+          640,
+          360
+        ],
+        "window_frame_budget": null
+      },
+      "description": "Review-only scaffold for attaching a bounded trailing color-frame burst to one model turn. Sequence delivery is bridge-state egress and exposes motion, behavior, and intent-adjacent temporal context."
+    },
+    {
+      "key": "model.context.visual.depth.sequence.attach",
+      "name": "Model Context Depth Frame Sequence Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "window"
+      ],
+      "data_exposed": [
+        "bounded transformed depth frame sequence from an approved Sensorium subscription",
+        "depth units metadata",
+        "motion, posture, and spatial behavior visible across the burst span",
+        "gesture and intent-adjacent temporal context inferred from depth changes",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed depth arrays",
+        "point clouds",
+        "meshes",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview",
+        "forward camera capture beyond the trailing ring"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.depth.sequence.attach.v1",
+      "bridge_state": true,
+      "egress_boundary": "remote_bridge_state",
+      "budget_unit": "frames",
+      "client_attachment_unit": "image_blocks",
+      "default_bounds": {
+        "effective_sampling_fps": 5,
+        "burst_max_frames": 16,
+        "burst_span_ms": 3200,
+        "burst_downsample": [
+          640,
+          360
+        ],
+        "window_frame_budget": null
+      },
+      "description": "Review-only scaffold for attaching a bounded trailing depth-frame burst to one model turn. Sequence delivery is bridge-state egress and exposes motion, behavior, and intent-adjacent temporal context."
+    },
+    {
+      "key": "model.context.visual.pose.sequence.attach",
+      "name": "Model Context Full Pose Sequence Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "window"
+      ],
+      "data_exposed": [
+        "bounded full pose keypoint sequence from an approved Sensorium subscription",
+        "body pose keypoints over time",
+        "68 face keypoints over time",
+        "42 hand keypoints across left and right hands over time",
+        "motion, gesture, behavior, and intent-adjacent biometric visual context",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed frames",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview",
+        "forward camera capture beyond the trailing ring"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.pose.sequence.attach.v1",
+      "bridge_state": true,
+      "egress_boundary": "remote_bridge_state",
+      "budget_unit": "frames",
+      "client_attachment_unit": "json_payloads",
+      "default_bounds": {
+        "effective_sampling_fps": 5,
+        "burst_max_frames": 16,
+        "burst_span_ms": 3200,
+        "burst_downsample": [
+          640,
+          360
+        ],
+        "window_frame_budget": null
+      },
+      "description": "Review-only scaffold for attaching a bounded trailing full-pose keypoint burst to one model turn. Pose sequence is bridge-state egress and exposes motion, behavior, gesture, and intent-adjacent biometric context."
+    },
+    {
+      "key": "model.context.visual.composite.sequence.attach",
+      "name": "Model Context Composite Visual Sequence Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "window"
+      ],
+      "data_exposed": [
+        "bounded paired color/depth visual sequence from approved Sensorium subscriptions",
+        "depth units metadata when present",
+        "motion, posture, spatial behavior, and intent-adjacent temporal context across the burst span",
+        "source subscription metadata",
+        "selected model target"
+      ],
+      "excluded_by_default": [
+        "full-resolution source frames",
+        "raw uncompressed depth arrays",
+        "point clouds",
+        "meshes",
+        "OCR or text extraction",
+        "scene descriptions generated before preview",
+        "hidden recording",
+        "durable visual memory",
+        "training use",
+        "background delivery without preview",
+        "forward camera capture beyond the trailing ring"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.visual.composite.sequence.attach.v1",
+      "bridge_state": true,
+      "egress_boundary": "remote_bridge_state",
+      "budget_unit": "pairs",
+      "client_attachment_unit": "image_blocks",
+      "default_bounds": {
+        "effective_sampling_fps": 5,
+        "burst_max_frames": 8,
+        "burst_span_ms": 3200,
+        "burst_downsample": [
+          640,
+          360
+        ],
+        "window_frame_budget": null,
+        "composite_pair_budget_unit": "pairs",
+        "client_attachment_unit": "image_blocks"
+      },
+      "description": "Review-only scaffold for attaching a bounded trailing paired color/depth burst to one model turn. Composite sequence budgets count pairs while model-client limits count image blocks."
     },
     {
       "key": "memory.session.read",
@@ -184,9 +421,15 @@
       "category": "memory",
       "risk_class": "low",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["ephemeral session memory"],
-      "excluded_by_default": ["durable memory"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "ephemeral session memory"
+      ],
+      "excluded_by_default": [
+        "durable memory"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.memory.session.v1",
@@ -198,9 +441,16 @@
       "category": "memory",
       "risk_class": "low",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["conversation summaries", "explicit notes"],
-      "excluded_by_default": ["durable memory"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "conversation summaries",
+        "explicit notes"
+      ],
+      "excluded_by_default": [
+        "durable memory"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.memory.session.v1",
@@ -212,9 +462,17 @@
       "category": "memory",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session", "project"],
-      "data_exposed": ["selected durable memory content"],
-      "excluded_by_default": ["unreviewed inferred memory"],
+      "allowed_scopes": [
+        "once",
+        "session",
+        "project"
+      ],
+      "data_exposed": [
+        "selected durable memory content"
+      ],
+      "excluded_by_default": [
+        "unreviewed inferred memory"
+      ],
       "reversible": true,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.memory.durable.v1",
@@ -226,9 +484,15 @@
       "category": "provenance",
       "risk_class": "low",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["provenance metadata"],
-      "excluded_by_default": ["raw message content"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "provenance metadata"
+      ],
+      "excluded_by_default": [
+        "raw message content"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.provenance.v1",
@@ -240,7 +504,9 @@
       "category": "provenance",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "episode-scoped aggregate provenance counts",
         "descriptor scope metadata"
@@ -268,9 +534,15 @@
       "category": "provenance",
       "risk_class": "sensitive",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["provenance deletion count"],
-      "excluded_by_default": ["durable audit deletion"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "provenance deletion count"
+      ],
+      "excluded_by_default": [
+        "durable audit deletion"
+      ],
       "reversible": false,
       "activation_policy": "base_harness",
       "provider_contract": "soma.provenance.v1",
@@ -282,9 +554,16 @@
       "category": "stewardship",
       "risk_class": "low",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["submitted text for non-diagnostic assessment"],
-      "excluded_by_default": ["diagnosis", "punitive gating"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "submitted text for non-diagnostic assessment"
+      ],
+      "excluded_by_default": [
+        "diagnosis",
+        "punitive gating"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.stewardship.cognitive_load.v1",
@@ -297,7 +576,9 @@
       "risk_class": "sensitive",
       "consequence_class": "C0",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "bounded normalized service state",
         "opaque service and observation handles"
@@ -319,7 +600,9 @@
       "risk_class": "high",
       "consequence_class": "C3",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
+      "allowed_scopes": [
+        "once"
+      ],
       "data_exposed": [
         "opaque restart plan and outcome metadata"
       ],
@@ -339,7 +622,9 @@
       "category": "status",
       "risk_class": "low",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "runtime health posture",
         "active module ids",
@@ -490,7 +775,9 @@
       "category": "desktop",
       "risk_class": "sensitive",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "application metadata",
         "root object roles",
@@ -518,7 +805,10 @@
       "category": "desktop",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "result-local window index",
         "window role",
@@ -551,9 +841,21 @@
       "category": "desktop",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["focused application metadata", "focused accessibility role", "focused object bounds"],
-      "excluded_by_default": ["text content", "screenshots", "pointer control", "keyboard control"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "focused application metadata",
+        "focused accessibility role",
+        "focused object bounds"
+      ],
+      "excluded_by_default": [
+        "text content",
+        "screenshots",
+        "pointer control",
+        "keyboard control"
+      ],
       "reversible": true,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.desktop.inspect.focus.v1",
@@ -565,7 +867,10 @@
       "category": "desktop",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "window titles",
         "accessible names",
@@ -598,7 +903,10 @@
       "category": "desktop",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "opaque action reference",
         "closed action kind",
@@ -623,7 +931,10 @@
       "category": "desktop",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "opaque action reference",
         "closed text input kind",
@@ -648,7 +959,10 @@
       "category": "sensorium",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "short-lived minimized semantic desktop structure events",
         "presence/audience posture buckets"
@@ -672,7 +986,9 @@
       "category": "sensorium",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "active Sensorium subscription metadata",
         "derived presence summaries",
@@ -697,7 +1013,10 @@
       "category": "desktop",
       "risk_class": "low",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "occupant-marked visual cue metadata",
         "locally derived output-act consequence class",
@@ -722,7 +1041,10 @@
       "category": "comms",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "fixture recipient identifiers",
         "draft and target binding digests",
@@ -747,7 +1069,10 @@
       "category": "desktop",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "target remote graphical session identity",
         "pointer movement or click intent",
@@ -772,7 +1097,10 @@
       "category": "desktop",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "target remote graphical session identity",
         "keyboard input intent",
@@ -797,7 +1125,10 @@
       "category": "desktop",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "target remote graphical session identity",
         "disconnect intent",
@@ -821,9 +1152,16 @@
       "category": "files",
       "risk_class": "sensitive",
       "default_status": "allowed",
-      "allowed_scopes": ["session"],
-      "data_exposed": ["text files within granted read scopes"],
-      "excluded_by_default": ["file writes", "files outside read roots"],
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "text files within granted read scopes"
+      ],
+      "excluded_by_default": [
+        "file writes",
+        "files outside read roots"
+      ],
       "reversible": true,
       "activation_policy": "base_harness",
       "provider_contract": "soma.files.read.v1",
@@ -835,9 +1173,19 @@
       "category": "files",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session", "project"],
-      "data_exposed": ["file contents", "file paths"],
-      "excluded_by_default": ["destructive writes", "writes outside granted scope"],
+      "allowed_scopes": [
+        "once",
+        "session",
+        "project"
+      ],
+      "data_exposed": [
+        "file contents",
+        "file paths"
+      ],
+      "excluded_by_default": [
+        "destructive writes",
+        "writes outside granted scope"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.files.write.v1",
@@ -849,9 +1197,17 @@
       "category": "shell",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once"],
-      "data_exposed": ["command", "environment-dependent output"],
-      "excluded_by_default": ["destructive commands", "background persistence"],
+      "allowed_scopes": [
+        "once"
+      ],
+      "data_exposed": [
+        "command",
+        "environment-dependent output"
+      ],
+      "excluded_by_default": [
+        "destructive commands",
+        "background persistence"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.shell.run.v1",
@@ -863,9 +1219,17 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["camera or video input"],
-      "excluded_by_default": ["hidden recording", "remote export"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "camera or video input"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.perception.camera.v1",
@@ -877,9 +1241,18 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["microphone input", "audio-derived transcript"],
-      "excluded_by_default": ["hidden recording", "remote export"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "microphone input",
+        "audio-derived transcript"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.perception.microphone.v1",
@@ -891,9 +1264,18 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
-      "data_exposed": ["screen or application state"],
-      "excluded_by_default": ["hidden recording", "remote export", "input control"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
+      "data_exposed": [
+        "screen or application state"
+      ],
+      "excluded_by_default": [
+        "hidden recording",
+        "remote export",
+        "input control"
+      ],
       "reversible": false,
       "activation_policy": "explicit_grant",
       "provider_contract": "soma.perception.screen.v1",
@@ -905,7 +1287,10 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "encoded remote graphical session frames",
         "remote host identity",
@@ -931,7 +1316,9 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "JPEG-encoded color frames from a remote Sensorium publisher",
         "scene contents within the camera's field of view"
@@ -954,7 +1341,9 @@
       "category": "perception",
       "risk_class": "high",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "PNG-encoded 16-bit depth maps from a remote Sensorium publisher",
         "spatial structure of the scene within the depth sensor's field of view"
@@ -976,7 +1365,9 @@
       "category": "perception",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "pose-derived presence event count buckets from Sensorium perception",
         "non-identity copresence cues within Sensorium's perception field of view"
@@ -1000,7 +1391,9 @@
       "category": "perception",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "full derived pose feature samples from perception/<host>/pose/features",
         "body landmark coordinates and confidence scores",
@@ -1029,7 +1422,9 @@
       "category": "perception",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["session"],
+      "allowed_scopes": [
+        "session"
+      ],
       "data_exposed": [
         "accelerometer samples in m/s^2",
         "gyroscope samples in rad/s",
@@ -1051,7 +1446,10 @@
       "category": "perception",
       "risk_class": "sensitive",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "configured geographic coordinates (lat/lon/alt) if set",
         "site label if set",
@@ -1073,7 +1471,10 @@
       "category": "perception",
       "risk_class": "low",
       "default_status": "disabled",
-      "allowed_scopes": ["once", "session"],
+      "allowed_scopes": [
+        "once",
+        "session"
+      ],
       "data_exposed": [
         "remote node hostname",
         "remote node uptime",

@@ -131,6 +131,16 @@ and gets tighter defaults, not omission.
 
 Local profile: native rate, resource bounds only, no table — activation is the gate.
 
+W2 catalog defaults are pinned as grant vocabulary, not live delivery: sequence
+capabilities use `allowed_scopes=["window"]`, `effective_sampling_fps=5`,
+`burst_max_frames=16`, `burst_span_ms=3200`, `burst_downsample=[640,360]`,
+and nullable `window_frame_budget`; `composite.sequence` sets
+`burst_max_frames=8`, counts `budget_unit="pairs"` at the grant layer, and
+uses `client_attachment_unit="image_blocks"` at the model-client layer.
+Remote profile preflight ceilings are `max_visual_attachments_per_turn=16`
+and `max_visual_bytes_per_turn=8388608`; local profile ceilings are resource
+bounds (`64` attachments, `33554432` bytes).
+
 ## Request path (remote profile; local inherits the block shape without the floor)
 
 Unchanged from R1 where it was sound:

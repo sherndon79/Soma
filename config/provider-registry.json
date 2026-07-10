@@ -38,6 +38,26 @@
           "key": "model.context.visual.pose.attach",
           "provider_contract": "soma.model.context.visual.pose.attach.v1",
           "output_schema": "soma.model.context.visual.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.color.sequence.attach",
+          "provider_contract": "soma.model.context.visual.color.sequence.attach.v1",
+          "output_schema": "soma.model.context.visual.sequence.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.depth.sequence.attach",
+          "provider_contract": "soma.model.context.visual.depth.sequence.attach.v1",
+          "output_schema": "soma.model.context.visual.sequence.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.pose.sequence.attach",
+          "provider_contract": "soma.model.context.visual.pose.sequence.attach.v1",
+          "output_schema": "soma.model.context.visual.sequence.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.visual.composite.sequence.attach",
+          "provider_contract": "soma.model.context.visual.composite.sequence.attach.v1",
+          "output_schema": "soma.model.context.visual.sequence.attach.proposal.v1"
         }
       ]
     },
@@ -252,7 +272,10 @@
       "binary": "./target/debug/soma-desktop-broker",
       "local_only": true,
       "network_access": false,
-      "requires": ["at-spi2-core", "dbus-session"],
+      "requires": [
+        "at-spi2-core",
+        "dbus-session"
+      ],
       "capabilities": [
         {
           "key": "desktop.inspect.accessibility_tree",

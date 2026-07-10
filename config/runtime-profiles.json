@@ -16,7 +16,9 @@
       "allowed_data_classes": [
         "submitted_text"
       ],
-      "description": "Local Gemma 4 model served by vLLM through an OpenAI-compatible API."
+      "description": "Local Gemma 4 model served by vLLM through an OpenAI-compatible API.",
+      "max_visual_attachments_per_turn": 64,
+      "max_visual_bytes_per_turn": 33554432
     },
     {
       "id": "claude-remote",
@@ -33,7 +35,7 @@
         "submitted_text",
         "capability_decision_context"
       ],
-      "description": "Remote Anthropic Messages API profile for first-breath/co-inhabitation harness evaluation. Requires an explicit model.remote.chat grant and ANTHROPIC_API_KEY. Allows capability_decision_context egress so the occupant receives its held-grant briefing and the results of capabilities it invokes (incl. armed perception summaries under a solo, user-consented dwell \u2014 the bystander floor is held by the run's solo constraint, not by starving the occupant of its own capability context).",
+      "description": "Remote Anthropic Messages API profile for first-breath/co-inhabitation harness evaluation. Requires an explicit model.remote.chat grant and ANTHROPIC_API_KEY. Allows capability_decision_context egress so the occupant receives its held-grant briefing and the results of capabilities it invokes (incl. armed perception summaries under a solo, user-consented dwell — the bystander floor is held by the run's solo constraint, not by starving the occupant of its own capability context).",
       "vision_input_supported": true,
       "visual_attachment_schema": "anthropic_messages_image",
       "visual_attachment_modalities": [
@@ -44,7 +46,9 @@
         "color",
         "composite"
       ],
-      "composite_representation": "paired_image_blocks"
+      "composite_representation": "paired_image_blocks",
+      "max_visual_attachments_per_turn": 16,
+      "max_visual_bytes_per_turn": 8388608
     }
   ]
 }

@@ -154,6 +154,62 @@ test("model visual template supports depth proposal metadata without payload byt
   assert.equal(template.review.payload_bytes_included, false);
 });
 
+test("model visual template supports sequence grant bounds without payload bytes", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+
+  const template = buildModelVisualAttachProposalTemplate({
+    ...baseColorRequest({ catalog, providerRegistry }),
+    capability: "model.context.visual.composite.sequence.attach",
+    requested_scope: "window",
+    source_subscription_ids: ["sub-color-1", "sub-depth-1"],
+    source_capabilities: [
+      "perception.sensorium.color.subscribe",
+      "perception.sensorium.depth.subscribe",
+    ],
+    source_topic: "sensor/jetsorano/realsense/composite",
+    source_grant_id: "grant-composite-sequence-1",
+    constraints: {
+      max_frame_count: 8,
+      max_frame_age_ms: 5_000,
+      transformed_dimensions: [640, 360],
+      format_required: "composite_sequence",
+      composite_representation: "paired_image_blocks",
+      max_pairing_skew_ms: 50,
+      effective_sampling_fps: 5,
+      burst_max_frames: 8,
+      burst_span_ms: 3_200,
+      burst_downsample: [640, 360],
+      window_frame_budget: 32,
+    },
+    reason: "Need one reviewed trailing composite burst for this turn.",
+  });
+
+  assert.equal(template.proposal.capability, "model.context.visual.composite.sequence.attach");
+  assert.ok(template.proposal.data_exposed.some((entry) => /motion|behavior|intent/.test(entry)));
+  assert.equal(template.review.payload_type, "composite_sequence");
+  assert.equal(template.review.bridge_state, true);
+  assert.equal(template.review.budget_unit, "pairs");
+  assert.equal(template.review.client_attachment_unit, "image_blocks");
+  assert.deepEqual(template.grant_intent.constraints, {
+    max_frame_count: 8,
+    max_frame_age_ms: 5_000,
+    transformed_dimensions: [640, 360],
+    format_required: "composite_sequence",
+    composite_representation: "paired_image_blocks",
+    max_pairing_skew_ms: 50,
+    effective_sampling_fps: 5,
+    burst_max_frames: 8,
+    burst_span_ms: 3_200,
+    burst_downsample: [640, 360],
+    window_frame_budget: 32,
+    budget_unit: "pairs",
+    client_attachment_unit: "image_blocks",
+  });
+  assert.equal(JSON.stringify(template).includes("payload_bytes"), true);
+  assert.equal("payload_bytes" in template, false);
+});
+
 test("Sensorium subscription capability cannot authorize model visual attachment by itself", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();

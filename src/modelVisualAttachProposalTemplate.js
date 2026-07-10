@@ -1,16 +1,19 @@
 const VISUAL_ATTACH_CAPABILITIES = {
   "model.context.visual.color.attach": {
     payload_type: "color",
+    sequence: false,
     source_capabilities: ["perception.sensorium.color.subscribe"],
     format_required: "jpeg",
   },
   "model.context.visual.depth.attach": {
     payload_type: "depth",
+    sequence: false,
     source_capabilities: ["perception.sensorium.depth.subscribe"],
     format_required: "png",
   },
   "model.context.visual.composite.attach": {
     payload_type: "composite",
+    sequence: false,
     source_capabilities: [
       "perception.sensorium.color.subscribe",
       "perception.sensorium.depth.subscribe",
@@ -19,12 +22,53 @@ const VISUAL_ATTACH_CAPABILITIES = {
   },
   "model.context.visual.pose.attach": {
     payload_type: "pose",
+    sequence: false,
     source_capabilities: ["perception.sensorium.pose.subscribe"],
     format_required: "msgpack",
+  },
+  "model.context.visual.color.sequence.attach": {
+    payload_type: "color_sequence",
+    base_payload_type: "color",
+    sequence: true,
+    source_capabilities: ["perception.sensorium.color.subscribe"],
+    format_required: "jpeg_sequence",
+    budget_unit: "frames",
+    client_attachment_unit: "image_blocks",
+  },
+  "model.context.visual.depth.sequence.attach": {
+    payload_type: "depth_sequence",
+    base_payload_type: "depth",
+    sequence: true,
+    source_capabilities: ["perception.sensorium.depth.subscribe"],
+    format_required: "png_sequence",
+    budget_unit: "frames",
+    client_attachment_unit: "image_blocks",
+  },
+  "model.context.visual.pose.sequence.attach": {
+    payload_type: "pose_sequence",
+    base_payload_type: "pose",
+    sequence: true,
+    source_capabilities: ["perception.sensorium.pose.subscribe"],
+    format_required: "json_sequence",
+    budget_unit: "frames",
+    client_attachment_unit: "json_payloads",
+  },
+  "model.context.visual.composite.sequence.attach": {
+    payload_type: "composite_sequence",
+    base_payload_type: "composite",
+    sequence: true,
+    source_capabilities: [
+      "perception.sensorium.color.subscribe",
+      "perception.sensorium.depth.subscribe",
+    ],
+    format_required: "composite_sequence",
+    budget_unit: "pairs",
+    client_attachment_unit: "image_blocks",
   },
 };
 
 const ONCE_SCOPE = "once";
+const WINDOW_SCOPE = "window";
 const DEFAULT_REQUESTED_BY = "assistant";
 const DEFAULT_FALLBACK = "Continue without visual model context for this turn.";
 const DEFAULT_FRAME_COUNT = 1;
@@ -83,8 +127,9 @@ export function buildModelVisualAttachProposalTemplate({
   if (!visualDefinition) {
     errors.push(`capability "${capabilityKey || "(missing)"}" is not a recognized model-facing visual attach capability`);
   }
-  if (scope !== ONCE_SCOPE) {
-    errors.push("model-facing visual attach proposal templates currently require requested_scope=once");
+  const expectedScope = visualDefinition?.sequence === true ? WINDOW_SCOPE : ONCE_SCOPE;
+  if (scope !== expectedScope) {
+    errors.push(`model-facing visual attach proposal templates currently require requested_scope=${expectedScope}`);
   }
   if (!normalizedReason) {
     errors.push("reason is required");
@@ -192,6 +237,9 @@ export function buildModelVisualAttachProposalTemplate({
       model_delivery_performed: false,
       payload_attached: false,
       payload_bytes_included: false,
+      bridge_state: visualDefinition.sequence === true,
+      budget_unit: normalizedConstraints.budget_unit,
+      client_attachment_unit: normalizedConstraints.client_attachment_unit,
       active_disclosure: activeDisclosure,
       model_boundary_warning:
         "Visual payloads can be withheld before delivery, but cannot be removed from a model turn after attachment.",
@@ -268,7 +316,11 @@ function validateConstraints(constraints, visualDefinition, errors) {
   }
 
   const maxFrameCount = constraints.max_frame_count;
-  if (maxFrameCount !== DEFAULT_FRAME_COUNT) {
+  if (visualDefinition?.sequence === true) {
+    if (!Number.isInteger(maxFrameCount) || maxFrameCount < 1) {
+      errors.push("constraints.max_frame_count must be a positive integer for sequence attachments");
+    }
+  } else if (maxFrameCount !== DEFAULT_FRAME_COUNT) {
     errors.push("constraints.max_frame_count must be 1 for the scaffold");
   }
 
@@ -286,24 +338,51 @@ function validateConstraints(constraints, visualDefinition, errors) {
   if (visualDefinition && formatRequired !== visualDefinition.format_required) {
     errors.push(`constraints.format_required must be ${visualDefinition.format_required}`);
   }
+  const basePayloadType = visualDefinition?.base_payload_type ?? visualDefinition?.payload_type;
   const depthRepresentation = stringValue(constraints.depth_representation) || "depth_png";
-  if (visualDefinition?.payload_type === "depth" && !["depth_png", "colorized_png"].includes(depthRepresentation)) {
+  if (basePayloadType === "depth" && !["depth_png", "colorized_png"].includes(depthRepresentation)) {
     errors.push("constraints.depth_representation must be depth_png or colorized_png");
   }
   const poseRepresentation = stringValue(constraints.pose_representation) || "pose_msgpack";
-  if (visualDefinition?.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(poseRepresentation)) {
+  if (basePayloadType === "pose" && !["pose_msgpack", "pose_json"].includes(poseRepresentation)) {
     errors.push("constraints.pose_representation must be pose_msgpack or pose_json");
   }
   const compositeRepresentation = stringValue(constraints.composite_representation) || "paired_image_blocks";
-  if (visualDefinition?.payload_type === "composite" && compositeRepresentation !== "paired_image_blocks") {
+  if (basePayloadType === "composite" && compositeRepresentation !== "paired_image_blocks") {
     errors.push("constraints.composite_representation must be paired_image_blocks");
   }
   const maxPairingSkewMs = constraints.max_pairing_skew_ms;
   if (
-    visualDefinition?.payload_type === "composite" &&
+    basePayloadType === "composite" &&
     (!Number.isInteger(maxPairingSkewMs) || maxPairingSkewMs < 0 || maxPairingSkewMs > maxFrameAgeMs)
   ) {
     errors.push("constraints.max_pairing_skew_ms must be an integer from 0 to max_frame_age_ms");
+  }
+  const effectiveSamplingFps = constraints.effective_sampling_fps;
+  const burstMaxFrames = constraints.burst_max_frames;
+  const burstSpanMs = constraints.burst_span_ms;
+  const burstDownsample = constraints.burst_downsample;
+  const windowFrameBudget = constraints.window_frame_budget;
+  if (visualDefinition?.sequence === true) {
+    if (!Number.isInteger(effectiveSamplingFps) || effectiveSamplingFps < 1) {
+      errors.push("constraints.effective_sampling_fps must be a positive integer for sequence attachments");
+    }
+    if (!Number.isInteger(burstMaxFrames) || burstMaxFrames < 1) {
+      errors.push("constraints.burst_max_frames must be a positive integer for sequence attachments");
+    }
+    if (Number.isInteger(maxFrameCount) && Number.isInteger(burstMaxFrames) && maxFrameCount !== burstMaxFrames) {
+      errors.push("constraints.max_frame_count must match burst_max_frames for sequence attachments");
+    }
+    if (!Number.isInteger(burstSpanMs) || burstSpanMs < 1) {
+      errors.push("constraints.burst_span_ms must be a positive integer for sequence attachments");
+    }
+    if (!validDimensions(burstDownsample)) {
+      errors.push(`constraints.burst_downsample must be [width,height] integers from 1 to ${MAX_DIMENSION}`);
+    }
+    if (windowFrameBudget !== null && windowFrameBudget !== undefined &&
+      (!Number.isInteger(windowFrameBudget) || windowFrameBudget < burstMaxFrames)) {
+      errors.push("constraints.window_frame_budget must be null or an integer at least burst_max_frames");
+    }
   }
 
   return {
@@ -311,16 +390,27 @@ function validateConstraints(constraints, visualDefinition, errors) {
     max_frame_age_ms: maxFrameAgeMs,
     transformed_dimensions: Array.isArray(transformedDimensions) ? [...transformedDimensions] : [],
     format_required: formatRequired,
-    ...(visualDefinition?.payload_type === "depth"
+    ...(basePayloadType === "depth"
       ? { depth_representation: depthRepresentation }
       : {}),
-    ...(visualDefinition?.payload_type === "pose"
+    ...(basePayloadType === "pose"
       ? { pose_representation: poseRepresentation }
       : {}),
-    ...(visualDefinition?.payload_type === "composite"
+    ...(basePayloadType === "composite"
       ? {
         composite_representation: compositeRepresentation,
         max_pairing_skew_ms: maxPairingSkewMs,
+      }
+      : {}),
+    ...(visualDefinition?.sequence === true
+      ? {
+        effective_sampling_fps: effectiveSamplingFps,
+        burst_max_frames: burstMaxFrames,
+        burst_span_ms: burstSpanMs,
+        burst_downsample: Array.isArray(burstDownsample) ? [...burstDownsample] : [],
+        window_frame_budget: windowFrameBudget ?? null,
+        budget_unit: visualDefinition.budget_unit,
+        client_attachment_unit: visualDefinition.client_attachment_unit,
       }
       : {}),
   };

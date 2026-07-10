@@ -21,6 +21,13 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   "pose_representation",
   "composite_representation",
   "max_pairing_skew_ms",
+  "effective_sampling_fps",
+  "burst_max_frames",
+  "burst_span_ms",
+  "burst_downsample",
+  "window_frame_budget",
+  "budget_unit",
+  "client_attachment_unit",
   "preview_artifact_id",
   "preview_acknowledgement_id",
   "preview_acknowledged_by",
@@ -87,6 +94,15 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
     pose_representation: stringValue(body.pose_representation),
     composite_representation: stringValue(body.composite_representation),
     max_pairing_skew_ms: body.max_pairing_skew_ms,
+    effective_sampling_fps: body.effective_sampling_fps,
+    burst_max_frames: body.burst_max_frames,
+    burst_span_ms: body.burst_span_ms,
+    burst_downsample: Array.isArray(body.burst_downsample)
+      ? [...body.burst_downsample]
+      : [],
+    window_frame_budget: body.window_frame_budget,
+    budget_unit: stringValue(body.budget_unit),
+    client_attachment_unit: stringValue(body.client_attachment_unit),
     preview_artifact_id: stringValue(body.preview_artifact_id),
     preview_acknowledgement_id: stringValue(body.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(body.preview_acknowledged_by),
@@ -131,6 +147,15 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
   }
   if (!Number.isInteger(validated.max_pairing_skew_ms)) {
     delete validated.max_pairing_skew_ms;
+  }
+  if (!isSequenceVisualAttachCapability(validated.capability)) {
+    delete validated.effective_sampling_fps;
+    delete validated.burst_max_frames;
+    delete validated.burst_span_ms;
+    delete validated.burst_downsample;
+    delete validated.window_frame_budget;
+    delete validated.budget_unit;
+    delete validated.client_attachment_unit;
   }
   if (validated.source_topics.length === 0) {
     delete validated.source_topics;
@@ -179,7 +204,13 @@ function validateRequestShape(request, errors) {
   if (request.retention_mode !== "none") {
     errors.push("retention_mode must be none");
   }
-  if (request.max_frame_count !== 1) {
+  const sequence = isSequenceVisualAttachCapability(request.capability);
+  const basePayloadType = baseVisualPayloadType(request.payload_type);
+  if (sequence) {
+    if (!Number.isInteger(request.max_frame_count) || request.max_frame_count < 1) {
+      errors.push("max_frame_count must be a positive integer for sequence payloads");
+    }
+  } else if (request.max_frame_count !== 1) {
     errors.push("max_frame_count must be 1");
   }
   if (!Number.isInteger(request.max_frame_age_ms) || request.max_frame_age_ms < 1) {
@@ -188,19 +219,19 @@ function validateRequestShape(request, errors) {
   if (!validDimensions(request.transformed_dimensions)) {
     errors.push("transformed_dimensions must be [width,height] positive integers");
   }
-  if (request.payload_type === "depth" && !["depth_png", "colorized_png"].includes(request.depth_representation)) {
+  if (basePayloadType === "depth" && !["depth_png", "colorized_png"].includes(request.depth_representation)) {
     errors.push("depth_representation must be depth_png or colorized_png for depth payloads");
   }
-  if (request.payload_type !== "depth" && request.depth_representation) {
+  if (basePayloadType !== "depth" && request.depth_representation) {
     errors.push("depth_representation is only allowed for depth payloads");
   }
-  if (request.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(request.pose_representation)) {
+  if (basePayloadType === "pose" && !["pose_msgpack", "pose_json"].includes(request.pose_representation)) {
     errors.push("pose_representation must be pose_msgpack or pose_json for pose payloads");
   }
-  if (request.payload_type !== "pose" && request.pose_representation) {
+  if (basePayloadType !== "pose" && request.pose_representation) {
     errors.push("pose_representation is only allowed for pose payloads");
   }
-  if (request.payload_type === "composite") {
+  if (basePayloadType === "composite") {
     if (request.source_subscription_ids.length < 2) {
       errors.push("composite payloads require color and depth source subscriptions");
     }
@@ -232,6 +263,55 @@ function validateRequestShape(request, errors) {
       errors.push("max_pairing_skew_ms is only allowed for composite payloads");
     }
   }
+  if (sequence) {
+    if (!Number.isInteger(request.effective_sampling_fps) || request.effective_sampling_fps < 1) {
+      errors.push("effective_sampling_fps must be a positive integer for sequence payloads");
+    }
+    if (!Number.isInteger(request.burst_max_frames) || request.burst_max_frames < 1) {
+      errors.push("burst_max_frames must be a positive integer for sequence payloads");
+    }
+    if (Number.isInteger(request.max_frame_count) && Number.isInteger(request.burst_max_frames) &&
+      request.max_frame_count !== request.burst_max_frames) {
+      errors.push("max_frame_count must match burst_max_frames for sequence payloads");
+    }
+    if (!Number.isInteger(request.burst_span_ms) || request.burst_span_ms < 1) {
+      errors.push("burst_span_ms must be a positive integer for sequence payloads");
+    }
+    if (!validDimensions(request.burst_downsample)) {
+      errors.push("burst_downsample must be [width,height] positive integers for sequence payloads");
+    }
+    if (request.window_frame_budget !== null && request.window_frame_budget !== undefined &&
+      (!Number.isInteger(request.window_frame_budget) || request.window_frame_budget < request.burst_max_frames)) {
+      errors.push("window_frame_budget must be null or an integer at least burst_max_frames");
+    }
+    const expectedBudgetUnit = basePayloadType === "composite" ? "pairs" : "frames";
+    if (request.budget_unit !== expectedBudgetUnit) {
+      errors.push(`budget_unit must be ${expectedBudgetUnit} for sequence payloads`);
+    }
+    if (!request.client_attachment_unit) {
+      errors.push("client_attachment_unit is required for sequence payloads");
+    }
+  } else {
+    for (const field of [
+      "effective_sampling_fps",
+      "burst_max_frames",
+      "burst_span_ms",
+      "window_frame_budget",
+    ]) {
+      if (request[field] !== undefined) {
+        errors.push(`${field} is only allowed for sequence payloads`);
+      }
+    }
+    if (request.burst_downsample.length > 0) {
+      errors.push("burst_downsample is only allowed for sequence payloads");
+    }
+    if (request.budget_unit) {
+      errors.push("budget_unit is only allowed for sequence payloads");
+    }
+    if (request.client_attachment_unit) {
+      errors.push("client_attachment_unit is only allowed for sequence payloads");
+    }
+  }
 }
 
 function validateGrantAuthority({ request, grant, errors }) {
@@ -242,8 +322,10 @@ function validateGrantAuthority({ request, grant, errors }) {
   if (grant.capability !== request.capability) {
     errors.push("request capability must match grant capability");
   }
-  if (grant.scope !== "once") {
-    errors.push("model visual attach grants must have once scope");
+  const sequence = isSequenceVisualAttachCapability(request.capability);
+  const expectedScope = sequence ? "window" : "once";
+  if (grant.scope !== expectedScope) {
+    errors.push(`model visual attach grants must have ${expectedScope} scope`);
   }
 
   const constraints = isPlainObject(grant.constraints) ? grant.constraints : {};
@@ -253,7 +335,7 @@ function validateGrantAuthority({ request, grant, errors }) {
   if (!sameStringSet(request.source_capabilities, normalizeStringList(constraints.source_capabilities))) {
     errors.push("source_capabilities must match grant constraints");
   }
-  if (request.payload_type === "composite") {
+  if (baseVisualPayloadType(request.payload_type) === "composite") {
     if (!sameStringSet(request.source_topics, normalizeStringList(constraints.source_topics))) {
       errors.push("source_topics must match grant constraints");
     }
@@ -299,6 +381,23 @@ function validateGrantAuthority({ request, grant, errors }) {
   if (!sameDimensions(request.transformed_dimensions, constraints.transformed_dimensions)) {
     errors.push("transformed_dimensions must match grant constraints");
   }
+  if (isSequenceVisualAttachCapability(request.capability)) {
+    for (const field of [
+      "effective_sampling_fps",
+      "burst_max_frames",
+      "burst_span_ms",
+      "window_frame_budget",
+      "budget_unit",
+      "client_attachment_unit",
+    ]) {
+      if (request[field] !== constraints[field]) {
+        errors.push(`${field} must match grant constraints`);
+      }
+    }
+    if (!sameDimensions(request.burst_downsample, constraints.burst_downsample)) {
+      errors.push("burst_downsample must match grant constraints");
+    }
+  }
 }
 
 function findActiveGrant(grants, grantId) {
@@ -335,6 +434,19 @@ function forbiddenPayloadPaths(value, path) {
 function isModelVisualAttachCapability(capability) {
   return capability.startsWith(VISUAL_ATTACH_CAPABILITY_PREFIX) &&
     capability.endsWith(VISUAL_ATTACH_CAPABILITY_SUFFIX);
+}
+
+function isSequenceVisualAttachCapability(capability) {
+  return capability.startsWith(VISUAL_ATTACH_CAPABILITY_PREFIX) &&
+    capability.includes(".sequence.") &&
+    capability.endsWith(VISUAL_ATTACH_CAPABILITY_SUFFIX);
+}
+
+function baseVisualPayloadType(payloadType = "") {
+  const normalized = stringValue(payloadType);
+  return normalized.endsWith("_sequence")
+    ? normalized.slice(0, -"_sequence".length)
+    : normalized;
 }
 
 function sameStringSet(left, right) {

@@ -3,6 +3,7 @@ import { validateGrantCreate } from "./grants.js";
 const VISUAL_ATTACH_CAPABILITY_PREFIX = "model.context.visual.";
 const VISUAL_ATTACH_CAPABILITY_SUFFIX = ".attach";
 const ONCE_SCOPE = "once";
+const WINDOW_SCOPE = "window";
 
 export function buildModelVisualAttachGrantCandidateFromProposal(
   proposal = {},
@@ -38,6 +39,7 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
   if (!isModelVisualAttachCapability(capability)) {
     errors.push("proposal capability must be a model-facing visual attach capability");
   }
+  const expectedScope = isSequenceVisualAttachCapability(capability) ? WINDOW_SCOPE : ONCE_SCOPE;
 
   const review = plainObjectOrNull(proposal.review_context);
   const intent = plainObjectOrNull(proposal.grant_intent);
@@ -82,7 +84,7 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
   const candidate = {
     capability,
     provider: intent.provider,
-    scope: ONCE_SCOPE,
+    scope: expectedScope,
     constraints,
     approved_by: "user",
     approval_provenance_id: approvalProvenanceId,
@@ -145,6 +147,15 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
     depth_representation: stringValue(intent.constraints?.depth_representation),
     pose_representation: stringValue(intent.constraints?.pose_representation),
     composite_representation: stringValue(intent.constraints?.composite_representation),
+    effective_sampling_fps: intent.constraints?.effective_sampling_fps ?? null,
+    burst_max_frames: intent.constraints?.burst_max_frames ?? null,
+    burst_span_ms: intent.constraints?.burst_span_ms ?? null,
+    burst_downsample: Array.isArray(intent.constraints?.burst_downsample)
+      ? [...intent.constraints.burst_downsample]
+      : [],
+    window_frame_budget: intent.constraints?.window_frame_budget ?? null,
+    budget_unit: stringValue(intent.constraints?.budget_unit),
+    client_attachment_unit: stringValue(intent.constraints?.client_attachment_unit),
     preview_artifact_id: stringValue(intent.preview_artifact_id),
     preview_acknowledgement_id: stringValue(intent.preview_acknowledgement_id),
     preview_acknowledged_by: stringValue(intent.preview_acknowledged_by),
@@ -173,6 +184,27 @@ export function buildModelVisualAttachGrantCandidateProvenanceSummary({
   if (!summary.composite_representation) {
     delete summary.composite_representation;
   }
+  if (!Number.isInteger(summary.effective_sampling_fps)) {
+    delete summary.effective_sampling_fps;
+  }
+  if (!Number.isInteger(summary.burst_max_frames)) {
+    delete summary.burst_max_frames;
+  }
+  if (!Number.isInteger(summary.burst_span_ms)) {
+    delete summary.burst_span_ms;
+  }
+  if (summary.burst_downsample.length === 0) {
+    delete summary.burst_downsample;
+  }
+  if (summary.window_frame_budget === null) {
+    delete summary.window_frame_budget;
+  }
+  if (!summary.budget_unit) {
+    delete summary.budget_unit;
+  }
+  if (!summary.client_attachment_unit) {
+    delete summary.client_attachment_unit;
+  }
   return summary;
 }
 
@@ -183,11 +215,12 @@ function validateReviewAndIntent({ proposal, review, intent, errors }) {
   if (intent.provider !== review.provider) {
     errors.push("review_context and grant_intent must match provider");
   }
-  if (intent.scope !== ONCE_SCOPE || review.scope !== ONCE_SCOPE) {
-    errors.push("model visual attach grant candidates currently require once scope");
+  const expectedScope = isSequenceVisualAttachCapability(proposal.capability) ? WINDOW_SCOPE : ONCE_SCOPE;
+  if (intent.scope !== expectedScope || review.scope !== expectedScope) {
+    errors.push(`model visual attach grant candidates currently require ${expectedScope} scope`);
   }
-  if (proposal.requested_scope !== ONCE_SCOPE) {
-    errors.push("approved proposal must have requested_scope=once");
+  if (proposal.requested_scope !== expectedScope) {
+    errors.push(`approved proposal must have requested_scope=${expectedScope}`);
   }
   if (!plainObjectOrNull(intent.constraints)) {
     errors.push("grant_intent.constraints must be an object");
@@ -334,6 +367,12 @@ function forbiddenPayloadPaths(value, path) {
 
 function isModelVisualAttachCapability(capability) {
   return capability.startsWith(VISUAL_ATTACH_CAPABILITY_PREFIX) &&
+    capability.endsWith(VISUAL_ATTACH_CAPABILITY_SUFFIX);
+}
+
+function isSequenceVisualAttachCapability(capability) {
+  return capability.startsWith(VISUAL_ATTACH_CAPABILITY_PREFIX) &&
+    capability.includes(".sequence.") &&
     capability.endsWith(VISUAL_ATTACH_CAPABILITY_SUFFIX);
 }
 

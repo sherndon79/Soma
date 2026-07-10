@@ -44,6 +44,8 @@ export function publicRuntimeProfile(profile) {
     tool_calls_enabled: Boolean(profile.tool_calls_enabled),
     remote_service: Boolean(profile.remote_service),
     allowed_data_classes: profile.allowed_data_classes ?? [],
+    max_visual_attachments_per_turn: profile.max_visual_attachments_per_turn ?? null,
+    max_visual_bytes_per_turn: profile.max_visual_bytes_per_turn ?? null,
     description: profile.description ?? "",
   };
 }

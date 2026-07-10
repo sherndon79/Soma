@@ -65,6 +65,91 @@ const request = {
   retention_mode: "none",
 };
 
+const visualSequenceGrant = {
+  id: "grant-visual-composite-sequence",
+  status: "active",
+  capability: "model.context.visual.composite.sequence.attach",
+  provider: "soma.provider.local-model",
+  scope: "window",
+  constraints: {
+    max_frame_count: 8,
+    max_frame_age_ms: 5_000,
+    transformed_dimensions: [640, 360],
+    format_required: "composite_sequence",
+    source_subscription_ids: ["sub-color-1", "sub-depth-1"],
+    source_capabilities: [
+      "perception.sensorium.color.subscribe",
+      "perception.sensorium.depth.subscribe",
+    ],
+    source_topics: [
+      "sensor/jetsorano/realsense/color",
+      "sensor/jetsorano/realsense/depth",
+    ],
+    source_grant_ids: ["grant-color-1", "grant-depth-1"],
+    source_provider: "soma.provider.sensorium.jetsorano",
+    source_topic: "sensor/jetsorano/realsense/composite",
+    source_grant_id: "grant-composite-sequence-1",
+    model_target: "claude-fable-5",
+    payload_type: "composite_sequence",
+    composite_representation: "paired_image_blocks",
+    max_pairing_skew_ms: 50,
+    effective_sampling_fps: 5,
+    burst_max_frames: 8,
+    burst_span_ms: 3_200,
+    burst_downsample: [640, 360],
+    window_frame_budget: 32,
+    budget_unit: "pairs",
+    client_attachment_unit: "image_blocks",
+    preview_artifact_id: "preview-composite-sequence-1",
+    preview_acknowledgement_id: "ack-preview-composite-sequence-1",
+    preview_acknowledged_by: "user",
+    preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+    preview_acknowledged: true,
+    preview_cleanup_required: true,
+    retention_mode: "none",
+  },
+};
+
+const sequenceRequest = {
+  capability: "model.context.visual.composite.sequence.attach",
+  grant_id: "grant-visual-composite-sequence",
+  source_subscription_ids: ["sub-color-1", "sub-depth-1"],
+  source_capabilities: [
+    "perception.sensorium.color.subscribe",
+    "perception.sensorium.depth.subscribe",
+  ],
+  source_topics: [
+    "sensor/jetsorano/realsense/color",
+    "sensor/jetsorano/realsense/depth",
+  ],
+  source_grant_ids: ["grant-color-1", "grant-depth-1"],
+  source_provider: "soma.provider.sensorium.jetsorano",
+  source_topic: "sensor/jetsorano/realsense/composite",
+  source_grant_id: "grant-composite-sequence-1",
+  model_target: "claude-fable-5",
+  payload_type: "composite_sequence",
+  max_frame_count: 8,
+  max_frame_age_ms: 5_000,
+  transformed_dimensions: [640, 360],
+  format_required: "composite_sequence",
+  composite_representation: "paired_image_blocks",
+  max_pairing_skew_ms: 50,
+  effective_sampling_fps: 5,
+  burst_max_frames: 8,
+  burst_span_ms: 3_200,
+  burst_downsample: [640, 360],
+  window_frame_budget: 32,
+  budget_unit: "pairs",
+  client_attachment_unit: "image_blocks",
+  preview_artifact_id: "preview-composite-sequence-1",
+  preview_acknowledgement_id: "ack-preview-composite-sequence-1",
+  preview_acknowledged_by: "user",
+  preview_acknowledged_at: "2026-05-19T12:00:00.000Z",
+  preview_acknowledged: true,
+  preview_cleanup_required: true,
+  retention_mode: "none",
+};
+
 test("validateModelVisualAttachRequest accepts metadata-only request with active visual grant", () => {
   const result = validateModelVisualAttachRequest(request, { grants: [visualGrant] });
 
@@ -79,6 +164,40 @@ test("validateModelVisualAttachRequest accepts metadata-only request with active
     payload_attached: false,
     payload_bytes_included: false,
   });
+});
+
+test("validateModelVisualAttachRequest accepts grant-bound sequence bounds", () => {
+  const result = validateModelVisualAttachRequest(sequenceRequest, { grants: [visualSequenceGrant] });
+
+  assert.deepEqual(result, {
+    ...sequenceRequest,
+    grant_id: "grant-visual-composite-sequence",
+    provider: "soma.provider.local-model",
+    scope: "window",
+    activation_performed: false,
+    subscription_activated: false,
+    model_delivery_performed: false,
+    payload_attached: false,
+    payload_bytes_included: false,
+  });
+});
+
+test("validateModelVisualAttachRequest rejects sequence bound drift before frame read", () => {
+  assertVisualRequestError(
+    () => validateModelVisualAttachRequest({
+      ...sequenceRequest,
+      budget_unit: "frames",
+    }, { grants: [visualSequenceGrant] }),
+    "budget_unit must be pairs for sequence payloads",
+  );
+
+  assertVisualRequestError(
+    () => validateModelVisualAttachRequest({
+      ...sequenceRequest,
+      burst_max_frames: 16,
+    }, { grants: [visualSequenceGrant] }),
+    "max_frame_count must match burst_max_frames for sequence payloads",
+  );
 });
 
 test("validateModelVisualAttachRequest rejects missing visual grant", () => {

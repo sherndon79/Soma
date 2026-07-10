@@ -375,6 +375,33 @@ const MODEL_VISUAL_ATTACH_CAPABILITIES = [
   },
 ];
 
+const MODEL_VISUAL_SEQUENCE_CAPABILITIES = [
+  {
+    key: "model.context.visual.color.sequence.attach",
+    contract: "soma.model.context.visual.color.sequence.attach.v1",
+    budget_unit: "frames",
+    client_attachment_unit: "image_blocks",
+  },
+  {
+    key: "model.context.visual.depth.sequence.attach",
+    contract: "soma.model.context.visual.depth.sequence.attach.v1",
+    budget_unit: "frames",
+    client_attachment_unit: "image_blocks",
+  },
+  {
+    key: "model.context.visual.pose.sequence.attach",
+    contract: "soma.model.context.visual.pose.sequence.attach.v1",
+    budget_unit: "frames",
+    client_attachment_unit: "json_payloads",
+  },
+  {
+    key: "model.context.visual.composite.sequence.attach",
+    contract: "soma.model.context.visual.composite.sequence.attach.v1",
+    budget_unit: "pairs",
+    client_attachment_unit: "image_blocks",
+  },
+];
+
 test("model-facing visual attach capabilities are requestable without activating delivery", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();
@@ -403,6 +430,40 @@ test("model-facing visual attach capabilities are requestable without activating
   assert.ok(pose.data_exposed.includes("68 face keypoints"));
   assert.ok(pose.data_exposed.includes("42 hand keypoints across left and right hands"));
   assert.ok(pose.data_exposed.some((entry) => entry.includes("identity-adjacent")));
+});
+
+test("model-facing visual sequence capabilities disclose bridge-state motion semantics", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  for (const want of MODEL_VISUAL_SEQUENCE_CAPABILITIES) {
+    const cap = view.capabilities.find((c) => c.key === want.key);
+    assert.ok(cap, `expected capability ${want.key} to be present in catalog`);
+    assert.equal(cap.category, "model");
+    assert.equal(cap.risk_class, "high");
+    assert.equal(cap.harness_status, "disabled");
+    assert.equal(cap.status, "requestable");
+    assert.deepEqual(cap.allowed_scopes, ["window"]);
+    assert.equal(cap.activation_policy, "explicit_grant");
+    assert.equal(cap.bridge_state, true);
+    assert.equal(cap.egress_boundary, "remote_bridge_state");
+    assert.equal(cap.budget_unit, want.budget_unit);
+    assert.equal(cap.client_attachment_unit, want.client_attachment_unit);
+    assert.equal(cap.provider_contract, want.contract);
+    assert.equal(cap.providers.length, 1);
+    assert.equal(cap.providers[0].id, "soma.provider.local-model");
+    assert.equal(cap.providers[0].provider_contract, want.contract);
+    assert.equal(cap.providers[0].output_schema, "soma.model.context.visual.sequence.attach.proposal.v1");
+    assert.equal(cap.default_bounds.effective_sampling_fps, 5);
+    assert.deepEqual(cap.default_bounds.burst_downsample, [640, 360]);
+    assert.ok(cap.data_exposed.some((entry) => /motion|behavior|intent/.test(entry)));
+    assert.ok(cap.excluded_by_default.includes("forward camera capture beyond the trailing ring"));
+  }
+
+  const composite = view.capabilities.find((c) => c.key === "model.context.visual.composite.sequence.attach");
+  assert.equal(composite.default_bounds.burst_max_frames, 8);
+  assert.equal(composite.default_bounds.composite_pair_budget_unit, "pairs");
 });
 
 const REMOTE_GRAPHICAL_CAPABILITIES = [

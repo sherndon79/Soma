@@ -60,6 +60,11 @@ export function buildCapabilityView({
       excluded_by_default: capability.excluded_by_default ?? [],
       reversible: capability.reversible ?? null,
       provider_contract: capability.provider_contract ?? "",
+      bridge_state: capability.bridge_state === true,
+      egress_boundary: capability.egress_boundary ?? "",
+      default_bounds: capability.default_bounds ?? null,
+      budget_unit: capability.budget_unit ?? "",
+      client_attachment_unit: capability.client_attachment_unit ?? "",
       providers: providers.map((provider) => publicProvider(provider, capability.key)),
       description: capability.description ?? "",
     };

@@ -1473,7 +1473,14 @@ test("raw visual floor status explains closed inputs and never reads frames", as
   });
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
   assert.equal(response.body.attestation.present, true);
+  assert.equal(response.body.perception_window.active, true);
+  assert.equal(response.body.perception_window.runtime_scoped, true);
+  assert.equal(response.body.perception_window.durable, false);
+  assert.equal(response.body.perception_window.window_ttl_ms, 60 * 60 * 1000);
   assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(response.body.content_included, false);
+  assert.equal("payload_bytes" in response.body.perception_window, false);
+  assert.equal("content" in response.body.perception_window, false);
 
   response = await invokeHandler(handler, {
     method: "POST",
@@ -1493,6 +1500,73 @@ test("raw visual floor status explains closed inputs and never reads frames", as
   assert.equal(response.body.floor_gate_decision.presence_fresh, true);
   assert.equal(response.body.floor_gate_inputs.solo_attestation_fresh, true);
   assert.equal(response.body.floor_gate_inputs.presence_fresh, true);
+  assert.equal(response.body.perception_window.active, true);
+  assert.equal(response.body.perception_window.payload_bytes_included, false);
+  assert.equal(response.body.perception_window.content_included, false);
+  assert.equal(response.body.boot_status.event_type, "perception_window_closed_by_process_restart");
+  assert.equal(response.body.boot_status.windows_resumed, false);
+  assert.equal(response.body.boot_status.durable_grants_rearmed, false);
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("raw visual perception window disarm closes floor and drops cached frames", async () => {
+  const envelope = modelVisualAttachActivationEnvelope();
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      window_ttl_ms: 1_000,
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.perception_window.active, true);
+  assert.equal(response.body.perception_window.window_ttl_ms, 1_000);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/disarm",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.perception_window.active, false);
+  assert.equal(response.body.perception_window.close_reason, "disarmed");
+  assert.equal(response.body.payload_bytes_included, false);
+  assert.equal(response.body.content_included, false);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/status",
+    body: {
+      actor: "operator",
+      request: envelope.body.request,
+      episode_status: "active",
+      run_posture: envelope.body.run_posture,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.allowed, false);
+  assert.equal(response.body.reason, "solo_attestation_missing");
+  assert.equal(response.body.perception_window.active, false);
+  assert.equal(response.body.attestation.present, false);
+  assert.equal(response.body.frame_read_performed, false);
   assert.equal(subscriber.readCalls.length, 0);
 });
 

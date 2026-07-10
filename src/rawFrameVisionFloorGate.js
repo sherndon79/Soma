@@ -215,12 +215,14 @@ function evaluateSoloAttestation({ soloAttestation, evaluatedAt, attestationTtlM
   }
   const issuedAt = parseDate(soloAttestation.issued_at || soloAttestation.attested_at || soloAttestation.created_at);
   const expiresAt = parseDate(soloAttestation.expires_at);
-  checks.solo_attestation_fresh = isFresh({
-    observedAt: issuedAt,
-    expiresAt,
-    evaluatedAt,
-    ttlMs: attestationTtlMs,
-  });
+  checks.solo_attestation_fresh = soloAttestation.perception_window_active === true
+    ? isActiveWindow({ issuedAt, expiresAt, evaluatedAt })
+    : isFresh({
+      observedAt: issuedAt,
+      expiresAt,
+      evaluatedAt,
+      ttlMs: attestationTtlMs,
+    });
   if (!checks.solo_attestation_fresh) {
     return { ok: false, reason: RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_STALE, checks };
   }
@@ -313,6 +315,16 @@ function isFresh({ observedAt, expiresAt, evaluatedAt, ttlMs } = {}) {
     return false;
   }
   return true;
+}
+
+function isActiveWindow({ issuedAt, expiresAt, evaluatedAt } = {}) {
+  if (!issuedAt || !expiresAt) {
+    return false;
+  }
+  const issuedMs = issuedAt.getTime();
+  const expiresMs = expiresAt.getTime();
+  const evaluatedMs = evaluatedAt.getTime();
+  return issuedMs <= evaluatedMs && evaluatedMs < expiresMs;
 }
 
 function refusal(reason, checks) {

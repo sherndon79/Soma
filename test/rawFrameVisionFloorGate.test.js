@@ -168,6 +168,37 @@ test("raw-frame vision floor gate refuses stale solo attestation", () => {
   );
 });
 
+test("raw-frame vision floor gate accepts active perception windows beyond one-shot ttl", () => {
+  const decision = decideRawFrameVisionFloorGate(green({
+    soloAttestation: {
+      ...green().soloAttestation,
+      input_origin: "trusted_run_control",
+      issued_at: "2026-07-09T16:59:00.000Z",
+      expires_at: "2026-07-09T19:00:00.000Z",
+      perception_window_active: true,
+    },
+  }));
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.reason, RAW_FRAME_VISION_FLOOR_REASONS.ALLOWED);
+  assert.equal(decision.checks.solo_attestation_fresh, true);
+});
+
+test("raw-frame vision floor gate refuses expired perception windows", () => {
+  assertDecision(
+    {
+      soloAttestation: {
+        ...green().soloAttestation,
+        input_origin: "trusted_run_control",
+        issued_at: "2026-07-09T16:59:00.000Z",
+        expires_at: "2026-07-09T17:59:59.000Z",
+        perception_window_active: true,
+      },
+    },
+    RAW_FRAME_VISION_FLOOR_REASONS.SOLO_ATTESTATION_STALE,
+  );
+});
+
 test("raw-frame vision floor gate refuses occupant-writable attestation", () => {
   assertDecision(
     { soloAttestation: { ...green().soloAttestation, input_origin: "occupant" } },

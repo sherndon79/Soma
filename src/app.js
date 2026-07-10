@@ -168,6 +168,8 @@ import {
 const DEFAULT_CHAT_TEMPERATURE = 0.7;
 const DEFAULT_TOOL_CALL_TEMPERATURE = 0.2;
 const MAX_POSE_JSON_BYTES = 256_000;
+const DEFAULT_PERCEPTION_WINDOW_TTL_MS = 60 * 60 * 1000;
+const MAX_PERCEPTION_WINDOW_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function createApp({
   harness,
@@ -339,6 +341,14 @@ export function createRequestHandler({
   const episodes = new Map();
   const forums = new Map();
   const rawVisualSoloAttestations = new Map();
+  const rawVisualPerceptionWindows = new Map();
+  const perceptionWindowBootFact = {
+    event_type: "perception_window_closed_by_process_restart",
+    windows_resumed: false,
+    durable_grants_rearmed: false,
+    payload_bytes_included: false,
+    content_included: false,
+  };
   if (typeof sensoriumSubscriber?.configurePresenceContext === "function") {
     sensoriumSubscriber.configurePresenceContext({
       presenceState: sensoriumPresenceState,
@@ -672,6 +682,14 @@ export function createRequestHandler({
         episode.updated_at = new Date().toISOString();
         desktopActuationTable.clearEpisode(episode.id);
         dropRawVisualFramesForControlClose(sensoriumSubscriber);
+        closeRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+          reason: "protective_control",
+          now: new Date(),
+          provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? actor,
+        });
+        rawVisualSoloAttestations.clear();
         const event = provenanceLog.append(createOccupantProtectionEvent({
           eventType: abortType,
           episodeId: episode.id,
@@ -821,6 +839,7 @@ export function createRequestHandler({
           });
           return;
         }
+        const now = new Date();
         const attestation = createRawVisualSoloAttestation({
           sourceHost,
           actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
@@ -828,17 +847,31 @@ export function createRequestHandler({
           sethConsented: body.seth_consented,
           activeControl: body.active_control,
           noOtherPersonInFrame: body.no_other_person_in_frame,
-          now: new Date(),
+          now,
         });
         rawVisualSoloAttestations.set(sourceHost, attestation);
+        const windowTtlMs = body?.window_ttl_ms !== undefined
+          ? normalizePerceptionWindowTtlMs(body.window_ttl_ms, { unit: "milliseconds" })
+          : normalizePerceptionWindowTtlMs(body?.window_ttl_seconds, { unit: "seconds" });
+        const perceptionWindow = createRawVisualPerceptionWindow({
+          sourceHost,
+          actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
+          assertions: body,
+          ttlMs: windowTtlMs,
+          now,
+        });
+        rawVisualPerceptionWindows.set(sourceHost, perceptionWindow);
         const event = provenanceLog.append({
           id: cryptoRandomId(),
           timestamp: attestation.issued_at,
-          event_type: "model_visual.floor_attestation.refreshed",
+          event_type: "model_visual.perception_window.armed",
           allowed: true,
           actor: stringValue(req.headers["x-soma-caller"] ?? body?.actor),
           source_host: sourceHost,
           attestation_issued_at: attestation.issued_at,
+          window_id: perceptionWindow.window_id,
+          window_expires_at: perceptionWindow.expires_at,
+          window_ttl_ms: perceptionWindow.window_ttl_ms,
           durable: false,
           payload_bytes_included: false,
           content_included: false,
@@ -848,6 +881,61 @@ export function createRequestHandler({
           accepted: true,
           source_host: sourceHost,
           attestation: byteFreeRawVisualSoloAttestation(attestation),
+          perception_window: byteFreeRawVisualPerceptionWindow(perceptionWindow, { now }),
+          provenance_id: event.id,
+          payload_bytes_included: false,
+          content_included: false,
+          activation_performed: false,
+          durable: false,
+        });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/model-visual/floor/disarm") {
+        const body = await readJson(req);
+        if (isOccupantModelVisualAttachCaller(body)) {
+          writeError(res, {
+            statusCode: 403,
+            code: "model_visual_floor_disarm_operator_required",
+            message: "Raw visual perception window disarm is restricted to operator run-control channels.",
+          });
+          return;
+        }
+        const sourceHost = stringValue(body?.source_host);
+        if (!sourceHost) {
+          writeError(res, {
+            statusCode: 400,
+            code: "model_visual_floor_disarm_source_host_required",
+            message: "Raw visual perception window disarm requires source_host.",
+          });
+          return;
+        }
+        const now = new Date();
+        const closed = closeRawVisualPerceptionWindow(rawVisualPerceptionWindows, sourceHost, {
+          reason: "disarmed",
+          now,
+          actor: req.headers["x-soma-caller"] ?? body?.actor ?? "",
+        });
+        rawVisualSoloAttestations.delete(sourceHost);
+        dropRawVisualFramesForControlClose(sensoriumSubscriber);
+        const event = provenanceLog.append({
+          id: cryptoRandomId(),
+          timestamp: now.toISOString(),
+          event_type: "model_visual.perception_window.disarmed",
+          allowed: true,
+          actor: stringValue(req.headers["x-soma-caller"] ?? body?.actor),
+          source_host: sourceHost,
+          window_id: closed.window_id,
+          close_reason: "disarmed",
+          durable: false,
+          payload_bytes_included: false,
+          content_included: false,
+        });
+        logger.info?.("soma.provenance", event);
+        writeJson(res, 200, {
+          accepted: true,
+          source_host: sourceHost,
+          perception_window: byteFreeRawVisualPerceptionWindow(closed, { now }),
           provenance_id: event.id,
           payload_bytes_included: false,
           content_included: false,
@@ -887,7 +975,19 @@ export function createRequestHandler({
         const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.runtime_profile_id);
         const sourceHost = sourceHostForVisualAttachRequest(request);
         const now = new Date();
-        const soloAttestation = rawVisualSoloAttestations.get(sourceHost) ?? null;
+        const expiredWindows = expireRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+          now,
+          provenanceLog,
+          logger,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
+        for (const expired of expiredWindows) {
+          rawVisualSoloAttestations.delete(expired.source_host);
+        }
+        const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
+        const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
+          ?? rawVisualSoloAttestations.get(sourceHost)
+          ?? null;
         const floorGateDecision = decideRawFrameVisionFloorGate({
           runPosture: body?.run_posture,
           episodeStatus: body?.episode_status,
@@ -922,6 +1022,8 @@ export function createRequestHandler({
           source_subscription_id: request.source_subscription_ids[0],
           modality: request.payload_type,
           attestation: byteFreeRawVisualSoloAttestation(soloAttestation),
+          perception_window: byteFreeRawVisualPerceptionWindow(perceptionWindow, { now }),
+          boot_status: perceptionWindowBootFact,
           payload_bytes_included: false,
           content_included: false,
           frame_read_performed: false,
@@ -4226,6 +4328,14 @@ export function createRequestHandler({
             desktopActuationTable.clearEpisode(updatedEpisode.id);
           }
           dropRawVisualFramesForControlClose(sensoriumSubscriber);
+          closeRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+            reason: "protective_control",
+            now: new Date(),
+            provenanceLog,
+            logger,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          rawVisualSoloAttestations.clear();
           const allowedProvenance = {
             ...provenance,
             event_type: "model.chat.completed",
@@ -4300,6 +4410,14 @@ export function createRequestHandler({
           const episodeStatusBefore = episodeState.status;
           const updatedEpisode = applyOccupantProtectionControl(episodeState, "pause");
           dropRawVisualFramesForControlClose(sensoriumSubscriber);
+          closeRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+            reason: "protective_control",
+            now: new Date(),
+            provenanceLog,
+            logger,
+            caller: req.headers["x-soma-caller"] ?? "",
+          });
+          rawVisualSoloAttestations.clear();
           const allowedProvenance = {
             ...provenance,
             event_type: "model.chat.completed",
@@ -6668,11 +6786,19 @@ function summarizeRawVisualFloorGateInputs({
     source_subscription_host_matches: Boolean(expectedHost && presenceHostForSubscription(sourceSubscription) === expectedHost),
     solo_attestation_present: Boolean(soloAttestationPresent),
     solo_attestation_origin: attestationOrigin,
-    solo_attestation_fresh: soloAttestationPresent && rawVisualFloorDateIsFresh({
-      observedAt: attestationIssuedAt,
-      evaluatedAt,
-      ttlMs: 60_000,
-    }),
+    solo_attestation_fresh: soloAttestationPresent && (
+      soloAttestation?.perception_window_active === true
+        ? rawVisualWindowIsActive({
+          issuedAt: attestationIssuedAt,
+          expiresAt: parseRawVisualFloorDate(soloAttestation?.expires_at),
+          evaluatedAt,
+        })
+        : rawVisualFloorDateIsFresh({
+          observedAt: attestationIssuedAt,
+          evaluatedAt,
+          ttlMs: 60_000,
+        })
+    ),
     solo_attestation_non_occupant_writable: soloAttestationPresent && !soloAttestationOccupantWritable,
     solo_attestation_seth_present_and_consenting: soloAttestation?.seth_present === true &&
       soloAttestation?.seth_consented === true &&
@@ -6721,6 +6847,13 @@ function rawVisualFloorDateIsFresh({ observedAt, expiresAt = null, evaluatedAt, 
     return false;
   }
   return true;
+}
+
+function rawVisualWindowIsActive({ issuedAt, expiresAt, evaluatedAt } = {}) {
+  if (!issuedAt || !expiresAt) {
+    return false;
+  }
+  return issuedAt.getTime() <= evaluatedAt.getTime() && evaluatedAt.getTime() < expiresAt.getTime();
 }
 
 function parseRawVisualFloorDate(value) {
@@ -7349,6 +7482,210 @@ function createRawVisualSoloAttestation({
   };
 }
 
+function normalizePerceptionWindowTtlMs(value, { unit = "milliseconds" } = {}) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_PERCEPTION_WINDOW_TTL_MS;
+  }
+  const ttlMs = unit === "seconds" ? Math.round(raw * 1000) : Math.round(raw);
+  return Math.min(Math.max(1_000, ttlMs), MAX_PERCEPTION_WINDOW_TTL_MS);
+}
+
+function createRawVisualPerceptionWindow({
+  sourceHost = "",
+  actor = "",
+  assertions = {},
+  ttlMs = DEFAULT_PERCEPTION_WINDOW_TTL_MS,
+  now = new Date(),
+} = {}) {
+  const issuedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const normalizedTtlMs = normalizePerceptionWindowTtlMs(ttlMs);
+  const expiresAt = new Date(issuedAt.getTime() + normalizedTtlMs);
+  return {
+    window_id: `perception-window-${cryptoRandomId()}`,
+    status: "active",
+    source_host: stringValue(sourceHost),
+    origin: "trusted_run_control",
+    input_origin: "trusted_run_control",
+    issued_at: issuedAt.toISOString(),
+    expires_at: expiresAt.toISOString(),
+    window_ttl_ms: normalizedTtlMs,
+    seth_present: assertions.seth_present === true,
+    seth_consented: assertions.seth_consented === true,
+    active_control: assertions.active_control === true,
+    no_other_person_in_frame: assertions.no_other_person_in_frame === true,
+    occupant_writable: false,
+    refreshed_by: stringValue(actor) || "operator",
+    perception_window_active: true,
+    durable: false,
+    runtime_scoped: true,
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
+function perceptionWindowAttestation(window = null, { now = new Date() } = {}) {
+  if (!isActiveRawVisualPerceptionWindow(window, { now })) {
+    return null;
+  }
+  return {
+    ...window,
+    issued_at: stringValue(window.issued_at),
+    expires_at: stringValue(window.expires_at),
+    perception_window_active: true,
+  };
+}
+
+function isActiveRawVisualPerceptionWindow(window = null, { now = new Date() } = {}) {
+  if (!window || typeof window !== "object" || Array.isArray(window) || window.status !== "active") {
+    return false;
+  }
+  const evaluatedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const issuedAt = parseRawVisualFloorDate(window.issued_at);
+  const expiresAt = parseRawVisualFloorDate(window.expires_at);
+  return Boolean(
+    issuedAt &&
+    expiresAt &&
+    issuedAt.getTime() <= evaluatedAt.getTime() &&
+    evaluatedAt.getTime() < expiresAt.getTime(),
+  );
+}
+
+function closeRawVisualPerceptionWindow(windows, sourceHost = "", {
+  reason = "closed",
+  now = new Date(),
+  actor = "",
+} = {}) {
+  const existing = windows.get(sourceHost);
+  const closedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const closed = {
+    ...(existing || {
+      window_id: "",
+      source_host: stringValue(sourceHost),
+      issued_at: "",
+      expires_at: "",
+      window_ttl_ms: 0,
+      durable: false,
+      runtime_scoped: true,
+    }),
+    status: "closed",
+    closed_at: closedAt.toISOString(),
+    close_reason: stringValue(reason) || "closed",
+    closed_by: stringValue(actor),
+    perception_window_active: false,
+    payload_bytes_included: false,
+    content_included: false,
+  };
+  windows.delete(sourceHost);
+  return closed;
+}
+
+function closeRawVisualPerceptionWindows(windows, {
+  reason = "closed",
+  now = new Date(),
+  provenanceLog = null,
+  logger = console,
+  caller = "",
+} = {}) {
+  const closed = [];
+  for (const sourceHost of Array.from(windows.keys())) {
+    const entry = closeRawVisualPerceptionWindow(windows, sourceHost, {
+      reason,
+      now,
+      actor: caller,
+    });
+    closed.push(entry);
+    const event = provenanceLog?.append?.({
+      id: cryptoRandomId(),
+      timestamp: entry.closed_at,
+      event_type: "model_visual.perception_window.closed",
+      allowed: true,
+      source_host: entry.source_host,
+      window_id: entry.window_id,
+      close_reason: entry.close_reason,
+      caller: stringValue(caller),
+      durable: false,
+      payload_bytes_included: false,
+      content_included: false,
+    });
+    if (event) {
+      logger.info?.("soma.provenance", event);
+    }
+  }
+  return closed;
+}
+
+function expireRawVisualPerceptionWindows(windows, {
+  now = new Date(),
+  provenanceLog = null,
+  logger = console,
+  caller = "",
+} = {}) {
+  const evaluatedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const expired = [];
+  for (const [sourceHost, window] of Array.from(windows.entries())) {
+    if (!isActiveRawVisualPerceptionWindow(window, { now: evaluatedAt })) {
+      const closed = closeRawVisualPerceptionWindow(windows, sourceHost, {
+        reason: "expired",
+        now: evaluatedAt,
+        actor: caller,
+      });
+      expired.push(closed);
+      const event = provenanceLog?.append?.({
+        id: cryptoRandomId(),
+        timestamp: evaluatedAt.toISOString(),
+        event_type: "model_visual.perception_window.expired",
+        allowed: true,
+        source_host: sourceHost,
+        window_id: stringValue(window.window_id),
+        close_reason: "expired",
+        caller: stringValue(caller),
+        durable: false,
+        payload_bytes_included: false,
+        content_included: false,
+      });
+      if (event) {
+        logger.info?.("soma.provenance", event);
+      }
+    }
+  }
+  return expired;
+}
+
+function byteFreeRawVisualPerceptionWindow(window = null, { now = new Date() } = {}) {
+  if (!window || typeof window !== "object" || Array.isArray(window)) {
+    return {
+      active: false,
+      source_host: "",
+      runtime_scoped: true,
+      durable: false,
+      payload_bytes_included: false,
+      content_included: false,
+    };
+  }
+  const evaluatedAt = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const expiresAt = parseRawVisualFloorDate(window.expires_at);
+  return {
+    active: isActiveRawVisualPerceptionWindow(window, { now: evaluatedAt }),
+    status: stringValue(window.status),
+    window_id: stringValue(window.window_id),
+    source_host: stringValue(window.source_host),
+    issued_at: stringValue(window.issued_at),
+    expires_at: stringValue(window.expires_at),
+    expires_in_seconds: expiresAt
+      ? Math.max(0, Math.ceil((expiresAt.getTime() - evaluatedAt.getTime()) / 1000))
+      : null,
+    window_ttl_ms: Number.isFinite(window.window_ttl_ms) ? window.window_ttl_ms : 0,
+    close_reason: stringValue(window.close_reason),
+    closed_at: stringValue(window.closed_at),
+    runtime_scoped: window.runtime_scoped !== false,
+    durable: false,
+    occupant_writable: window.occupant_writable === true,
+    payload_bytes_included: false,
+    content_included: false,
+  };
+}
+
 function byteFreeRawVisualSoloAttestation(attestation = null) {
   if (!attestation || typeof attestation !== "object" || Array.isArray(attestation)) {
     return {
@@ -7368,6 +7705,8 @@ function byteFreeRawVisualSoloAttestation(attestation = null) {
     seth_consented: attestation.seth_consented === true,
     active_control: attestation.active_control === true,
     no_other_person_in_frame: attestation.no_other_person_in_frame === true,
+    perception_window_active: attestation.perception_window_active === true,
+    expires_at: stringValue(attestation.expires_at),
     occupant_writable: attestation.occupant_writable === true,
     payload_bytes_included: false,
     content_included: false,

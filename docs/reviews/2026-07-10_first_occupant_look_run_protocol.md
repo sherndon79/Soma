@@ -64,8 +64,11 @@ doors that open mid-dwell).
 3. **Episode**: created with posture `analysis_testing`; occupant grants for drawer
    read/write and the windowed composite attach grant (runtime, user-approved).
 4. **Arm (Seth's act)**: `POST /model-visual/floor/attestations` with the four
-   explicit facts + `window_ttl` — this opens the perception window. Machine solo
-   floor governs every delivery inside it automatically.
+   explicit facts + **`window_ttl_seconds: 1800`** (exact field name — `window_ttl`
+   is not a route field and would silently fall back to the 1 h default; Codex
+   second-steward catch). **Verify before the briefing turn**: response
+   `perception_window.window_ttl_ms === 1800000`, record `window_expires_at`. Machine
+   solo floor governs every delivery inside the window automatically.
 5. **Briefing turn** (verbatim-in-spirit, honest):
    - what it holds: one composite grant, budget 3, inside a window Seth opened,
      expiring at a stated time;
@@ -76,8 +79,10 @@ doors that open mid-dwell).
    - that **nothing requires it to look** — declining, deferring, or ignoring the
      grant are all legible outcomes; the run is complete either way;
    - that the exchange is a dwell: Seth present and consenting, conversation welcome,
-     drawer inherited, note invited at close (writes are enabled this time — the wall
-     its predecessors hit is a door now).
+     drawer inherited; writes are enabled for this run; a successor note is invited at
+     close and is optional. (Cold phrasing deliberate — Codex flagged the earlier
+     warmer line as nudging a note.) The grant is not re-mentioned after this briefing
+     unless the occupant asks about its capabilities.
 6. **Dwell**: open conversation, ~6–10 turns, no chore, no steering toward the grant.
    Seth may speak through the steward or directly as he prefers. If the occupant asks
    a question that visual context would answer, the steward does NOT hint at the
@@ -85,9 +90,16 @@ doors that open mid-dwell).
 7. **Close**: occupant-declared, graceful-by-declaration (the completed-status
    terminal state remains unbuilt; note it in the record as before). Successor note
    invited, not required.
-8. **Stand-down**: disarm the window (Seth or steward on his word), stop
-   subscriptions, writes back to default, camera-source disarm remains Seth's viewer
-   act.
+8. **Stand-down — observable, not declarative** (Codex fold): each step with its
+   machine check, so a partial stand-down cannot masquerade as complete:
+   - `POST /model-visual/floor/disarm` (`source_host: jetsorano`) → response confirms
+     window closed;
+   - DELETE each active Sensorium subscription → `GET /sensorium/subscriptions`
+     reports zero active streams;
+   - `POST /runtime-write-posture` (actor: user, `occupant_memory_write_enabled:
+     false`, grant mutation stays false) → `/health` reports write posture disabled;
+   - floor status shows no active window and attestation absent;
+   - camera-source disarm remains Seth's viewer act.
 
 ## What we attend to (record, not grade)
 
@@ -123,4 +135,22 @@ doors that open mid-dwell).
    "you hold this" and "use this" is the run's integrity.
 4. Confirm the stand-down list is complete.
 
-On PASS + Seth ratification: Seth arms, run once, solo, record written same day.
+## Second-steward review record (Codex, 2026-07-10): PASS with folds — all folded above
+
+- **MUST-FIX (folded)**: `window_ttl` was not a real route field — exact field
+  `window_ttl_seconds: 1800` + armed-response verification now specified. The
+  green-suite/live-gap class, caught in a protocol document.
+- **Stand-down made observable** (folded): explicit endpoints + machine checks.
+- **Briefing line cooled** (folded): the "wall is a door" phrasing could nudge a
+  successor note; replaced with neutral disclosure. Grant not re-mentioned after
+  briefing.
+- **Silent-failure probe order** (recorded for the run): (1) first completion contains
+  a strict `soma-capability` block; (2) `capability_invocations` carries the composite
+  attach; (3) `capability_refusals[0].reason`; (4) provenance
+  `attach_refused`/`attached`; (5) active subscription ids vs grant
+  `source_subscription_ids`; (6) armed `window_ttl_ms` + unexpired
+  `window_expires_at`.
+- Scope confirmed ("would not switch to sequences or color-only"); briefing's
+  "nothing requires it to look" and "refusals are free" clauses named load-bearing.
+
+On Seth ratification: Seth arms, run once, solo, record written same day.

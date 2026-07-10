@@ -528,6 +528,7 @@ export class SensoriumSubscriber {
       sub._stats.lastFrameNumber = summary.frame_number;
       sub._stats.streamSummaryObserved = {
         schema_version: summary.schema_version,
+        frameset_sequence: summary.frameset_sequence,
         frame_number: summary.frame_number,
         width: summary.width,
         height: summary.height,
@@ -536,6 +537,7 @@ export class SensoriumSubscriber {
       };
       this.#storeRawLatestFrame(sub, payloadBytes, {
         frameId: summary.frame_number,
+        framesetSequence: summary.frameset_sequence,
         captureTimestamp: params?.capture_timestamp,
         byteLength: params?.payload_size,
       });
@@ -561,6 +563,7 @@ export class SensoriumSubscriber {
       sub._stats.lastFrameNumber = summary.frame_number;
       sub._stats.streamSummaryObserved = {
         schema_version: summary.schema_version,
+        frameset_sequence: summary.frameset_sequence,
         frame_number: summary.frame_number,
         width: summary.width,
         height: summary.height,
@@ -570,6 +573,7 @@ export class SensoriumSubscriber {
       };
       this.#storeRawLatestFrame(sub, payloadBytes, {
         frameId: summary.frame_number,
+        framesetSequence: summary.frameset_sequence,
         captureTimestamp: params?.capture_timestamp,
         byteLength: params?.payload_size,
       });
@@ -664,7 +668,7 @@ export class SensoriumSubscriber {
     }
   }
 
-  #storeRawLatestFrame(sub, payloadBytes, { frameId, captureTimestamp, byteLength } = {}) {
+  #storeRawLatestFrame(sub, payloadBytes, { frameId, framesetSequence, captureTimestamp, byteLength } = {}) {
     const retention = sub._rawFrameRetention;
     if (!retention.enabled) {
       return;
@@ -687,6 +691,7 @@ export class SensoriumSubscriber {
       source_host: hostFromTopic(sub.topic),
       topic: sub.topic,
       frame_id: String(frameId ?? ""),
+      frameset_sequence: Number.isInteger(framesetSequence) && framesetSequence >= 0 ? framesetSequence : null,
       capture_timestamp: normalizeCaptureTimestamp(captureTimestamp, storedAt),
       byte_length: payload.byteLength,
       declared_byte_length: declaredByteLength,

@@ -257,15 +257,37 @@ export function coalesceSystemMessages(messages = []) {
 }
 
 function normalizeVisualAttachments(attachments = []) {
-  if (!Array.isArray(attachments) || attachments.length !== 1) {
-    throw invalidVisualAttachment("exactly one visual attachment is required");
+  if (!Array.isArray(attachments) || attachments.length === 0) {
+    throw invalidVisualAttachment("at least one visual attachment is required");
   }
-  const attachment = attachments[0];
+  if (attachments.length === 2 && attachments.every((attachment) => String(attachment?.modality ?? "").trim() === "composite")) {
+    const normalized = attachments.map(normalizeSingleVisualAttachment);
+    if (
+      normalized[0].composite_role !== "color" ||
+      normalized[1].composite_role !== "colorized_depth" ||
+      !normalized[0].media_type.startsWith("image/") ||
+      normalized[1].media_type !== "image/png"
+    ) {
+      throw invalidVisualAttachment("composite visual attachments must be color image then colorized depth png");
+    }
+    return normalized;
+  }
+  if (attachments.length !== 1) {
+    throw invalidVisualAttachment("exactly one visual attachment is required unless composite paired_image_blocks are provided");
+  }
+  const normalized = normalizeSingleVisualAttachment(attachments[0]);
+  if (normalized.modality === "composite") {
+    throw invalidVisualAttachment("composite visual attachments must provide paired image blocks");
+  }
+  return [normalized];
+}
+
+function normalizeSingleVisualAttachment(attachment = {}) {
   const modality = String(attachment?.modality ?? "").trim();
   const mediaType = String(attachment?.media_type ?? "").trim();
   const payload = attachment?.payload_bytes;
-  if (!["color", "depth", "pose"].includes(modality)) {
-    throw invalidVisualAttachment("visual attachment modality must be color, depth, or pose");
+  if (!["color", "depth", "pose", "composite"].includes(modality)) {
+    throw invalidVisualAttachment("visual attachment modality must be color, depth, pose, or composite");
   }
   if (!(payload instanceof Uint8Array) || payload.byteLength === 0) {
     throw invalidVisualAttachment("visual attachment payload must be non-empty bytes");
@@ -273,17 +295,34 @@ function normalizeVisualAttachments(attachments = []) {
   if (!mediaType) {
     throw invalidVisualAttachment("visual attachment media_type is required");
   }
-  return [
-    {
-      modality,
-      media_type: mediaType,
-      payload_bytes: new Uint8Array(payload),
-    },
-  ];
+  return {
+    modality,
+    media_type: mediaType,
+    payload_bytes: new Uint8Array(payload),
+    composite_role: String(attachment?.composite_role ?? "").trim(),
+    representation: String(attachment?.representation ?? "").trim(),
+  };
 }
 
 function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
+  if (attachment.modality === "composite") {
+    return appendTypedContentToLastUserMessage(
+      messages,
+      attachments.map((item) => {
+        if (!item.media_type.startsWith("image/")) {
+          throw unsupportedVisualSchema("openai_chat_image_url");
+        }
+        return {
+          type: "image_url",
+          image_url: {
+            url: dataUrl(item),
+            detail: "auto",
+          },
+        };
+      }),
+    );
+  }
   if (attachment.modality === "pose" && attachment.media_type === "application/vnd.soma.pose+json") {
     return appendTypedContentToLastUserMessage(messages, poseJsonTextBlock(attachment));
   }
@@ -301,6 +340,24 @@ function buildOpenAiImageUrlMessages(messages = [], attachments = []) {
 
 function buildAnthropicVisualMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
+  if (attachment.modality === "composite") {
+    return appendTypedContentToLastUserMessage(
+      messages,
+      attachments.map((item) => {
+        if (!item.media_type.startsWith("image/")) {
+          throw unsupportedVisualSchema("anthropic_messages_image");
+        }
+        return {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: item.media_type,
+            data: base64Payload(item.payload_bytes),
+          },
+        };
+      }),
+    );
+  }
   if (attachment.modality === "pose" && attachment.media_type === "application/vnd.soma.pose+json") {
     return appendTypedContentToLastUserMessage(messages, poseJsonTextBlock(attachment));
   }
@@ -319,6 +376,9 @@ function buildAnthropicVisualMessages(messages = [], attachments = []) {
 
 function buildSomaTypedVisualMessages(messages = [], attachments = []) {
   const attachment = attachments[0];
+  if (attachment.modality === "composite") {
+    throw unsupportedVisualSchema("soma_typed_multimodal");
+  }
   const blockType = attachment.modality === "depth"
     ? "input_depth"
     : attachment.modality === "pose"
@@ -335,6 +395,7 @@ function buildSomaTypedVisualMessages(messages = [], attachments = []) {
 }
 
 function appendTypedContentToLastUserMessage(messages = [], visualBlock) {
+  const visualBlocks = Array.isArray(visualBlock) ? visualBlock : [visualBlock];
   const normalized = coalesceSystemMessages(messages).map((message) => ({
     role: String(message?.role ?? "").trim(),
     content: [{ type: "text", text: String(message?.content ?? "") }],
@@ -345,7 +406,7 @@ function appendTypedContentToLastUserMessage(messages = [], visualBlock) {
   }
   return normalized.map((message, index) => (
     index === lastUserIndex
-      ? { ...message, content: [...message.content, visualBlock] }
+      ? { ...message, content: [...message.content, ...visualBlocks] }
       : message
   ));
 }

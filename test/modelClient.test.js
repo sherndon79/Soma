@@ -309,6 +309,74 @@ test("ModelClient sends colorized depth PNG as an image block for Anthropic sche
   }
 });
 
+test("ModelClient sends composite paired image blocks as adjacent Anthropic images", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  try {
+    let captured;
+    const client = new ModelClient({
+      runtime: "anthropic-messages",
+      model: "claude-composite",
+      async fetchImpl(url, options) {
+        captured = { url, options };
+        return {
+          ok: true,
+          async json() {
+            return {
+              model: "claude-composite",
+              content: [{ type: "text", text: "paired ok" }],
+              stop_reason: "end_turn",
+              usage: { input_tokens: 4, output_tokens: 5 },
+            };
+          },
+        };
+      },
+    });
+
+    await client.chatWithVisualAttachments({
+      messages: [{ role: "user", content: "paired once" }],
+      attachments: [
+        {
+          modality: "composite",
+          composite_role: "color",
+          media_type: "image/jpeg",
+          payload_bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]),
+        },
+        {
+          modality: "composite",
+          composite_role: "colorized_depth",
+          media_type: "image/png",
+          payload_bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+        },
+      ],
+      visualAttachmentSchema: "anthropic_messages_image",
+    });
+
+    const body = JSON.parse(captured.options.body);
+    assert.deepEqual(body.messages[0].content, [
+      { type: "text", text: "paired once" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
+          data: "/9j/2Q==",
+        },
+      },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "iVBORw==",
+        },
+      },
+    ]);
+  } finally {
+    restoreEnv("ANTHROPIC_API_KEY", previousKey);
+  }
+});
+
 test("ModelClient sends pose JSON as a separate labeled Anthropic text block", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";

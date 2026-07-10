@@ -6,6 +6,7 @@ const CONTRACTS = {
     risk_class: "restricted",
     allowed_summary_fields: [
       "schema_version",
+      "frameset_sequence",
       "frame_number",
       "width",
       "height",
@@ -34,6 +35,7 @@ const CONTRACTS = {
     risk_class: "restricted",
     allowed_summary_fields: [
       "schema_version",
+      "frameset_sequence",
       "frame_number",
       "width",
       "height",
@@ -98,6 +100,12 @@ export function assertSensoriumSummaryWithinContract(capability, summary) {
 
   if (!Number.isInteger(summary.schema_version)) {
     errors.push("summary.schema_version must be an integer");
+  }
+  if (
+    "frameset_sequence" in summary &&
+    (!Number.isInteger(summary.frameset_sequence) || summary.frameset_sequence < 0)
+  ) {
+    errors.push("summary.frameset_sequence must be a non-negative integer");
   }
   if (
     "frame_number" in summary &&

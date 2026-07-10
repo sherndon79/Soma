@@ -29,34 +29,29 @@ export function encodeStatusPayload({
 export function encodeColorPayload({
   schema_version = 1,
   timestamp = 1_779_000_001.25,
+  frameset_sequence,
   frame_number = 42,
   width = 1280,
   height = 720,
   format = "jpeg",
   data = [0xff, 0xd8, 0xff, 0xd9],
 } = {}) {
-  return [
-    ...mapHeader(7),
-    ...str("schema_version"),
-    ...uint(schema_version),
-    ...str("timestamp"),
-    ...float64(timestamp),
-    ...str("frame_number"),
-    ...uint(frame_number),
-    ...str("width"),
-    ...uint(width),
-    ...str("height"),
-    ...uint(height),
-    ...str("format"),
-    ...str(format),
-    ...str("data"),
-    ...bin(data),
-  ];
+  return encodeAny(stripUndefined({
+    schema_version,
+    timestamp,
+    frameset_sequence,
+    frame_number,
+    width,
+    height,
+    format,
+    data: new Uint8Array(data),
+  }));
 }
 
 export function encodeDepthPayload({
   schema_version = 1,
   timestamp = 1_779_000_001.25,
+  frameset_sequence,
   frame_number = 42,
   width = 1280,
   height = 720,
@@ -64,25 +59,17 @@ export function encodeDepthPayload({
   depth_units = 0.001,
   data = [0x89, 0x50, 0x4e, 0x47],
 } = {}) {
-  return [
-    ...mapHeader(8),
-    ...str("schema_version"),
-    ...uint(schema_version),
-    ...str("timestamp"),
-    ...float64(timestamp),
-    ...str("frame_number"),
-    ...uint(frame_number),
-    ...str("width"),
-    ...uint(width),
-    ...str("height"),
-    ...uint(height),
-    ...str("format"),
-    ...str(format),
-    ...str("depth_units"),
-    ...float64(depth_units),
-    ...str("data"),
-    ...bin(data),
-  ];
+  return encodeAny(stripUndefined({
+    schema_version,
+    timestamp,
+    frameset_sequence,
+    frame_number,
+    width,
+    height,
+    format,
+    depth_units,
+    data: new Uint8Array(data),
+  }));
 }
 
 export function encodePresencePayload({
@@ -266,4 +253,10 @@ function encodeAny(value) {
     ];
   }
   throw new TypeError(`unsupported msgpack test value: ${String(value)}`);
+}
+
+function stripUndefined(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  );
 }

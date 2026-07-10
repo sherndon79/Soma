@@ -15,6 +15,7 @@ test("color stream contract documents allowed summary fields and excluded conten
   assert.equal(contract.expected_schema_version, 1);
   assert.deepEqual(contract.allowed_summary_fields, [
     "schema_version",
+    "frameset_sequence",
     "frame_number",
     "width",
     "height",
@@ -120,6 +121,7 @@ test("depth stream contract documents allowed summary fields and excluded conten
   assert.equal(contract.expected_schema_version, 1);
   assert.deepEqual(contract.allowed_summary_fields, [
     "schema_version",
+    "frameset_sequence",
     "frame_number",
     "width",
     "height",

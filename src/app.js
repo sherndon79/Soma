@@ -1222,6 +1222,7 @@ export function createRequestHandler({
           return;
         }
         if (frame.composite_pairing_refused === true) {
+          const refusalReason = stringValue(frame.composite_pairing_refusal_reason) || "composite_pairing_skew_exceeded";
           const event = appendModelVisualAttachProvenanceEvent({
             provenanceLog,
             logger,
@@ -1232,7 +1233,7 @@ export function createRequestHandler({
             sourceSubscription,
             frame,
             floorGateDecision,
-            reason: "composite_pairing_skew_exceeded",
+            reason: refusalReason,
             failedGateInput: "composite_pairing",
             frameAgeMs: frame.max_frame_age_ms,
             modelDeliveryPerformed: false,
@@ -1241,10 +1242,12 @@ export function createRequestHandler({
           });
           writeJson(res, 409, {
             error: "model_visual_attach_frame_unavailable",
-            reason: "composite_pairing_skew_exceeded",
+            reason: refusalReason,
             provenance_id: event.id,
+            pairing_method: frame.pairing_method,
             pairing_skew_ms: frame.pairing_skew_ms,
             max_pairing_skew_ms: request.max_pairing_skew_ms,
+            frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
             activation_performed: false,
             subscription_activated: false,
             model_delivery_performed: false,
@@ -1291,15 +1294,14 @@ export function createRequestHandler({
         }
 
         let completion = null;
+        let deliveredAttachments = [];
         let deliveredAttachment = null;
         if (modelDeliveryRequested) {
           try {
-            deliveredAttachment = modelVisualAttachmentFromFrame({ request, frame, profile });
+            deliveredAttachments = modelVisualAttachmentsFromFrame({ request, frame, profile });
+            deliveredAttachment = modelVisualAttachmentSummary({ request, frame, attachments: deliveredAttachments });
           } catch (err) {
-            sensoriumSubscriber.dropRawFrames?.({
-              subscriptionId: frame.subscription_id,
-              modality: frame.modality,
-            });
+            dropModelVisualAttachFrames({ request, frame, sensoriumSubscriber });
             const event = appendModelVisualAttachProvenanceEvent({
               provenanceLog,
               logger,
@@ -1334,7 +1336,7 @@ export function createRequestHandler({
           if (modelDeliveryRequested) {
             completion = await deliveryProfileClient.chatWithVisualAttachments({
               messages: deliveryMessages,
-              attachments: [deliveredAttachment],
+              attachments: deliveredAttachments,
               model: profile.model,
               maxTokens: numberOrDefault(body.max_tokens, 512),
               temperature: numberOrDefault(body.temperature, DEFAULT_CHAT_TEMPERATURE),
@@ -1426,7 +1428,7 @@ export function createRequestHandler({
           payload_attached: true,
           payload_bytes_included: false,
           payload_bytes_returned: false,
-          visual_attachment_count: modelDeliveryRequested ? 1 : 0,
+          visual_attachment_count: modelDeliveryRequested ? deliveredAttachments.length : 0,
           typed_visual_content: modelDeliveryRequested,
           attachment_persisted: false,
           completion: completion
@@ -1445,6 +1447,7 @@ export function createRequestHandler({
             source_host: frame.source_host,
             topic: frame.topic,
             frame_id: frame.frame_id,
+            frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
             capture_timestamp: frame.capture_timestamp,
             byte_length: deliveredAttachment?.byte_length ?? frame.byte_length,
             envelope_byte_length: frame.byte_length,
@@ -1455,6 +1458,7 @@ export function createRequestHandler({
             depth_units: Number.isFinite(deliveredAttachment?.depth_units) ? deliveredAttachment.depth_units : null,
             source_frames: normalizeCompositeSourceFrames(frame.source_frames),
             source_frame_ids: normalizeCatalogStringArray(deliveredAttachment?.source_frame_ids || frame.source_frame_ids, []),
+            pairing_method: stringValue(deliveredAttachment?.pairing_method || frame.pairing_method),
             pairing_skew_ms: Number.isFinite(deliveredAttachment?.pairing_skew_ms)
               ? deliveredAttachment.pairing_skew_ms
               : (Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null),
@@ -6419,6 +6423,7 @@ function createRawVisualTaint({
     pairing_skew_ms: Number.isFinite(attachment?.pairing_skew_ms)
       ? attachment.pairing_skew_ms
       : (Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null),
+    pairing_method: stringValue(attachment?.pairing_method || frame.pairing_method),
     floor_gate_reason: floorGateDecision.reason ?? "",
     payload_bytes_included: false,
     content_included: false,
@@ -6484,6 +6489,7 @@ function normalizeRawVisualTaint(value = null) {
     source_frame_ids: normalizeCatalogStringArray(value.source_frame_ids, []),
     source_frames: normalizeCompositeSourceFrames(value.source_frames),
     pairing_skew_ms: Number.isFinite(value.pairing_skew_ms) ? value.pairing_skew_ms : null,
+    pairing_method: stringValue(value.pairing_method),
     floor_gate_reason: stringValue(value.floor_gate_reason),
     payload_bytes_included: false,
     content_included: false,
@@ -6546,6 +6552,10 @@ function appendModelVisualAttachProvenanceEvent({
     pairing_skew_ms: Number.isFinite(attachment?.pairing_skew_ms)
       ? attachment.pairing_skew_ms
       : (Number.isFinite(frame?.pairing_skew_ms) ? frame.pairing_skew_ms : null),
+    pairing_method: stringValue(attachment?.pairing_method || frame?.pairing_method),
+    visual_attachment_count: Number.isInteger(attachment?.visual_attachment_count)
+      ? attachment.visual_attachment_count
+      : (modelDeliveryPerformed === true ? 1 : 0),
     floor_gate_decision: summarizeRawFrameVisionFloorGate(floorGateDecision),
     floor_gate_failed_input: stringValue(failedGateInput),
     refusal_reason: stringValue(reason),
@@ -6864,7 +6874,7 @@ function validateModelVisualDeliveryProfile(profile = {}, modality = "", request
     return requestedModality === "color" ||
       (requestedModality === "depth" && stringValue(profile.depth_representation) === "colorized_png") ||
       (requestedModality === "pose" && stringValue(profile.pose_representation) === "pose_json") ||
-      (requestedModality === "composite" && stringValue(profile.composite_representation) === "side_by_side_svg")
+      (requestedModality === "composite" && stringValue(profile.composite_representation) === "paired_image_blocks")
       ? { allowed: true, schema }
       : { allowed: false, reason: "profile_schema_does_not_support_depth_or_pose" };
   }
@@ -6922,7 +6932,17 @@ function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, 
   const colorTime = Date.parse(colorFrame.capture_timestamp);
   const depthTime = Date.parse(depthFrame.capture_timestamp);
   const pairingSkewMs = Math.abs(colorTime - depthTime);
-  if (!Number.isFinite(pairingSkewMs) || pairingSkewMs > request.max_pairing_skew_ms) {
+  const colorSequence = nonNegativeIntegerOrNull(colorFrame.frameset_sequence);
+  const depthSequence = nonNegativeIntegerOrNull(depthFrame.frameset_sequence);
+  const hasColorSequence = colorSequence !== null;
+  const hasDepthSequence = depthSequence !== null;
+  const pairingMethod = hasColorSequence && hasDepthSequence
+    ? "frameset_sequence"
+    : "capture_timestamp_fallback";
+  const sequenceMismatch = pairingMethod === "frameset_sequence" && colorSequence !== depthSequence;
+  const timestampSkewExceeded = pairingMethod === "capture_timestamp_fallback" &&
+    (!Number.isFinite(pairingSkewMs) || pairingSkewMs > request.max_pairing_skew_ms);
+  if (sequenceMismatch || timestampSkewExceeded) {
     return {
       subscription_id: `${colorSubscriptionId}+${depthSubscriptionId}`,
       source_grant_id: stringValue(request.source_grant_id),
@@ -6937,9 +6957,14 @@ function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, 
       retention_mode: "latest_frame_cache",
       source_frames: compositeSourceFrames(colorFrame, depthFrame),
       source_frame_ids: [stringValue(colorFrame.frame_id), stringValue(depthFrame.frame_id)],
+      frameset_sequence: colorSequence === depthSequence ? colorSequence : null,
+      pairing_method: pairingMethod,
       pairing_skew_ms: Number.isFinite(pairingSkewMs) ? pairingSkewMs : null,
       max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
       composite_pairing_refused: true,
+      composite_pairing_refusal_reason: sequenceMismatch
+        ? "composite_frameset_sequence_mismatch"
+        : "composite_pairing_skew_exceeded",
     };
   }
   return {
@@ -6956,6 +6981,8 @@ function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, 
     retention_mode: "latest_frame_cache",
     source_frames: compositeSourceFrames(colorFrame, depthFrame),
     source_frame_ids: [stringValue(colorFrame.frame_id), stringValue(depthFrame.frame_id)],
+    frameset_sequence: pairingMethod === "frameset_sequence" ? colorSequence : null,
+    pairing_method: pairingMethod,
     pairing_skew_ms: pairingSkewMs,
     max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
     color_frame: colorFrame,
@@ -7004,6 +7031,7 @@ function compositeSourceFrame(modality, frame = {}) {
     source_grant_id: stringValue(frame.source_grant_id),
     topic: stringValue(frame.topic),
     frame_id: stringValue(frame.frame_id),
+    frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
     capture_timestamp: stringValue(frame.capture_timestamp),
   };
 }
@@ -7019,6 +7047,7 @@ function normalizeCompositeSourceFrames(value = []) {
       source_grant_id: stringValue(frame?.source_grant_id),
       topic: stringValue(frame?.topic),
       frame_id: stringValue(frame?.frame_id),
+      frameset_sequence: Number.isInteger(frame?.frameset_sequence) ? frame.frameset_sequence : null,
       capture_timestamp: stringValue(frame?.capture_timestamp),
     }))
     .filter((frame) => frame.modality && frame.frame_id);
@@ -7037,9 +7066,12 @@ function laterIso(left = "", right = "") {
   return new Date(Math.max(leftMs, rightMs)).toISOString();
 }
 
-function modelVisualAttachmentFromFrame({ request = {}, frame = {}, profile = {} } = {}) {
+function modelVisualAttachmentsFromFrame({ request = {}, frame = {}, profile = {} } = {}) {
+  if (request.payload_type === "composite") {
+    return compositePairedImageAttachments({ request, frame, profile });
+  }
   const extracted = extractModelVisualPayload({ request, frame, profile });
-  return {
+  return [{
     modality: request.payload_type,
     media_type: extracted.media_type,
     payload_bytes: extracted.payload_bytes,
@@ -7050,7 +7082,29 @@ function modelVisualAttachmentFromFrame({ request = {}, frame = {}, profile = {}
     depth_colormap: extracted.depth_colormap ?? "",
     depth_normalization: extracted.depth_normalization ?? null,
     source_frame_ids: extracted.source_frame_ids ?? [],
+    pairing_method: extracted.pairing_method ?? "",
     pairing_skew_ms: extracted.pairing_skew_ms ?? null,
+  }];
+}
+
+function modelVisualAttachmentSummary({ request = {}, frame = {}, attachments = [] } = {}) {
+  if (request.payload_type !== "composite") {
+    return attachments[0] ?? null;
+  }
+  const depthAttachment = attachments.find((attachment) => attachment?.composite_role === "colorized_depth");
+  return {
+    modality: "composite",
+    media_type: "paired_image_blocks",
+    byte_length: attachments.reduce((total, attachment) => total + (attachment?.byte_length ?? 0), 0),
+    envelope_byte_length: frame.byte_length,
+    representation: "paired_image_blocks",
+    depth_units: Number.isFinite(depthAttachment?.depth_units) ? depthAttachment.depth_units : null,
+    depth_colormap: stringValue(depthAttachment?.depth_colormap),
+    depth_normalization: depthAttachment?.depth_normalization ?? null,
+    source_frame_ids: normalizeCatalogStringArray(frame.source_frame_ids, []),
+    visual_attachment_count: attachments.length,
+    pairing_method: stringValue(frame.pairing_method),
+    pairing_skew_ms: Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null,
   };
 }
 
@@ -7078,13 +7132,13 @@ function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = 
     };
   }
   if (modality === "composite") {
-    if (stringValue(request.composite_representation) !== "side_by_side_svg") {
-      throwModelVisualPayloadError("visual_composite_representation_mismatch", "composite_representation must be side_by_side_svg");
+    if (stringValue(request.composite_representation) !== "paired_image_blocks") {
+      throwModelVisualPayloadError("visual_composite_representation_mismatch", "composite_representation must be paired_image_blocks");
     }
-    if (stringValue(profile.composite_representation) !== "side_by_side_svg") {
-      throwModelVisualPayloadError("visual_composite_representation_profile_mismatch", "profile must explicitly declare composite_representation=side_by_side_svg");
+    if (stringValue(profile.composite_representation) !== "paired_image_blocks") {
+      throwModelVisualPayloadError("visual_composite_representation_profile_mismatch", "profile must explicitly declare composite_representation=paired_image_blocks");
     }
-    return compositeSvgPayload({ request, frame });
+    throwModelVisualPayloadError("visual_composite_payload_internal_mismatch", "composite payload must be delivered through paired image blocks");
   }
   const decoded = decodeSensoriumMessagePack(frame.payload_bytes, {
     errorPrefix: `model_visual_${modality}_msgpack`,
@@ -7121,7 +7175,13 @@ function extractModelVisualPayload({ request = {}, frame = {}, profile = {} } = 
   };
 }
 
-function compositeSvgPayload({ request = {}, frame = {} } = {}) {
+function compositePairedImageAttachments({ request = {}, frame = {}, profile = {} } = {}) {
+  if (stringValue(request.composite_representation) !== "paired_image_blocks") {
+    throwModelVisualPayloadError("visual_composite_representation_mismatch", "composite_representation must be paired_image_blocks");
+  }
+  if (stringValue(profile.composite_representation) !== "paired_image_blocks") {
+    throwModelVisualPayloadError("visual_composite_representation_profile_mismatch", "profile must explicitly declare composite_representation=paired_image_blocks");
+  }
   const colorDecoded = decodeVisualFrameEnvelope(frame.color_frame, "color");
   const depthDecoded = decodeVisualFrameEnvelope(frame.depth_frame, "depth");
   const colorFormat = stringValue(colorDecoded.format);
@@ -7135,30 +7195,38 @@ function compositeSvgPayload({ request = {}, frame = {} } = {}) {
   const colorized = colorizeDepthPng(copyVisualPayloadBytes(depthDecoded.data), {
     depthUnits: Number(depthDecoded.depth_units),
   });
-  const colorWidth = positiveInteger(colorDecoded.width) || 1;
-  const colorHeight = positiveInteger(colorDecoded.height) || 1;
-  const depthWidth = colorized.width || positiveInteger(depthDecoded.width) || 1;
-  const depthHeight = colorized.height || positiveInteger(depthDecoded.height) || 1;
-  const height = Math.max(colorHeight, depthHeight);
-  const width = colorWidth + depthWidth;
   const colorMediaType = colorFormat === "png" ? "image/png" : "image/jpeg";
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<rect width="${width}" height="${height}" fill="black"/>`,
-    `<image x="0" y="0" width="${colorWidth}" height="${colorHeight}" preserveAspectRatio="xMidYMid meet" href="data:${colorMediaType};base64,${base64Payload(colorBytes)}"/>`,
-    `<image x="${colorWidth}" y="0" width="${depthWidth}" height="${depthHeight}" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,${base64Payload(colorized.payload_bytes)}"/>`,
-    "</svg>",
-  ].join("");
-  return {
-    media_type: "image/svg+xml",
-    payload_bytes: new TextEncoder().encode(svg),
-    representation: stringValue(request.composite_representation),
-    depth_units: colorized.depth_units,
-    depth_colormap: colorized.colormap,
-    depth_normalization: colorized.normalization,
-    source_frame_ids: normalizeCatalogStringArray(frame.source_frame_ids, []),
+  const sourceFrameIds = normalizeCatalogStringArray(frame.source_frame_ids, []);
+  const common = {
+    modality: "composite",
+    representation: "paired_image_blocks",
+    source_frame_ids: sourceFrameIds,
+    pairing_method: stringValue(frame.pairing_method),
     pairing_skew_ms: Number.isFinite(frame.pairing_skew_ms) ? frame.pairing_skew_ms : null,
   };
+  return [
+    {
+      ...common,
+      composite_role: "color",
+      media_type: colorMediaType,
+      payload_bytes: colorBytes,
+      byte_length: colorBytes.byteLength,
+      envelope_byte_length: frame.color_frame?.byte_length ?? null,
+      source_frame_id: stringValue(frame.color_frame?.frame_id),
+    },
+    {
+      ...common,
+      composite_role: "colorized_depth",
+      media_type: colorized.media_type,
+      payload_bytes: colorized.payload_bytes,
+      byte_length: colorized.payload_bytes.byteLength,
+      envelope_byte_length: frame.depth_frame?.byte_length ?? null,
+      source_frame_id: stringValue(frame.depth_frame?.frame_id),
+      depth_units: colorized.depth_units,
+      depth_colormap: colorized.colormap,
+      depth_normalization: colorized.normalization,
+    },
+  ];
 }
 
 function decodeVisualFrameEnvelope(frame = {}, modality = "") {
@@ -7171,12 +7239,8 @@ function decodeVisualFrameEnvelope(frame = {}, modality = "") {
   return decoded;
 }
 
-function positiveInteger(value) {
-  return Number.isInteger(value) && value > 0 ? value : null;
-}
-
-function base64Payload(payload) {
-  return Buffer.from(payload).toString("base64");
+function nonNegativeIntegerOrNull(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function mediaTypeForModelVisualAttachment({ modality = "", format = "" } = {}) {

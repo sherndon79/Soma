@@ -25,6 +25,9 @@ export function summarizeSensoriumColorPayload(payloadBytes) {
     format: decoded.format,
     payload_size: payloadByteLength(decoded.data),
   };
+  if (decoded.frameset_sequence !== undefined && decoded.frameset_sequence !== null) {
+    summary.frameset_sequence = decoded.frameset_sequence;
+  }
 
   const contracted = assertSensoriumSummaryWithinContract(COLOR_CAPABILITY, summary);
   return {

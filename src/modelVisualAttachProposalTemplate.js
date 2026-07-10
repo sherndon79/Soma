@@ -294,9 +294,9 @@ function validateConstraints(constraints, visualDefinition, errors) {
   if (visualDefinition?.payload_type === "pose" && !["pose_msgpack", "pose_json"].includes(poseRepresentation)) {
     errors.push("constraints.pose_representation must be pose_msgpack or pose_json");
   }
-  const compositeRepresentation = stringValue(constraints.composite_representation) || "side_by_side_svg";
-  if (visualDefinition?.payload_type === "composite" && compositeRepresentation !== "side_by_side_svg") {
-    errors.push("constraints.composite_representation must be side_by_side_svg");
+  const compositeRepresentation = stringValue(constraints.composite_representation) || "paired_image_blocks";
+  if (visualDefinition?.payload_type === "composite" && compositeRepresentation !== "paired_image_blocks") {
+    errors.push("constraints.composite_representation must be paired_image_blocks");
   }
   const maxPairingSkewMs = constraints.max_pairing_skew_ms;
   if (

@@ -2438,7 +2438,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
     payload_type: "composite",
     transformed_dimensions: [32, 16],
     format_required: "composite",
-    composite_representation: "side_by_side_svg",
+    composite_representation: "paired_image_blocks",
     max_pairing_skew_ms: 250,
   };
   const envelope = modelVisualAttachActivationEnvelope({
@@ -2446,7 +2446,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
     bodyPatch: {
       model_delivery_requested: true,
       messages: [{ role: "user", content: "look at paired scene once" }],
-      runtime_profile_id: "anthropic-composite-svg",
+      runtime_profile_id: "anthropic-composite-paired",
     },
   });
   const visualGrant = {
@@ -2469,10 +2469,10 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
     },
     runtimeProfiles: {
       schema_version: 1,
-      default_profile: "anthropic-composite-svg",
+      default_profile: "anthropic-composite-paired",
       profiles: [
         {
-          id: "anthropic-composite-svg",
+          id: "anthropic-composite-paired",
           route: "remote",
           runtime: "anthropic-messages",
           model: "claude-composite-test",
@@ -2480,7 +2480,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
           supported_visual_modalities: ["composite"],
           visual_attachment_schema: "anthropic_messages_image",
           visual_attachment_modalities: ["composite"],
-          composite_representation: "side_by_side_svg",
+          composite_representation: "paired_image_blocks",
           allowed_data_classes: ["submitted_text"],
         },
       ],
@@ -2608,38 +2608,103 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
   });
 
   assert.equal(response.statusCode, 200, JSON.stringify(response.body));
-  assert.equal(response.body.visual_attachment_count, 1);
+  assert.equal(response.body.visual_attachment_count, 2);
   assert.equal(response.body.frame.modality, "composite");
-  assert.equal(response.body.frame.visual_representation, "side_by_side_svg");
+  assert.equal(response.body.frame.visual_representation, "paired_image_blocks");
+  assert.equal(response.body.frame.pairing_method, "capture_timestamp_fallback");
   assert.equal(response.body.frame.pairing_skew_ms, 120);
   assert.deepEqual(response.body.frame.source_frame_ids, ["91", "91"]);
   assert.equal(response.body.frame.source_frames.length, 2);
   assert.equal(modelClient.calls.length, 1);
-  assert.equal(modelClient.calls[0].args.attachments.length, 1);
-  const attachment = modelClient.calls[0].args.attachments[0];
-  assert.equal(attachment.modality, "composite");
-  assert.equal(attachment.media_type, "image/svg+xml");
-  assert.equal(attachment.representation, "side_by_side_svg");
-  assert.equal(attachment.pairing_skew_ms, 120);
-  const svg = new TextDecoder().decode(attachment.payload_bytes);
-  assert.match(svg, /^<svg /);
-  assert.match(svg, /data:image\/jpeg;base64,/);
-  assert.match(svg, /data:image\/png;base64,/);
-  assert.equal(response.body.live_perception_taint.raw_visual_taint.representation, "side_by_side_svg");
+  assert.equal(modelClient.calls[0].args.attachments.length, 2);
+  const [colorAttachment, depthAttachment] = modelClient.calls[0].args.attachments;
+  assert.equal(colorAttachment.modality, "composite");
+  assert.equal(colorAttachment.composite_role, "color");
+  assert.equal(colorAttachment.media_type, "image/jpeg");
+  assert.equal(colorAttachment.representation, "paired_image_blocks");
+  assert.equal(colorAttachment.pairing_method, "capture_timestamp_fallback");
+  assert.equal(colorAttachment.pairing_skew_ms, 120);
+  assert.deepEqual([...colorAttachment.payload_bytes], [0xff, 0xd8, 0x01, 0xff, 0xd9]);
+  assert.equal(depthAttachment.modality, "composite");
+  assert.equal(depthAttachment.composite_role, "colorized_depth");
+  assert.equal(depthAttachment.media_type, "image/png");
+  assert.equal(depthAttachment.representation, "paired_image_blocks");
+  assert.deepEqual([...depthAttachment.payload_bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.equal(response.body.live_perception_taint.raw_visual_taint.representation, "paired_image_blocks");
   assert.deepEqual(response.body.live_perception_taint.raw_visual_taint.source_frame_ids, ["91", "91"]);
+  assert.equal(response.body.live_perception_taint.raw_visual_taint.pairing_method, "capture_timestamp_fallback");
+
+  manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frameset_sequence: 92,
+      frame_number: 92,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0x02, 0xff, 0xd9],
+    }),
+    payloadSize: 128,
+    captureTimestamp: nowIso,
+  });
+  manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
+    payloadBytes: encodeDepthPayload({
+      schema_version: 1,
+      frameset_sequence: 92,
+      frame_number: 92,
+      width: 16,
+      height: 16,
+      format: "png",
+      depth_units: 0.001,
+      data: encodeDepthPng16({
+        width: 16,
+        height: 16,
+        values: Array.from({ length: 256 }, (_, index) => (
+          index === 0 ? 0 : Math.min(5000, 250 + index * 20)
+        )),
+      }),
+    }),
+    payloadSize: 256,
+    captureTimestamp: new Date(Date.parse(nowIso) + 500).toISOString(),
+  });
+
+  const sequenceResponse = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/attach-requests/controller",
+    body: envelope.body,
+  });
+
+  assert.equal(sequenceResponse.statusCode, 200, JSON.stringify(sequenceResponse.body));
+  assert.equal(sequenceResponse.body.visual_attachment_count, 2);
+  assert.equal(sequenceResponse.body.frame.frameset_sequence, 92);
+  assert.equal(sequenceResponse.body.frame.pairing_method, "frameset_sequence");
+  assert.equal(sequenceResponse.body.frame.pairing_skew_ms, 500);
+  assert.deepEqual(sequenceResponse.body.frame.source_frame_ids, ["92", "92"]);
+  assert.equal(modelClient.calls.length, 2);
+  assert.equal(modelClient.calls[1].args.attachments.length, 2);
+  assert.deepEqual([...modelClient.calls[1].args.attachments[0].payload_bytes], [0xff, 0xd8, 0x02, 0xff, 0xd9]);
+  assert.equal(modelClient.calls[1].args.attachments[0].media_type, "image/jpeg");
+  assert.equal(modelClient.calls[1].args.attachments[1].media_type, "image/png");
+  assert.equal(modelClient.calls[1].args.attachments[0].pairing_method, "frameset_sequence");
 
   const provenance = await invokeHandler(handler, {
     method: "GET",
     url: "/provenance?event_type=model.context.visual.attached",
   });
   assert.equal(provenance.statusCode, 200);
-  assert.equal(provenance.body.entries.length, 1);
-  assert.equal(provenance.body.entries[0].visual_representation, "side_by_side_svg");
+  assert.equal(provenance.body.entries.length, 2);
+  assert.equal(provenance.body.entries[0].visual_representation, "paired_image_blocks");
+  assert.equal(provenance.body.entries[0].visual_attachment_count, 2);
   assert.deepEqual(provenance.body.entries[0].source_frame_ids, ["91", "91"]);
   assert.equal(provenance.body.entries[0].source_frames.length, 2);
+  assert.equal(provenance.body.entries[0].pairing_method, "capture_timestamp_fallback");
   assert.equal(provenance.body.entries[0].pairing_skew_ms, 120);
   assert.equal(provenance.body.entries[0].payload_bytes_included, false);
   assert.equal(provenance.body.entries[0].content_included, false);
+  assert.equal(provenance.body.entries[1].visual_representation, "paired_image_blocks");
+  assert.equal(provenance.body.entries[1].visual_attachment_count, 2);
+  assert.equal(provenance.body.entries[1].pairing_method, "frameset_sequence");
+  assert.equal(provenance.body.entries[1].pairing_skew_ms, 500);
 });
 
 test("POST /model-visual/attach-requests/controller delivers pose JSON through real subscriber route", async () => {

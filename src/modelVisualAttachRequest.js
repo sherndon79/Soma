@@ -215,8 +215,8 @@ function validateRequestShape(request, errors) {
     if (request.source_grant_ids.length < 2) {
       errors.push("composite payloads require source_grant_ids for color and depth");
     }
-    if (request.composite_representation !== "side_by_side_svg") {
-      errors.push("composite_representation must be side_by_side_svg for composite payloads");
+    if (request.composite_representation !== "paired_image_blocks") {
+      errors.push("composite_representation must be paired_image_blocks for composite payloads");
     }
     if (!Number.isInteger(request.max_pairing_skew_ms) || request.max_pairing_skew_ms < 0) {
       errors.push("max_pairing_skew_ms must be a non-negative integer for composite payloads");

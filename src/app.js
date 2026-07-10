@@ -7380,6 +7380,28 @@ function modelVisualSequencePreflightRefusal({ request = {}, profile = {}, budge
   return "";
 }
 
+function modelVisualProfileByteLimitRefusal({ profile = {}, attachments = [], sequence = false } = {}) {
+  const maxBytes = profile.max_visual_bytes_per_turn;
+  if (!Number.isInteger(maxBytes) || maxBytes < 0) {
+    return "";
+  }
+  return modelVisualAttachmentBytes(attachments) <= maxBytes
+    ? ""
+    : (sequence ? "model_visual_sequence_profile_byte_limit_exceeded" : "model_visual_profile_byte_limit_exceeded");
+}
+
+function modelVisualAttachmentBytes(attachments = []) {
+  return (Array.isArray(attachments) ? attachments : []).reduce((total, attachment) => {
+    if (Number.isInteger(attachment?.byte_length) && attachment.byte_length >= 0) {
+      return total + attachment.byte_length;
+    }
+    if (attachment?.payload_bytes instanceof Uint8Array) {
+      return total + attachment.payload_bytes.byteLength;
+    }
+    return total;
+  }, 0);
+}
+
 function modelVisualWindowBudgetRefusalForUnits(grant = {}, unitCount = 1) {
   if (grant.scope !== "window") {
     return "";
@@ -8630,6 +8652,35 @@ async function processOccupantModelVisualInvocationFromCompletion({
       disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
     };
   }
+  const byteLimitReason = modelVisualProfileByteLimitRefusal({ profile, attachments: deliveredAttachments });
+  if (byteLimitReason) {
+    dropModelVisualAttachFrames({ request, frame, sensoriumSubscriber });
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame,
+      attachment: deliveredAttachment,
+      floorGateDecision,
+      reason: byteLimitReason,
+      failedGateInput: "runtime_profile",
+      frameAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason: byteLimitReason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason: byteLimitReason })],
+    };
+  }
 
   const secondCallMessages = modelVisualSecondCallMessages({
     modelMessages,
@@ -8942,6 +8993,39 @@ async function processOccupantModelVisualSequenceInvocation({
       provenanceId: event.id,
       refusals: [modelVisualInvocationRefusal({ invocation, reason })],
       disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+  const byteLimitReason = modelVisualProfileByteLimitRefusal({
+    profile,
+    attachments: deliveredAttachments,
+    sequence: true,
+  });
+  if (byteLimitReason) {
+    dropModelVisualSequenceFrames({ request, sensoriumSubscriber });
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame: burst.frames.at(-1),
+      attachment: deliveredAttachment,
+      floorGateDecision,
+      reason: byteLimitReason,
+      failedGateInput: "runtime_profile",
+      frameAgeMs: stale.maxAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason: byteLimitReason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason: byteLimitReason })],
     };
   }
 

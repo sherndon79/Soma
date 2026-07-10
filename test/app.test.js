@@ -9411,6 +9411,78 @@ test("model visual occupant invocation refuses exhausted window budget without h
       entry.payload_bytes_included === false), true);
 });
 
+test("model visual occupant invocation refuses profile byte ceiling before handoff spend", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-byte-limit",
+    },
+  });
+  envelope.grantStore.grants[0].scope = "window";
+  envelope.grantStore.grants[0].constraints.window_frame_budget = 1;
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0x01, 0x02, 0xff, 0xd9],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles({ maxVisualBytes: 5 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will look.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.attach", grant_id: "grant-visual-color" }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-byte-limit",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "model_visual_profile_byte_limit_exceeded");
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 1);
+  assert.equal(calls.filter((call) => call.kind === "visual").length, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
 test("model visual occupant invocation aborts delivery when protective control closes the floor", async () => {
   const envelope = modelVisualAttachActivationEnvelope({
     bodyPatch: {
@@ -9648,6 +9720,81 @@ test("model visual occupant sequence invocation refuses profile attachment limit
   assert.equal(response.body.capability_refusals[0].reason, "model_visual_sequence_profile_attachment_limit_exceeded");
   assert.equal(subscriber.sequenceReadCalls.length, 0);
   assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 4);
+});
+
+test("model visual occupant sequence invocation refuses exact profile byte ceiling before handoff spend", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-sequence-byte-limit",
+    },
+  });
+  const sequenceGrant = modelVisualSequenceGrantFixture({
+    nowIso: envelope.nowIso,
+    payloadType: "color_sequence",
+    capability: "model.context.visual.color.sequence.attach",
+    budgetUnit: "frames",
+    clientAttachmentUnit: "image_blocks",
+  });
+  envelope.grantStore.grants[0] = sequenceGrant;
+  const frames = [10, 11].map((sequence) => modelVisualSequenceFrame({
+    sequence,
+    frameId: `color-${sequence}`,
+    captureTimestamp: envelope.nowIso,
+    payloadBytes: encodeColorPayload({ format: "jpeg", data: [0xff, 0xd8, sequence, 0x02, 0xff, 0xd9] }),
+  }));
+  const subscriber = makeModelVisualSequenceSubscriber({ colorFrames: frames });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 2, maxVisualBytes: 11 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: modelVisualSequencePresenceState({ nowIso: envelope.nowIso, framesetSequences: [10, 11] }),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will inspect the burst.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.sequence.attach", grant_id: sequenceGrant.id }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-sequence-byte-limit",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "model_visual_sequence_profile_byte_limit_exceeded");
+  assert.equal(subscriber.sequenceReadCalls.length, 1);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 4);
+  assert.equal(calls.filter((call) => call.kind === "visual").length, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
 });
 
 test("model visual occupant sequence invocation refuses when whole-burst presence is not solo", async () => {
@@ -16426,7 +16573,7 @@ function modelVisualAttachRequestFixture() {
   };
 }
 
-function modelVisualAttachRuntimeProfiles() {
+function modelVisualAttachRuntimeProfiles({ maxVisualBytes = null } = {}) {
   return {
     schema_version: 1,
     default_profile: "gemma4-vision",
@@ -16439,13 +16586,14 @@ function modelVisualAttachRuntimeProfiles() {
         supported_visual_modalities: ["color"],
         visual_attachment_schema: "openai_chat_image_url",
         visual_attachment_modalities: ["color"],
+        ...(Number.isInteger(maxVisualBytes) ? { max_visual_bytes_per_turn: maxVisualBytes } : {}),
         allowed_data_classes: ["submitted_text"],
       },
     ],
   };
 }
 
-function modelVisualSequenceRuntimeProfiles({ maxAttachments = 4 } = {}) {
+function modelVisualSequenceRuntimeProfiles({ maxAttachments = 4, maxVisualBytes = null } = {}) {
   const profile = {
     ...modelVisualAttachRuntimeProfiles().profiles[0],
     supported_visual_modalities: ["color", "depth", "pose", "composite"],
@@ -16454,6 +16602,7 @@ function modelVisualSequenceRuntimeProfiles({ maxAttachments = 4 } = {}) {
     pose_representation: "pose_json",
     composite_representation: "paired_image_blocks",
     max_visual_attachments_per_turn: maxAttachments,
+    ...(Number.isInteger(maxVisualBytes) ? { max_visual_bytes_per_turn: maxVisualBytes } : {}),
   };
   return {
     ...modelVisualAttachRuntimeProfiles(),

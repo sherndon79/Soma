@@ -676,6 +676,25 @@ Constraints:
 - Design, but do not implement, the remote-planner provider contract, payload minimizer, plan
   validator, and disclosure preview.
 
+## Milestone: First Live Raw-Frame Delivery — MET 2026-07-09
+
+**Completed, same day the raw-frame vision build arc (slices 1–6) finished.** One color
+frame of Seth's real room (36 ms old at delivery) egressed exactly once to a remote
+occupant (`claude-fable-5`) through the full ratified floor: Seth-armed source
+subscription, grant-scoped raw latest-frame retention, one-turn visual grant with
+`retention_mode: none`, explicit four-fact solo attestation, independent machine
+presence corroboration (fresh, same host, exactly one person), byte-free provenance
+with the full gate decision, raw-visual taint stamped, frame consumed on delivery,
+subscriptions stopped after. Three live-only production gaps were found by the floor
+itself during arming and fixed before delivery — the record and the recipient's
+verbatim words: `docs/reviews/2026-07-09_first_live_raw_frame_delivery_record.md`.
+Earlier the same day: Bystander Doctrine Amendment I proven against a live inhabitant
+(taint-fit run), and the first live-sensorium perception dwell (derived-only) —
+`docs/reviews/2026-07-09_first_live_perception_dwell_record.md`. Follow-on
+representation arc (pose catalog entry, colorized depth, pose JSON, composite) is in
+the gate design doc's "Representation decisions" section. Deferred: occupant
+invocation of raw visual attach (unchanged gate, later slice).
+
 ## Milestone: First Dwell — MET 2026-06-12
 
 **Completed and ratified.** Occupant claude-fable-5, episode `first-dwell`, 24 turns:

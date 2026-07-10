@@ -341,3 +341,63 @@ Egress-incapable slices first, so capacity is spent on the floor *enforcement* b
 - **Slice 2 (raw latest-frame cache)** — local in-memory bytes, no egress. Second.
 - **Slices 3–5 (attach activation, multimodal client, provenance/taint)** — first point where a frame *could* egress; these stay behind Seth's live arming + attestation, and get their own review before first live delivery.
 - **Slice 6 + Later (runbook/controls, then occupant invocation)** — after the controller path has live evidence.
+
+## Representation decisions (2026-07-09 evening, Seth-dispatched arc)
+
+After the first live delivery proved the color path, Seth dispatched the representation
+arc: pose catalog entry, pose JSON, colorized depth, and composite. Each representation
+is a **declared decision, never a fallback** — it must be named in the request, the
+grant constraints, AND the runtime profile, and any mismatch refuses before the frame
+is read. The representation used is recorded in the byte-free provenance event.
+
+### Built and reviewed
+
+**Pose catalog entry** (`13d5368`) — `model.context.visual.pose.attach` added as the
+doc required: disabled default, explicit grant, `once` scope, high risk, with
+`data_exposed` naming the 68 face and 42 hand keypoints and calling the payload
+identity-adjacent biometric/behavioral visual context in plain words.
+
+**Colorized depth** (`4536655`) — the "documented colorized/normalized depth rendering"
+this design allowed, for image-only provider schemas (Anthropic/OpenAI):
+
+- `depth_representation: "colorized_png"` (request + grant + profile, triple-declared);
+  the raw `depth_png` representation remains for the future typed local runtime.
+- 16-bit grayscale depth PNG decoded, normalized on a **fixed metric range 0.25–5.0 m**
+  (not per-frame — frames are comparable across a session), scaled by the frame's own
+  calibration `depth_units`, encoded 8-bit grayscale PNG, `image/png`.
+- Colormap is **grayscale**, chosen over turbo deliberately: deterministic,
+  channel-minimal, implies no semantic labels; derives from depth only — no color
+  texture, no captions (the no-smuggled-channels rule).
+- Raw depth value 0 renders black as invalid/no-depth.
+- Provenance records `visual_representation`, `depth_colormap`, `depth_units`, and the
+  normalization rule, all byte-free.
+- **Pending legibility fold-in** (reviewed, non-blocking, due before composite): reserve
+  0 exclusively for invalid, map valid depths into 1–255, and prefer near = bright so a
+  close subject is not confusable with no-data pixels.
+
+### Authorized and in build (constraints binding, details land with the commits)
+
+**Pose JSON** — a second pose representation so text-capable remote models can read
+keypoints. Binding constraints: explicit profile + grant declaration (the pose analog
+of colorized depth — a rendering decision, not silent stringification, which remains
+prohibited); delivered as its own clearly-labeled content block, never mixed into the
+user's prose; size-bounded with delivered `byte_length` recorded; representation in
+provenance. The exact block shape for `anthropic_messages_image` profiles is a named
+design decision owed with the implementation report.
+
+**Composite** — a **single stitched side-by-side image (color | colorized depth)** so
+the exactly-one-attachment / one-turn invariant is untouched. Binding constraints: the
+two halves MUST be paired by `frameset_sequence` (fall back to capture timestamp within
+a documented max skew; refuse beyond it — "latest of each" is two unrelated moments,
+not a composite); requires both modalities cached under their own grant-scoped
+retention; delivered only under its own explicit `composite.attach` grant (combined
+disclosure volume); provenance records both source frame ids and the pairing skew.
+
+### Standing rule from the first live run
+
+Every gate leg ships with at least one integration test through the **production
+collaborators** (subscriber, presence state, routes). Three live-arm blockers —
+retention never wired through the route, subscription ids absent from disclosure,
+presence snapshot missing its host — plus the slice-4 envelope-bytes finding were all
+invisible to tests built on fakes. See
+`docs/reviews/2026-07-09_first_live_raw_frame_delivery_record.md`.

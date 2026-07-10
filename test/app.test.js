@@ -2732,6 +2732,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
   manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
     payloadBytes: encodeColorPayload({
       schema_version: 1,
+      frameset_sequence: 91,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -2744,6 +2745,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
   manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
     payloadBytes: encodeDepthPayload({
       schema_version: 1,
+      frameset_sequence: 92,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -2785,6 +2787,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
   manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
     payloadBytes: encodeDepthPayload({
       schema_version: 1,
+      frameset_sequence: 92,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -9453,6 +9456,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   manager.emitSample("sub-route-1", "sensor/jetsorano/realsense/color", {
     payloadBytes: encodeColorPayload({
       schema_version: 1,
+      frameset_sequence: 91,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -9465,6 +9469,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
     payloadBytes: encodeDepthPayload({
       schema_version: 1,
+      frameset_sequence: 92,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -9508,6 +9513,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
     payloadBytes: encodeDepthPayload({
       schema_version: 1,
+      frameset_sequence: 92,
       frame_number: 91,
       width: 16,
       height: 16,
@@ -9535,8 +9541,12 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   const visualCall = calls.find((call) => call.kind === "visual");
   assert.equal(visualCall.args.attachments.length, 2);
   assert.equal(visualCall.args.attachments[0].composite_role, "color");
+  assert.equal(visualCall.args.attachments[0].pairing_method, "capture_timestamp_fallback");
+  assert.equal(visualCall.args.attachments[0].pairing_skew_ms, 120);
   assert.deepEqual([...visualCall.args.attachments[0].payload_bytes], [0xff, 0xd8, 0x01, 0xff, 0xd9]);
   assert.equal(visualCall.args.attachments[1].composite_role, "colorized_depth");
+  assert.equal(visualCall.args.attachments[1].pairing_method, "capture_timestamp_fallback");
+  assert.equal(visualCall.args.attachments[1].pairing_skew_ms, 120);
   assert.deepEqual([...visualCall.args.attachments[1].payload_bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
 });
 

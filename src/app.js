@@ -7208,13 +7208,13 @@ function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, 
   const depthSequence = nonNegativeIntegerOrNull(depthFrame.frameset_sequence);
   const hasColorSequence = colorSequence !== null;
   const hasDepthSequence = depthSequence !== null;
-  const pairingMethod = hasColorSequence && hasDepthSequence
+  const sequenceMatch = hasColorSequence && hasDepthSequence && colorSequence === depthSequence;
+  const pairingMethod = sequenceMatch
     ? "frameset_sequence"
     : "capture_timestamp_fallback";
-  const sequenceMismatch = pairingMethod === "frameset_sequence" && colorSequence !== depthSequence;
   const timestampSkewExceeded = pairingMethod === "capture_timestamp_fallback" &&
     (!Number.isFinite(pairingSkewMs) || pairingSkewMs > request.max_pairing_skew_ms);
-  if (sequenceMismatch || timestampSkewExceeded) {
+  if (timestampSkewExceeded) {
     return {
       subscription_id: `${colorSubscriptionId}+${depthSubscriptionId}`,
       source_grant_id: stringValue(request.source_grant_id),
@@ -7234,9 +7234,7 @@ function readModelVisualAttachFrame({ request = {}, sensoriumSubscriber = null, 
       pairing_skew_ms: Number.isFinite(pairingSkewMs) ? pairingSkewMs : null,
       max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
       composite_pairing_refused: true,
-      composite_pairing_refusal_reason: sequenceMismatch
-        ? "composite_frameset_sequence_mismatch"
-        : "composite_pairing_skew_exceeded",
+      composite_pairing_refusal_reason: "composite_pairing_skew_exceeded",
     };
   }
   return {

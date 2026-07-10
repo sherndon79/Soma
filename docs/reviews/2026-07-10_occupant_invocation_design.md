@@ -3,9 +3,9 @@
 - Date: 2026-07-10 (Revision 2, same day — Revision 1 superseded before ratification)
 - Author: Claude (steward, design/orchestration); Seth directed the design and the
   revision.
-- Status: **DRAFT (R2)** — Revision 1 passed Codex pressure-test with four folds, then
-  Seth's review surfaced structural corrections before ratification. R2 deltas go back
-  to Codex; then Seth ratifies.
+- Status: **RATIFIED by Seth 2026-07-10** ("ratified, proceed with the build") — R1
+  pressure-tested (4 folds), restructured on Seth's corrections, R2 re-tested by Codex
+  ("passes on architecture", tightenings folded), then ratified in full.
 - Depends on: the raw-frame vision floor gate (RATIFIED 2026-07-09, slices 1–6 built),
   the Representation decisions (all four built), three live controller-triggered
   deliveries, Bystander Doctrine Amendment I, and the first-dwell/taint-fit occupant
@@ -355,26 +355,28 @@ right span mechanism.
 
 ## Ratification checklist (Seth)
 
-- [ ] Local-first architecture: local occupant perception is activation-gated at native
+**All items ratified 2026-07-10.**
+
+- [x] Local-first architecture: local occupant perception is activation-gated at native
       framerate whenever possible; floor binds at sinks; remote is a marked bridge-state
       profile.
-- [ ] Windowed consent: arm = attestation with Seth-chosen TTL (default 1 h);
+- [x] Windowed consent: arm = attestation with Seth-chosen TTL (default 1 h);
       per-frame flooring automatic; disarm instant.
-- [ ] Windowed grants with Seth-pinned bounds replace per-look consumption; `once`
+- [x] Windowed grants with Seth-pinned bounds replace per-look consumption; `once`
       remains available, not default.
-- [ ] Sequence capability family (four new entries) with honest behavioral disclosure.
-- [ ] Remote defaults: 5 fps effective sampling, ≤ 16-frame / 3.2 s bursts, 640×360
+- [x] Sequence capability family (four new entries) with honest behavioral disclosure.
+- [x] Remote defaults: 5 fps effective sampling, ≤ 16-frame / 3.2 s bursts, 640×360
       burst resolution + optional keyframe, composite bursts ≤ 8 pairs.
-- [ ] Burst-span solo via the presence timeline coverage rule (sequence-join primary,
+- [x] Burst-span solo via the presence timeline coverage rule (sequence-join primary,
       guard-banded fallback, missing/stale coverage fails closed); trailing-ring-only;
       no forward capture.
-- [ ] Restart closes all windows; durable grants never re-arm; boot discloses the
+- [x] Restart closes all windows; durable grants never re-arm; boot discloses the
       closure.
-- [ ] Budget atomicity at the model-handoff boundary; frame/pair-defined sequence
+- [x] Budget atomicity at the model-handoff boundary; frame/pair-defined sequence
       budgets.
-- [ ] Immediate second-call transaction shape; redaction invariant; rate bound (carried
+- [x] Immediate second-call transaction shape; redaction invariant; rate bound (carried
       from R1).
-- [ ] Grant console as companion build.
-- [ ] First live use gets its own run protocol before arming.
+- [x] Grant console as companion build.
+- [x] First live use gets its own run protocol before arming.
 
 On ratification: build slices to Codex under the usual per-slice review.

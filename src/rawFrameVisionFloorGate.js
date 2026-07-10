@@ -134,7 +134,13 @@ function evaluateVisualGrant({ visualGrant = {}, requestedModality = "", expecte
   const capability = stringValue(visualGrant.capability);
   const modalitySuffix = MODALITY_CAPABILITY_SUFFIX[requestedModality];
   const active = visualGrant.status === "active";
-  const capabilityMatches = Boolean(modalitySuffix && capability === `model.context.visual.${modalitySuffix}`);
+  const sequenceCapability = modalitySuffix
+    ? `model.context.visual.${requestedModality}.sequence.attach`
+    : "";
+  const capabilityMatches = Boolean(modalitySuffix && (
+    capability === `model.context.visual.${modalitySuffix}` ||
+    capability === sequenceCapability
+  ));
   const hostMatches = !expectedHost || !constraints.source_host || stringValue(constraints.source_host) === expectedHost;
   const retentionNone = stringValue(constraints.retention_mode) === "none";
   const checks = {

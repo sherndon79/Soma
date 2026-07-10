@@ -153,6 +153,7 @@ import {
   RAW_FRAME_VISION_FLOOR_REASONS,
   decideRawFrameVisionFloorGate,
 } from "./rawFrameVisionFloorGate.js";
+import { evaluateBurstPresenceCoverage } from "./sensoriumBurstFloor.js";
 import { SessionMemory } from "./sessionMemory.js";
 import {
   DESKTOP_VISUAL_CUE_CAPABILITY,
@@ -7353,6 +7354,206 @@ function modelVisualAttachmentsFromFrame({ request = {}, frame = {}, profile = {
   }];
 }
 
+function modelVisualBasePayloadType(payloadType = "") {
+  const normalized = stringValue(payloadType);
+  return normalized.endsWith("_sequence") ? normalized.slice(0, -"_sequence".length) : normalized;
+}
+
+function modelVisualSingleFrameRequestForSequence(request = {}) {
+  const payloadType = modelVisualBasePayloadType(request.payload_type);
+  const format = stringValue(request.format_required);
+  return {
+    ...request,
+    payload_type: payloadType,
+    format_required: format.endsWith("_sequence") ? format.slice(0, -"_sequence".length) : format,
+  };
+}
+
+function modelVisualSequencePreflightRefusal({ request = {}, profile = {}, budgetUnits = 1 } = {}) {
+  const maxAttachments = profile.max_visual_attachments_per_turn;
+  const attachmentCount = request.payload_type === "composite_sequence"
+    ? budgetUnits * 2
+    : budgetUnits;
+  if (Number.isInteger(maxAttachments) && maxAttachments >= 0 && attachmentCount > maxAttachments) {
+    return "model_visual_sequence_profile_attachment_limit_exceeded";
+  }
+  return "";
+}
+
+function modelVisualWindowBudgetRefusalForUnits(grant = {}, unitCount = 1) {
+  if (grant.scope !== "window") {
+    return "";
+  }
+  const budget = grant.constraints?.window_frame_budget;
+  if (budget === null || budget === undefined) {
+    return "";
+  }
+  return Number.isInteger(budget) && budget >= Math.max(1, unitCount)
+    ? ""
+    : "model_visual_window_frame_budget_exhausted";
+}
+
+function readModelVisualSequenceBurst({ request = {}, sensoriumSubscriber = null, now = new Date() } = {}) {
+  const burstMaxFrames = Math.max(1, request.burst_max_frames);
+  if (request.payload_type !== "composite_sequence") {
+    const modality = modelVisualBasePayloadType(request.payload_type);
+    const frames = readRawFrameSequenceSafe({
+      sensoriumSubscriber,
+      subscriptionId: request.source_subscription_ids[0],
+      modality,
+      maxFrames: burstMaxFrames,
+      now,
+    });
+    return frames.length >= burstMaxFrames
+      ? { frames, pairs: [], unitCount: frames.length, attachmentCount: frames.length }
+      : { frames, pairs: [], unitCount: frames.length, attachmentCount: frames.length, incomplete: true };
+  }
+
+  const colorSubscriptionId = sourceSubscriptionIdForCapability(request, "perception.sensorium.color.subscribe");
+  const depthSubscriptionId = sourceSubscriptionIdForCapability(request, "perception.sensorium.depth.subscribe");
+  const colorFrames = readRawFrameSequenceSafe({
+    sensoriumSubscriber,
+    subscriptionId: colorSubscriptionId,
+    modality: "color",
+    maxFrames: burstMaxFrames,
+    now,
+  });
+  const depthFrames = readRawFrameSequenceSafe({
+    sensoriumSubscriber,
+    subscriptionId: depthSubscriptionId,
+    modality: "depth",
+    maxFrames: burstMaxFrames,
+    now,
+  });
+  const depthBySequence = new Map(depthFrames
+    .filter((frame) => Number.isInteger(frame.frameset_sequence))
+    .map((frame) => [frame.frameset_sequence, frame]));
+  const pairs = colorFrames
+    .filter((frame) => Number.isInteger(frame.frameset_sequence) && depthBySequence.has(frame.frameset_sequence))
+    .map((colorFrame) => compositeSequencePairFrame({
+      request,
+      colorFrame,
+      depthFrame: depthBySequence.get(colorFrame.frameset_sequence),
+      now,
+    }))
+    .slice(-burstMaxFrames);
+  return pairs.length >= burstMaxFrames
+    ? { frames: pairs, pairs, unitCount: pairs.length, attachmentCount: pairs.length * 2 }
+    : { frames: pairs, pairs, unitCount: pairs.length, attachmentCount: pairs.length * 2, incomplete: true };
+}
+
+function readRawFrameSequenceSafe({
+  sensoriumSubscriber = null,
+  subscriptionId = "",
+  modality = "",
+  maxFrames = 1,
+  now = new Date(),
+} = {}) {
+  if (typeof sensoriumSubscriber?.readRawFrameSequence !== "function") {
+    return [];
+  }
+  const frames = sensoriumSubscriber.readRawFrameSequence({ subscriptionId, modality, maxFrames, now });
+  return Array.isArray(frames) ? frames : [];
+}
+
+function compositeSequencePairFrame({ request = {}, colorFrame = {}, depthFrame = {}, now = new Date() } = {}) {
+  const pairingSkewMs = Math.abs(Date.parse(colorFrame.capture_timestamp) - Date.parse(depthFrame.capture_timestamp));
+  return {
+    subscription_id: `${colorFrame.subscription_id}+${depthFrame.subscription_id}`,
+    source_grant_id: stringValue(request.source_grant_id),
+    modality: "composite",
+    source_host: colorFrame.source_host || depthFrame.source_host || sourceHostForVisualAttachRequest(request),
+    topic: stringValue(request.source_topic),
+    frame_id: `${colorFrame.frame_id}|${depthFrame.frame_id}`,
+    capture_timestamp: laterIso(colorFrame.capture_timestamp, depthFrame.capture_timestamp),
+    byte_length: (colorFrame.byte_length ?? 0) + (depthFrame.byte_length ?? 0),
+    declared_byte_length: null,
+    payload_bytes_included: true,
+    retention_mode: "sequence_ring",
+    source_frames: compositeSourceFrames(colorFrame, depthFrame),
+    source_frame_ids: [stringValue(colorFrame.frame_id), stringValue(depthFrame.frame_id)],
+    frameset_sequence: colorFrame.frameset_sequence,
+    pairing_method: "frameset_sequence",
+    pairing_skew_ms: Number.isFinite(pairingSkewMs) ? pairingSkewMs : null,
+    max_frame_age_ms: Math.max(frameAgeMs(colorFrame, now), frameAgeMs(depthFrame, now)),
+    color_frame: colorFrame,
+    depth_frame: depthFrame,
+  };
+}
+
+function modelVisualSequenceFramesStale({ frames = [], request = {}, now = new Date() } = {}) {
+  const ages = frames.map((frame) => Number.isFinite(frame.max_frame_age_ms)
+    ? frame.max_frame_age_ms
+    : now.getTime() - Date.parse(frame.capture_timestamp));
+  const maxAgeMs = Math.max(...ages);
+  return {
+    stale: !Number.isFinite(maxAgeMs) || maxAgeMs < 0 || maxAgeMs > request.max_frame_age_ms,
+    maxAgeMs,
+  };
+}
+
+function modelVisualSequenceAttachmentsFromBurst({ request = {}, burst = {}, profile = {} } = {}) {
+  const singleRequest = modelVisualSingleFrameRequestForSequence(request);
+  if (request.payload_type !== "composite_sequence") {
+    return burst.frames.flatMap((frame, index) =>
+      modelVisualAttachmentsFromFrame({ request: singleRequest, frame, profile })
+        .map((attachment) => ({
+          ...attachment,
+          sequence_index: index,
+          frame_id: stringValue(frame.frame_id),
+          capture_timestamp: stringValue(frame.capture_timestamp),
+          frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
+          modality: singleRequest.payload_type,
+          pair_id: "",
+        })));
+  }
+  return burst.pairs.flatMap((frame, index) =>
+    compositePairedImageAttachments({ request: singleRequest, frame, profile })
+      .map((attachment) => ({
+        ...attachment,
+        sequence_index: index,
+        frame_id: stringValue(frame.frame_id),
+        capture_timestamp: stringValue(frame.capture_timestamp),
+        frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
+        modality: "composite",
+        pair_id: Number.isInteger(frame.frameset_sequence) ? `frameset-${frame.frameset_sequence}` : stringValue(frame.frame_id),
+      })));
+}
+
+function modelVisualSequenceAttachmentSummary({ request = {}, burst = {}, attachments = [] } = {}) {
+  const frames = burst.frames ?? [];
+  const first = frames[0] ?? {};
+  const last = frames[frames.length - 1] ?? {};
+  const depthAttachment = attachments.find((attachment) => Number.isFinite(attachment?.depth_units));
+  return {
+    modality: modelVisualBasePayloadType(request.payload_type),
+    media_type: request.payload_type === "composite_sequence" ? "paired_image_blocks" : stringValue(attachments[0]?.media_type),
+    byte_length: attachments.reduce((total, attachment) => total + (attachment?.byte_length ?? 0), 0),
+    envelope_byte_length: frames.reduce((total, frame) => total + (frame?.byte_length ?? 0), 0),
+    representation: request.payload_type === "composite_sequence"
+      ? "paired_image_blocks"
+      : stringValue(attachments[0]?.representation),
+    depth_units: Number.isFinite(depthAttachment?.depth_units) ? depthAttachment.depth_units : null,
+    depth_colormap: stringValue(depthAttachment?.depth_colormap),
+    depth_normalization: depthAttachment?.depth_normalization ?? null,
+    source_frame_ids: [...new Set(attachments.flatMap((attachment) => normalizeCatalogStringArray(
+      attachment?.source_frame_ids?.length ? attachment.source_frame_ids : [attachment?.frame_id],
+      [],
+    )))],
+    visual_attachment_count: attachments.length,
+    pairing_method: request.payload_type === "composite_sequence" ? "frameset_sequence" : "",
+    pairing_skew_ms: null,
+    burst_frame_count: frames.length,
+    burst_pair_count: request.payload_type === "composite_sequence" ? burst.pairs.length : 0,
+    oldest_capture_timestamp: stringValue(first.capture_timestamp),
+    newest_capture_timestamp: stringValue(last.capture_timestamp),
+    frame_ids: frames.map((frame) => stringValue(frame.frame_id)).filter(Boolean),
+    frameset_sequences: frames
+      .map((frame) => Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null)
+      .filter((value) => value !== null),
+  };
+}
+
 function modelVisualAttachmentSummary({ request = {}, frame = {}, attachments = [] } = {}) {
   if (request.payload_type !== "composite") {
     return attachments[0] ?? null;
@@ -8177,15 +8378,6 @@ async function processOccupantModelVisualInvocationFromCompletion({
     };
   }
 
-  if (isSequenceVisualAttachCapabilityKey(request.capability)) {
-    const reason = "model_visual_sequence_invocation_not_enabled";
-    return {
-      ...base,
-      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
-      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
-    };
-  }
-
   const budgetRefusal = modelVisualWindowBudgetRefusal(visualGrant);
   if (budgetRefusal) {
     const event = appendModelVisualAttachProvenanceEvent({
@@ -8216,7 +8408,7 @@ async function processOccupantModelVisualInvocationFromCompletion({
   }
 
   const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.model_profile);
-  const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type, request);
+  const deliveryProfile = validateModelVisualDeliveryProfile(profile, modelVisualBasePayloadType(request.payload_type), request);
   if (!deliveryProfile.allowed) {
     const event = appendModelVisualAttachProvenanceEvent({
       provenanceLog,
@@ -8246,6 +8438,32 @@ async function processOccupantModelVisualInvocationFromCompletion({
       refusals: [modelVisualInvocationRefusal({ invocation, reason })],
       disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
     };
+  }
+
+  if (isSequenceVisualAttachCapabilityKey(request.capability)) {
+    return processOccupantModelVisualSequenceInvocation({
+      base,
+      extraction,
+      invocation,
+      request,
+      visualGrant,
+      modelMessages,
+      body,
+      profile,
+      profileClient,
+      grantRecoveryReport,
+      sensoriumSubscriber,
+      sensoriumPresenceState,
+      rawVisualPerceptionWindows,
+      rawVisualClosedPerceptionWindows,
+      rawVisualSoloAttestations,
+      rawVisualInvocationRefusals,
+      provenanceLog,
+      logger,
+      episode,
+      episodeState,
+      caller,
+    });
   }
 
   const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
@@ -8481,6 +8699,322 @@ async function processOccupantModelVisualInvocationFromCompletion({
   };
 }
 
+async function processOccupantModelVisualSequenceInvocation({
+  base = {},
+  extraction = {},
+  invocation = {},
+  request = {},
+  visualGrant = {},
+  modelMessages = [],
+  body = {},
+  profile = {},
+  profileClient = null,
+  grantRecoveryReport = null,
+  sensoriumSubscriber = null,
+  sensoriumPresenceState = null,
+  rawVisualPerceptionWindows = new Map(),
+  rawVisualClosedPerceptionWindows = new Map(),
+  rawVisualSoloAttestations = new Map(),
+  rawVisualInvocationRefusals = new Map(),
+  provenanceLog,
+  logger = console,
+  episode = {},
+  episodeState = {},
+  caller = "",
+} = {}) {
+  const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
+  const sourceHost = sourceHostForVisualAttachRequest(request);
+  const now = new Date();
+  const expiredWindows = expireRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+    now,
+    provenanceLog,
+    logger,
+    caller,
+    closedWindows: rawVisualClosedPerceptionWindows,
+  });
+  for (const expired of expiredWindows) {
+    rawVisualSoloAttestations.delete(expired.source_host);
+  }
+  const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
+  const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
+    ?? rawVisualSoloAttestations.get(sourceHost)
+    ?? null;
+  const floorGateDecision = decideRawFrameVisionFloorGate({
+    runPosture: modelVisualInvocationRunPosture({ grant: visualGrant, fallback: body?.run_posture }),
+    episodeStatus: episodeState.status || "active",
+    visualGrant,
+    grantRecoveryReport,
+    soloAttestation,
+    presenceState: sensoriumPresenceState,
+    sourceSubscription,
+    profile,
+    modality: modelVisualBasePayloadType(request.payload_type),
+    sourceHost,
+    now,
+  });
+  if (!floorGateDecision.allowed) {
+    const rateKey = rawVisualInvocationRateKey({ episodeId: episode.id, grantId: request.grant_id });
+    const previousRefusalAt = rawVisualInvocationRefusals.get(rateKey) ?? 0;
+    const rateLimited = previousRefusalAt > 0 &&
+      now.getTime() - previousRefusalAt < RAW_VISUAL_INVOCATION_REFUSAL_COOLDOWN_MS;
+    const reason = rateLimited ? "raw_visual_invocation_rate_limited" : floorGateDecision.reason;
+    if (!rateLimited) {
+      rawVisualInvocationRefusals.set(rateKey, now.getTime());
+    }
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      floorGateDecision,
+      reason,
+      failedGateInput: rateLimited ? "rate_bound" : failedRawFrameVisionFloorGateInput(floorGateDecision),
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason,
+        authorizationCode: rateLimited ? "cooldown" : "",
+      })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+  rawVisualInvocationRefusals.delete(rawVisualInvocationRateKey({ episodeId: episode.id, grantId: request.grant_id }));
+
+  const preflightReason = modelVisualSequencePreflightRefusal({
+    request,
+    profile,
+    budgetUnits: request.burst_max_frames,
+  }) || modelVisualWindowBudgetRefusalForUnits(visualGrant, request.burst_max_frames);
+  if (preflightReason) {
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      floorGateDecision,
+      reason: preflightReason,
+      failedGateInput: preflightReason === "model_visual_sequence_profile_attachment_limit_exceeded"
+        ? "runtime_profile"
+        : "window_frame_budget",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason: preflightReason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason: preflightReason })],
+    };
+  }
+
+  const burst = readModelVisualSequenceBurst({ request, sensoriumSubscriber, now });
+  if (burst.incomplete) {
+    const reason = request.payload_type === "composite_sequence"
+      ? "raw_visual_composite_sequence_burst_incomplete"
+      : "raw_visual_sequence_burst_incomplete";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      floorGateDecision,
+      reason,
+      failedGateInput: "sequence_ring",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const stale = modelVisualSequenceFramesStale({ frames: burst.frames, request, now });
+  if (stale.stale) {
+    const reason = "raw_visual_sequence_frame_stale";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame: burst.frames.at(-1),
+      floorGateDecision,
+      reason,
+      failedGateInput: "frame_age",
+      frameAgeMs: stale.maxAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const coverage = evaluateBurstPresenceCoverage({
+    frames: burst.frames,
+    presenceSamples: modelVisualPresenceSamples(sensoriumPresenceState, { now }),
+  });
+  if (!coverage.allowed) {
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame: burst.frames.at(-1),
+      floorGateDecision,
+      reason: coverage.reason,
+      failedGateInput: "burst_presence_coverage",
+      frameAgeMs: stale.maxAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason: coverage.reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason: coverage.reason })],
+    };
+  }
+
+  let deliveredAttachments = [];
+  let deliveredAttachment = null;
+  try {
+    deliveredAttachments = modelVisualSequenceAttachmentsFromBurst({ request, burst, profile });
+    deliveredAttachment = modelVisualSequenceAttachmentSummary({ request, burst, attachments: deliveredAttachments });
+  } catch (err) {
+    dropModelVisualSequenceFrames({ request, sensoriumSubscriber });
+    const reason = err.code ?? "visual_payload_mismatch";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame: burst.frames.at(-1),
+      floorGateDecision,
+      reason,
+      failedGateInput: "payload_envelope",
+      frameAgeMs: stale.maxAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const sequenceFrame = modelVisualSequenceSyntheticFrame({ request, burst, attachment: deliveredAttachment });
+  const secondCallMessages = modelVisualSequenceSecondCallMessages({
+    modelMessages,
+    cleanedText: extraction.text,
+    request,
+    burst,
+    attachment: deliveredAttachment,
+    floorGateDecision,
+    coverage,
+  });
+  decrementModelVisualWindowBudget(visualGrant, burst.unitCount);
+  let secondCompletion;
+  try {
+    secondCompletion = await profileClient.chatWithVisualAttachments({
+      messages: secondCallMessages,
+      attachments: deliveredAttachments,
+      model: profile.model,
+      maxTokens: numberOrDefault(body.max_tokens, 512),
+      temperature: numberOrDefault(body.temperature, DEFAULT_CHAT_TEMPERATURE),
+      visualAttachmentSchema: profile.visual_attachment_schema,
+    });
+  } finally {
+    dropModelVisualSequenceFrames({ request, sensoriumSubscriber });
+  }
+
+  const rawVisualTaint = createRawVisualTaint({
+    request,
+    frame: sequenceFrame,
+    attachment: deliveredAttachment,
+    profile,
+    floorGateDecision,
+  });
+  const event = appendModelVisualAttachProvenanceEvent({
+    provenanceLog,
+    logger,
+    eventType: "model.context.visual.attached",
+    allowed: true,
+    request,
+    profile,
+    sourceSubscription,
+    frame: sequenceFrame,
+    attachment: deliveredAttachment,
+    floorGateDecision,
+    frameAgeMs: stale.maxAgeMs,
+    rawVisualTaint,
+    modelDeliveryPerformed: true,
+    episodeId: episode.id,
+    caller,
+    requestedBy: "occupant",
+  });
+  const result = modelVisualSequenceInvocationResult({
+    request,
+    burst,
+    attachment: deliveredAttachment,
+    event,
+    floorGateDecision,
+    coverage,
+  });
+  return {
+    ...base,
+    performed: true,
+    completion: secondCompletion,
+    results: [result],
+    disclosures: [modelVisualInvocationSuccessDisclosure(result)],
+    rawVisualTaint,
+    visualAttachmentCount: deliveredAttachments.length,
+    provenanceId: event.id,
+  };
+}
+
 function validateModelVisualInvocationBlock(invocation = {}) {
   const keys = Object.keys(isPlainObject(invocation) ? invocation : {});
   const allowed = new Set(["invoke", "grant_id"]);
@@ -8613,6 +9147,98 @@ function modelVisualSecondCallMessages({
   return messages;
 }
 
+function modelVisualSequenceSecondCallMessages({
+  modelMessages = [],
+  cleanedText = "",
+  request = {},
+  burst = {},
+  attachment = {},
+  floorGateDecision = {},
+  coverage = {},
+} = {}) {
+  const frames = burst.frames ?? [];
+  const frameIds = frames.map((frame) => stringValue(frame.frame_id)).filter(Boolean);
+  const first = frames[0] ?? {};
+  const last = frames[frames.length - 1] ?? {};
+  const unitLabel = request.payload_type === "composite_sequence" ? "pair" : "frame";
+  const marker = [
+    "Harness visual capability result:",
+    `${request.capability} delivered a ${frames.length} ${unitLabel} burst as ${attachment.visual_attachment_count ?? 0} ordered typed attachments for this turn only.`,
+    `Grant: ${request.grant_id}. Capture span: ${stringValue(first.capture_timestamp)} to ${stringValue(last.capture_timestamp)}.`,
+    `Effective sampling fps: ${request.effective_sampling_fps}. Burst span ms: ${request.burst_span_ms}.`,
+    `Frame ids: ${frameIds.join(", ") || "unknown"}.`,
+    `Solo floor verified: ${floorGateDecision.allowed === true}. Solo span verified: ${coverage.solo_span_verified === true}. Coverage method: ${stringValue(coverage.coverage_method)}.`,
+    `Attachment representation: ${stringValue(attachment.representation)}. Budget unit: ${stringValue(request.budget_unit)}.`,
+    "Visual bytes are attached out-of-band in this immediate model call only; they are not present in chat history, text, memory, forum, or provenance.",
+  ].join(" ");
+  const messages = Array.isArray(modelMessages) ? modelMessages.map((message) => ({ ...message })) : [];
+  const firstText = stringValue(cleanedText);
+  if (firstText) {
+    messages.push({ role: "assistant", content: firstText });
+  }
+  messages.push({ role: "user", content: marker });
+  return messages;
+}
+
+function modelVisualPresenceSamples(sensoriumPresenceState = null, { now = new Date() } = {}) {
+  if (typeof sensoriumPresenceState?.timeline === "function") {
+    return sensoriumPresenceState.timeline({ now: () => now });
+  }
+  if (typeof sensoriumPresenceState?.snapshot === "function") {
+    return [sensoriumPresenceState.snapshot({ now: () => now })];
+  }
+  if (Array.isArray(sensoriumPresenceState?.timeline)) {
+    return sensoriumPresenceState.timeline;
+  }
+  return sensoriumPresenceState && typeof sensoriumPresenceState === "object" ? [sensoriumPresenceState] : [];
+}
+
+function dropModelVisualSequenceFrames({ request = {}, sensoriumSubscriber = null } = {}) {
+  if (request.payload_type !== "composite_sequence") {
+    sensoriumSubscriber?.dropRawFrames?.({
+      subscriptionId: request.source_subscription_ids?.[0],
+      modality: modelVisualBasePayloadType(request.payload_type),
+    });
+    return;
+  }
+  for (const [capability, modality] of [
+    ["perception.sensorium.color.subscribe", "color"],
+    ["perception.sensorium.depth.subscribe", "depth"],
+  ]) {
+    sensoriumSubscriber?.dropRawFrames?.({
+      subscriptionId: sourceSubscriptionIdForCapability(request, capability),
+      modality,
+    });
+  }
+}
+
+function modelVisualSequenceSyntheticFrame({ request = {}, burst = {}, attachment = {} } = {}) {
+  const frames = burst.frames ?? [];
+  const first = frames[0] ?? {};
+  const last = frames[frames.length - 1] ?? {};
+  return {
+    subscription_id: request.payload_type === "composite_sequence"
+      ? `${sourceSubscriptionIdForCapability(request, "perception.sensorium.color.subscribe")}+${sourceSubscriptionIdForCapability(request, "perception.sensorium.depth.subscribe")}`
+      : stringValue(request.source_subscription_ids?.[0]),
+    source_grant_id: stringValue(request.source_grant_id),
+    modality: modelVisualBasePayloadType(request.payload_type),
+    source_host: first.source_host || sourceHostForVisualAttachRequest(request),
+    topic: stringValue(request.source_topic),
+    frame_id: stringValue(attachment.frame_ids?.join("|") || attachment.source_frame_ids?.join("|")),
+    capture_timestamp: stringValue(last.capture_timestamp),
+    byte_length: Number.isFinite(attachment.envelope_byte_length) ? attachment.envelope_byte_length : null,
+    declared_byte_length: null,
+    payload_bytes_included: true,
+    retention_mode: "sequence_ring",
+    source_frame_ids: normalizeCatalogStringArray(attachment.source_frame_ids, []),
+    source_frames: frames.flatMap((frame) => Array.isArray(frame.source_frames) ? frame.source_frames : [frame]),
+    frameset_sequence: Number.isInteger(last.frameset_sequence) ? last.frameset_sequence : null,
+    pairing_method: stringValue(attachment.pairing_method),
+    oldest_capture_timestamp: stringValue(first.capture_timestamp),
+    newest_capture_timestamp: stringValue(last.capture_timestamp),
+  };
+}
+
 function modelVisualInvocationRefusal({
   invocation = {},
   reason = "",
@@ -8677,6 +9303,59 @@ function modelVisualInvocationResult({
       visual_representation: stringValue(attachment.representation),
       retention_mode: stringValue(frame.retention_mode),
       payload_bytes_included: false,
+    },
+  };
+}
+
+function modelVisualSequenceInvocationResult({
+  request = {},
+  burst = {},
+  attachment = {},
+  event = {},
+  floorGateDecision = {},
+  coverage = {},
+} = {}) {
+  const frames = burst.frames ?? [];
+  return {
+    capability: request.capability,
+    grant_id: request.grant_id,
+    result_schema: "soma.model.context.visual.sequence.attach.result.v1",
+    requested_by: "occupant",
+    one_turn: true,
+    payload_attached: true,
+    payload_bytes_included: false,
+    payload_bytes_returned: false,
+    attachment_persisted: false,
+    provenance_id: event.id ?? "",
+    floor_gate_decision: {
+      allowed: floorGateDecision.allowed === true,
+      reason: stringValue(floorGateDecision.reason),
+      solo_span_verified: coverage.solo_span_verified === true,
+      coverage_method: stringValue(coverage.coverage_method),
+      payload_bytes_included: false,
+    },
+    burst: {
+      payload_type: stringValue(request.payload_type),
+      base_modality: modelVisualBasePayloadType(request.payload_type),
+      frame_count: frames.length,
+      pair_count: request.payload_type === "composite_sequence" ? burst.pairs.length : 0,
+      attachment_count: Number.isInteger(attachment.visual_attachment_count) ? attachment.visual_attachment_count : 0,
+      budget_unit: stringValue(request.budget_unit),
+      budget_units_spent: burst.unitCount,
+      client_attachment_unit: stringValue(request.client_attachment_unit),
+      effective_sampling_fps: request.effective_sampling_fps,
+      burst_span_ms: request.burst_span_ms,
+      oldest_capture_timestamp: stringValue(attachment.oldest_capture_timestamp),
+      newest_capture_timestamp: stringValue(attachment.newest_capture_timestamp),
+      frame_ids: normalizeCatalogStringArray(attachment.frame_ids, []),
+      source_frame_ids: normalizeCatalogStringArray(attachment.source_frame_ids, []),
+      frameset_sequences: Array.isArray(attachment.frameset_sequences) ? [...attachment.frameset_sequences] : [],
+      solo_span_verified: coverage.solo_span_verified === true,
+      coverage_method: stringValue(coverage.coverage_method),
+      presence_sample_count: Number.isInteger(coverage.presence_sample_count) ? coverage.presence_sample_count : 0,
+      pairing_method: stringValue(attachment.pairing_method),
+      visual_representation: stringValue(attachment.representation),
+      retention_mode: "sequence_ring",
     },
   };
 }

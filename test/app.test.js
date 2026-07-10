@@ -9495,6 +9495,347 @@ test("model visual occupant invocation aborts delivery when protective control c
   assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
 });
 
+test("model visual occupant sequence invocation delivers ordered color burst with frame budget spend", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-sequence-color",
+    },
+  });
+  const sequenceGrant = modelVisualSequenceGrantFixture({
+    nowIso: envelope.nowIso,
+    payloadType: "color_sequence",
+    capability: "model.context.visual.color.sequence.attach",
+    budgetUnit: "frames",
+    clientAttachmentUnit: "image_blocks",
+  });
+  envelope.grantStore.grants[0] = sequenceGrant;
+  const frames = [10, 11].map((sequence) => modelVisualSequenceFrame({
+    sequence,
+    frameId: `color-${sequence}`,
+    captureTimestamp: new Date(Date.parse(envelope.nowIso) - (11 - sequence) * 250).toISOString(),
+    payloadBytes: encodeColorPayload({ format: "jpeg", data: [0xff, 0xd8, sequence, 0xff, 0xd9] }),
+  }));
+  const subscriber = makeModelVisualSequenceSubscriber({ colorFrames: frames });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 2 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: modelVisualSequencePresenceState({ nowIso: envelope.nowIso, framesetSequences: [10, 11] }),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will inspect the burst.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.sequence.attach", grant_id: sequenceGrant.id }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments(args) {
+            calls.push({ kind: "visual", profile, args });
+            return {
+              text: "I saw the ordered burst.",
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: args.attachments.length,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-sequence-color",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look at the short burst" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "I saw the ordered burst.");
+  assert.equal(response.body.model_visual_invocation.performed, true);
+  assert.equal(response.body.capability_results[0].result_schema, "soma.model.context.visual.sequence.attach.result.v1");
+  assert.equal(response.body.capability_results[0].burst.frame_count, 2);
+  assert.equal(response.body.capability_results[0].burst.budget_units_spent, 2);
+  assert.equal(response.body.capability_results[0].burst.solo_span_verified, true);
+  assert.equal(response.body.capability_results[0].burst.coverage_method, "sequence_join");
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 2);
+  assert.equal(calls[1].args.attachments.length, 2);
+  assert.deepEqual(calls[1].args.attachments.map((attachment) => attachment.sequence_index), [0, 1]);
+  assert.deepEqual(calls[1].args.attachments.map((attachment) => attachment.frame_id), ["color-10", "color-11"]);
+  assert.deepEqual(calls[1].args.attachments.map((attachment) => attachment.frameset_sequence), [10, 11]);
+  assert.match(calls[1].args.messages.at(-1).content, /delivered a 2 frame burst/);
+  assert.match(calls[1].args.messages.at(-1).content, /Solo span verified: true/);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
+test("model visual occupant sequence invocation refuses profile attachment limit before ring read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-sequence-profile",
+    },
+  });
+  const sequenceGrant = modelVisualSequenceGrantFixture({
+    nowIso: envelope.nowIso,
+    payloadType: "color_sequence",
+    capability: "model.context.visual.color.sequence.attach",
+    budgetUnit: "frames",
+    clientAttachmentUnit: "image_blocks",
+  });
+  envelope.grantStore.grants[0] = sequenceGrant;
+  const subscriber = makeModelVisualSequenceSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 1 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: modelVisualSequencePresenceState({ nowIso: envelope.nowIso, framesetSequences: [10, 11] }),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat() {
+            return {
+              text: [
+                "I will inspect the burst.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.sequence.attach", grant_id: sequenceGrant.id }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-sequence-profile",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "model_visual_sequence_profile_attachment_limit_exceeded");
+  assert.equal(subscriber.sequenceReadCalls.length, 0);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 4);
+});
+
+test("model visual occupant sequence invocation refuses when whole-burst presence is not solo", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-sequence-floor",
+    },
+  });
+  const sequenceGrant = modelVisualSequenceGrantFixture({
+    nowIso: envelope.nowIso,
+    payloadType: "color_sequence",
+    capability: "model.context.visual.color.sequence.attach",
+    budgetUnit: "frames",
+    clientAttachmentUnit: "image_blocks",
+  });
+  envelope.grantStore.grants[0] = sequenceGrant;
+  const frames = [10, 11].map((sequence) => modelVisualSequenceFrame({
+    sequence,
+    frameId: `color-${sequence}`,
+    captureTimestamp: envelope.nowIso,
+    payloadBytes: encodeColorPayload({ format: "jpeg", data: [0xff, 0xd8, sequence, 0xff, 0xd9] }),
+  }));
+  const subscriber = makeModelVisualSequenceSubscriber({ colorFrames: frames });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 2 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: modelVisualSequencePresenceState({
+      nowIso: envelope.nowIso,
+      framesetSequences: [10, 11],
+      samplePersonCount: 2,
+      sampleCountBucket: "2_plus",
+      sampleAdditionalPersonPresent: "present",
+    }),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat() {
+            return {
+              text: [
+                "I will inspect the burst.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.sequence.attach", grant_id: sequenceGrant.id }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-sequence-floor",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.model_visual_invocation.performed, false);
+  assert.equal(response.body.capability_refusals[0].reason, "burst_presence_not_solo");
+  assert.equal(subscriber.sequenceReadCalls.length, 1);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 4);
+});
+
+test("model visual occupant composite sequence spends pairs while delivering paired image blocks", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-sequence-composite",
+    },
+  });
+  const sequenceGrant = modelVisualSequenceGrantFixture({
+    nowIso: envelope.nowIso,
+    payloadType: "composite_sequence",
+    capability: "model.context.visual.composite.sequence.attach",
+    budgetUnit: "pairs",
+    clientAttachmentUnit: "paired_image_blocks",
+  });
+  envelope.grantStore.grants[0] = sequenceGrant;
+  const colorFrames = [20, 21].map((sequence) => modelVisualSequenceFrame({
+    sequence,
+    frameId: `color-${sequence}`,
+    captureTimestamp: envelope.nowIso,
+    payloadBytes: encodeColorPayload({ format: "jpeg", data: [0xff, 0xd8, sequence, 0xff, 0xd9] }),
+  }));
+  const depthFrames = [20, 21].map((sequence) => modelVisualSequenceFrame({
+    sequence,
+    frameId: `depth-${sequence}`,
+    captureTimestamp: envelope.nowIso,
+    modality: "depth",
+    subscriptionId: "sub-depth-1",
+    sourceGrantId: "grant-depth-1",
+    topic: "sensor/jetsorano/realsense/depth",
+    payloadBytes: encodeDepthPayload({
+      format: "png",
+      data: Array.from(encodeDepthPng16({ width: 1, height: 1, values: [sequence] })),
+      depth_units: 0.001,
+    }),
+  }));
+  const subscriber = makeModelVisualSequenceSubscriber({ colorFrames, depthFrames });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 4 }),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: modelVisualSequencePresenceState({ nowIso: envelope.nowIso, framesetSequences: [20, 21] }),
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will inspect the paired burst.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.composite.sequence.attach", grant_id: sequenceGrant.id }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments(args) {
+            calls.push({ kind: "visual", profile, args });
+            return {
+              text: "I saw the paired burst.",
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: args.attachments.length,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-sequence-composite",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look at the paired burst" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "I saw the paired burst.");
+  assert.equal(response.body.capability_results[0].burst.pair_count, 2);
+  assert.equal(response.body.capability_results[0].burst.attachment_count, 4);
+  assert.equal(response.body.capability_results[0].burst.budget_unit, "pairs");
+  assert.equal(response.body.capability_results[0].burst.budget_units_spent, 2);
+  assert.equal(response.body.capability_results[0].burst.client_attachment_unit, "paired_image_blocks");
+  assert.equal(response.body.capability_results[0].burst.pairing_method, "frameset_sequence");
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 2);
+  assert.equal(calls[1].args.attachments.length, 4);
+  assert.deepEqual(calls[1].args.attachments.map((attachment) => attachment.sequence_index), [0, 0, 1, 1]);
+  assert.deepEqual(calls[1].args.attachments.map((attachment) => attachment.pair_id), [
+    "frameset-20",
+    "frameset-20",
+    "frameset-21",
+    "frameset-21",
+  ]);
+  assert.deepEqual(subscriber.dropCalls, [
+    { subscriptionId: "sub-color-1", modality: "color" },
+    { subscriptionId: "sub-depth-1", modality: "depth" },
+  ]);
+});
+
 test("POST /chat rejects inbound visual payload-shaped fields before model call", async () => {
   let calls = 0;
   const handler = makeHandler({
@@ -16104,6 +16445,22 @@ function modelVisualAttachRuntimeProfiles() {
   };
 }
 
+function modelVisualSequenceRuntimeProfiles({ maxAttachments = 4 } = {}) {
+  const profile = {
+    ...modelVisualAttachRuntimeProfiles().profiles[0],
+    supported_visual_modalities: ["color", "depth", "pose", "composite"],
+    visual_attachment_modalities: ["color", "depth", "pose", "composite"],
+    depth_representation: "colorized_png",
+    pose_representation: "pose_json",
+    composite_representation: "paired_image_blocks",
+    max_visual_attachments_per_turn: maxAttachments,
+  };
+  return {
+    ...modelVisualAttachRuntimeProfiles(),
+    profiles: [profile],
+  };
+}
+
 function modelVisualAttachActivationEnvelope({ requestPatch = {}, bodyPatch = {} } = {}) {
   const nowIso = new Date().toISOString();
   const request = {
@@ -16151,6 +16508,59 @@ function modelVisualAttachActivationEnvelope({ requestPatch = {}, bodyPatch = {}
       },
       ...bodyPatch,
     },
+  };
+}
+
+function modelVisualSequenceGrantFixture({
+  nowIso = new Date().toISOString(),
+  payloadType = "color_sequence",
+  capability = "model.context.visual.color.sequence.attach",
+  budgetUnit = "frames",
+  clientAttachmentUnit = "image_blocks",
+} = {}) {
+  const base = modelVisualGrantFixture();
+  const basePayload = payloadType.replace(/_sequence$/, "");
+  const constraints = {
+    ...base.constraints,
+    source_subscription_ids: basePayload === "composite" ? ["sub-color-1", "sub-depth-1"] : ["sub-color-1"],
+    source_capabilities: basePayload === "composite"
+      ? ["perception.sensorium.color.subscribe", "perception.sensorium.depth.subscribe"]
+      : [`perception.sensorium.${basePayload}.subscribe`],
+    source_topics: basePayload === "composite"
+      ? ["sensor/jetsorano/realsense/color", "sensor/jetsorano/realsense/depth"]
+      : [],
+    source_grant_ids: basePayload === "composite" ? ["grant-color-1", "grant-depth-1"] : [],
+    source_topic: basePayload === "composite"
+      ? "sensor/jetsorano/realsense/composite"
+      : `sensor/jetsorano/realsense/${basePayload}`,
+    source_grant_id: basePayload === "composite" ? "grant-composite-sequence-1" : `grant-${basePayload}-1`,
+    payload_type: payloadType,
+    max_frame_count: 2,
+    max_frame_age_ms: 5_000,
+    transformed_dimensions: [384, 384],
+    format_required: basePayload === "depth" || basePayload === "composite" ? "png_sequence" : "jpeg_sequence",
+    max_pairing_skew_ms: basePayload === "composite" ? 1_000 : undefined,
+    composite_representation: basePayload === "composite" ? "paired_image_blocks" : undefined,
+    preview_acknowledged_at: nowIso,
+    effective_sampling_fps: 2,
+    burst_max_frames: 2,
+    burst_span_ms: 1_000,
+    burst_downsample: [384, 384],
+    window_frame_budget: 4,
+    budget_unit: budgetUnit,
+    client_attachment_unit: clientAttachmentUnit,
+  };
+  for (const key of ["depth_representation", "pose_representation", "composite_representation", "max_pairing_skew_ms"]) {
+    if (constraints[key] === undefined) {
+      delete constraints[key];
+    }
+  }
+  return {
+    ...base,
+    id: `grant-${basePayload}-sequence`,
+    capability,
+    scope: "window",
+    constraints,
   };
 }
 
@@ -16212,6 +16622,150 @@ function makeModelVisualAttachSubscriber({ frame = {} } = {}) {
       cachedFrame = null;
     },
   };
+}
+
+function modelVisualSequenceFrame({
+  sequence = 1,
+  frameId = `frame-${sequence}`,
+  captureTimestamp = new Date().toISOString(),
+  modality = "color",
+  subscriptionId = "sub-color-1",
+  sourceGrantId = "grant-color-1",
+  topic = "sensor/jetsorano/realsense/color",
+  payloadBytes = encodeColorPayload({ format: "jpeg", data: [0xff, 0xd8, 0x01, 0xff, 0xd9] }),
+} = {}) {
+  const payload = Uint8Array.from(payloadBytes);
+  return {
+    subscription_id: subscriptionId,
+    source_grant_id: sourceGrantId,
+    modality,
+    source_host: "jetsorano",
+    topic,
+    frame_id: frameId,
+    frameset_sequence: sequence,
+    capture_timestamp: captureTimestamp,
+    byte_length: payload.byteLength,
+    declared_byte_length: null,
+    accounted_byte_length: payload.byteLength,
+    stored_at: captureTimestamp,
+    expires_at: new Date(Date.parse(captureTimestamp) + 10_000).toISOString(),
+    payload_bytes: payload,
+    payload_bytes_included: true,
+    disk_persisted: false,
+    provenance_appended: false,
+    retention_mode: "sequence_ring",
+  };
+}
+
+function makeModelVisualSequenceSubscriber({ colorFrames = [], depthFrames = [] } = {}) {
+  const sequenceReadCalls = [];
+  const dropCalls = [];
+  const streams = [
+    {
+      subscription_id: "sub-color-1",
+      capability: "perception.sensorium.color.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      grant_id: "grant-color-1",
+      topic: "sensor/jetsorano/realsense/color",
+      host: "jetsorano",
+      source_host: "jetsorano",
+      status: "active",
+    },
+    {
+      subscription_id: "sub-depth-1",
+      capability: "perception.sensorium.depth.subscribe",
+      provider: "soma.provider.sensorium.jetsorano",
+      grant_id: "grant-depth-1",
+      topic: "sensor/jetsorano/realsense/depth",
+      host: "jetsorano",
+      source_host: "jetsorano",
+      status: "active",
+    },
+  ];
+  const sequences = new Map([
+    ["sub-color-1\u0000color", colorFrames],
+    ["sub-depth-1\u0000depth", depthFrames],
+  ]);
+  return {
+    sequenceReadCalls,
+    dropCalls,
+    configurePresenceContext() {},
+    onSubscriptionEnded() {},
+    describeActive() {
+      return {
+        family: "perception.sensorium",
+        active_count: streams.length,
+        summary: "active",
+        streams,
+        frames_recorded: true,
+      };
+    },
+    readRawFrameSequence(args) {
+      sequenceReadCalls.push(args);
+      const key = `${args.subscriptionId}\u0000${args.modality}`;
+      const frames = sequences.get(key) ?? [];
+      return frames.slice(-args.maxFrames).map((frame) => ({
+        ...frame,
+        payload_bytes: new Uint8Array(frame.payload_bytes),
+      }));
+    },
+    dropRawFrames(args) {
+      dropCalls.push(args);
+      sequences.set(`${args.subscriptionId}\u0000${args.modality}`, []);
+    },
+  };
+}
+
+function modelVisualSequencePresenceState({
+  nowIso = new Date().toISOString(),
+  framesetSequences = [],
+  personCount = 1,
+  countBucket = "1",
+  additionalPersonPresent = "not_detected",
+  samplePersonCount = personCount,
+  sampleCountBucket = countBucket,
+  sampleAdditionalPersonPresent = additionalPersonPresent,
+} = {}) {
+  const snapshot = {
+    status: "available",
+    source_host: "jetsorano",
+    observed_at: nowIso,
+    expires_at: new Date(Date.parse(nowIso) + 10_000).toISOString(),
+    person_count: personCount,
+    count_bucket: countBucket,
+    additional_person_present: additionalPersonPresent,
+    confidence_bucket: "high",
+  };
+  const samples = framesetSequences.map((sequence) => ({
+    ...snapshot,
+    frameset_sequence: sequence,
+    person_count: samplePersonCount,
+    count_bucket: sampleCountBucket,
+    additional_person_present: sampleAdditionalPersonPresent,
+  }));
+  return {
+    snapshot() {
+      return { ...snapshot };
+    },
+    timeline() {
+      return samples.map((sample) => ({ ...sample }));
+    },
+  };
+}
+
+async function attestModelVisualFloor(handler, sourceHost) {
+  return invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: sourceHost,
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
 }
 
 function makeModelVisualDeliveryClient({ fail = false } = {}) {

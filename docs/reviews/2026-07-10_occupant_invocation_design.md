@@ -41,15 +41,20 @@ turn output —
 ```
 
 (likewise `.composite.attach`, `.depth.attach`, `.pose.attach` — whatever capability the
-held grant names). The block carries **only** `invoke` and `grant_id`. Every substantive
-parameter — modality, source subscriptions, source host, max frame age, format,
-representation, pairing bound, retention `none`, preview acknowledgement — comes from the
-**grant constraints**, which only Seth writes. There is nothing in the block for the
-occupant to widen.
+held grant names). The block carries **only** `invoke` and `grant_id` — a **strict
+schema** (Codex fold): no `args`, no `capability` alias, no TTL/source/subscription/
+profile/representation fields; any unknown field refuses before grant resolution or
+frame read. Every substantive parameter — modality, source subscriptions, source host,
+max frame age, format, representation, pairing bound, retention `none`, preview
+acknowledgement — comes from the **grant constraints**, which only Seth writes. There is
+nothing in the block for the occupant to widen.
 
-Flow on turn N (occupant emits the block):
+**"Next turn" means an immediate second model call inside the same `/chat` transaction**
+(Codex crux, folded — this is what makes no-pending-state real). Flow within one
+steward `/chat` call:
 
-1. Harness parses the block, resolves the grant (`once` scope, explicit user approval —
+1. Model call N returns occupant output containing the block. Harness parses it against
+   the strict schema and resolves the grant (`once` scope, explicit user approval —
    unchanged catalog policy).
 2. Harness evaluates **the same floor gate** (`decideRawFrameVisionFloorGate`) with the
    same inputs from the same sources: live presence state (never caller-supplied — the
@@ -57,19 +62,44 @@ Flow on turn N (occupant emits the block):
    structurally, because the attestation endpoint is HTTP and the occupant's only surface
    is the capability block), the episode's own status from the harness's episode record,
    grant recovery, profile vision support.
-3. **Gate open** → the frame is read from the gated cache, extracted/rendered per the
-   built representation contracts, and attached to the occupant's **next turn (N+1)**
-   request, alongside a capability result stating what was delivered (frame id, capture
-   timestamp, age, byte length, representation — the same byte-free facts provenance
-   records). The grant is spent; the cached frame is consumed.
-4. **Gate closed** → turn N+1 carries a **spoken refusal** with the gate's reason class
-   (slice-A discipline: a refusal is a gift; silence is a trap). The grant is **not**
-   spent on refusal. The occupant may ask again.
+3. **Gate open** → the harness immediately assembles a **second model call (N+1) within
+   the same transaction**: redacted history + content-free capability result (frame id,
+   capture timestamp, age, byte length, representation) in the message text, with the
+   visual attachment passed as the **sibling `attachments` argument** to
+   `chatWithVisualAttachments` — never inside `messages`. The cached frame is consumed;
+   the grant is spent (below). Both completions (N's ask, N+1's response-to-seeing)
+   return to the steward; the transcript records both, with the redaction marker where
+   the attachment was delivered.
+4. **Gate closed** → no second model call. The refusal reason class is spoken back to
+   the occupant on the following steward turn (slice-A discipline: a refusal is a gift;
+   silence is a trap). The grant is **not** spent on refusal. The occupant may ask again,
+   within the rate bound (below).
+5. **Protective-control race** (Codex fold): if pause/distress/eject fires between
+   invocation and the second call, cached frames drop and the delivery aborts/refuses —
+   a control close always wins over an in-flight look.
 
-No queued or pending state. A request is evaluated against the floor **as it stands at
-invocation**; there is no harness-held "deliver when Seth next attests" — that would turn
-a closed floor into a scheduled opening the occupant arranged. If the floor is closed,
-the occupant hears why, and asking Seth is a *conversation*, not a mechanism.
+No queued or pending state — the immediate-second-call shape is what makes this true
+mechanically, not just as posture: an allowed look never outlives its transaction, and a
+refused look leaves **no** delivery object anywhere. A request is evaluated against the
+floor **as it stands at invocation**; there is no harness-held "deliver when Seth next
+attests" — that would turn a closed floor into a scheduled opening the occupant arranged.
+If the floor is closed, the occupant hears why, and asking Seth is a *conversation*, not
+a mechanism.
+
+**Grant spending is an explicit mechanism** (Codex fold), not an adjective: on successful
+handoff of the attachment to the model client, the grant transitions to a consumed state
+with a content-free provenance event (runtime supersede/expire — build's choice of form),
+such that it can never authorize a second look, **including across a service restart if
+the grant is durable**. The consumption boundary is the handoff: floor/stale/profile/
+shape refusals before handoff do not spend; a model-call failure *after* handoff does
+(the bytes reached the client — the consequential act happened).
+
+**Rate bound on refused retries** (Codex fold, answering the presence-probe concern):
+repeated closed-floor invocations could poll presence/attestation state for free. The
+first refusal in a window carries its full honest reason class; subsequent refusals
+within the cooldown (per episode + grant; on the order of 3/minute — build pins the
+constant) refuse with an honest `visual_invocation_rate_limited` class. Reason classes
+are never blurred; only cadence is limited. Rate-limited refusals do not spend the grant.
 
 ## What the occupant can and cannot influence
 
@@ -94,18 +124,27 @@ new rule, a frame attached at turn N+1 would ride the relayed history into N+2, 
 — a one-turn delivery silently becoming an every-turn delivery. That is the gap between
 "one turn" as intent and as mechanism.
 
-**Rule: the attachment exists in exactly one outbound model request.**
+**Rule: the attachment exists in exactly one outbound model request** — and the
+implementation invariant is an **object boundary**, not a prose rule (Codex fold):
 
-1. **Harness-side (load-bearing):** the harness attaches the frame to the N+1 request at
-   assembly time, from the gated cache — the image block never appears in any *stored or
-   relayed* message structure. What enters the steward-held history for turn N+1 is a
+1. **Harness-side (load-bearing):** visual bytes / typed visual blocks may exist only in
+   a local variable passed as the sibling `attachments` argument to the immediate second
+   model call. They must never be inserted into `messages`, episode state, session
+   memory, forum posts, durable testimony, provenance, capability result objects,
+   transport telemetry, or logs. What enters the steward-held history for turn N+1 is a
    content-free marker in the user-role message:
    `[one-turn visual attachment delivered here: <modality>, frame <id>, retention none — not retained in history]`.
-2. **Harness-side (backstop):** the occupant chat path **refuses** any inbound
-   `messages` containing typed image/visual content blocks or payload-shaped fields
-   (the slice-3 rule extended to the chat route). Only the harness may attach, and only
-   from the gated cache. A steward cannot accidentally (or deliberately) re-send a frame
-   through the relay; a compromised relay cannot smuggle one.
+   The controller path's cache-drop-after-any-attempted-delivery pattern is reused.
+2. **Harness-side (backstop):** the occupant chat path **fails closed before message
+   normalization** on any inbound `messages` containing content arrays/objects or
+   payload-shaped fields at any nesting depth — `attachments`, `image_url`,
+   `input_image`, content blocks, data URLs, `payload_bytes`, `bytes`, `base64`, source
+   frames — covering the steward relay and every chat route shape, local and remote.
+   (Today's string-only normalization blocks typed content *accidentally* by
+   stringifying it; this makes the refusal deliberate and prior.) Only the harness may
+   attach, and only from the gated cache. A steward cannot accidentally (or
+   deliberately) re-send a frame through the relay; a compromised relay cannot smuggle
+   one.
 3. **Steward-side (discipline, not mechanism):** the steward's own transcript keeps the
    marker, never the bytes — consistent with existing provenance/byte-free practice.
 
@@ -183,6 +222,35 @@ The Later Slice named its own list; the build must prove, at minimum:
     redacted history, with production collaborators (the standing rule; fakes hid five
     findings in this arc).
 
+Codex additions (folded from pressure-test, all binding):
+
+11. **Strict block schema**: only `invoke` + `grant_id` accepted for
+    `model.context.visual.*.attach` invocations; no `args`, no `capability` alias;
+    unknown fields refuse before grant spend or frame read.
+12. **Once-grant consumption**: a delivered look leaves the grant unable to authorize a
+    second, including across service restart for durable grants; consumption boundary is
+    handoff-to-model-client (pre-handoff refusals never spend; post-handoff model-call
+    failure does spend); consumption has content-free provenance.
+13. **Model-call count**: one incoming `/chat` call produces exactly two model calls
+    when the floor is open (second carries the attachment as sibling argument, never in
+    `messages`) and exactly one when closed; stored/relayed history holds only the
+    marker; N+2 request carries no visual block (JSON.stringify negative checks on every
+    modelClient call's `messages`, all calls).
+14. **Closed floor leaves nothing**: after a refusal, no pending visual delivery object
+    exists anywhere in episode state, session memory, or harness state.
+15. **Inbound smuggling, route-level**: typed visual content / payload-shaped fields in
+    relayed `messages` fail closed before normalization, on local and remote profiles.
+16. **Telemetry/log negatives**: no base64, data URLs, image_url, typed visual content,
+    or raw attachment objects in provenance entries or transport telemetry.
+17. **Control-close race**: pause/distress/eject firing between invocation and the
+    second call drops cached frames and aborts the delivery.
+18. **Rate bound**: first refusal fully reasoned; repeated closed-floor invocations
+    within the cooldown refuse `visual_invocation_rate_limited` (honest class, no
+    blurring), without spending the grant.
+19. **Composite happy path is sequence-primary**: with `81e16e5` deployed, the
+    composite occupant-look test asserts `pairing_method: frameset_sequence`; the
+    timestamp fallback stays tested but is no longer the happy-path assertion.
+
 ## First live use (sketch, own protocol to follow)
 
 A short dwell, fable-5, honest briefing: it holds one once-scope color grant (or
@@ -193,17 +261,36 @@ that) but **what a mind does with the choice**: whether it looks, when, why, and
 says about the difference between being shown and asking. Run protocol to be drafted
 after build review, per the dwell tradition.
 
-## Asks for Codex (second-steward pressure-test)
+## Pressure-test record
 
-1. Is the history-redaction mechanism sound as specified — attachment at request-assembly
-   time only, marker in stored/relayed history, inbound visual-content refusal on the
-   chat route? Any leak path between the gated cache and a second outbound request that
-   this misses (compaction is absent today, but name anything shaped like it)?
-2. The no-pending-state decision: refusal-now vs. deliver-on-next-attest. We chose
-   refusal-now for floor honesty. Does any legitimate use suffer enough to revisit?
-3. The refused-request-does-not-spend-grant rule: any abuse shape in free retries against
-   a closed floor (e.g., presence-probe side channel: can repeated refusal reason classes
-   leak more about the room than the occupant should have)? If so, propose the narrowest
-   mitigation — rate-bound on invocations, not a reason-class blur (refusals stay honest).
-4. Confirm the acceptance list is complete against the Later Slice's ratified sentence
-   and slices 1–6 as built.
+**Codex second-steward pressure-test: PASS on the spine with four tightenings, all
+folded above (2026-07-10):**
+
+1. **"Next turn" clarified as immediate second model call within the same `/chat`
+   transaction** — the crux; without it, no-pending-state and no-retention contradict a
+   deferred delivery. Folded into the request-path flow.
+2. **Grant spending made an explicit consumed-state mechanism** with restart survival
+   and a defined consumption boundary (handoff to model client). Folded.
+3. **Redaction restated as an object-boundary invariant** (attachment only ever a local
+   sibling argument to the second call) with fail-closed inbound rejection *before*
+   normalization and full negative-check coverage including telemetry/logs. Folded.
+4. **Rate bound on refused retries** (per episode + grant, honest
+   `visual_invocation_rate_limited` class, no reason blurring, no grant spend) — the
+   answer to the presence-probe side channel. Folded.
+
+Codex also confirmed: refusal-now over deliver-on-next-attest ("would let the occupant
+schedule a future opening and makes the floor less honest"), and the acceptance list is
+complete with its additions (11–19 above).
+
+## Ratification checklist (Seth)
+
+- [ ] The immediate-second-call transaction shape (two model calls when open, one when
+      closed, no pending state).
+- [ ] Grant consumption boundary at handoff-to-model-client.
+- [ ] History redaction as object-boundary invariant + fail-closed inbound refusal.
+- [ ] Rate bound on refused retries (honest class, cadence-only).
+- [ ] 60s attestation TTL retained unchanged; any occupant-window TTL is a separate
+      future ratification.
+- [ ] First live use gets its own run protocol before arming.
+
+On ratification: build slices to Codex under the usual per-slice review.

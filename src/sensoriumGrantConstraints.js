@@ -5,11 +5,22 @@ const SENSORIUM_GRANT_CONSTRAINT_KEYS = new Set([
   "downsample_to",
 ]);
 
+const REQUIRED_CONSTRAINTS_BY_CAPABILITY = Object.freeze({
+  "perception.sensorium.color.subscribe": ["max_seconds", "max_fps", "format_required", "downsample_to"],
+  "perception.sensorium.depth.subscribe": ["max_seconds", "max_fps", "format_required", "downsample_to"],
+  "perception.sensorium.presence.subscribe": ["max_seconds", "max_fps"],
+  "perception.sensorium.pose.subscribe": ["max_seconds", "max_fps"],
+  "perception.sensorium.imu.subscribe": ["max_seconds"],
+  "perception.sensorium.location.subscribe": ["max_seconds"],
+  "perception.sensorium.status.subscribe": ["max_seconds"],
+});
+
 export function enforceSensoriumGrantConstraints({ request, grant } = {}) {
   const requested = objectOrEmpty(request?.constraints);
   const grantConstraints = objectOrEmpty(grant?.constraints);
   const errors = [];
   const constraints = { ...requested };
+  const required = REQUIRED_CONSTRAINTS_BY_CAPABILITY[request?.capability] ?? [];
 
   for (const key of Object.keys(grantConstraints)) {
     if (!SENSORIUM_GRANT_CONSTRAINT_KEYS.has(key)) {
@@ -49,6 +60,12 @@ export function enforceSensoriumGrantConstraints({ request, grant } = {}) {
       !Object.hasOwn(grantConstraints, key)
     ) {
       errors.push(`grant.constraints.${key} must exist before request.constraints.${key} can be used`);
+    }
+  }
+
+  for (const key of required) {
+    if (!Object.hasOwn(constraints, key)) {
+      errors.push(`grant.constraints.${key} must exist before ${request?.capability} can be activated`);
     }
   }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -192,6 +192,32 @@ test("SensorBrokerManager send before start rejects with a clear error", async (
     () => mgr.send("sensorium.subscribe.start", { topic: "sensor/x/status" }),
     /not started/,
   );
+});
+
+test("SensorBrokerManager send times out when helper does not answer", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "soma-sensor-broker-hung-"));
+  const helperPath = path.join(dir, "hung-helper.sh");
+  writeFileSync(helperPath, "#!/usr/bin/env bash\nwhile IFS= read -r _line; do :; done\n");
+  chmodSync(helperPath, 0o755);
+
+  const mgr = new SensorBrokerManager({
+    binaryPath: helperPath,
+    requestTimeoutMs: 25,
+  });
+  await mgr.start();
+  try {
+    await assert.rejects(
+      () => mgr.send("sensorium.subscribe.stop", { subscription_id: "sub-hung" }),
+      (error) => {
+        assert.equal(error.code, "helper_request_timeout");
+        assert.equal(error.code_name, "helper_request_timeout");
+        assert.equal(error.method, "sensorium.subscribe.stop");
+        return true;
+      },
+    );
+  } finally {
+    await mgr.stop();
+  }
 });
 
 test("SensorBrokerManager start with a missing binary rejects", async () => {

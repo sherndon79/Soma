@@ -104,6 +104,40 @@ test("Sensorium grant constraints reject requested bounded keys absent from gran
   );
 });
 
+test("Sensorium grant constraints reject unconstrained camera activation", () => {
+  assertConstraintError(
+    () => enforceSensoriumGrantConstraints({
+      request: {
+        capability: "perception.sensorium.depth.subscribe",
+        topic: "sensor/jetsorano/realsense/depth",
+        constraints: {},
+      },
+      grant: {
+        id: "grant-unbounded-depth",
+        constraints: {},
+      },
+    }),
+    /grant\.constraints\.max_seconds/,
+  );
+});
+
+test("Sensorium grant constraints reject unconstrained derived stream activation", () => {
+  assertConstraintError(
+    () => enforceSensoriumGrantConstraints({
+      request: {
+        capability: "perception.sensorium.presence.subscribe",
+        topic: "perception/jetsorano/presence",
+        constraints: {},
+      },
+      grant: {
+        id: "grant-unbounded-presence",
+        constraints: {},
+      },
+    }),
+    /grant\.constraints\.max_seconds/,
+  );
+});
+
 test("Sensorium grant constraints reject malformed grant limits", () => {
   assertConstraintError(
     () => enforceSensoriumGrantConstraints({

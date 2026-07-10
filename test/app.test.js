@@ -2375,6 +2375,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
       max_seconds: 60,
       max_fps: 5,
       format_required: "jpeg",
+      downsample_to: [16, 16],
       raw_frame_retention: {
         enabled: true,
         retention_mode: "latest_frame_cache",
@@ -2392,6 +2393,7 @@ test("POST /model-visual/attach-requests/controller delivers paired color-depth 
       max_seconds: 60,
       max_fps: 5,
       format_required: "png",
+      downsample_to: [16, 16],
       raw_frame_retention: {
         enabled: true,
         retention_mode: "latest_frame_cache",

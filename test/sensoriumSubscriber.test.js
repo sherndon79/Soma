@@ -356,6 +356,57 @@ test("helperStatusAnchor uses helper-owned status rather than the Node mirror", 
   assert.equal(manager.calls.at(-1).method, "sensorium.subscribe.status");
 });
 
+test("describeActive marks streams stalled when notifications stop", async () => {
+  const manager = new FakeManager();
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowMs),
+  });
+  let nowMs = 1_700_000_000_000;
+  await subscriber.start(COMMON_START);
+
+  nowMs += 9_000;
+  let disclosure = subscriber.describeActive({ now: new Date(nowMs) });
+  assert.equal(disclosure.streams[0].helper_error_class, "");
+
+  nowMs += 2_000;
+  disclosure = subscriber.describeActive({ now: new Date(nowMs) });
+  assert.equal(disclosure.streams[0].helper_error_class, "notification_stalled");
+});
+
+test("sample notifications clear a prior stalled marker", async () => {
+  const manager = new FakeManager();
+  let nowMs = 1_700_000_000_000;
+  const subscriber = new SensoriumSubscriber({
+    manager,
+    now: () => new Date(nowMs),
+  });
+  await subscriber.start(COMMON_START);
+  nowMs += 11_000;
+  assert.equal(
+    subscriber.describeActive({ now: new Date(nowMs) }).streams[0].helper_error_class,
+    "notification_stalled",
+  );
+
+  manager.emitSample("sub-1", "sensor/jetsorano/realsense/color", {
+    payloadBytes: encodeColorPayload({
+      schema_version: 1,
+      frame_number: 12,
+      width: 16,
+      height: 16,
+      format: "jpeg",
+      data: [0xff, 0xd8, 0xff, 0xd9],
+    }),
+    payloadSize: 4,
+    captureTimestamp: new Date(nowMs).toISOString(),
+  });
+
+  assert.equal(
+    subscriber.describeActive({ now: new Date(nowMs) }).streams[0].helper_error_class,
+    "",
+  );
+});
+
 test("stopAll stops every tracked subscription for runtime shutdown", async () => {
   const manager = new FakeManager();
   const subscriber = new SensoriumSubscriber({ manager });

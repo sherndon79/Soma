@@ -60,8 +60,10 @@ const INTERNAL_ERROR: i64 = -32603;
 // no subscription is currently registered under it." Distinct from
 // invalid_params (which is for malformed param shapes).
 const SUBSCRIPTION_NOT_FOUND: i64 = -32002;
+const OUTPUT_QUEUE_CAPACITY: usize = 128;
+const OUTPUT_SEND_TIMEOUT: Duration = Duration::from_millis(500);
 
-type Output = mpsc::UnboundedSender<String>;
+type Output = mpsc::Sender<String>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ColorTransformConfig {
@@ -140,7 +142,7 @@ struct State {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> std::process::ExitCode {
     let state = Arc::new(Mutex::new(State::default()));
-    let (output_tx, mut output_rx) = mpsc::unbounded_channel::<String>();
+    let (output_tx, mut output_rx) = mpsc::channel::<String>(OUTPUT_QUEUE_CAPACITY);
 
     // Output task — single writer, prevents interleaved lines on stdout.
     let output_task = tokio::spawn(async move {
@@ -166,7 +168,7 @@ async fn main() -> std::process::ExitCode {
             Ok(0) => break,
             Ok(_) => {
                 let response = handle_line(&line, Arc::clone(&state), output_tx.clone()).await;
-                if output_tx.send(response.to_string()).is_err() {
+                if !send_output_line(&output_tx, response.to_string()).await {
                     break;
                 }
             }
@@ -468,7 +470,7 @@ async fn handle_subscribe_start(
                                         "error_class": error_class,
                                     }
                                 });
-                                let _ = output_tx.send(notification.to_string());
+                                let _ = send_output_line(&output_tx, notification.to_string()).await;
                                 break;
                             }
                         };
@@ -493,7 +495,7 @@ async fn handle_subscribe_start(
                             }
                         }),
                     };
-                    if output_tx.send(notification.to_string()).is_err() {
+                    if !send_output_line(&output_tx, notification.to_string()).await {
                         break;
                     }
                 }
@@ -507,7 +509,7 @@ async fn handle_subscribe_start(
                             "error_class": "zenoh_recv_failed",
                         }
                     });
-                    let _ = output_tx.send(notification.to_string());
+                    let _ = send_output_line(&output_tx, notification.to_string()).await;
                     break;
                 }
             }
@@ -540,6 +542,13 @@ async fn handle_subscribe_start(
         },
         "id": id,
     })
+}
+
+async fn send_output_line(output_tx: &Output, line: String) -> bool {
+    matches!(
+        tokio::time::timeout(OUTPUT_SEND_TIMEOUT, output_tx.send(line)).await,
+        Ok(Ok(()))
+    )
 }
 
 fn parse_optional_max_fps(params: &Value) -> Result<Option<u32>, String> {
@@ -1035,8 +1044,8 @@ mod tests {
         Arc::new(Mutex::new(State::default()))
     }
 
-    fn make_output() -> (Output, mpsc::UnboundedReceiver<String>) {
-        mpsc::unbounded_channel::<String>()
+    fn make_output() -> (Output, mpsc::Receiver<String>) {
+        mpsc::channel::<String>(OUTPUT_QUEUE_CAPACITY)
     }
 
     fn sandbox_zenoh_config_path() -> PathBuf {

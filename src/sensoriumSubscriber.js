@@ -47,6 +47,9 @@ const SENSORIUM_SAMPLE_NOTIFICATION = "sensorium.subscription.sample";
 const SENSORIUM_ERROR_NOTIFICATION = "sensorium.subscription.error";
 const PRESENCE_CAPABILITY = "perception.sensorium.presence.subscribe";
 const POSE_CAPABILITY = "perception.sensorium.pose.subscribe";
+const STALL_STARTUP_GRACE_MS = 10_000;
+const STALL_MIN_SAMPLE_GAP_MS = 10_000;
+const STALL_SAMPLE_PERIOD_MULTIPLIER = 4;
 const RAW_FRAME_MODALITY_BY_CAPABILITY = Object.freeze({
   "perception.sensorium.color.subscribe": "color",
   "perception.sensorium.depth.subscribe": "depth",
@@ -160,6 +163,7 @@ export class SensoriumSubscriber {
         streamSummaryObserved: null,
         poseSummaryObserved: null,
         helperErrorClass: "",
+        lastNotificationAt: null,
       },
       _rawFrameRetention: normalizeRawFrameRetention(rawFrameRetention, {
         capability,
@@ -316,24 +320,28 @@ export class SensoriumSubscriber {
    * for the operator/participant-facing surface.
    */
   describeActive({ now } = {}) {
-    const subscriptions = Array.from(this.#active.values()).map((record) => ({
-      subscription_id: record.subscription_id,
-      capability: record.capability,
-      provider: record.provider,
-      grant_id: record.grant_id,
-      scope: record.scope,
-      topic: record.topic,
-      started_at: record.started_at_iso,
-      expires_at: record.expires_at_iso,
-      constraints_declared: record.constraints_declared,
-      recent_frame_rate: estimateFrameRate(record, this.#now()),
-      frames_consumed_so_far: record._stats.framesConsumed,
-      status_summary_observed: record._stats.statusSummaryObserved,
-      stream_summary_observed: record._stats.streamSummaryObserved,
-      pose_summary_observed: record._stats.poseSummaryObserved,
-      helper_error_class: record._stats.helperErrorClass,
-    }));
-    return describeActiveSensoriumSubscriptions(subscriptions, { now: now ?? this.#now() });
+    const evaluatedAt = now ?? this.#now();
+    const subscriptions = Array.from(this.#active.values()).map((record) => {
+      this.#refreshStallState(record, evaluatedAt);
+      return {
+        subscription_id: record.subscription_id,
+        capability: record.capability,
+        provider: record.provider,
+        grant_id: record.grant_id,
+        scope: record.scope,
+        topic: record.topic,
+        started_at: record.started_at_iso,
+        expires_at: record.expires_at_iso,
+        constraints_declared: record.constraints_declared,
+        recent_frame_rate: estimateFrameRate(record, evaluatedAt),
+        frames_consumed_so_far: record._stats.framesConsumed,
+        status_summary_observed: record._stats.statusSummaryObserved,
+        stream_summary_observed: record._stats.streamSummaryObserved,
+        pose_summary_observed: record._stats.poseSummaryObserved,
+        helper_error_class: record._stats.helperErrorClass,
+      };
+    });
+    return describeActiveSensoriumSubscriptions(subscriptions, { now: evaluatedAt });
   }
 
   readLatestRawFrame({ subscriptionId = "", modality = "", now } = {}) {
@@ -405,6 +413,10 @@ export class SensoriumSubscriber {
     if (!sub) {
       return;
     }
+    sub._stats.lastNotificationAt = this.#now().toISOString();
+    if (sub._stats.helperErrorClass === "notification_stalled") {
+      sub._stats.helperErrorClass = "";
+    }
     sub._stats.framesConsumed += 1;
     if (sub.capability === "perception.sensorium.color.subscribe") {
       this.#recordColorSample(sub, msg.params);
@@ -433,7 +445,26 @@ export class SensoriumSubscriber {
     if (!sub) {
       return;
     }
+    sub._stats.lastNotificationAt = this.#now().toISOString();
     sub._stats.helperErrorClass = sanitizeHelperErrorClass(msg.params?.error_class);
+  }
+
+  #refreshStallState(record, now) {
+    const evaluatedAt = resolveDate(now ?? this.#now);
+    if (record._stats.helperErrorClass && record._stats.helperErrorClass !== "notification_stalled") {
+      return record;
+    }
+    const lastNotificationMs = Date.parse(record._stats.lastNotificationAt);
+    const baselineMs = Number.isFinite(lastNotificationMs)
+      ? lastNotificationMs
+      : record.started_at * 1000;
+    const maxSilenceMs = Number.isFinite(lastNotificationMs)
+      ? maxSampleSilenceMs(record)
+      : STALL_STARTUP_GRACE_MS;
+    if (Number.isFinite(baselineMs) && evaluatedAt.getTime() - baselineMs > maxSilenceMs) {
+      record._stats.helperErrorClass = "notification_stalled";
+    }
+    return record;
   }
 
   #scheduleTimeout(record, maxSeconds) {
@@ -734,6 +765,14 @@ function estimateFrameRate(record, now) {
     return 0;
   }
   return record._stats.framesConsumed / elapsedSec;
+}
+
+function maxSampleSilenceMs(record) {
+  const fps = record?.constraints_declared?.max_fps;
+  if (!Number.isInteger(fps) || fps <= 0) {
+    return STALL_MIN_SAMPLE_GAP_MS;
+  }
+  return Math.max(STALL_MIN_SAMPLE_GAP_MS, Math.ceil((1000 / fps) * STALL_SAMPLE_PERIOD_MULTIPLIER));
 }
 
 function stripEmpty(object) {

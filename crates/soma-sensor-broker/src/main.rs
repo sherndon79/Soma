@@ -110,6 +110,7 @@ struct ColorFrame {
     schema_version: u32,
     timestamp: f64,
     frame_number: u64,
+    frameset_sequence: Option<u64>,
     width: u32,
     height: u32,
     format: String,
@@ -121,6 +122,7 @@ struct DepthFrame {
     schema_version: u32,
     timestamp: f64,
     frame_number: u64,
+    frameset_sequence: Option<u64>,
     width: u32,
     height: u32,
     format: String,
@@ -1086,6 +1088,7 @@ mod tests {
             schema_version: 1,
             timestamp: 1_779_000_001.25,
             frame_number: 42,
+            frameset_sequence: Some(85_204),
             width,
             height,
             format: "jpeg".to_string(),
@@ -1131,6 +1134,7 @@ mod tests {
             schema_version: 1,
             timestamp: 1_779_000_001.25,
             frame_number: 42,
+            frameset_sequence: Some(85_204),
             width,
             height,
             format: "png".to_string(),
@@ -1478,6 +1482,7 @@ mod tests {
         let frame: ColorFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
         assert_eq!(frame.schema_version, 1);
         assert_eq!(frame.frame_number, 42);
+        assert_eq!(frame.frameset_sequence, Some(85_204));
         assert_eq!(frame.format, "jpeg");
         assert!(frame.width <= 320, "width was {}", frame.width);
         assert!(frame.height <= 240, "height was {}", frame.height);
@@ -1552,6 +1557,7 @@ mod tests {
         let frame: DepthFrame = rmp_serde::from_slice(&transformed).expect("decode transformed");
         assert_eq!(frame.schema_version, 1);
         assert_eq!(frame.frame_number, 42);
+        assert_eq!(frame.frameset_sequence, Some(85_204));
         assert_eq!(frame.format, "png");
         assert_eq!(frame.depth_units, 0.001);
         assert!(frame.width <= 320, "width was {}", frame.width);

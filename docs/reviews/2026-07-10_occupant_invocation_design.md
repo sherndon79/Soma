@@ -160,6 +160,29 @@ exhaustion — each with content-free provenance. `once` scope remains available
 vocabulary for one-shot grants (the controller runbook's shape) but is no longer the
 occupant default.
 
+**Budget atomicity** (Codex R2 fold): pre-handoff refusals (floor, stale, shape,
+profile-limit preflight) never decrement; successful handoff to the model client
+decrements **even if the provider then errors** (R1's post-handoff spend boundary,
+kept); rate-limited refusals never decrement. Sequence budgets are **frame- or
+pair-defined per capability** — `composite.sequence` counts pairs at the grant/budget
+layer and **image blocks at the model-client boundary** (providers count blocks), with
+one definition per layer so the two never conflate.
+
+**Restart semantics** (Codex R2 fold): windows are runtime-scoped and **die closed with
+the process**. Durable grants never imply an armed window — after any Soma restart, all
+remote perception windows are closed and require a fresh Seth arm act; nothing
+reconstructs an open window from grants. Since a crash cannot append provenance at crash
+time, the next boot's status surface reports a content-free
+`perception_window_closed_by_process_restart` fact. If durable windows are ever added,
+they persist as *closed-on-restart* unless separately ratified.
+
+**Model-client limits** (Codex R2 fold): profiles declare
+`max_visual_attachments_per_turn` and `max_visual_bytes_per_turn`; a burst exceeding
+either refuses **before handoff** (no spend). Attachments are ordered and typed —
+each carries `sequence_index`, `frame_id`, `capture_timestamp`, `frameset_sequence`,
+`modality`, and `pair_id` for composite — oldest-first, order preserved through the
+adapter, mirrored byte-free in the capability result.
+
 ## The ring buffer (sequence grants only)
 
 The single-frame cache holds one latest frame. Sequences need a **bounded ring**: a
@@ -171,9 +194,33 @@ deeper by a named, granted amount. An invocation reads the **trailing** window �
 motion that prompted the ask — not a forward capture (no camera-on-demand semantics
 hiding in a read).
 
-Presence samples are ring-annotated: a burst whose span contains any non-solo or
-missing presence reading refuses whole (remote profile). No partial bursts — a burst is
-one disclosure decision.
+**The presence timeline coverage rule** (Codex R2 — "the real floor for remote
+bursts"): per-frame ingest snapshots are not the load-bearing proof (async lag can make
+them wrong). Presence is a **first-class small timeline/ring of its own**, evaluated at
+invocation:
+
+- Visual ring frames and presence samples both carry `capture_timestamp` and
+  `frameset_sequence` where available; **sequence join is primary** when present
+  (depth-derived presence shares the camera's clock).
+- Otherwise the burst's capture-time interval `[oldest, newest]` plus a small guard
+  band (sized from presence cadence/freshness) must have **sufficient fresh presence
+  coverage**, and **every covering sample must be solo**.
+- Missing coverage refuses `burst_presence_coverage_missing`; stale coverage refuses;
+  any observed non-solo refuses `burst_presence_not_solo`. Distinct honest classes,
+  whole-burst refusal, no partial bursts — a burst is one disclosure decision.
+- Same-host Sensorium timestamps keep skew small, but the guard band and fail-closed
+  missing-coverage rule are named so clock drift degrades to refusal, never to
+  delivery.
+
+**Ring hardening** (Codex R2 fold): per-ring **max frame count AND max total bytes**,
+evicting oldest before accepting a frame that would exceed either; remote rings store
+frames **only in the grant-pinned transformed representation/resolution** (never raw
+native — local native rings wait for local-runtime ratification); status/disclosure
+surfaces expose byte-free metadata only (count, span, oldest/newest timestamps, dropped
+count, caps, armed state); drop fires on disarm, expiry, revoke, budget exhaustion,
+protective control, subscription stop, **grant-recovery degradation, service shutdown,
+and the model-handoff `finally` block**. Named caveat: RAM-only is not crash-dump-proof
+— core dumps for the Soma process should be disabled or this residue named in ops.
 
 ## History redaction (unchanged from R1 — permanent, both profiles)
 
@@ -193,6 +240,13 @@ every route shape, local and remote. Steward transcripts keep markers, never byt
 - Provenance events gain `requested_by: "occupant"`, and for sequences: frame count,
   span, sampling rate, per-frame ids, ring depth, `solo_span_verified: true` — all
   byte-free. Refusals record reason class per the existing discipline.
+- **Local-profile taint invariant** (Codex R2, named now so the local build inherits
+  it): continuous local perception has no discrete delivery event, so the existing
+  consume-once-on-next-turn taint is the wrong shape there. The local runtime needs an
+  **active-window taint source** — while local perception is armed, *all* occupant
+  writes/egress carry the live-perception class for the window's duration, not per
+  delivery. Designed with the local runtime; recorded here so remote one-shot machinery
+  is not mistaken for the general form.
 
 ## The grant console (companion build, not a slice of this design)
 
@@ -250,7 +304,27 @@ Replaced/new for R2:
     capability result names span/rate/ids/solo-span.
 26. **Sequence catalog honesty**: `data_exposed` for sequence entries names
     motion/behavior/intent disclosure (assert the language, per the pose-entry
-    precedent).
+    precedent), and marks remote sequence capabilities as bridge-state/egress-shaped so
+    local-first is not fossilized into remote defaults.
+
+Codex R2 additions (all binding):
+
+27. **Restart closure**: restart closes all runtime windows; durable grants do not
+    re-arm; boot status reports `perception_window_closed_by_process_restart`; nothing
+    resumes.
+28. **Budget atomicity**: frame/pair-defined per capability; preflight refusal no-spend
+    vs post-handoff provider failure spend, tested at the boundary; rate-limited
+    refusals no-spend.
+29. **Presence timeline coverage**: non-solo mid-span refuses; missing coverage
+    refuses (`burst_presence_coverage_missing`); stale coverage refuses; sequence join
+    wins when available; timestamp fallback honors the guard band.
+30. **Ring caps and surfaces**: byte-cap eviction (oldest first); stills-only grants
+    never populate a ring even where a single-frame cache exists; status/disclosure
+    byte-free.
+31. **Model-client limits**: `max_visual_attachments_per_turn` / `max_visual_bytes_per_turn`
+    preflight refusal (no spend); oldest-first attachment order preserved through the
+    adapter; `composite.sequence` counts pairs at budget layer, blocks at client
+    boundary — both asserted.
 
 ## Pressure-test record
 
@@ -267,6 +341,18 @@ stacked on his consent, on the record); ring buffer + burst span solo rule are n
 mechanism (23–24); sequence capability family is new surface (26); local-first framing
 bounds what is bridge-state.
 
+**R2 re-test (Codex, 2026-07-10): "passes on architecture after these tightenings" —
+all folded above:** the presence timeline coverage rule replacing per-frame ingest
+snapshots (named by Codex as the real floor for remote bursts — the must-not-miss);
+restart-closes-all-windows with boot-time disclosure and no grant-implied re-arming;
+budget atomicity at the handoff boundary with per-capability frame/pair definitions;
+ring frame+byte caps, transformed-only remote storage, byte-free surfaces, the full
+drop list, and the core-dump caveat; profile-level model-client limits with ordered
+typed attachments; the local active-window taint invariant recorded for the local
+build; acceptance items 27–31 added. Codex confirmed runtime-scoped
+windows-die-closed as preferable to durable resumption, and whole-burst refusal as the
+right span mechanism.
+
 ## Ratification checklist (Seth)
 
 - [ ] Local-first architecture: local occupant perception is activation-gated at native
@@ -279,7 +365,13 @@ bounds what is bridge-state.
 - [ ] Sequence capability family (four new entries) with honest behavioral disclosure.
 - [ ] Remote defaults: 5 fps effective sampling, ≤ 16-frame / 3.2 s bursts, 640×360
       burst resolution + optional keyframe, composite bursts ≤ 8 pairs.
-- [ ] Burst-span solo rule; trailing-ring-only; no forward capture.
+- [ ] Burst-span solo via the presence timeline coverage rule (sequence-join primary,
+      guard-banded fallback, missing/stale coverage fails closed); trailing-ring-only;
+      no forward capture.
+- [ ] Restart closes all windows; durable grants never re-arm; boot discloses the
+      closure.
+- [ ] Budget atomicity at the model-handoff boundary; frame/pair-defined sequence
+      budgets.
 - [ ] Immediate second-call transaction shape; redaction invariant; rate bound (carried
       from R1).
 - [ ] Grant console as companion build.

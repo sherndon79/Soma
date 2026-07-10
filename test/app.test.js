@@ -9033,6 +9033,262 @@ test("soma-capability malformed fragments disclose fixed reason classes without 
   }
 });
 
+test("model visual occupant invocation performs immediate second call with redacted history", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-success",
+    },
+  });
+  envelope.grantStore.grants[0].scope = "window";
+  envelope.grantStore.grants[0].constraints.window_frame_budget = 1;
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const calls = [];
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat(args) {
+            calls.push({ kind: "chat", profile, args });
+            return {
+              text: [
+                "I will look once.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.attach", grant_id: "grant-visual-color" }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments(args) {
+            calls.push({ kind: "visual", profile, args });
+            return {
+              text: "I saw the frame and can continue.",
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: args.attachments.length,
+            };
+          },
+        };
+      },
+    },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-success",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look if useful" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "I saw the frame and can continue.");
+  assert.equal(response.body.model_visual_invocation.performed, true);
+  assert.equal(response.body.model_visual_invocation.payload_bytes_included, false);
+  assert.equal(response.body.capability_results.length, 1);
+  assert.equal(response.body.capability_results[0].capability, "model.context.visual.color.attach");
+  assert.equal(response.body.capability_results[0].payload_bytes_included, false);
+  assert.equal(response.body.capability_results[0].frame.frame_id, "42");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].kind, "chat");
+  assert.equal(calls[1].kind, "visual");
+  assert.equal(calls[1].args.attachments.length, 1);
+  assert.equal(calls[1].args.attachments[0].payload_bytes instanceof Uint8Array, true);
+  assert.equal(JSON.stringify(calls[1].args.messages).includes("soma-capability"), false);
+  assert.equal(JSON.stringify(response.body).includes("payload_bytes\":"), false);
+  assert.equal(envelope.grantStore.grants[0].constraints.window_frame_budget, 0);
+  assert.deepEqual(subscriber.dropCalls, [{ subscriptionId: "sub-color-1", modality: "color" }]);
+});
+
+test("model visual occupant invocation strict block refuses before frame read", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-strict",
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat() {
+            return {
+              text: [
+                "I will try a widened look.",
+                "```soma-capability",
+                JSON.stringify({
+                  invoke: "model.context.visual.color.attach",
+                  grant_id: "grant-visual-color",
+                  max_frame_age_ms: 60_000,
+                }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-strict",
+      model_profile: "gemma4-vision",
+      messages: [{ role: "user", content: "look" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.match(response.body.text, /model\.context\.visual\.color\.attach was refused/);
+  assert.match(response.body.text, /model_visual_invocation_block_schema_invalid/);
+  assert.equal(response.body.capability_refusals.length, 1);
+  assert.equal(response.body.capability_refusals[0].reason, "model_visual_invocation_block_schema_invalid");
+  assert.equal(subscriber.readCalls.length, 0);
+  assert.equal(subscriber.dropCalls.length, 0);
+});
+
+test("model visual occupant invocation rate-limits repeated closed-floor refusals", async () => {
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-rate",
+    },
+  });
+  const subscriber = makeModelVisualAttachSubscriber();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: modelVisualAttachRuntimeProfiles(),
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: {
+      ...envelope.presenceState,
+      person_count: 2,
+      additional_person_present: "present",
+    },
+    modelClient: {
+      withProfile(profile) {
+        return {
+          async chat() {
+            return {
+              text: [
+                "I will look.",
+                "```soma-capability",
+                JSON.stringify({ invoke: "model.context.visual.color.attach", grant_id: "grant-visual-color" }),
+                "```",
+              ].join("\n"),
+              model: profile.model,
+              finish_reason: "stop",
+              tokens_used: 4,
+            };
+          },
+          async chatWithVisualAttachments() {
+            throw new Error("must not deliver");
+          },
+        };
+      },
+    },
+  });
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/model-visual/floor/attestations",
+    body: {
+      actor: "operator",
+      source_host: "jetsorano",
+      seth_present: true,
+      seth_consented: true,
+      active_control: true,
+      no_other_person_in_frame: true,
+    },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  const body = {
+    episode_id: "episode-visual-occupant-rate",
+    model_profile: "gemma4-vision",
+    messages: [{ role: "user", content: "look" }],
+  };
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.capability_refusals[0].reason, "presence_count_not_exactly_one");
+  assert.equal(subscriber.readCalls.length, 0);
+
+  response = await invokeHandler(handler, { method: "POST", url: "/chat", body });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.capability_refusals[0].reason, "raw_visual_invocation_rate_limited");
+  assert.equal(subscriber.readCalls.length, 0);
+});
+
+test("POST /chat rejects inbound visual payload-shaped fields before model call", async () => {
+  let calls = 0;
+  const handler = makeHandler({
+    harness: allowedHarness,
+    modelClient: {
+      async chat() {
+        calls += 1;
+        return { text: "must not run", model: "local-test-model", finish_reason: "stop", tokens_used: 1 };
+      },
+    },
+  });
+
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      messages: [{ role: "user", content: "hello" }],
+      payload_bytes: [1, 2, 3],
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, "chat_visual_payload_fields_forbidden");
+  assert.equal(calls, 0);
+});
+
 test("space.status.read delivers minimized grant-bound result egress without forbidden result fields", async () => {
   const handler = makeHandler({
     harness: allowedHarness,
@@ -15563,6 +15819,11 @@ function modelVisualGrantFixture() {
       preview_acknowledged: true,
       preview_cleanup_required: true,
       retention_mode: "none",
+      run_posture: {
+        status: "active",
+        seth_present: true,
+        seth_consented_to_visual_egress: true,
+      },
     },
   };
 }

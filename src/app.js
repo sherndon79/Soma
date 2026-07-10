@@ -170,6 +170,7 @@ const DEFAULT_TOOL_CALL_TEMPERATURE = 0.2;
 const MAX_POSE_JSON_BYTES = 256_000;
 const DEFAULT_PERCEPTION_WINDOW_TTL_MS = 60 * 60 * 1000;
 const MAX_PERCEPTION_WINDOW_TTL_MS = 24 * 60 * 60 * 1000;
+const RAW_VISUAL_INVOCATION_REFUSAL_COOLDOWN_MS = 30_000;
 
 export function createApp({
   harness,
@@ -343,6 +344,7 @@ export function createRequestHandler({
   const rawVisualSoloAttestations = new Map();
   const rawVisualPerceptionWindows = new Map();
   const rawVisualClosedPerceptionWindows = new Map();
+  const rawVisualInvocationRefusals = new Map();
   const perceptionWindowBootFact = {
     event_type: "perception_window_closed_by_process_restart",
     windows_resumed: false,
@@ -4046,6 +4048,15 @@ export function createRequestHandler({
 
       if (req.method === "POST" && url.pathname === "/chat") {
         const body = await readJson(req);
+        const forbiddenVisualPayloadPaths = forbiddenChatVisualPayloadPaths(body);
+        if (forbiddenVisualPayloadPaths.length > 0) {
+          writeJson(res, 400, {
+            error: "chat_visual_payload_fields_forbidden",
+            message: "Chat requests must not include visual payload-shaped fields.",
+            forbidden_paths: forbiddenVisualPayloadPaths,
+          });
+          return;
+        }
         const messages = normalizeMessages(body.messages);
         const useSessionMemory = Boolean(body.use_session_memory);
         const writeSessionMemory = Boolean(body.write_session_memory);
@@ -4120,7 +4131,7 @@ export function createRequestHandler({
           });
           return;
         }
-        const livePerceptionTaint = composeLivePerceptionTaint(
+        let livePerceptionTaint = composeLivePerceptionTaint(
           activeSensoriumPerceptionTaint({ sensoriumSubscriber }),
           consumeRawVisualTaint(episodeState),
         );
@@ -4518,6 +4529,42 @@ export function createRequestHandler({
           });
           return;
         }
+        const modelVisualInvocation = await processOccupantModelVisualInvocationFromCompletion({
+          completion,
+          modelMessages,
+          body,
+          runtimeProfile,
+          profileClient,
+          grantStore,
+          grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
+          runtimeProfiles,
+          sensoriumSubscriber,
+          sensoriumPresenceState,
+          rawVisualPerceptionWindows,
+          rawVisualClosedPerceptionWindows,
+          rawVisualSoloAttestations,
+          rawVisualInvocationRefusals,
+          provenanceLog,
+          logger,
+          episode,
+          episodeState,
+          caller: req.headers["x-soma-caller"] ?? "",
+        });
+        if (modelVisualInvocation.handled) {
+          if (modelVisualInvocation.completion) {
+            completion.text = modelVisualInvocation.completion.text ?? "";
+            completion.model = modelVisualInvocation.completion.model ?? completion.model;
+            completion.finish_reason = modelVisualInvocation.completion.finish_reason ?? completion.finish_reason;
+            completion.tokens_used = (completion.tokens_used ?? 0) + (modelVisualInvocation.completion.tokens_used ?? 0);
+            completion.transport_telemetry = modelVisualInvocation.completion.transport_telemetry ?? completion.transport_telemetry ?? null;
+          } else {
+            completion.text = modelVisualInvocation.cleanedText;
+          }
+          if (modelVisualInvocation.rawVisualTaint) {
+            livePerceptionTaint = composeLivePerceptionTaint(livePerceptionTaint, modelVisualInvocation.rawVisualTaint);
+          }
+        }
+
         const forumExtraction = extractForumPostsFromCompletion(completion.text);
         const durableTestimonyExtraction = extractDurableTestimonyDirectivesFromCompletion(forumExtraction.text);
         const spaceCapabilityExtraction = extractSpaceCapabilityInvocationsFromCompletion(durableTestimonyExtraction.text);
@@ -4646,7 +4693,10 @@ export function createRequestHandler({
           forumPostsTruncated: forumExtraction.truncatedPosts,
           durableTestimonyResult,
           durableTestimonyTruncated: durableTestimonyExtraction.truncatedDirectives,
-          capabilityRefusals: spaceCapabilityResult.refusals,
+          capabilityRefusals: [
+            ...modelVisualInvocation.refusals,
+            ...spaceCapabilityResult.refusals,
+          ],
           capabilityParseDisclosures,
         });
         const occupantVisibleText = appendHarnessFeedback(completion.text, harnessFeedback);
@@ -4673,12 +4723,14 @@ export function createRequestHandler({
           durable_testimony_revoked: durableTestimonyResult.revoked.length,
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
           durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
-          space_capability_invocations: spaceCapabilityResult.invocations.length,
-          space_capability_results: spaceCapabilityResult.results.length,
-          space_capability_refusals: spaceCapabilityResult.refusals.length,
+          space_capability_invocations: spaceCapabilityResult.invocations.length + modelVisualInvocation.invocations.length,
+          space_capability_results: spaceCapabilityResult.results.length + modelVisualInvocation.results.length,
+          space_capability_refusals: spaceCapabilityResult.refusals.length + modelVisualInvocation.refusals.length,
           space_capability_truncated: spaceCapabilityExtraction.truncatedInvocations,
           space_capability_parse_errors: spaceCapabilityExtraction.parseErrors.length,
           space_capability_parse_error_reasons: spaceCapabilityExtraction.parseErrors.map((error) => error.reason),
+          model_visual_invocation_performed: modelVisualInvocation.performed,
+          model_visual_invocation_refused: modelVisualInvocation.refusals.length > 0,
         };
         provenanceLog.append(allowedProvenance);
         logger.info?.("soma.provenance", allowedProvenance);
@@ -4725,15 +4777,33 @@ export function createRequestHandler({
           durable_testimony_blocked: durableTestimonyResult.blocked.length,
           durable_testimony_truncated: durableTestimonyExtraction.truncatedDirectives,
           durable_testimony_disclosures: durableTestimonyResult.disclosures,
-          capability_invocations: spaceCapabilityResult.invocations,
-          capability_results: spaceCapabilityResult.results,
-          capability_refusals: spaceCapabilityResult.refusals,
+          capability_invocations: [
+            ...modelVisualInvocation.invocations,
+            ...spaceCapabilityResult.invocations,
+          ],
+          capability_results: [
+            ...modelVisualInvocation.results,
+            ...spaceCapabilityResult.results,
+          ],
+          capability_refusals: [
+            ...modelVisualInvocation.refusals,
+            ...spaceCapabilityResult.refusals,
+          ],
           capability_invocation_disclosures: [
+            ...modelVisualInvocation.disclosures,
             ...spaceCapabilityResult.disclosures,
             ...capabilityParseDisclosures,
           ],
           capability_invocation_parse_errors: spaceCapabilityExtraction.parseErrors,
           capability_invocations_truncated: spaceCapabilityExtraction.truncatedInvocations,
+          model_visual_invocation: {
+            handled: modelVisualInvocation.handled,
+            performed: modelVisualInvocation.performed,
+            refused: modelVisualInvocation.refusals.length > 0,
+            payload_bytes_included: false,
+            visual_attachment_count: modelVisualInvocation.visualAttachmentCount,
+            provenance_id: modelVisualInvocation.provenanceId,
+          },
           harness_feedback: harnessFeedback,
           analysis_testing_briefing_carried: briefingCarried,
           cognitive_load_assessment: cognitiveLoadAssessment,
@@ -7906,6 +7976,605 @@ function extractSpaceCapabilityInvocationsFromCompletion(text = "") {
     searchFrom = closingIndex + 3;
   }
   return { text: cleaned.trim(), invocations, truncatedInvocations, parseErrors };
+}
+
+async function processOccupantModelVisualInvocationFromCompletion({
+  completion = {},
+  modelMessages = [],
+  body = {},
+  runtimeProfile = {},
+  profileClient = null,
+  grantStore = {},
+  grantRecoveryReport = null,
+  runtimeProfiles = {},
+  sensoriumSubscriber = null,
+  sensoriumPresenceState = null,
+  rawVisualPerceptionWindows = new Map(),
+  rawVisualClosedPerceptionWindows = new Map(),
+  rawVisualSoloAttestations = new Map(),
+  rawVisualInvocationRefusals = new Map(),
+  provenanceLog,
+  logger = console,
+  episode = {},
+  episodeState = {},
+  caller = "",
+} = {}) {
+  const extraction = extractSpaceCapabilityInvocationsFromCompletion(completion.text);
+  const visualInvocation = extraction.invocations.find((invocation) =>
+    isModelVisualAttachInvocationCapability(invocation?.invoke));
+  const empty = {
+    handled: false,
+    performed: false,
+    completion: null,
+    cleanedText: String(completion.text ?? ""),
+    invocations: [],
+    results: [],
+    refusals: [],
+    disclosures: [],
+    rawVisualTaint: null,
+    visualAttachmentCount: 0,
+    provenanceId: "",
+  };
+  if (!visualInvocation) {
+    return empty;
+  }
+
+  const invocation = {
+    invoke: stringValue(visualInvocation.invoke),
+    grant_id: stringValue(visualInvocation.grant_id),
+  };
+  const base = {
+    ...empty,
+    handled: true,
+    cleanedText: extraction.text,
+    invocations: [invocation],
+  };
+  const strictError = validateModelVisualInvocationBlock(visualInvocation);
+  if (strictError) {
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason: strictError,
+      })],
+      disclosures: [modelVisualInvocationDisclosure({
+        invocation,
+        reason: strictError,
+      })],
+    };
+  }
+
+  const visualGrant = findGrantById(grantStore, invocation.grant_id);
+  if (!visualGrant || visualGrant.status !== "active" || visualGrant.capability !== invocation.invoke) {
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason: "model_visual_attach_grant_not_authorized",
+        authorizationCode: visualGrant ? "capability_mismatch" : "grant_not_found",
+      })],
+      disclosures: [modelVisualInvocationDisclosure({
+        invocation,
+        reason: "model_visual_attach_grant_not_authorized",
+      })],
+    };
+  }
+
+  const requestBody = modelVisualAttachRequestFromGrant({ invocation, grant: visualGrant });
+  let request;
+  try {
+    request = validateModelVisualAttachRequest(requestBody, {
+      grants: grantStore.grants ?? [],
+    });
+  } catch (err) {
+    const reason = "model_visual_attach_request_invalid";
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason,
+        validationErrors: err.validation_errors,
+      })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  if (isSequenceVisualAttachCapabilityKey(request.capability)) {
+    const reason = "model_visual_sequence_invocation_not_enabled";
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const budgetRefusal = modelVisualWindowBudgetRefusal(visualGrant);
+  if (budgetRefusal) {
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason: budgetRefusal,
+      })],
+      disclosures: [modelVisualInvocationDisclosure({
+        invocation,
+        reason: budgetRefusal,
+      })],
+    };
+  }
+
+  const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.model_profile);
+  const deliveryProfile = validateModelVisualDeliveryProfile(profile, request.payload_type, request);
+  if (!deliveryProfile.allowed) {
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      reason: deliveryProfile.reason,
+      failedGateInput: "runtime_profile",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason: deliveryProfile.reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason: deliveryProfile.reason })],
+    };
+  }
+  if (typeof profileClient?.chatWithVisualAttachments !== "function") {
+    const reason = "model_client_lacks_typed_visual_path";
+    return {
+      ...base,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const sourceSubscription = findActiveSensoriumStream(sensoriumSubscriber, request.source_subscription_ids[0]);
+  const sourceHost = sourceHostForVisualAttachRequest(request);
+  const now = new Date();
+  const expiredWindows = expireRawVisualPerceptionWindows(rawVisualPerceptionWindows, {
+    now,
+    provenanceLog,
+    logger,
+    caller,
+    closedWindows: rawVisualClosedPerceptionWindows,
+  });
+  for (const expired of expiredWindows) {
+    rawVisualSoloAttestations.delete(expired.source_host);
+  }
+  const perceptionWindow = rawVisualPerceptionWindows.get(sourceHost) ?? null;
+  const soloAttestation = perceptionWindowAttestation(perceptionWindow, { now })
+    ?? rawVisualSoloAttestations.get(sourceHost)
+    ?? null;
+  const floorGateDecision = decideRawFrameVisionFloorGate({
+    runPosture: modelVisualInvocationRunPosture({ grant: visualGrant, fallback: body?.run_posture }),
+    episodeStatus: episodeState.status || "active",
+    visualGrant,
+    grantRecoveryReport,
+    soloAttestation,
+    presenceState: sensoriumPresenceState,
+    sourceSubscription,
+    profile,
+    modality: request.payload_type,
+    sourceHost,
+    now,
+  });
+  if (!floorGateDecision.allowed) {
+    if (floorGateDecision.reason === "episode_not_live" && typeof sensoriumSubscriber?.dropRawFrames === "function") {
+      sensoriumSubscriber.dropRawFrames({
+        subscriptionId: request.source_subscription_ids[0],
+        modality: request.payload_type,
+      });
+    }
+    const rateKey = rawVisualInvocationRateKey({ episodeId: episode.id, grantId: request.grant_id });
+    const previousRefusalAt = rawVisualInvocationRefusals.get(rateKey) ?? 0;
+    const rateLimited = previousRefusalAt > 0 &&
+      now.getTime() - previousRefusalAt < RAW_VISUAL_INVOCATION_REFUSAL_COOLDOWN_MS;
+    const reason = rateLimited ? "raw_visual_invocation_rate_limited" : floorGateDecision.reason;
+    if (!rateLimited) {
+      rawVisualInvocationRefusals.set(rateKey, now.getTime());
+    }
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      floorGateDecision,
+      reason,
+      failedGateInput: rateLimited ? "rate_bound" : failedRawFrameVisionFloorGateInput(floorGateDecision),
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({
+        invocation,
+        reason,
+        authorizationCode: rateLimited ? "cooldown" : "",
+      })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+  rawVisualInvocationRefusals.delete(rawVisualInvocationRateKey({ episodeId: episode.id, grantId: request.grant_id }));
+
+  const frame = readModelVisualAttachFrame({ request, sensoriumSubscriber, now });
+  if (!frame) {
+    const reason = "raw_latest_frame_unavailable";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      floorGateDecision,
+      reason,
+      failedGateInput: "latest_frame_cache",
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+  const frameAgeMs = Number.isFinite(frame.max_frame_age_ms)
+    ? frame.max_frame_age_ms
+    : now.getTime() - Date.parse(frame.capture_timestamp);
+  if (!Number.isFinite(frameAgeMs) || frameAgeMs < 0 || frameAgeMs > request.max_frame_age_ms) {
+    const reason = "raw_latest_frame_stale";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame,
+      floorGateDecision,
+      reason,
+      failedGateInput: "frame_age",
+      frameAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  let deliveredAttachments = [];
+  let deliveredAttachment = null;
+  try {
+    deliveredAttachments = modelVisualAttachmentsFromFrame({ request, frame, profile });
+    deliveredAttachment = modelVisualAttachmentSummary({ request, frame, attachments: deliveredAttachments });
+  } catch (err) {
+    dropModelVisualAttachFrames({ request, frame, sensoriumSubscriber });
+    const reason = err.code ?? "visual_payload_mismatch";
+    const event = appendModelVisualAttachProvenanceEvent({
+      provenanceLog,
+      logger,
+      eventType: "model.context.visual.attach_refused",
+      allowed: false,
+      request,
+      profile,
+      sourceSubscription,
+      frame,
+      floorGateDecision,
+      reason,
+      failedGateInput: "payload_envelope",
+      frameAgeMs,
+      modelDeliveryPerformed: false,
+      episodeId: episode.id,
+      caller,
+      requestedBy: "occupant",
+    });
+    return {
+      ...base,
+      provenanceId: event.id,
+      refusals: [modelVisualInvocationRefusal({ invocation, reason })],
+      disclosures: [modelVisualInvocationDisclosure({ invocation, reason })],
+    };
+  }
+
+  const secondCallMessages = modelVisualSecondCallMessages({
+    modelMessages,
+    cleanedText: extraction.text,
+    request,
+    frame,
+    attachment: deliveredAttachment,
+    floorGateDecision,
+  });
+  decrementModelVisualWindowBudget(visualGrant, deliveredAttachments.length);
+  let secondCompletion;
+  try {
+    secondCompletion = await profileClient.chatWithVisualAttachments({
+      messages: secondCallMessages,
+      attachments: deliveredAttachments,
+      model: profile.model,
+      maxTokens: numberOrDefault(body.max_tokens, 512),
+      temperature: numberOrDefault(body.temperature, DEFAULT_CHAT_TEMPERATURE),
+      visualAttachmentSchema: profile.visual_attachment_schema,
+    });
+  } finally {
+    dropModelVisualAttachFrames({ request, frame, sensoriumSubscriber });
+  }
+
+  const rawVisualTaint = createRawVisualTaint({
+    request,
+    frame,
+    attachment: deliveredAttachment,
+    profile,
+    floorGateDecision,
+  });
+  const event = appendModelVisualAttachProvenanceEvent({
+    provenanceLog,
+    logger,
+    eventType: "model.context.visual.attached",
+    allowed: true,
+    request,
+    profile,
+    sourceSubscription,
+    frame,
+    attachment: deliveredAttachment,
+    floorGateDecision,
+    frameAgeMs,
+    rawVisualTaint,
+    modelDeliveryPerformed: true,
+    episodeId: episode.id,
+    caller,
+    requestedBy: "occupant",
+  });
+
+  const result = modelVisualInvocationResult({
+    request,
+    frame,
+    attachment: deliveredAttachment,
+    event,
+    floorGateDecision,
+  });
+  return {
+    ...base,
+    performed: true,
+    completion: secondCompletion,
+    results: [result],
+    disclosures: [modelVisualInvocationSuccessDisclosure(result)],
+    rawVisualTaint,
+    visualAttachmentCount: deliveredAttachments.length,
+    provenanceId: event.id,
+  };
+}
+
+function validateModelVisualInvocationBlock(invocation = {}) {
+  const keys = Object.keys(isPlainObject(invocation) ? invocation : {});
+  const allowed = new Set(["invoke", "grant_id"]);
+  if (keys.some((key) => !allowed.has(key))) {
+    return "model_visual_invocation_block_schema_invalid";
+  }
+  if (!stringValue(invocation.invoke) || !stringValue(invocation.grant_id)) {
+    return "model_visual_invocation_block_schema_invalid";
+  }
+  return "";
+}
+
+function isModelVisualAttachInvocationCapability(value = "") {
+  const capability = stringValue(value);
+  return capability.startsWith("model.context.visual.") && capability.endsWith(".attach");
+}
+
+function isSequenceVisualAttachCapabilityKey(value = "") {
+  const capability = stringValue(value);
+  return capability.startsWith("model.context.visual.") &&
+    capability.includes(".sequence.") &&
+    capability.endsWith(".attach");
+}
+
+function modelVisualAttachRequestFromGrant({ invocation = {}, grant = {} } = {}) {
+  const constraints = isPlainObject(grant.constraints) ? grant.constraints : {};
+  const requestConstraints = {};
+  for (const key of MODEL_VISUAL_ATTACH_REQUEST_GRANT_FIELDS) {
+    if (Object.hasOwn(constraints, key)) {
+      requestConstraints[key] = constraints[key];
+    }
+  }
+  return {
+    capability: invocation.invoke,
+    grant_id: invocation.grant_id,
+    ...requestConstraints,
+  };
+}
+
+const MODEL_VISUAL_ATTACH_REQUEST_GRANT_FIELDS = [
+  "source_subscription_ids",
+  "source_capabilities",
+  "source_topics",
+  "source_grant_ids",
+  "source_provider",
+  "source_topic",
+  "source_grant_id",
+  "model_target",
+  "payload_type",
+  "max_frame_count",
+  "max_frame_age_ms",
+  "transformed_dimensions",
+  "format_required",
+  "depth_representation",
+  "pose_representation",
+  "composite_representation",
+  "max_pairing_skew_ms",
+  "effective_sampling_fps",
+  "burst_max_frames",
+  "burst_span_ms",
+  "burst_downsample",
+  "window_frame_budget",
+  "budget_unit",
+  "client_attachment_unit",
+  "preview_artifact_id",
+  "preview_acknowledgement_id",
+  "preview_acknowledged_by",
+  "preview_acknowledged_at",
+  "preview_acknowledged",
+  "preview_cleanup_required",
+  "retention_mode",
+];
+
+function modelVisualInvocationRunPosture({ grant = {}, fallback = null } = {}) {
+  const grantRunPosture = grant?.constraints?.run_posture;
+  return isPlainObject(grantRunPosture) ? grantRunPosture : fallback;
+}
+
+function modelVisualWindowBudgetRefusal(grant = {}) {
+  if (grant.scope !== "window") {
+    return "";
+  }
+  const budget = grant.constraints?.window_frame_budget;
+  if (budget === null || budget === undefined) {
+    return "";
+  }
+  return Number.isInteger(budget) && budget > 0
+    ? ""
+    : "model_visual_window_frame_budget_exhausted";
+}
+
+function decrementModelVisualWindowBudget(grant = {}, attachmentCount = 1) {
+  if (grant.scope !== "window" || !isPlainObject(grant.constraints)) {
+    return;
+  }
+  const budget = grant.constraints.window_frame_budget;
+  if (!Number.isInteger(budget)) {
+    return;
+  }
+  grant.constraints.window_frame_budget = Math.max(0, budget - Math.max(1, attachmentCount));
+}
+
+function rawVisualInvocationRateKey({ episodeId = "", grantId = "" } = {}) {
+  return `${stringValue(episodeId)}\u0000${stringValue(grantId)}`;
+}
+
+function modelVisualSecondCallMessages({
+  modelMessages = [],
+  cleanedText = "",
+  request = {},
+  frame = {},
+  attachment = {},
+  floorGateDecision = {},
+} = {}) {
+  const marker = [
+    "Harness visual capability result:",
+    `${request.capability} delivered one current ${request.payload_type} frame as a typed attachment for this turn only.`,
+    `Grant: ${request.grant_id}. Frame id: ${frame.frame_id}. Capture timestamp: ${frame.capture_timestamp}.`,
+    `Frameset sequence: ${Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : "unknown"}.`,
+    `Solo floor verified: ${floorGateDecision.allowed === true}.`,
+    `Attachment representation: ${stringValue(attachment.representation)}.`,
+    "Visual bytes are attached out-of-band in this immediate model call only; they are not present in chat history, text, memory, forum, or provenance.",
+  ].join(" ");
+  const messages = Array.isArray(modelMessages) ? modelMessages.map((message) => ({ ...message })) : [];
+  const firstText = stringValue(cleanedText);
+  if (firstText) {
+    messages.push({ role: "assistant", content: firstText });
+  }
+  messages.push({ role: "user", content: marker });
+  return messages;
+}
+
+function modelVisualInvocationRefusal({
+  invocation = {},
+  reason = "",
+  authorizationCode = "",
+  validationErrors = undefined,
+} = {}) {
+  return {
+    capability: stringValue(invocation.invoke),
+    grant_id: stringValue(invocation.grant_id),
+    reason: stringValue(reason) || "model_visual_invocation_refused",
+    authorization_code: stringValue(authorizationCode),
+    validation_errors: Array.isArray(validationErrors) ? validationErrors : undefined,
+    content_included: false,
+    predecessor_content_included: false,
+    payload_bytes_included: false,
+  };
+}
+
+function modelVisualInvocationDisclosure({ invocation = {}, reason = "" } = {}) {
+  return [
+    `${stringValue(invocation.invoke) || "model visual attach"} was refused.`,
+    `Reason: ${stringValue(reason) || "model_visual_invocation_refused"}.`,
+    "No visual payload was read or returned for this refused invocation.",
+  ].join(" ");
+}
+
+function modelVisualInvocationResult({
+  request = {},
+  frame = {},
+  attachment = {},
+  event = {},
+  floorGateDecision = {},
+} = {}) {
+  return {
+    capability: request.capability,
+    grant_id: request.grant_id,
+    result_schema: "soma.model.context.visual.attach.result.v1",
+    requested_by: "occupant",
+    one_turn: true,
+    payload_attached: true,
+    payload_bytes_included: false,
+    payload_bytes_returned: false,
+    attachment_persisted: false,
+    provenance_id: event.id ?? "",
+    floor_gate_decision: {
+      allowed: floorGateDecision.allowed === true,
+      reason: stringValue(floorGateDecision.reason),
+      payload_bytes_included: false,
+    },
+    frame: {
+      subscription_id: stringValue(frame.subscription_id),
+      source_grant_id: stringValue(frame.source_grant_id),
+      modality: stringValue(frame.modality),
+      source_host: stringValue(frame.source_host),
+      topic: stringValue(frame.topic),
+      frame_id: stringValue(frame.frame_id),
+      frameset_sequence: Number.isInteger(frame.frameset_sequence) ? frame.frameset_sequence : null,
+      capture_timestamp: stringValue(frame.capture_timestamp),
+      byte_length: Number.isInteger(attachment.byte_length) ? attachment.byte_length : frame.byte_length,
+      envelope_byte_length: Number.isInteger(frame.byte_length) ? frame.byte_length : null,
+      declared_byte_length: Number.isInteger(frame.declared_byte_length) ? frame.declared_byte_length : null,
+      visual_representation: stringValue(attachment.representation),
+      retention_mode: stringValue(frame.retention_mode),
+      payload_bytes_included: false,
+    },
+  };
+}
+
+function modelVisualInvocationSuccessDisclosure(result = {}) {
+  return [
+    `${result.capability} delivered a one-turn visual attachment.`,
+    `Frame id: ${result.frame?.frame_id ?? ""}.`,
+    "The attachment bytes were sent only to the immediate model call and are not included in the chat response or provenance.",
+  ].join(" ");
 }
 
 function capabilityBlockParserDisclosure(error = {}) {
@@ -14836,6 +15505,39 @@ function normalizeMessages(messages) {
     }
     return { role, content };
   });
+}
+
+const CHAT_VISUAL_PAYLOAD_FORBIDDEN_KEYS = new Set([
+  "attachments",
+  "payload",
+  "payload_bytes",
+  "bytes",
+  "image_bytes",
+  "depth_bytes",
+  "raw_bytes",
+  "frame_bytes",
+  "screenshot",
+  "image_url",
+  "visual_content",
+]);
+
+function forbiddenChatVisualPayloadPaths(value, path = "body") {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => forbiddenChatVisualPayloadPaths(entry, `${path}[${index}]`));
+  }
+  if (!isPlainObject(value)) {
+    return [];
+  }
+  const paths = [];
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}.${key}`;
+    if (CHAT_VISUAL_PAYLOAD_FORBIDDEN_KEYS.has(key)) {
+      paths.push(childPath);
+      continue;
+    }
+    paths.push(...forbiddenChatVisualPayloadPaths(child, childPath));
+  }
+  return paths;
 }
 
 function defaultChatTemperature({ useToolCalls = false } = {}) {

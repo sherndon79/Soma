@@ -148,12 +148,14 @@ export function validateModelVisualAttachRequest(body = {}, { grants = [] } = {}
   if (!Number.isInteger(validated.max_pairing_skew_ms)) {
     delete validated.max_pairing_skew_ms;
   }
+  if (!Number.isInteger(validated.window_frame_budget)) {
+    delete validated.window_frame_budget;
+  }
   if (!isSequenceVisualAttachCapability(validated.capability)) {
     delete validated.effective_sampling_fps;
     delete validated.burst_max_frames;
     delete validated.burst_span_ms;
     delete validated.burst_downsample;
-    delete validated.window_frame_budget;
     delete validated.budget_unit;
     delete validated.client_attachment_unit;
   }
@@ -296,11 +298,14 @@ function validateRequestShape(request, errors) {
       "effective_sampling_fps",
       "burst_max_frames",
       "burst_span_ms",
-      "window_frame_budget",
     ]) {
       if (request[field] !== undefined) {
         errors.push(`${field} is only allowed for sequence payloads`);
       }
+    }
+    if (request.window_frame_budget !== null && request.window_frame_budget !== undefined &&
+      (!Number.isInteger(request.window_frame_budget) || request.window_frame_budget < 1)) {
+      errors.push("window_frame_budget must be null or a positive integer");
     }
     if (request.burst_downsample.length > 0) {
       errors.push("burst_downsample is only allowed for sequence payloads");
@@ -323,9 +328,9 @@ function validateGrantAuthority({ request, grant, errors }) {
     errors.push("request capability must match grant capability");
   }
   const sequence = isSequenceVisualAttachCapability(request.capability);
-  const expectedScope = sequence ? "window" : "once";
-  if (grant.scope !== expectedScope) {
-    errors.push(`model visual attach grants must have ${expectedScope} scope`);
+  const allowedScopes = sequence ? ["window"] : ["once", "window"];
+  if (!allowedScopes.includes(grant.scope)) {
+    errors.push(`model visual attach grants must have ${allowedScopes.join(" or ")} scope`);
   }
 
   const constraints = isPlainObject(grant.constraints) ? grant.constraints : {};
@@ -397,6 +402,8 @@ function validateGrantAuthority({ request, grant, errors }) {
     if (!sameDimensions(request.burst_downsample, constraints.burst_downsample)) {
       errors.push("burst_downsample must match grant constraints");
     }
+  } else if (request.window_frame_budget !== constraints.window_frame_budget) {
+    errors.push("window_frame_budget must match grant constraints");
   }
 }
 

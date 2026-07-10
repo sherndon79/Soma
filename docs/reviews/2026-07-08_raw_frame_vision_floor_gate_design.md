@@ -385,13 +385,24 @@ user's prose; size-bounded with delivered `byte_length` recorded; representation
 provenance. The exact block shape for `anthropic_messages_image` profiles is a named
 design decision owed with the implementation report.
 
-**Composite** — a **single stitched side-by-side image (color | colorized depth)** so
-the exactly-one-attachment / one-turn invariant is untouched. Binding constraints: the
-two halves MUST be paired by `frameset_sequence` (fall back to capture timestamp within
-a documented max skew; refuse beyond it — "latest of each" is two unrelated moments,
-not a composite); requires both modalities cached under their own grant-scoped
-retention; delivered only under its own explicit `composite.attach` grant (combined
-disclosure volume); provenance records both source frame ids and the pairing skew.
+**Composite** — **the pair as the atomic unit: one `composite.attach` grant, one turn,
+delivering exactly TWO provider-native image blocks** — the original color JPEG
+(untouched bytes) and the derived colorized-depth PNG, appended adjacently in that
+order, both-or-nothing. *(Amended 2026-07-10 from "single stitched side-by-side image":
+the first implementation stitched via SVG because the repo rightly avoids a JPEG codec
+in floor-path code, but `image/svg+xml` is not an accepted image type at any current
+provider — Anthropic takes jpeg/png/gif/webp; OpenAI vision is raster-only — so a
+stitched composite could never deliver to the providers it exists to serve. The
+one-attachment invariant's PURPOSE — one decision, one disclosure, one turn — is
+preserved by the pair-as-unit; only its letter changed, and this note is the record of
+that deviation. Composite is the ONLY modality permitted two attachment blocks.)*
+Binding constraints: the two halves MUST be paired by `frameset_sequence` as primary
+(authoritative when equal; capture-timestamp fallback within a documented max skew only
+when sequence is absent; refuse beyond skew — "latest of each" is two unrelated moments,
+not a composite; provenance records `pairing_method`); requires both modalities cached
+under their own grant-scoped retention; delivered only under its own explicit
+`composite.attach` grant (combined disclosure volume); provenance records both source
+frame ids, the pairing skew, and `visual_attachment_count: 2` honestly.
 
 ### Standing rule from the first live run
 

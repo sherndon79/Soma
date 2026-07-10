@@ -18,6 +18,7 @@ import {
 import { DesktopDisclosureRegistry } from "../src/desktopDisclosureRegistry.js";
 import { assertDesktopInspectionResult } from "../src/desktopInspectionSchema.js";
 import { loadGrantAuthority } from "../src/grantAuthority.js";
+import { ModelClient } from "../src/modelClient.js";
 import { ProvenanceLog } from "../src/provenanceLog.js";
 import { resolveResourceDescriptor } from "../src/resourceRouter.js";
 import { createSensoriumPresenceState } from "../src/sensoriumPresenceState.js";
@@ -9267,7 +9268,16 @@ test("model visual occupant invocation performs immediate second call with redac
   assert.doesNotMatch(secondTransactionJson, /payload_bytes/);
 });
 
-test("model visual occupant composite invocation uses real subscriber envelopes without body run_posture", async () => {
+test("model visual occupant composite invocation uses real subscriber envelopes without body run_posture", async (t) => {
+  const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  t.after(() => {
+    if (previousAnthropicKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+      return;
+    }
+    process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+  });
   const manager = new AppRouteSensoriumFakeManager();
   const nowIso = new Date().toISOString();
   const presenceState = createSensoriumPresenceState({
@@ -9371,7 +9381,40 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
       window_frame_budget: 2,
     },
   };
-  const calls = [];
+  const fetchBodies = [];
+  const modelClient = new ModelClient({
+    runtime: "anthropic-messages",
+    async fetchImpl(url, options) {
+      const body = JSON.parse(String(options?.body ?? "{}"));
+      fetchBodies.push({ url, body });
+      const bodyJson = JSON.stringify(body);
+      const visualDelivery = bodyJson.includes("\"type\":\"image\"");
+      return {
+        ok: true,
+        async json() {
+          return {
+            model: "claude-composite-test",
+            content: [{
+              type: "text",
+              text: visualDelivery
+                ? "I saw the paired scene."
+                : [
+                  "I will inspect the paired scene.",
+                  "```soma-capability",
+                  JSON.stringify({
+                    invoke: "model.context.visual.composite.attach",
+                    grant_id: "grant-visual-composite-occupant",
+                  }),
+                  "```",
+                ].join("\n"),
+            }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 2, output_tokens: visualDelivery ? 3 : 4 },
+          };
+        },
+      };
+    },
+  });
   const handler = makeHandler({
     capabilityCatalog: sensoriumPresenceCapabilityCatalog,
     providerRegistry: sensoriumPresenceProviderRegistry,
@@ -9379,41 +9422,28 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
       schema_version: 1,
       grants: [colorSourceGrant, depthSourceGrant, presenceGrant, visualGrant],
     },
-    runtimeProfiles: modelVisualSequenceRuntimeProfiles({ maxAttachments: 4 }),
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "gemma4-vision",
+      profiles: [
+        {
+          id: "gemma4-vision",
+          route: "local",
+          runtime: "anthropic-messages",
+          model: "claude-composite-test",
+          remote_service: false,
+          supported_visual_modalities: ["color", "depth", "pose", "composite"],
+          visual_attachment_schema: "anthropic_messages_image",
+          visual_attachment_modalities: ["color", "depth", "pose", "composite"],
+          composite_representation: "paired_image_blocks",
+          max_visual_attachments_per_turn: 4,
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
     sensoriumSubscriber: subscriber,
     sensoriumPresenceState: presenceState,
-    modelClient: {
-      withProfile(profile) {
-        return {
-          async chat(args) {
-            calls.push({ kind: "chat", profile, args });
-            return {
-              text: [
-                "I will inspect the paired scene.",
-                "```soma-capability",
-                JSON.stringify({
-                  invoke: "model.context.visual.composite.attach",
-                  grant_id: "grant-visual-composite-occupant",
-                }),
-                "```",
-              ].join("\n"),
-              model: profile.model,
-              finish_reason: "stop",
-              tokens_used: 4,
-            };
-          },
-          async chatWithVisualAttachments(args) {
-            calls.push({ kind: "visual", profile, args });
-            return {
-              text: "I saw the paired scene.",
-              model: profile.model,
-              finish_reason: "stop",
-              tokens_used: args.attachments.length,
-            };
-          },
-        };
-      },
-    },
+    modelClient,
   });
 
   let response = await invokeHandler(handler, {
@@ -9507,7 +9537,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   assert.equal(response.body.model_visual_invocation.performed, false);
   assert.equal(response.body.capability_refusals[0].reason, "composite_pairing_skew_exceeded");
   assert.equal(JSON.stringify(response.body).includes("model_visual_color_msgpack_invalid_bytes"), false);
-  assert.equal(calls.filter((call) => call.kind === "visual").length, 0);
+  assert.equal(fetchBodies.some((call) => JSON.stringify(call.body).includes("\"type\":\"image\"")), false);
   assert.equal(visualGrant.constraints.window_frame_budget, 2);
 
   manager.emitSample("sub-route-2", "sensor/jetsorano/realsense/depth", {
@@ -9538,16 +9568,12 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   assert.equal(response.body.capability_results[0].frame.modality, "composite");
   assert.equal(response.body.capability_results[0].frame.visual_representation, "paired_image_blocks");
   assert.equal(visualGrant.constraints.window_frame_budget, 0);
-  const visualCall = calls.find((call) => call.kind === "visual");
-  assert.equal(visualCall.args.attachments.length, 2);
-  assert.equal(visualCall.args.attachments[0].composite_role, "color");
-  assert.equal(visualCall.args.attachments[0].pairing_method, "capture_timestamp_fallback");
-  assert.equal(visualCall.args.attachments[0].pairing_skew_ms, 120);
-  assert.deepEqual([...visualCall.args.attachments[0].payload_bytes], [0xff, 0xd8, 0x01, 0xff, 0xd9]);
-  assert.equal(visualCall.args.attachments[1].composite_role, "colorized_depth");
-  assert.equal(visualCall.args.attachments[1].pairing_method, "capture_timestamp_fallback");
-  assert.equal(visualCall.args.attachments[1].pairing_skew_ms, 120);
-  assert.deepEqual([...visualCall.args.attachments[1].payload_bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  const visualFetch = fetchBodies.find((call) => JSON.stringify(call.body).includes("\"type\":\"image\""));
+  assert.ok(visualFetch, "occupant composite delivery should reach ModelClient visual handoff");
+  const typedContent = visualFetch.body.messages.at(-1).content;
+  const imageBlocks = typedContent.filter((block) => block?.type === "image");
+  assert.equal(imageBlocks.length, 2);
+  assert.deepEqual(imageBlocks.map((block) => block.source.media_type), ["image/jpeg", "image/png"]);
 });
 
 test("model visual occupant invocation strict block refuses before frame read", async () => {

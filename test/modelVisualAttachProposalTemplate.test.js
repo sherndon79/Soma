@@ -154,6 +154,29 @@ test("model visual template supports depth proposal metadata without payload byt
   assert.equal(template.review.payload_bytes_included, false);
 });
 
+test("model visual template supports window scope for single-frame proposals", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+
+  const template = buildModelVisualAttachProposalTemplate({
+    ...baseColorRequest({ catalog, providerRegistry }),
+    requested_scope: "window",
+    constraints: {
+      max_frame_count: 1,
+      max_frame_age_ms: 5_000,
+      transformed_dimensions: [384, 384],
+      format_required: "jpeg",
+      window_frame_budget: 3,
+    },
+    reason: "Need a reviewed color frame inside a consent window.",
+  });
+
+  assert.equal(template.proposal.requested_scope, "window");
+  assert.equal(template.review.scope, "window");
+  assert.equal(template.grant_intent.scope, "window");
+  assert.equal(template.grant_intent.constraints.window_frame_budget, 3);
+});
+
 test("model visual template supports sequence grant bounds without payload bytes", async () => {
   const catalog = await loadCapabilityCatalog();
   const providerRegistry = await loadProviderRegistry();

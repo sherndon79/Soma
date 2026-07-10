@@ -127,9 +127,11 @@ export function buildModelVisualAttachProposalTemplate({
   if (!visualDefinition) {
     errors.push(`capability "${capabilityKey || "(missing)"}" is not a recognized model-facing visual attach capability`);
   }
-  const expectedScope = visualDefinition?.sequence === true ? WINDOW_SCOPE : ONCE_SCOPE;
-  if (scope !== expectedScope) {
-    errors.push(`model-facing visual attach proposal templates currently require requested_scope=${expectedScope}`);
+  const allowedTemplateScopes = visualDefinition?.sequence === true
+    ? [WINDOW_SCOPE]
+    : [ONCE_SCOPE, WINDOW_SCOPE];
+  if (!allowedTemplateScopes.includes(scope)) {
+    errors.push(`model-facing visual attach proposal templates currently require requested_scope=${allowedTemplateScopes.join(" or ")}`);
   }
   if (!normalizedReason) {
     errors.push("reason is required");
@@ -383,6 +385,9 @@ function validateConstraints(constraints, visualDefinition, errors) {
       (!Number.isInteger(windowFrameBudget) || windowFrameBudget < burstMaxFrames)) {
       errors.push("constraints.window_frame_budget must be null or an integer at least burst_max_frames");
     }
+  } else if (windowFrameBudget !== null && windowFrameBudget !== undefined &&
+    (!Number.isInteger(windowFrameBudget) || windowFrameBudget < 1)) {
+    errors.push("constraints.window_frame_budget must be null or a positive integer");
   }
 
   return {
@@ -412,6 +417,9 @@ function validateConstraints(constraints, visualDefinition, errors) {
         budget_unit: visualDefinition.budget_unit,
         client_attachment_unit: visualDefinition.client_attachment_unit,
       }
+      : {}),
+    ...(visualDefinition?.sequence !== true && Number.isInteger(windowFrameBudget)
+      ? { window_frame_budget: windowFrameBudget }
       : {}),
   };
 }

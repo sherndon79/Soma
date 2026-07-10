@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sanitizeDisplayText } from "./textSanitization.js";
 
-const VALID_SCOPES = new Set(["once", "session"]);
+const VALID_SCOPES = new Set(["once", "session", "window"]);
 const VALID_RISK_CLASSES = new Set(["low", "sensitive", "high"]);
 const DECISION_FEEDBACK_MAX_CHARS = 500;
 
@@ -300,7 +300,7 @@ function requiredString(value, field) {
 function requiredScope(value) {
   const normalized = requiredString(value, "requested_scope");
   if (!VALID_SCOPES.has(normalized)) {
-    throw validationError("requested_scope must be once or session.");
+    throw validationError("requested_scope must be once, session, or window.");
   }
   return normalized;
 }

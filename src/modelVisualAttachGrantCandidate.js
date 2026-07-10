@@ -39,7 +39,6 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
   if (!isModelVisualAttachCapability(capability)) {
     errors.push("proposal capability must be a model-facing visual attach capability");
   }
-  const expectedScope = isSequenceVisualAttachCapability(capability) ? WINDOW_SCOPE : ONCE_SCOPE;
 
   const review = plainObjectOrNull(proposal.review_context);
   const intent = plainObjectOrNull(proposal.grant_intent);
@@ -84,7 +83,7 @@ export function buildModelVisualAttachGrantCandidateFromProposal(
   const candidate = {
     capability,
     provider: intent.provider,
-    scope: expectedScope,
+    scope: proposal.requested_scope,
     constraints,
     approved_by: "user",
     approval_provenance_id: approvalProvenanceId,
@@ -215,12 +214,15 @@ function validateReviewAndIntent({ proposal, review, intent, errors }) {
   if (intent.provider !== review.provider) {
     errors.push("review_context and grant_intent must match provider");
   }
-  const expectedScope = isSequenceVisualAttachCapability(proposal.capability) ? WINDOW_SCOPE : ONCE_SCOPE;
-  if (intent.scope !== expectedScope || review.scope !== expectedScope) {
-    errors.push(`model visual attach grant candidates currently require ${expectedScope} scope`);
+  const allowedScopes = allowedModelVisualAttachScopes(proposal.capability);
+  if (!allowedScopes.includes(intent.scope) || !allowedScopes.includes(review.scope)) {
+    errors.push(`model visual attach grant candidates currently require ${allowedScopes.join(" or ")} scope`);
   }
-  if (proposal.requested_scope !== expectedScope) {
-    errors.push(`approved proposal must have requested_scope=${expectedScope}`);
+  if (intent.scope !== proposal.requested_scope || review.scope !== proposal.requested_scope) {
+    errors.push("review_context and grant_intent must match proposal requested_scope");
+  }
+  if (!allowedScopes.includes(proposal.requested_scope)) {
+    errors.push(`approved proposal must have requested_scope=${allowedScopes.join(" or ")}`);
   }
   if (!plainObjectOrNull(intent.constraints)) {
     errors.push("grant_intent.constraints must be an object");
@@ -374,6 +376,10 @@ function isSequenceVisualAttachCapability(capability) {
   return capability.startsWith(VISUAL_ATTACH_CAPABILITY_PREFIX) &&
     capability.includes(".sequence.") &&
     capability.endsWith(VISUAL_ATTACH_CAPABILITY_SUFFIX);
+}
+
+function allowedModelVisualAttachScopes(capability) {
+  return isSequenceVisualAttachCapability(capability) ? [WINDOW_SCOPE] : [ONCE_SCOPE, WINDOW_SCOPE];
 }
 
 function sameStringSet(left, right) {

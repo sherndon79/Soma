@@ -9,6 +9,7 @@ import test, { mock } from "node:test";
 
 import { createRequestHandler } from "../src/app.js";
 import { CapabilityProposalStore } from "../src/capabilityProposals.js";
+import { loadCapabilityCatalog, loadProviderRegistry } from "../src/capabilityCatalog.js";
 import { createDesktopActuationTable } from "../src/desktopActuationTable.js";
 import {
   inspectDesktopAccessibilityTreeWithDescriptor,
@@ -4918,6 +4919,96 @@ test("status snapshot full loop proposal approval grant and route use", async ()
   assert.equal(response.body.entries[0].grant_id, grantId);
   assert.equal(response.body.entries[0].grant_written, false);
   assert.equal(response.body.entries[0].activation_performed, false);
+});
+
+test("window-scoped single-frame visual grant can be minted through proposal approval", async () => {
+  const liveCatalog = await loadCapabilityCatalog();
+  const liveProviderRegistry = await loadProviderRegistry();
+  const handler = makeHandler({
+    harness: allowedHarness,
+    capabilityCatalog: liveCatalog,
+    providerRegistry: liveProviderRegistry,
+    grantStore: { schema_version: 1, grants: [], examples: [] },
+  });
+
+  let response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/capability-proposals",
+    body: {
+      requested_by: "assistant",
+      capability: "model.context.visual.composite.attach",
+      reason: "Need one occupant-requested composite look inside a consent window.",
+      requested_scope: "window",
+      data_exposed: [
+        "one bounded fused color/depth visual payload from approved Sensorium subscriptions",
+        "source subscription metadata",
+        "selected model target",
+      ],
+      excluded_data: ["durable visual memory", "training use", "background delivery without preview"],
+      risk: "A composite visual attachment exposes live camera context to the model for one turn.",
+      fallback: "Continue the dwell without visual model context.",
+    },
+  });
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  assert.equal(response.body.proposal.requested_scope, "window");
+  const proposalId = response.body.proposal.id;
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/approve`,
+    body: { approved_scope: "window", decided_by: "user" },
+  });
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.decision.approved_scope, "window");
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: `/capability-proposals/${proposalId}/grants`,
+    body: {
+      actor: "user",
+      provider: "soma.provider.local-model",
+      reason: "Windowed first-look grant ratified by Seth.",
+      constraints: {
+        source_subscription_ids: ["sub-color-live", "sub-depth-live"],
+        source_capabilities: [
+          "perception.sensorium.color.subscribe",
+          "perception.sensorium.depth.subscribe",
+        ],
+        source_topics: [
+          "sensor/jetsorano/realsense/color",
+          "sensor/jetsorano/realsense/depth",
+        ],
+        source_grant_ids: ["grant-color-live", "grant-depth-live"],
+        source_provider: "soma.provider.sensorium.jetsorano",
+        source_topic: "sensor/jetsorano/realsense/composite",
+        source_grant_id: "grant-composite-live",
+        model_target: "local.gemma4",
+        payload_type: "composite",
+        max_frame_count: 1,
+        max_frame_age_ms: 5_000,
+        transformed_dimensions: [640, 360],
+        format_required: "composite",
+        composite_representation: "paired_image_blocks",
+        max_pairing_skew_ms: 1_000,
+        window_frame_budget: 3,
+        preview_artifact_id: "preview-composite-live",
+        preview_acknowledgement_id: "ack-preview-composite-live",
+        preview_acknowledged_by: "user",
+        preview_acknowledged_at: new Date().toISOString(),
+        preview_acknowledged: true,
+        preview_cleanup_required: true,
+        retention_mode: "none",
+      },
+    },
+  });
+  assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+  assert.equal(response.body.grant.capability, "model.context.visual.composite.attach");
+  assert.equal(response.body.grant.scope, "window");
+  assert.equal(response.body.grant.provider, "soma.provider.local-model");
+  assert.equal(response.body.grant.constraints.window_frame_budget, 3);
+  assert.equal(response.body.grant.constraints.payload_type, "composite");
+  assert.equal(response.body.grant_written, true);
+  assert.equal(response.body.activation_performed, false);
 });
 
 test("approved proposal can be explicitly persisted as a durable grant", async () => {

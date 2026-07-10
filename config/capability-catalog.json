@@ -99,7 +99,8 @@
       "risk_class": "high",
       "default_status": "disabled",
       "allowed_scopes": [
-        "once"
+        "once",
+        "window"
       ],
       "data_exposed": [
         "one transformed color frame from an approved Sensorium subscription",
@@ -130,7 +131,8 @@
       "risk_class": "high",
       "default_status": "disabled",
       "allowed_scopes": [
-        "once"
+        "once",
+        "window"
       ],
       "data_exposed": [
         "one transformed depth frame from an approved Sensorium subscription",
@@ -164,7 +166,8 @@
       "risk_class": "high",
       "default_status": "disabled",
       "allowed_scopes": [
-        "once"
+        "once",
+        "window"
       ],
       "data_exposed": [
         "one bounded fused color/depth visual payload from approved Sensorium subscriptions",
@@ -200,7 +203,8 @@
       "risk_class": "high",
       "default_status": "disabled",
       "allowed_scopes": [
-        "once"
+        "once",
+        "window"
       ],
       "data_exposed": [
         "one full pose keypoint payload from an approved Sensorium subscription",

@@ -415,7 +415,7 @@ test("model-facing visual attach capabilities are requestable without activating
     assert.equal(cap.harness_status, "disabled");
     assert.equal(cap.status, "requestable");
     assert.equal(cap.support_status, "supported");
-    assert.deepEqual(cap.allowed_scopes, ["once"]);
+    assert.deepEqual(cap.allowed_scopes, ["once", "window"]);
     assert.equal(cap.activation_policy, "explicit_grant");
     assert.equal(cap.reversible, false);
     assert.equal(cap.provider_contract, want.contract);

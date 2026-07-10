@@ -11,7 +11,7 @@ const catalog = {
     {
       key: "model.context.visual.color.attach",
       activation_policy: "explicit_grant",
-      allowed_scopes: ["once"],
+      allowed_scopes: ["once", "window"],
     },
   ],
 };
@@ -161,6 +161,32 @@ test("buildModelVisualAttachGrantCandidateFromProposal returns validated input w
     preview_cleanup_required: true,
     retention_mode: "none",
   });
+});
+
+test("buildModelVisualAttachGrantCandidateFromProposal supports window-scoped single-frame grants", () => {
+  const result = buildModelVisualAttachGrantCandidateFromProposal({
+    ...approvedProposal,
+    requested_scope: "window",
+    decision: {
+      ...approvedProposal.decision,
+      approved_scope: "window",
+    },
+    review_context: {
+      ...approvedProposal.review_context,
+      scope: "window",
+    },
+    grant_intent: {
+      ...approvedProposal.grant_intent,
+      scope: "window",
+      constraints: {
+        ...approvedProposal.grant_intent.constraints,
+        window_frame_budget: 3,
+      },
+    },
+  }, context);
+
+  assert.equal(result.grant_create_input.scope, "window");
+  assert.equal(result.grant_create_input.constraints.window_frame_budget, 3);
 });
 
 test("model visual grant candidate emits byte-free provenance summary", () => {

@@ -29,7 +29,7 @@ export function evaluateBurstPresenceCoverage({
     });
   }
 
-  if (normalizedFrames.every((frame) => Number.isInteger(frame.frameset_sequence))) {
+  if (hasCompleteSequenceCoverage(normalizedFrames, normalizedPresence)) {
     return evaluateSequenceJoin({ frames: normalizedFrames, presenceSamples: normalizedPresence });
   }
   return evaluateTimestampCoverage({
@@ -37,6 +37,21 @@ export function evaluateBurstPresenceCoverage({
     presenceSamples: normalizedPresence,
     guardBandMs,
   });
+}
+
+function hasCompleteSequenceCoverage(frames, presenceSamples) {
+  if (!frames.every((frame) => Number.isInteger(frame.frameset_sequence))) {
+    return false;
+  }
+  const presenceSequences = new Set(
+    presenceSamples
+      .map((sample) => sample.frameset_sequence)
+      .filter(Number.isInteger),
+  );
+  if (presenceSequences.size === 0) {
+    return false;
+  }
+  return frames.every((frame) => presenceSequences.has(frame.frameset_sequence));
 }
 
 function evaluateSequenceJoin({ frames, presenceSamples }) {
@@ -112,11 +127,14 @@ function evaluateTimestampCoverage({ frames, presenceSamples, guardBandMs }) {
       presence_sample_count: candidates.length,
     });
   }
-  if (candidates[0].observed_ms > windowStart || candidates[candidates.length - 1].expires_ms < windowEnd) {
+  const gap = findCoverageGap({ samples: candidates, windowStart, windowEnd, maxGapMs: guard });
+  if (gap) {
     return refusal(BURST_PRESENCE_REASONS.PRESENCE_COVERAGE_MISSING, {
       coverage_method: "timestamp_interval",
       frame_count: frames.length,
       presence_sample_count: candidates.length,
+      coverage_gap_start: new Date(gap.start_ms).toISOString(),
+      coverage_gap_end: new Date(gap.end_ms).toISOString(),
     });
   }
   const nonSolo = candidates.find((sample) => !presenceSampleIsSolo(sample));
@@ -134,6 +152,34 @@ function evaluateTimestampCoverage({ frames, presenceSamples, guardBandMs }) {
     newest_capture_timestamp: new Date(newestMs).toISOString(),
     solo_span_verified: true,
   });
+}
+
+function findCoverageGap({ samples, windowStart, windowEnd, maxGapMs }) {
+  let coveredUntil = windowStart;
+  for (const sample of samples) {
+    if (sample.expires_ms < windowStart || sample.observed_ms > windowEnd) {
+      continue;
+    }
+    if (sample.observed_ms > coveredUntil + maxGapMs) {
+      return {
+        start_ms: coveredUntil,
+        end_ms: sample.observed_ms,
+      };
+    }
+    if (sample.expires_ms > coveredUntil) {
+      coveredUntil = sample.expires_ms;
+    }
+    if (coveredUntil >= windowEnd) {
+      return null;
+    }
+  }
+  if (coveredUntil < windowEnd) {
+    return {
+      start_ms: coveredUntil,
+      end_ms: windowEnd,
+    };
+  }
+  return null;
 }
 
 function normalizeFrames(frames) {

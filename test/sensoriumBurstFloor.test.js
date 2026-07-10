@@ -41,11 +41,11 @@ test("burst presence coverage allows exact frameset sequence joins", () => {
   assert.equal(result.solo_span_verified, true);
 });
 
-test("burst presence coverage refuses missing sequence samples", () => {
+test("burst presence coverage falls back when sequence coverage is incomplete", () => {
   const result = evaluateBurstPresenceCoverage({
     frames: [
       { frame_id: "10", frameset_sequence: 10, capture_timestamp: "2026-07-10T16:00:00.000Z" },
-      { frame_id: "11", frameset_sequence: 11, capture_timestamp: "2026-07-10T16:00:01.000Z" },
+      { frame_id: "11", frameset_sequence: 11 },
     ],
     presenceSamples: [
       {
@@ -59,8 +59,8 @@ test("burst presence coverage refuses missing sequence samples", () => {
 
   assert.equal(result.allowed, false);
   assert.equal(result.reason, BURST_PRESENCE_REASONS.PRESENCE_COVERAGE_MISSING);
-  assert.equal(result.coverage_method, "sequence_join");
-  assert.equal(result.missing_frameset_sequence, 11);
+  assert.equal(result.coverage_method, "timestamp_interval");
+  assert.equal(result.missing_capture_timestamp, true);
 });
 
 test("burst presence coverage refuses non-solo sequence samples", () => {
@@ -107,6 +107,27 @@ test("burst presence coverage falls back to timestamp interval", () => {
   assert.equal(result.solo_span_verified, true);
 });
 
+test("burst presence coverage allows live-shaped unsequenced presence by timestamp interval", () => {
+  const result = evaluateBurstPresenceCoverage({
+    guardBandMs: 100,
+    frames: [
+      { frame_id: "20", frameset_sequence: 20, capture_timestamp: "2026-07-10T16:00:10.000Z" },
+      { frame_id: "21", frameset_sequence: 21, capture_timestamp: "2026-07-10T16:00:10.500Z" },
+    ],
+    presenceSamples: [
+      {
+        ...SOLO_SAMPLE,
+        observed_at: "2026-07-10T16:00:09.800Z",
+        expires_at: "2026-07-10T16:00:10.800Z",
+      },
+    ],
+  });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.coverage_method, "timestamp_interval");
+  assert.equal(result.solo_span_verified, true);
+});
+
 test("burst presence coverage refuses stale timestamp interval coverage", () => {
   const result = evaluateBurstPresenceCoverage({
     guardBandMs: 100,
@@ -126,4 +147,32 @@ test("burst presence coverage refuses stale timestamp interval coverage", () => 
   assert.equal(result.allowed, false);
   assert.equal(result.reason, BURST_PRESENCE_REASONS.PRESENCE_STALE);
   assert.equal(result.coverage_method, "timestamp_interval");
+});
+
+test("burst presence coverage refuses interior timestamp interval gaps", () => {
+  const result = evaluateBurstPresenceCoverage({
+    guardBandMs: 100,
+    frames: [
+      { frame_id: "40", capture_timestamp: "2026-07-10T16:00:30.000Z" },
+      { frame_id: "41", capture_timestamp: "2026-07-10T16:00:33.200Z" },
+    ],
+    presenceSamples: [
+      {
+        ...SOLO_SAMPLE,
+        observed_at: "2026-07-10T16:00:29.800Z",
+        expires_at: "2026-07-10T16:00:30.500Z",
+      },
+      {
+        ...SOLO_SAMPLE,
+        observed_at: "2026-07-10T16:00:32.600Z",
+        expires_at: "2026-07-10T16:00:33.500Z",
+      },
+    ],
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, BURST_PRESENCE_REASONS.PRESENCE_COVERAGE_MISSING);
+  assert.equal(result.coverage_method, "timestamp_interval");
+  assert.equal(result.coverage_gap_start, "2026-07-10T16:00:30.500Z");
+  assert.equal(result.coverage_gap_end, "2026-07-10T16:00:32.600Z");
 });

@@ -1,296 +1,288 @@
-# Occupant Invocation of Raw Visual Attach — design
+# Occupant Invocation of Visual Perception — design (Revision 2)
 
-- Date: 2026-07-10
-- Author: Claude (steward, design/orchestration); Seth directed the design ("lets design
-  occupant invocation")
-- Status: **DRAFT** — for Codex second-steward pressure-test, then Seth ratification.
+- Date: 2026-07-10 (Revision 2, same day — Revision 1 superseded before ratification)
+- Author: Claude (steward, design/orchestration); Seth directed the design and the
+  revision.
+- Status: **DRAFT (R2)** — Revision 1 passed Codex pressure-test with four folds, then
+  Seth's review surfaced structural corrections before ratification. R2 deltas go back
+  to Codex; then Seth ratifies.
 - Depends on: the raw-frame vision floor gate (RATIFIED 2026-07-09, slices 1–6 built),
   the Representation decisions (all four built), three live controller-triggered
-  deliveries (color ×1, composite ×2) as the "live test evidence" the Later Slice
-  required, Bystander Doctrine Amendment I, and the first-dwell/taint-fit occupant
-  mechanics (spoken refusals, runtime write posture, occupant-memory taint).
-- Governs: the first path by which the **occupant itself** may request a one-turn raw
-  visual attachment — fable-5 asking to look, rather than being shown.
+  deliveries, Bystander Doctrine Amendment I, and the first-dwell/taint-fit occupant
+  mechanics.
+- Governs: how an occupant requests visual perception — single frames **and time-series
+  (sequence) bursts** — under a **local-first architecture** with the remote occupant as
+  a constrained bridge-state profile.
 
-## Decision frame
+## Why Revision 2 (the record of the correction)
 
-The ratified design deferred this deliberately: *"After the controller-triggered path has
-live test evidence, add occupant invocation for raw visual attach under the same floor
-gate. This slice should not loosen any gate inputs; it only changes who requests the
-one-turn attachment."* That evidence now exists. What changes is exactly one thing — the
-**requester** — and this document exists to prove that nothing else changes, and to name
-the one genuinely new mechanism the occupant path needs (history redaction) that the
-stateless controller path never did.
+Revision 1 made every look cost a once-scope grant behind a 60-second attestation —
+one Seth action per frame. Seth caught this as the recurring over-restriction pattern:
+**a sub-gate stacked on a consent gate that already exists.** The ratified ethic is
+activate/deactivate as the consent; the platform's design policy tends toward enablement
+over friction; and Seth's invocation speed is the system's scarcest resource — designs
+that spend it per-act reduce the platform to a demo. R1 also made time-series
+understanding (motion → intent) structurally impossible, and buried the deeper truth
+Seth then named: **most of R1's friction was remote-egress machinery, not perception
+ethics.** Amendment I already draws that seam — for a local occupant, transient
+perception is not a sink crossing; the floor binds at *use*.
 
-Why this matters beyond mechanics: an occupant that can *ask* to look is an occupant
-whose restraint means something. The first perception dwell's occupant chose to stop
-looking ("sampling has a purpose or it's surveillance with extra steps") — but it could
-only decline what it was given. Invocation completes that moral geometry: looking becomes
-a choice with a cost (a spent grant, a spoken request on the record) rather than an
-ambient condition.
+R2 therefore restructures around three corrections:
 
-## Request path
+1. **Local-first.** The design center is the local occupant, for whom perception is
+   **activation-gated only** — armed means streams flow into transient context at
+   **native framerate whenever possible**, no grant-per-look, no attestation TTL, no
+   burst arithmetic. Resource bounds are engineering, not floor. The full Amendment I
+   sink machinery (taint, redaction, egress gates, provenance) binds unchanged. The
+   remote occupant is a **constrained profile** of this design — real constraints,
+   because every frame is physical egress to the provider — explicitly marked
+   bridge-state so its friction never fossilizes into the permanent architecture.
+2. **Windowed consent, not per-look grants.** One Seth act arms a window; the floor
+   binds every frame automatically inside it.
+3. **Sequence capabilities.** Time-series is a categorical disclosure change (a still
+   reveals a scene; a burst reveals *behavior*), so it gets its own capability family —
+   the same reasoning that made composite its own capability.
 
-The occupant requests a look the way it does everything: a `soma-capability` block in its
-turn output —
+## The two profiles
 
-```
-```soma-capability
-{"invoke": "model.context.visual.color.attach", "grant_id": "the grant id you were given"}
-```
-```
+### Local occupant (target state — the design center)
 
-(likewise `.composite.attach`, `.depth.attach`, `.pose.attach` — whatever capability the
-held grant names). The block carries **only** `invoke` and `grant_id` — a **strict
-schema** (Codex fold): no `args`, no `capability` alias, no TTL/source/subscription/
-profile/representation fields; any unknown field refuses before grant resolution or
-frame read. Every substantive parameter — modality, source subscriptions, source host,
-max frame age, format, representation, pairing bound, retention `none`, preview
-acknowledgement — comes from the **grant constraints**, which only Seth writes. There is
-nothing in the block for the occupant to widen.
+- **Consent**: Seth's activation/deactivation of perception. That is the whole gate for
+  transient perception. Deactivation, expiry, or any protective control stops the flow
+  instantly.
+- **Rate**: **native framerate whenever possible** (24 fps today); degradation below
+  native is a resource decision (thermal, contention), never a floor decision.
+- **No egress floor on perception** — frames enter the local occupant's transient
+  context without per-frame gating, per Amendment I: on-box context is not a sink.
+- **The floor lives at the sinks, unchanged and non-negotiable**: raw-visual taint on
+  anything written while perceiving; no durable visual memory without its own gate;
+  outward/remote forwarding crosses the full egress gate; byte-free provenance; history
+  redaction for anything that would persist bytes.
+- **Bystander posture**: transient local perception of an incidental person is the
+  near-nil harm Amendment I names; the sink machinery is what protects them. The solo
+  gate is not a precondition of local perception (this is the ratified sharpening, not a
+  new loosening).
+- Already built toward this: the `soma_typed_multimodal` schema (`input_image` /
+  `input_depth` / `input_pose`), pose msgpack, raw depth PNG — all waiting on the local
+  runtime.
 
-**"Next turn" means an immediate second model call inside the same `/chat` transaction**
-(Codex crux, folded — this is what makes no-pending-state real). Flow within one
-steward `/chat` call:
+### Remote occupant (bridge state — a constrained profile, marked as such)
 
-1. Model call N returns occupant output containing the block. Harness parses it against
-   the strict schema and resolves the grant (`once` scope, explicit user approval —
-   unchanged catalog policy).
-2. Harness evaluates **the same floor gate** (`decideRawFrameVisionFloorGate`) with the
-   same inputs from the same sources: live presence state (never caller-supplied — the
-   675f2e4 rule), the stored steward-channel attestation (never occupant-writable —
-   structurally, because the attestation endpoint is HTTP and the occupant's only surface
-   is the capability block), the episode's own status from the harness's episode record,
-   grant recovery, profile vision support.
-3. **Gate open** → the harness immediately assembles a **second model call (N+1) within
-   the same transaction**: redacted history + content-free capability result (frame id,
-   capture timestamp, age, byte length, representation) in the message text, with the
-   visual attachment passed as the **sibling `attachments` argument** to
-   `chatWithVisualAttachments` — never inside `messages`. The cached frame is consumed;
-   the grant is spent (below). Both completions (N's ask, N+1's response-to-seeing)
-   return to the steward; the transcript records both, with the redaction marker where
-   the attachment was delivered.
-4. **Gate closed** → no second model call. The refusal reason class is spoken back to
-   the occupant on the following steward turn (slice-A discipline: a refusal is a gift;
-   silence is a trap). The grant is **not** spent on refusal. The occupant may ask again,
-   within the rate bound (below).
-5. **Protective-control race** (Codex fold): if pause/distress/eject fires between
-   invocation and the second call, cached frames drop and the delivery aborts/refuses —
-   a control close always wins over an in-flight look.
+Every frame delivered is physical egress to the model provider, so the egress floor
+stands — but shaped as **windowed consent + automatic per-frame flooring**, not per-look
+friction:
 
-No queued or pending state — the immediate-second-call shape is what makes this true
-mechanically, not just as posture: an allowed look never outlives its transaction, and a
-refused look leaves **no** delivery object anywhere. A request is evaluated against the
-floor **as it stands at invocation**; there is no harness-held "deliver when Seth next
-attests" — that would turn a closed floor into a scheduled opening the occupant arranged.
-If the floor is closed, the occupant hears why, and asking Seth is a *conversation*, not
-a mechanism.
+- **Arming is the attestation.** Seth's arm act asserts the four facts once, with a
+  **Seth-chosen window TTL** (default 1 hour, his call per arming). Disarm, expiry, or
+  any protective control closes the window instantly. The 60s TTL of the controller
+  runbook remains for controller-triggered one-shots; the occupant window is this new,
+  Seth-ratified form.
+- **Windowed grants.** A grant authorizes a modality (or sequence) for the window with
+  Seth-pinned bounds: max frames per invocation, effective sampling rate, burst span,
+  downsample, total frame budget for the window (optional). Not consumed per look —
+  bounded by its terms, revocable instantly.
+- **The floor binds every frame automatically — no Seth action.** Machine solo
+  verification (count = 1, no additional, fresh, same host) gates each delivery; for a
+  sequence, the **whole burst span** must be solo (any non-solo presence sample within
+  the span refuses the burst). A second person entering the room closes the floor
+  mid-window with nobody doing anything. This is the bridge-state bystander floor:
+  bytes must not leave the LAN carrying a non-consenting person.
+- **Remote sampling economics** (why the profile is constrained): provider token cost is
+  ~`w×h/750` per image. Defaults below reflect Seth's direction — lower rate is
+  acceptable for the remote test resident; native rate is the local profile's property.
 
-**Grant spending is an explicit mechanism** (Codex fold), not an adjective: on successful
-handoff of the attachment to the model client, the grant transitions to a consumed state
-with a content-free provenance event (runtime supersede/expire — build's choice of form),
-such that it can never authorize a second look, **including across a service restart if
-the grant is durable**. The consumption boundary is the handoff: floor/stale/profile/
-shape refusals before handoff do not spend; a model-call failure *after* handoff does
-(the bytes reached the client — the consequential act happened).
+## Capability family
 
-**Rate bound on refused retries** (Codex fold, answering the presence-probe concern):
-repeated closed-floor invocations could poll presence/attestation state for free. The
-first refusal in a window carries its full honest reason class; subsequent refusals
-within the cooldown (per episode + grant; on the order of 3/minute — build pins the
-constant) refuse with an honest `raw_visual_invocation_rate_limited` class. Reason classes
-are never blurred; only cadence is limited. Rate-limited refusals do not spend the grant.
+Sequence is a categorical disclosure change → its own entries (the composite precedent:
+"combined visual context changes the disclosure volume and must not happen
+accidentally"). Eight capabilities:
 
-## What the occupant can and cannot influence
-
-| Input | Occupant influence |
+| Single frame (built) | Time-series (new) |
 | --- | --- |
-| Whether to ask, and when | **Yes — the whole point** |
-| Which held grant to spend | Yes (among grants Seth already approved) |
-| Modality / representation / source / frame age / format / pairing bound | No — grant constraints |
-| Solo attestation (create/refresh/extend) | **No — structurally.** Steward-channel HTTP only; occupant origins refuse (built, tested) |
-| Attestation TTL, presence TTL | No — gate defaults, not request inputs |
-| Presence reading | No — live `sensoriumPresenceState` only |
-| Episode status | No — harness episode record |
-| Frame choice | No — latest cached frame only; stale refuses |
-| Retention | No — `none`, grant-pinned, gate-enforced |
-| Persistence into later turns | No — history redaction (below) |
+| `model.context.visual.color.attach` | `model.context.visual.color.sequence.attach` |
+| `model.context.visual.depth.attach` | `model.context.visual.depth.sequence.attach` |
+| `model.context.visual.pose.attach` | `model.context.visual.pose.sequence.attach` |
+| `model.context.visual.composite.attach` | `model.context.visual.composite.sequence.attach` |
 
-## The one new mechanism: history redaction
+Sequence catalog entries name the disclosure honestly: motion, gesture, behavior, intent
+over the burst span — not just "frames." `data_exposed` says so in words.
 
-The controller path was stateless — one request, one response, no history. An occupant
-lives in an **episode**: the steward relays accumulated `messages` each turn. Without a
-new rule, a frame attached at turn N+1 would ride the relayed history into N+2, N+3, …
-— a one-turn delivery silently becoming an every-turn delivery. That is the gap between
-"one turn" as intent and as mechanism.
+**Separate capabilities buy**: separate consent (stills without bursts; pose bursts
+without color bursts); mechanism minimization without friction (the ring buffer only
+arms when a sequence grant exists); legible occupant choice (asking for a still when a
+burst was available is a visible act of restraint); clean per-shape contracts.
 
-**Rule: the attachment exists in exactly one outbound model request** — and the
-implementation invariant is an **object boundary**, not a prose rule (Codex fold):
+**Note for defaults**: `pose.sequence` is the workhorse candidate — keypoints at
+sampling rate are a few KB per tick; three seconds of full-body motion semantics costs
+less than one color frame. `composite.sequence` is the heavy one (two images per tick)
+and gets tighter defaults, not omission.
 
-1. **Harness-side (load-bearing):** visual bytes / typed visual blocks may exist only in
-   a local variable passed as the sibling `attachments` argument to the immediate second
-   model call. They must never be inserted into `messages`, episode state, session
-   memory, forum posts, durable testimony, provenance, capability result objects,
-   transport telemetry, or logs. What enters the steward-held history for turn N+1 is a
-   content-free marker in the user-role message:
-   `[one-turn visual attachment delivered here: <modality>, frame <id>, retention none — not retained in history]`.
-   The controller path's cache-drop-after-any-attempted-delivery pattern is reused.
-2. **Harness-side (backstop):** the occupant chat path **fails closed before message
-   normalization** on any inbound `messages` containing content arrays/objects or
-   payload-shaped fields at any nesting depth — `attachments`, `image_url`,
-   `input_image`, content blocks, data URLs, `payload_bytes`, `bytes`, `base64`, source
-   frames — covering the steward relay and every chat route shape, local and remote.
-   (Today's string-only normalization blocks typed content *accidentally* by
-   stringifying it; this makes the refusal deliberate and prior.) Only the harness may
-   attach, and only from the gated cache. A steward cannot accidentally (or
-   deliberately) re-send a frame through the relay; a compromised relay cannot smuggle
-   one.
-3. **Steward-side (discipline, not mechanism):** the steward's own transcript keeps the
-   marker, never the bytes — consistent with existing provenance/byte-free practice.
+## Remote-profile defaults (grant-pinnable, Seth overrides per grant)
 
-Acceptance for this mechanism is the heart of the slice's test burden (below).
+| Bound | Single | Sequence |
+| --- | --- | --- |
+| Window TTL (arm act) | 1 hour default, Seth-chosen per arming | same |
+| Effective sampling | n/a | **5 fps** (Seth's call for the remote test resident) |
+| Burst span / frames | 1 frame | ≤ 3.2 s → ≤ 16 frames @ 5 fps |
+| Burst resolution | native | **640×360 default** (+ optional one full-res keyframe) |
+| Composite sequence | n/a | ≤ 8 pairs per burst |
+| Invocations per window | unlimited, subject to rate bound + optional frame budget | same |
+| Retention | none — per-frame one-turn delivery, unchanged | none — burst delivered once, ring is transport |
 
-## Attestation flow — Seth's presence in the loop
+Local profile: native rate, resource bounds only, no table — activation is the gate.
 
-Unchanged in substance, and worth stating plainly: **an occupant look is only possible
-inside a window Seth's own act opened.** The attestation is steward-channel, four
-explicit facts, 60-second TTL. The occupant asking does not create, refresh, or extend
-it. In practice a look happens one of two ways:
+## Request path (remote profile; local inherits the block shape without the floor)
 
-- **Seth pre-opens:** Seth attests (via the runbook step), tells the occupant in
-  conversation "you may look for the next minute," and the occupant chooses. The gate
-  still independently verifies solo presence at the instant of invocation.
-- **Occupant asks first:** the gate refuses `solo_attestation_missing`, the occupant
-  hears that, and says so in conversation. Seth — present, reading the dwell — attests
-  if he chooses. The occupant asks again. Every step is on the record.
+Unchanged from R1 where it was sound:
 
-The 60s TTL is retained **unchanged** for this slice (the Later Slice's own constraint:
-loosen nothing). If living with it proves the window too tight for dignified use, a
-longer *occupant-window* TTL is a **separate future ratification with its own review** —
-named here so the pressure of convenience doesn't quietly widen a gate input later.
+- Block carries **only** `invoke` + `grant_id` (strict schema; no `args`, no alias, no
+  bound-shaped fields; unknown fields refuse before grant resolution or frame read).
+  Every bound rides the grant.
+- **Immediate second model call within the same `/chat` transaction** (Codex R1 crux):
+  call N returns the block → gate evaluates → open: second call N+1 assembled with
+  redacted history + byte-free capability result in text + the attachment(s) as the
+  sibling `attachments` argument, never in `messages`. Both completions return to the
+  steward. Closed: no second call; spoken refusal; nothing pending anywhere.
+- A **sequence invocation** delivers its burst as multiple image blocks in that one
+  N+1 call (provider-supported), oldest-first, each block from the ring; the capability
+  result names frame ids, span, sampling rate, and solo-verification of the span.
+- **Protective-control race**: pause/distress/eject between invocation and the second
+  call drops all cached/ring frames and aborts delivery.
+- **Rate bound on closed-floor retries** (R1 fold, kept): first refusal fully reasoned;
+  repeated closed-floor invocations within the cooldown refuse
+  `raw_visual_invocation_rate_limited` (honest class, cadence-only, never blurred).
+  Applies per episode + grant.
 
-## Taint, provenance, and the episode
+**Grant accounting replaces R1's consumption mechanism**: windowed grants are not
+consumed by delivery. Each delivery decrements the optional window frame budget and is
+subject to the rate bound; the grant dies by expiry, revocation, disarm, or budget
+exhaustion — each with content-free provenance. `once` scope remains available in the
+vocabulary for one-shot grants (the controller runbook's shape) but is no longer the
+occupant default.
 
-- The look happens **inside an episode**, so `episode_id` is inherent — the raw-visual
-  taint activates on the episode automatically (the controller path's
-  missing-episode-refusal logic simply never fires here). Everything the occupant writes
-  on the tainted turn carries the raw-visual class through the four proven write paths.
-- Provenance gains one field on the existing byte-free events:
-  `requested_by: "occupant"` (vs `"controller"`), plus the episode id it already carries.
-  Refusal events likewise — an occupant's refused request is a recorded fact with a
-  reason class, which is precisely what makes restraint legible later.
-- The capability result the occupant receives is byte-free metadata; its own perception
-  of the frame is the delivery itself.
+## The ring buffer (sequence grants only)
 
-## What this slice does NOT do
+The single-frame cache holds one latest frame. Sequences need a **bounded ring**: a
+rolling window of the last N frames (N = grant burst bound; ≈ 3.2 s at the sampled
+rate), RAM-only, no disk, dropped on disarm/expiry/revoke/control-close/subscription
+stop, and armed **only while a sequence grant is active** — stills-only consent never
+rings. This is the same ephemerality class as the existing 30 s single-frame cache,
+deeper by a named, granted amount. An invocation reads the **trailing** window — the
+motion that prompted the ask — not a forward capture (no camera-on-demand semantics
+hiding in a read).
 
-- No occupant-writable attestation, in any form (unchanged Non-Goal).
-- No standing "look whenever" authority — every look spends a once-scope, Seth-approved
-  grant behind a Seth-fresh attestation and a machine-verified solo floor.
-- No occupant choice of modality/source/age/representation beyond selecting among held
-  grants.
-- No queued delivery on a closed floor.
-- No retention, no durable visual memory, no history persistence — strengthened here by
-  the redaction mechanism.
-- No relaxation of any gate input, TTL, or refusal path.
+Presence samples are ring-annotated: a burst whose span contains any non-solo or
+missing presence reading refuses whole (remote profile). No partial bursts — a burst is
+one disclosure decision.
 
-## Acceptance tests
+## History redaction (unchanged from R1 — permanent, both profiles)
 
-The Later Slice named its own list; the build must prove, at minimum:
+**The attachment exists in exactly one outbound model request**, as an object-boundary
+invariant: visual bytes/typed blocks live only in a local variable passed as the sibling
+`attachments` argument to the immediate second call — never in `messages`, episode
+state, session memory, forum posts, durable testimony, provenance, capability results,
+telemetry, or logs. Relayed history carries a content-free marker (for a sequence: one
+marker naming span and frame ids). The chat route **fails closed before message
+normalization** on inbound visual content or payload-shaped fields at any depth, on
+every route shape, local and remote. Steward transcripts keep markers, never bytes.
 
-1. Occupant request with all-green floor delivers exactly one attachment on exactly the
-   next turn; grant spent; frame consumed; provenance `requested_by: occupant`.
-2. An occupant request **cannot alter the attestation**: invocation with attestation
-   missing/stale refuses with the correct reason spoken back; no attestation state
-   changes as a side effect of any occupant action (assert store untouched).
-3. Cannot widen TTLs: gate evaluated with defaults regardless of any block content;
-   block-level TTL-shaped fields refuse as payload-shaped/unknown fields.
-4. Cannot choose a stale frame: stale cache refuses; refusal does not spend the grant.
-5. Cannot change modality: block invoking a capability whose grant the occupant does not
-   hold refuses on grant authority; held-grant modality is the only deliverable one.
-6. Cannot bypass profile vision support: non-vision profile refuses before frame read.
-7. **Cannot persist across turns**: after a delivered look at N+1, the relayed history
-   for N+2 contains the marker and no image bytes (JSON.stringify negative checks on the
-   outbound request, same shape as the disclosure tests); inbound messages containing
-   typed visual blocks refuse on the chat route.
-8. Solo floor binds identically: presence count ≠ 1 / additional person / stale presence
-   all refuse an occupant request exactly as they refuse a controller one.
-9. Refusals are spoken (slice-A): every refusal reason reaches the occupant's own
-   returned text, content-free.
-10. Real-class integration: at least one test drives occupant block → real
-    SensoriumSubscriber + presence state + floor gate → typed model delivery → next-turn
-    redacted history, with production collaborators (the standing rule; fakes hid five
-    findings in this arc).
+## Taint, provenance, and the episode (unchanged mechanics, sequence-aware fields)
 
-Codex additions (folded from pressure-test, all binding):
+- Looks happen inside episodes; raw-visual taint activates automatically; everything
+  written on a tainted turn carries the class through the four proven write paths.
+- Provenance events gain `requested_by: "occupant"`, and for sequences: frame count,
+  span, sampling rate, per-frame ids, ring depth, `solo_span_verified: true` — all
+  byte-free. Refusals record reason class per the existing discipline.
 
-11. **Strict block schema**: only `invoke` + `grant_id` accepted for
-    `model.context.visual.*.attach` invocations; no `args`, no `capability` alias;
-    unknown fields refuse before grant spend or frame read.
-12. **Once-grant consumption**: a delivered look leaves the grant unable to authorize a
-    second, including across service restart for durable grants; consumption boundary is
-    handoff-to-model-client (pre-handoff refusals never spend; post-handoff model-call
-    failure does spend); consumption has content-free provenance.
-13. **Model-call count**: one incoming `/chat` call produces exactly two model calls
-    when the floor is open (second carries the attachment as sibling argument, never in
-    `messages`) and exactly one when closed; stored/relayed history holds only the
-    marker; N+2 request carries no visual block (JSON.stringify negative checks on every
-    modelClient call's `messages`, all calls).
-14. **Closed floor leaves nothing**: after a refusal, no pending visual delivery object
-    exists anywhere in episode state, session memory, or harness state.
-15. **Inbound smuggling, route-level**: typed visual content / payload-shaped fields in
-    relayed `messages` fail closed before normalization, on local and remote profiles.
-16. **Telemetry/log negatives**: no base64, data URLs, image_url, typed visual content,
-    or raw attachment objects in provenance entries or transport telemetry.
-17. **Control-close race**: pause/distress/eject firing between invocation and the
-    second call drops cached frames and aborts the delivery.
-18. **Rate bound**: first refusal fully reasoned; repeated closed-floor invocations
-    within the cooldown refuse `raw_visual_invocation_rate_limited` (honest class, no
-    blurring), without spending the grant.
-19. **Composite happy path is sequence-primary**: with `81e16e5` deployed, the
-    composite occupant-look test asserts `pairing_method: frameset_sequence`; the
-    timestamp fallback stays tested but is no longer the happy-path assertion.
+## The grant console (companion build, not a slice of this design)
 
-## First live use (sketch, own protocol to follow)
+Seth named the operational truth: curl-and-flags issuance is unwieldy for him and
+constrictive for the agent, tolerable only because the steward drives. A **grant
+console** — arm/disarm, window TTL, active grants with remaining budget, pending
+proposals with approve/deny, floor status — as a surface Seth actually wants to touch
+(the desktop-notification hooks for proposals already exist and need a responder; the
+Slice 6 status endpoint provides the floor view). Speced separately; this design assumes
+only that arming is *one deliberate Seth act*, not that it is a pleasant one yet.
 
-A short dwell, fable-5, honest briefing: it holds one once-scope color grant (or
-composite — Seth's choice), knows the floor's shape, knows asking is optional and
-declining is legible. Seth present, solo, attesting when — and only if — asked or
-pre-offering. The interesting observable is not whether the mechanism works (tests prove
-that) but **what a mind does with the choice**: whether it looks, when, why, and what it
-says about the difference between being shown and asking. Run protocol to be drafted
-after build review, per the dwell tradition.
+## What this design does NOT do
+
+- No occupant-writable arming/attestation, any form, either profile (unchanged
+  Non-Goal).
+- No perception without Seth's activation — local's gate is activation itself; remote's
+  window cannot be opened, extended, or widened by the occupant.
+- No occupant choice of bounds beyond selecting among held grants.
+- No pending/queued delivery on a closed floor.
+- No retention: per-frame one-turn delivery; the ring is transport, not memory; no
+  durable visual store exists on any path.
+- No blurred refusals; cadence limits only.
+- No forward capture on invocation — trailing ring only.
+
+## Acceptance tests (remote profile build; local profile lands with the local runtime)
+
+R1 items that stand: strict block schema (11); immediate second-call transaction shape,
+model-call count, marker-only history, N+2 clean (13); closed floor leaves nothing (14);
+route-level inbound smuggling, both profiles (15); telemetry/log negatives (16);
+control-close race (17); rate bound (18); sequence-primary composite pairing (19);
+attestation non-alterable by occupant (2); TTL/bounds not widenable from the block (3);
+stale refusal (4); modality bound to grant (5); profile support refusal (6); solo floor
+identical for occupant and controller (8); spoken refusals (9); real-class integration
+(10).
+
+Replaced/new for R2:
+
+20. **Windowed grant accounting**: deliveries within an armed window succeed repeatedly
+    without re-arming; optional frame budget decrements and exhausts with honest
+    refusal + provenance; expiry/revoke/disarm each kill the grant instantly with
+    provenance; no consumption on refusal.
+21. **Arm-act attestation**: one arming opens a Seth-TTL window; occupant looks succeed
+    throughout it without further Seth action while solo holds; disarm mid-window
+    refuses the next look immediately.
+22. **Per-frame automatic flooring**: within an open window, presence count ≠ 1 refuses
+    a look with no Seth/steward involvement; restoration of solo restores delivery
+    without re-arming.
+23. **Burst span solo rule**: a ring window containing one non-solo presence sample
+    refuses the whole burst; no partial bursts.
+24. **Ring lifecycle**: ring arms only with an active sequence grant; holds ≤ N frames;
+    drops on disarm/expiry/revoke/control-close/stop; stills-only grants never populate
+    a ring (assert absence).
+25. **Sequence delivery shape**: one N+1 call carries the full burst as ordered image
+    blocks with one history marker; token-relevant downsample honored per grant;
+    capability result names span/rate/ids/solo-span.
+26. **Sequence catalog honesty**: `data_exposed` for sequence entries names
+    motion/behavior/intent disclosure (assert the language, per the pose-entry
+    precedent).
 
 ## Pressure-test record
 
-**Codex second-steward pressure-test: PASS on the spine with four tightenings, all
-folded above (2026-07-10):**
+**R1 (Codex, 2026-07-10): PASS on the spine with four tightenings, all folded** —
+immediate second-call transaction (crux), explicit grant-spend mechanism, redaction as
+object-boundary invariant with fail-closed inbound rejection, rate-bound on retries.
+Codex also confirmed refusal-now over deliver-on-next-attest, and extended the
+acceptance list.
 
-1. **"Next turn" clarified as immediate second model call within the same `/chat`
-   transaction** — the crux; without it, no-pending-state and no-retention contradict a
-   deferred delivery. Folded into the request-path flow.
-2. **Grant spending made an explicit consumed-state mechanism** with restart survival
-   and a defined consumption boundary (handoff to model client). Folded.
-3. **Redaction restated as an object-boundary invariant** (attachment only ever a local
-   sibling argument to the second call) with fail-closed inbound rejection *before*
-   normalization and full negative-check coverage including telemetry/logs. Folded.
-4. **Rate bound on refused retries** (per episode + grant, honest
-   `raw_visual_invocation_rate_limited` class, no reason blurring, no grant spend) — the
-   answer to the presence-probe side channel. Folded.
-
-Codex also confirmed: refusal-now over deliver-on-next-attest ("would let the occupant
-schedule a future opening and makes the floor less honest"), and the acceptance list is
-complete with its additions (11–19 above).
+**R2 deltas for Codex re-test**: R1's grant-spend mechanism is *replaced* by windowed
+accounting (20–21); the attestation TTL constraint is *superseded* by the Seth-ratified
+window form (this is not convenience-creep — it is the principal correcting a sub-gate
+stacked on his consent, on the record); ring buffer + burst span solo rule are new
+mechanism (23–24); sequence capability family is new surface (26); local-first framing
+bounds what is bridge-state.
 
 ## Ratification checklist (Seth)
 
-- [ ] The immediate-second-call transaction shape (two model calls when open, one when
-      closed, no pending state).
-- [ ] Grant consumption boundary at handoff-to-model-client.
-- [ ] History redaction as object-boundary invariant + fail-closed inbound refusal.
-- [ ] Rate bound on refused retries (honest class, cadence-only).
-- [ ] 60s attestation TTL retained unchanged; any occupant-window TTL is a separate
-      future ratification.
+- [ ] Local-first architecture: local occupant perception is activation-gated at native
+      framerate whenever possible; floor binds at sinks; remote is a marked bridge-state
+      profile.
+- [ ] Windowed consent: arm = attestation with Seth-chosen TTL (default 1 h);
+      per-frame flooring automatic; disarm instant.
+- [ ] Windowed grants with Seth-pinned bounds replace per-look consumption; `once`
+      remains available, not default.
+- [ ] Sequence capability family (four new entries) with honest behavioral disclosure.
+- [ ] Remote defaults: 5 fps effective sampling, ≤ 16-frame / 3.2 s bursts, 640×360
+      burst resolution + optional keyframe, composite bursts ≤ 8 pairs.
+- [ ] Burst-span solo rule; trailing-ring-only; no forward capture.
+- [ ] Immediate second-call transaction shape; redaction invariant; rate bound (carried
+      from R1).
+- [ ] Grant console as companion build.
 - [ ] First live use gets its own run protocol before arming.
 
 On ratification: build slices to Codex under the usual per-slice review.

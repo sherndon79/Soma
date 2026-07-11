@@ -9366,7 +9366,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
       source_provider: "soma.provider.sensorium.jetsorano",
       source_topic: "sensor/jetsorano/realsense/composite",
       source_grant_id: "grant-sensorium-composite-test",
-      model_target: "local.gemma4",
+      model_target: "claude-remote",
       payload_type: "composite",
       format_required: "composite",
       composite_representation: "paired_image_blocks",
@@ -9383,10 +9383,34 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   };
   const fetchBodies = [];
   const modelClient = new ModelClient({
-    runtime: "anthropic-messages",
     async fetchImpl(url, options) {
       const body = JSON.parse(String(options?.body ?? "{}"));
       fetchBodies.push({ url, body });
+      if (String(url).includes("/v1/chat/completions")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              model: "local-chat-model",
+              choices: [{
+                message: {
+                  content: [
+                    "I will inspect the paired scene.",
+                    "```soma-capability",
+                    JSON.stringify({
+                      invoke: "model.context.visual.composite.attach",
+                      grant_id: "grant-visual-composite-occupant",
+                    }),
+                    "```",
+                  ].join("\n"),
+                },
+                finish_reason: "stop",
+              }],
+              usage: { total_tokens: 4 },
+            };
+          },
+        };
+      }
       const bodyJson = JSON.stringify(body);
       const visualDelivery = bodyJson.includes("\"type\":\"image\"");
       return {
@@ -9424,10 +9448,18 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
     },
     runtimeProfiles: {
       schema_version: 1,
-      default_profile: "gemma4-vision",
+      default_profile: "local-chat",
       profiles: [
         {
-          id: "gemma4-vision",
+          id: "local-chat",
+          route: "local",
+          runtime: "openai-compatible-http",
+          model: "local-chat-model",
+          remote_service: false,
+          allowed_data_classes: ["submitted_text"],
+        },
+        {
+          id: "claude-remote",
           route: "local",
           runtime: "anthropic-messages",
           model: "claude-composite-test",
@@ -9529,7 +9561,7 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
 
   const chatBody = {
     episode_id: "episode-visual-occupant-composite-real",
-    model_profile: "gemma4-vision",
+    model_profile: "local-chat",
     messages: [{ role: "user", content: "look at the paired scene" }],
   };
   response = await invokeHandler(handler, { method: "POST", url: "/chat", body: chatBody });
@@ -9574,6 +9606,135 @@ test("model visual occupant composite invocation uses real subscriber envelopes 
   const imageBlocks = typedContent.filter((block) => block?.type === "image");
   assert.equal(imageBlocks.length, 2);
   assert.deepEqual(imageBlocks.map((block) => block.source.media_type), ["image/jpeg", "image/png"]);
+});
+
+test("model visual occupant color invocation uses visual grant profile for real handoff", async (t) => {
+  const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  t.after(() => {
+    if (previousAnthropicKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+      return;
+    }
+    process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+  });
+  const envelope = modelVisualAttachActivationEnvelope({
+    bodyPatch: {
+      episode_id: "episode-visual-occupant-color-profile-split",
+    },
+  });
+  envelope.grantStore.grants[0].scope = "window";
+  envelope.grantStore.grants[0].constraints.window_frame_budget = 1;
+  envelope.grantStore.grants[0].constraints.model_target = "claude-remote";
+  const payloadEnvelope = Uint8Array.from(encodeColorPayload({
+    format: "jpeg",
+    data: [0xff, 0xd8, 0x01, 0xff, 0xd9],
+  }));
+  const subscriber = makeModelVisualAttachSubscriber({
+    frame: {
+      capture_timestamp: envelope.nowIso,
+      byte_length: payloadEnvelope.byteLength,
+      payload_bytes: payloadEnvelope,
+    },
+  });
+  const fetchBodies = [];
+  const modelClient = new ModelClient({
+    async fetchImpl(url, options) {
+      const body = JSON.parse(String(options?.body ?? "{}"));
+      fetchBodies.push({ url, body });
+      if (String(url).includes("/v1/chat/completions")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              model: "local-chat-model",
+              choices: [{
+                message: {
+                  content: [
+                    "I will look once.",
+                    "```soma-capability",
+                    JSON.stringify({
+                      invoke: "model.context.visual.color.attach",
+                      grant_id: "grant-visual-color",
+                    }),
+                    "```",
+                  ].join("\n"),
+                },
+                finish_reason: "stop",
+              }],
+              usage: { total_tokens: 4 },
+            };
+          },
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return {
+            model: "claude-color-test",
+            content: [{ type: "text", text: "I saw the color frame." }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 2, output_tokens: 3 },
+          };
+        },
+      };
+    },
+  });
+  const handler = makeHandler({
+    harness: allowedHarness,
+    grantStore: envelope.grantStore,
+    runtimeProfiles: {
+      schema_version: 1,
+      default_profile: "local-chat",
+      profiles: [
+        {
+          id: "local-chat",
+          route: "local",
+          runtime: "openai-compatible-http",
+          model: "local-chat-model",
+          remote_service: false,
+          allowed_data_classes: ["submitted_text"],
+        },
+        {
+          id: "claude-remote",
+          route: "local",
+          runtime: "anthropic-messages",
+          model: "claude-color-test",
+          remote_service: false,
+          supported_visual_modalities: ["color"],
+          visual_attachment_schema: "anthropic_messages_image",
+          visual_attachment_modalities: ["color"],
+          allowed_data_classes: ["submitted_text"],
+        },
+      ],
+    },
+    sensoriumSubscriber: subscriber,
+    sensoriumPresenceState: envelope.presenceState,
+    modelClient,
+  });
+
+  let response = await attestModelVisualFloor(handler, "jetsorano");
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/chat",
+    body: {
+      episode_id: "episode-visual-occupant-color-profile-split",
+      model_profile: "local-chat",
+      messages: [{ role: "user", content: "look if useful" }],
+    },
+  });
+
+  assert.equal(response.statusCode, 200, JSON.stringify(response.body));
+  assert.equal(response.body.text, "I saw the color frame.");
+  assert.equal(response.body.model_visual_invocation.performed, true);
+  const visualFetch = fetchBodies.find((call) => JSON.stringify(call.body).includes("\"type\":\"image\""));
+  assert.ok(visualFetch, "occupant color delivery should reach ModelClient visual handoff");
+  const typedContent = visualFetch.body.messages.at(-1).content;
+  const imageBlocks = typedContent.filter((block) => block?.type === "image");
+  assert.equal(imageBlocks.length, 1);
+  assert.equal(imageBlocks[0].source.media_type, "image/jpeg");
 });
 
 test("model visual occupant invocation strict block refuses before frame read", async () => {

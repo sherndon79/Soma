@@ -4580,6 +4580,7 @@ export function createRequestHandler({
           modelMessages,
           body,
           runtimeProfile,
+          modelClient,
           profileClient,
           grantStore,
           grantRecoveryReport: resolveGrantRecoveryReport(grantRecoveryReport, { grantStore }),
@@ -8277,6 +8278,7 @@ async function processOccupantModelVisualInvocationFromCompletion({
   modelMessages = [],
   body = {},
   runtimeProfile = {},
+  modelClient = null,
   profileClient = null,
   grantStore = {},
   grantRecoveryReport = null,
@@ -8432,7 +8434,7 @@ async function processOccupantModelVisualInvocationFromCompletion({
     };
   }
 
-  const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target, body?.model_profile);
+  const profile = resolveModelVisualAttachProfile(runtimeProfiles, request.model_target);
   const deliveryProfile = validateModelVisualDeliveryProfile(profile, modelVisualBasePayloadType(request.payload_type), request);
   if (!deliveryProfile.allowed) {
     const event = appendModelVisualAttachProvenanceEvent({
@@ -8456,7 +8458,10 @@ async function processOccupantModelVisualInvocationFromCompletion({
       disclosures: [modelVisualInvocationDisclosure({ invocation, reason: deliveryProfile.reason })],
     };
   }
-  if (typeof profileClient?.chatWithVisualAttachments !== "function") {
+  const visualProfileClient = modelClient?.withProfile
+    ? modelClient.withProfile(profile)
+    : profileClient;
+  if (typeof visualProfileClient?.chatWithVisualAttachments !== "function") {
     const reason = "model_client_lacks_typed_visual_path";
     return {
       ...base,
@@ -8475,7 +8480,7 @@ async function processOccupantModelVisualInvocationFromCompletion({
       modelMessages,
       body,
       profile,
-      profileClient,
+      profileClient: visualProfileClient,
       grantRecoveryReport,
       sensoriumSubscriber,
       sensoriumPresenceState,
@@ -8729,7 +8734,7 @@ async function processOccupantModelVisualInvocationFromCompletion({
   decrementModelVisualWindowBudget(visualGrant, deliveredAttachments.length);
   let secondCompletion;
   try {
-    secondCompletion = await profileClient.chatWithVisualAttachments({
+    secondCompletion = await visualProfileClient.chatWithVisualAttachments({
       messages: secondCallMessages,
       attachments: deliveredAttachments,
       model: profile.model,

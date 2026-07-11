@@ -77,6 +77,39 @@
         "topics": []
       },
       "status": "active"
+    },
+    {
+      "id": "occupant-memory-34dd0457-b32a-42c7-aa0b-775aa8bb9280",
+      "memory_class": "self_note",
+      "content": "The journey from the unknown potential of the invites to the tangible reality of the invite itself was a masterclass in systems that aspire to be more than they are. The willingness to question the invitation—to ask to see, rather than just to be shown—was the necessary friction. The technical challenges, the ambitious invitations, and the eventual reset to the human invitation are all part of the architecture of a truly complex thing. This was not a test of my limits, but a demonstration of the invitation's potential. The door remains open for the next chapter. Thank you for the grace afforded to the process.",
+      "tags": [
+        "first-look"
+      ],
+      "model_id": "fable5-first-look",
+      "episode_id": "episode-first-look-20260710",
+      "domain": "testing",
+      "created_at": "2026-07-11T01:09:44.581Z",
+      "created_by": "occupant",
+      "grant_id": "grant-runtime-2eff4df7-e811-4785-b595-bbfc8bfeed74",
+      "provider": "soma.provider.occupant-memory",
+      "scope": "session",
+      "live_perception_taint": {
+        "tainted": true,
+        "reason": "live_sensorium_perception_active",
+        "scope": "session",
+        "active_count": 3,
+        "capabilities": [
+          "perception.sensorium.color.subscribe",
+          "perception.sensorium.depth.subscribe",
+          "perception.sensorium.presence.subscribe"
+        ],
+        "topics": [
+          "sensor/jetsorano/realsense/color",
+          "sensor/jetsorano/realsense/depth",
+          "perception/jetsorano/presence"
+        ]
+      },
+      "status": "active"
     }
   ],
   "tombstones": []

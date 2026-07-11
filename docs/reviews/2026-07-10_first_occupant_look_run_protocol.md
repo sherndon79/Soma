@@ -2,7 +2,7 @@
 
 - Date: 2026-07-10
 - Author: Claude (steward, design/orchestration)
-- Status: **DRAFT** — for Codex second-steward review, then Seth ratification + arm.
+- Status: **RATIFIED by Seth 2026-07-10** ("ratified, I'm seated and in frame — arm it") after Codex second-steward PASS with folds.
 - Depends on: occupant-invocation design (RATIFIED + BUILT 2026-07-10, W1–W5); the
   three controller-triggered live deliveries; the first-dwell / perception-dwell /
   taint-fit run traditions.

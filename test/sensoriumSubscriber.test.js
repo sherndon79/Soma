@@ -775,11 +775,11 @@ test("status samples with unexpected schema record mismatch without summary", as
   });
 
   manager.emitSample(subscription_id, "sensor/jetsorano/status", {
-    payloadBytes: encodeStatusPayload({ schema_version: 2 }),
+    payloadBytes: encodeStatusPayload({ schema_version: 3 }),
   });
 
   const { endSummary } = await subscriber.stop(subscription_id);
-  assert.equal(endSummary.schema_version_observed, 2);
+  assert.equal(endSummary.schema_version_observed, 3);
   assert.equal(endSummary.schema_mismatches, 1);
   assert.equal("status_summary_observed" in endSummary, false);
 });

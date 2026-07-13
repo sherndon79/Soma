@@ -1,6 +1,7 @@
 import { decodeSensoriumMessagePack } from "./sensoriumMessagePack.js";
 
-const STATUS_SCHEMA_VERSION = 1;
+const STATUS_SCHEMA_VERSION = 2;
+const ACCEPTED_STATUS_SCHEMA_VERSIONS = new Set([1, 2]);
 
 export function summarizeSensoriumStatusPayload(payloadBytes) {
   const decoded = decodeSensoriumMessagePack(payloadBytes, {
@@ -35,7 +36,7 @@ export function summarizeSensoriumStatusPayload(payloadBytes) {
 
   return {
     schema_version: schemaVersion,
-    schema_matches_expected: schemaVersion === STATUS_SCHEMA_VERSION,
+    schema_matches_expected: ACCEPTED_STATUS_SCHEMA_VERSIONS.has(schemaVersion),
     expected_schema_version: STATUS_SCHEMA_VERSION,
     hostname,
     uptime_seconds: uptimeSeconds,

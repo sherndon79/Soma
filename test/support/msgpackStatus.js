@@ -235,7 +235,7 @@ function scores(length, value) {
   return Array.from({ length }, (_, index) => value - index / 1000);
 }
 
-function encodeAny(value) {
+export function encodeAny(value) {
   if (value === null || value === undefined) return [0xc0];
   if (typeof value === "boolean") return value ? [0xc3] : [0xc2];
   if (typeof value === "number") {

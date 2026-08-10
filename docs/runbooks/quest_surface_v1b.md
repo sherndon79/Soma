@@ -109,11 +109,22 @@ with the HTTP mocked (injected fetch). It asserts the real answer reaches the we
 with no session state retained after close.
 
 **Live-services loopback (the ultimate pre-Gate-2 proof — needs the services up).** The mocked
-loopback cannot catch live-service behavior (the lesson: fakes hide live blockers). Before Gate 2,
-bring up TheCommons `whisper-stt`/`kokoro-tts`/`gemma4-llm` (host-published on 4001/4010/8000), point
-Soma at them (`SOMA_WHISPER_URL`/`SOMA_KOKORO_URL`/`SOMA_LLM_URL`, or their defaults), set
-`SOMA_QUEST_SURFACE_REAL_ANSWER=1`, and run one host-side utterance through the real services,
-confirming a coherent spoken answer and an empty retention audit.
+loopback cannot catch live-service behavior (the lesson: fakes hide live blockers). A runnable
+harness drives one utterance through the *real* Whisper/Gemma/Kokoro, self-contained (it bootstraps
+the question audio via real Kokoro, then STT → model → TTS), printing each stage as evidence:
+
+```bash
+# 1. bring the services up, host-published on 4001/4010/8000 (TheCommons):
+docker compose -f docker-compose.gpu.yml up -d whisper-stt kokoro-tts gemma4-llm
+# 2. run the live loopback (endpoints default to 127.0.0.1; override with
+#    SOMA_WHISPER_URL / SOMA_KOKORO_URL / SOMA_LLM_URL if needed):
+SOMA_QUEST_API_KEY="$INTERNAL_API_KEY" npm run quest-v1b-live-loopback
+```
+
+It health-gates the services first (clear bring-up hint if any is down), then prints the transcript
+Whisper heard, the model's answer, and the TTS audio size, with per-stage latencies. It writes
+nothing to disk; the provider-level no-retention audit is proven by the mocked loopback (§7) and
+repeated on device. A coherent answer here clears the last host-side unknown before Gate 2.
 
 ## 5. Start the real-compute-wired provider
 

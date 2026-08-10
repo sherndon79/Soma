@@ -23,7 +23,8 @@
     "systemd-provider:controlled-test": "bash scripts/systemd-provider-controlled-test.sh",
     "start": "node src/server.js",
     "test": "node --test",
-    "test:quest-v1b-loopback": "node --test test/questSurfaceLoopback.test.js"
+    "test:quest-v1b-loopback": "node --test test/questSurfaceLoopback.test.js",
+    "quest-v1b-live-loopback": "node scripts/quest-v1b-live-loopback.mjs"
   },
   "engines": {
     "node": ">=22"

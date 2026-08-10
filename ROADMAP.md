@@ -666,7 +666,7 @@ Constraints:
 - Complete the remaining live-device Quest v1a negative cases: no-listener, wrong-grant,
   stale/mismatched content, focus/presence loss, re-don non-resume, and independent local stop. The
   positive mTLS → lease → snapshot → composed-frame acknowledgement path was verified on
-  2026-08-09. The v1b Java protocol/runtime path is integrated through fake hardware, including bounded ≤200 ms drop-oldest jitter (20 ms/40 ms duration-bound) and `ANSWER_END` drain-then-clear; real device audio remains separate and unstarted.
+  2026-08-09. The v1b path is built HOST-SIDE (2026-08-10): the wire/consent machinery, bounded ≤200 ms drop-oldest jitter + `ANSWER_END` drain-then-clear, the dual-mode answer matrix (text-local live, three cells inert), and the real local answer route (Whisper STT → local Gemma → Kokoro TTS behind the abort-aware pipeline — interruptible, fail-closed, transcript-firewalled, no-retention, voice-brief), flag-gated by `SOMA_QUEST_SURFACE_REAL_ANSWER` and verified via `npm run test:quest-v1b-loopback`. Remaining: the live-services loopback (real Whisper/Gemma/Kokoro up) and the on-device run (Gate 2, Seth-only); barge-in / streaming-to-wire is a defined follow-on slice.
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
 - Preserve operator narrowing controls as traversal and focused inspection evolve.
 - Keep text-bearing desktop traversal separate under `desktop.inspect.text`; do not fold child

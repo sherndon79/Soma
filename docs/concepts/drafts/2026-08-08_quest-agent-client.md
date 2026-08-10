@@ -11,8 +11,14 @@ subsequently approved the architecture, placement, and v1a→v1b milestone throu
 human gate. v1a now exists under `clients/quest-surface/`, `src/questSurface*.js`, and the disabled
 catalog/provider entries. The 2026-08-09 device exercise verified mTLS, a fresh lease and snapshot,
 composition, and the actual-bounds acknowledgement; it did not close the live negative-case suite.
-This preserves the earlier proposal state while naming its replacement; v1b has not started. See
-`docs/runbooks/quest_surface_v1a.md` for the current operator contract and evidence boundary.
+Update (2026-08-10): **v1b is now built host-side** — the wire/consent machinery (armed episode,
+four-leaf manifest, per-stream audio, fail-closed latch), the dual-mode answer matrix (armed leaf
+selects the mode; text-local live, the other three cells inert), and the **real local answer route**
+(Whisper STT → local Gemma → Kokoro TTS behind the abort-aware pipeline: interruptible, fail-closed,
+transcript-firewalled, no-retention, voice-brief) — all verified host-side against injected-fetch
+adapters (`npm run test:quest-v1b-loopback`). Remaining: the live-services loopback and the on-device
+run (Gate 2, Seth-only). Barge-in / streaming-to-wire is a defined follow-on slice. See
+`docs/runbooks/quest_surface_v1b.md` and `docs/design/2026-08-10_quest-v1b-item-i-scope.md`.
 
 ---
 

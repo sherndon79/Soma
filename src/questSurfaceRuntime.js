@@ -1,11 +1,16 @@
 import { readFile } from "node:fs/promises";
 
 import { createQuestSurfaceFixtureProvider } from "./questSurfaceFixtureProvider.js";
+import { createRealAnswerStages } from "./questSurfaceRealAnswerProvider.js";
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on"]);
 
 export function isQuestSurfaceRuntimeEnabled(env = process.env) {
   return ENABLED_VALUES.has(String(env.SOMA_QUEST_SURFACE_ENABLED ?? "").trim().toLowerCase());
+}
+
+export function isQuestSurfaceRealAnswerEnabled(env = process.env) {
+  return ENABLED_VALUES.has(String(env.SOMA_QUEST_SURFACE_REAL_ANSWER ?? "").trim().toLowerCase());
 }
 
 export async function createQuestSurfaceRuntime({
@@ -40,7 +45,7 @@ export async function createQuestSurfaceRuntime({
     );
   }
 
-  const provider = providerFactory({
+  const providerOptions = {
     tlsOptions,
     grantStore,
     grantRecoveryReport,
@@ -61,7 +66,11 @@ export async function createQuestSurfaceRuntime({
     },
     logger,
     eventSink,
-  });
+  };
+  if (isQuestSurfaceRealAnswerEnabled(env)) {
+    providerOptions.answerStages = createRealAnswerStages({ env });
+  }
+  const provider = providerFactory(providerOptions);
 
   let address;
   try {

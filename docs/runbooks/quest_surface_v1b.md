@@ -1,10 +1,13 @@
 # Quest surface v1b operator runbook — voice + panel round trip
 
-Status: **DRAFT, pre-implementation.** The v1b wire/consent machinery (armed episode, four-leaf
-manifest, per-stream audio, correlated answer panel, fail-closed latch) is integrated and verified
-against fake/no-op hardware. This runbook cannot be executed end to end until **item I** lands — the
-real local-only STT/model/TTS adapters and the host loopback artifact — and until real
-`AudioRecord`/`AudioTrack` capture/playback are wired. Sections marked **[pending I]** finalize then.
+Status: **Host path BUILT; device run is Gate 2 (Seth-only), still closed.** The v1b wire/consent
+machinery (armed episode, four-leaf manifest, per-stream audio, correlated answer panel, fail-closed
+latch) and the **real local-only answer route** (Whisper STT → local Gemma → Kokoro TTS behind the
+abort-aware pipeline — interruptible, fail-closed, transcript-firewalled, no-retention, voice-brief)
+are built and verified host-side against injected-fetch adapters (`npm run test:quest-v1b-loopback`).
+Two things remain before this runbook is fully executable on the headset: the **live-services
+loopback** (run against the real Whisper/Gemma/Kokoro services — the ultimate pre-Gate-2 proof), and
+real `AudioRecord`/`AudioTrack` capture/playback on device. Those are called out inline.
 
 **Gate 2 is Seth-only.** Arming the episode window and running live microphone capture on the
 headset are not agent actions. Everything below the pre-device host loopback is an operator
@@ -61,9 +64,10 @@ outside the repo, fixed compatibility PKCS#12 password, treat APK + PKCS#12 as s
 
 ## 2. Create the four-leaf grants
 
-v1b authority is a manifest over four independently revocable leaves. Create each grant through the
-operator mutation surface, substituting the step-1 fingerprint. **[pending I]** — exact capability
-ids/constraints confirm against the shipped catalog when item I lands.
+v1b authority is a manifest over four independently revocable leaves (the text-local mode). Create
+each grant through the operator mutation surface, substituting the step-1 fingerprint. The four leaf
+capabilities are shipped in the catalog; the three expansion leaves (text-remote, raw-audio-local/
+remote) are defined but disabled and are **not** used here.
 
 ```bash
 SOMA_RUNTIME_WRITES_ENABLED=1 npm start
@@ -79,43 +83,56 @@ npm run cli -- grants create --capability <leaf> --provider <provider> --scope <
 Record each grant id. Grant creation is separate from arming and from runtime activation; it
 contacts no headset and arms no microphone.
 
-## 3. Arm the episode window — **Gate 2, Seth-only** — **[pending I]**
+## 3. Arm the episode window — **Gate 2, Seth-only**
 
-The armed episode is the consent act. It is operator-only, carries an episode id, an explicit
+The armed episode is the consent act. `armEpisode` binds an exact `{mode, capability, provider,
+grant_id}` tuple (here: mode `text/local`) — the armed leaf selects the mode, and only the exactly-
+matching answer provider is invoked. It is operator-only, carries an episode id, an explicit
 TTL, and deliberate provenance, and is instantly revocable. Arming is what distinguishes a v1b
 session that *may* capture from four grants that merely *exist*. The exact arm/disarm surface
 finalizes with item I; it must record who armed it, when, and for how long, and expose an instant
 revoke. Do not proceed past this step in any run Seth has not personally armed.
 
-## 4. Pre-device host loopback — run this **before** the headset — **[pending I]**
+## 4. Pre-device host loopback — run this **before** the headset
 
-Item I ships a **real-class host loopback artifact**: `on → ask → [real local STT → local model →
-real TTS] → answer + correlated panel → off`, run host-side through the actual local adapters with
-no headset, asserting the no-retention audit. Run it green first. This is the gate leg that catches
-integration blockers cheaply; the program lesson is that fakes hide live blockers, so this loopback
-must exercise the real adapters, not fixtures.
+The **loopback artifact** drives the full provider flow host-side, no headset: `on → ask → [real
+STT → model → TTS] → answer + correlated panel → off`, plus the no-retention audit. Run it green
+first; it catches wiring/marshaling/fail-closed bugs cheaply.
 
 ```bash
-# [pending I] exact invocation — the loopback lives with item I's tests and runs the real adapters
 npm run test:quest-v1b-loopback
 ```
 
-## 5. Start the real-compute-wired provider — **[pending I]**
+It exercises the **real adapter code** (`createRealAnswerStages` → Whisper/Gemma/Kokoro adapters)
+with the HTTP mocked (injected fetch). It asserts the real answer reaches the wearer over the wire
+*and* that the transcript/answer/PCM never appear in the provider's logs or events (no-retention),
+with no session state retained after close.
 
-Start Soma with the v1b listener bound to the LAN address, the four grant ids, and the **local**
-STT/model/TTS adapters wired (no remote fallback). Exact env surface finalizes with item I.
+**Live-services loopback (the ultimate pre-Gate-2 proof — needs the services up).** The mocked
+loopback cannot catch live-service behavior (the lesson: fakes hide live blockers). Before Gate 2,
+bring up TheCommons `whisper-stt`/`kokoro-tts`/`gemma4-llm` (host-published on 4001/4010/8000), point
+Soma at them (`SOMA_WHISPER_URL`/`SOMA_KOKORO_URL`/`SOMA_LLM_URL`, or their defaults), set
+`SOMA_QUEST_SURFACE_REAL_ANSWER=1`, and run one host-side utterance through the real services,
+confirming a coherent spoken answer and an empty retention audit.
+
+## 5. Start the real-compute-wired provider
+
+Start Soma with the v1b listener and set `SOMA_QUEST_SURFACE_REAL_ANSWER=1` to attach the **local**
+STT/model/TTS adapters (no remote fallback). Absent the flag, the listener runs the fixture answer
+path (useful for wire/consent testing without the services).
 
 ```bash
 SOMA_QUEST_SURFACE_ENABLED=1 \
 SOMA_QUEST_SURFACE_HOST=192.168.50.20 SOMA_QUEST_SURFACE_PORT=8793 \
 # ...TLS key/cert/client-ca as v1a...
 # ...four grant ids...
-# [pending I] local STT / local model / local TTS adapter selection, no-remote-fallback assertion
+SOMA_QUEST_SURFACE_REAL_ANSWER=1 \
+SOMA_WHISPER_URL=http://127.0.0.1:4001 SOMA_KOKORO_URL=http://127.0.0.1:4010 SOMA_LLM_URL=http://127.0.0.1:8000 \
 npm start
 ```
 
-The provider emits content-free lifecycle/metadata only; it logs no PCM, transcript, or answer
-text.
+The provider emits content-free lifecycle/metadata only; it logs no PCM, transcript, or answer text.
+The answer is voice-brief by default (short spoken sentences); a long answer offers to say more.
 
 ## 6. Device exercise — the round trip
 
@@ -137,11 +154,13 @@ capture; granting it is a device-side deliberate act, not a standing authority).
 6. **Negatives.** Exercise mid-utterance revoke *(N2)*, wrong/stale lease and wrong epoch/revision
    *(N3)*. No negative case may play audio, display capability content, or leave retained state.
 
-## 7. No-retention audit — **[pending I]**
+## 7. No-retention audit
 
-After close, verify no raw PCM, transcript, or answer text persists — on disk, in provider logs, or
-in a live process buffer *(P4/P5)*. Item I defines the exact audit; it must be empty. Capture the
-audit output as the retention evidence.
+The loopback (§4) already asserts the automated audit: the transcript, answer text, and raw PCM
+never appear in the provider's logs or emitted events, and no session state is retained after close
+*(P4/P5)*. For the **live** run, additionally confirm no raw PCM/transcript/answer persists on disk
+or in a live process buffer after close, and capture that as the retention evidence. The provider is
+built to emit content-free metadata only; the audit is the proof, not the promise.
 
 ## Cleanup
 
@@ -151,7 +170,16 @@ uninstall or replace it as part of cleanup.
 
 ## Open before this runbook is executable
 
-- **[item I]** real local STT/model/TTS adapters, host loopback artifact (§4), no-retention audit
-  (§7), and the exact arm surface (§3).
-- **[item H]** bounded ≤200 ms drop-oldest capture/playback queues (20 ms = 1920 B mono / 3840 B stereo, 40 ms = 3840 B mono / 7680 B stereo, duration-bound ≤200 ms, per-stream isolated, synchronous flush) and `ANSWER_END` terminal (drain-then-clear, lifecycle latch preempts, exact lease/correlation, `BigInt` seq, stream 0 / late refusal) — fake-hardware-tested via `Threshold/docker/quest-build.sh` + `g++` + `node --test` (H production seam).
+**Built (host-side, committed):** item H (bounded ≤200 ms drop-oldest queues + `ANSWER_END`
+terminal), item I (mode-matrix enforcement, the four leaves, the real Whisper→Gemma→Kokoro answer
+route, the `SOMA_QUEST_SURFACE_REAL_ANSWER` runtime flag, the loopback + no-retention audit). All
+verified against injected-fetch adapters / fake hardware.
+
+**Remaining before the headset run:**
+- The **live-services loopback** (§4) — one host-side utterance through the real
+  Whisper/Gemma/Kokoro services. The ultimate pre-Gate-2 proof; the mocked loopback cannot catch
+  live-service behavior.
 - Real `AudioRecord`/`AudioTrack` capture/playback and `RECORD_AUDIO` handling on device.
+- The operator-facing **arm surface** (§3) — `armEpisode` binds `{mode, capability, provider,
+  grant_id}` today; a real operator console for issuing/arming (rather than a code path) is a
+  companion build.

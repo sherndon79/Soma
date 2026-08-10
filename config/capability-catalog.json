@@ -1580,6 +1580,94 @@
       "bridge_state": false
     },
     {
+      "key": "model.context.audio.microphone.remote.attach",
+      "name": "Model Context Microphone Audio Remote Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "once",
+        "window"
+      ],
+      "data_exposed": [
+        "one bounded transcribed utterance from Quest microphone capture",
+        "utterance id, answer_id correlation",
+        "remote endpoint only",
+        "source capture lease ref"
+      ],
+      "excluded_by_default": [
+        "local model delivery",
+        "durable retention",
+        "training use",
+        "unpinned remote destination",
+        "hidden recording without armed window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.audio.microphone.remote.attach.v1",
+      "description": "Attach one VAD-gated Quest utterance to a remote model turn (disabled/inert in v1b: text-remote leaf defined but no live provider). Remote destinations are governed and pinned.",
+      "bridge_state": false
+    },
+    {
+      "key": "model.context.audio.microphone.raw.local.attach",
+      "name": "Model Context Raw Audio Local Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "once",
+        "window"
+      ],
+      "data_exposed": [
+        "one bounded raw audio utterance (PCM) from Quest microphone capture",
+        "utterance id, answer_id correlation",
+        "local model target only",
+        "source capture lease ref"
+      ],
+      "excluded_by_default": [
+        "transcript-only routing",
+        "remote model delivery",
+        "durable retention",
+        "training use",
+        "hidden recording without armed window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.audio.microphone.raw.local.attach.v1",
+      "description": "Attach raw PCM utterance to a local audio-native model (disabled/inert in v1b: raw_audio-local leaf defined but no live provider).",
+      "bridge_state": false
+    },
+    {
+      "key": "model.context.audio.microphone.raw.remote.attach",
+      "name": "Model Context Raw Audio Remote Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "once",
+        "window"
+      ],
+      "data_exposed": [
+        "one bounded raw audio utterance (PCM) from Quest microphone capture",
+        "utterance id, answer_id correlation",
+        "remote endpoint only",
+        "source capture lease ref"
+      ],
+      "excluded_by_default": [
+        "transcript-only routing",
+        "local model delivery",
+        "durable retention",
+        "training use",
+        "unpinned remote destination",
+        "hidden recording without armed window"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.audio.microphone.raw.remote.attach.v1",
+      "description": "Attach raw PCM utterance to a remote audio-native model (disabled/inert in v1b: raw_audio-remote leaf defined but no live provider).",
+      "bridge_state": false
+    },
+    {
       "key": "perception.sensorium.status.subscribe",
       "name": "Sensorium Status Subscription",
       "category": "perception",

@@ -107,13 +107,13 @@ function createHProvider(credentials) {
     tlsOptions: { key: credentials.serverKey, cert: credentials.serverCert, ca: credentials.ca },
     grantStore: { schema_version: 1, grants },
     capabilityCatalog: { capabilities: grants.map(g => ({ key: g.capability })) },
-    providerRegistry: { providers: [{ id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, "interaction.quest.surface.microphone.capture", "interaction.quest.surface.audio.wearer_directed.present"] }, { id: "soma.provider.local-model", capabilities: ["model.context.audio.microphone.local.attach"] }] },
+    providerRegistry: { providers: [{ id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, "interaction.quest.surface.microphone.capture", "interaction.quest.surface.audio.wearer_directed.present"], answer: { input_class: "text", destination: "local", required_leaf: "model.context.audio.microphone.local.attach" } }, { id: "soma.provider.local-model", capabilities: ["model.context.audio.microphone.local.attach"] }] },
     grantId: "grant-quest-panel",
     leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "HELLO SETH FROM SOMA" },
     logger: quietLogger,
   });
-  provider.armEpisode({ episodeId: "ep-h-fixture-socket", ttlMs: 60000, actor: "test" });
+  provider.armEpisode({ episodeId: "ep-h-fixture-socket", ttlMs: 60000, actor: "test", mode: { input_class: "text", destination: "local" }, capability: "model.context.audio.microphone.local.attach", provider: QUEST_SURFACE_PROVIDER_ID, grant_id: "grant-quest-local" });
   return provider;
 }
 

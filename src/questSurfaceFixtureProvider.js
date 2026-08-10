@@ -33,6 +33,7 @@ import {
 } from "./questSurfaceProtocol.js";
 import { createQuestSurfaceAudioPipeline } from "./questSurfaceAudioPipeline.js";
 import { QuestSurfaceMicLatch } from "./questSurfaceMicLatch.js";
+import { matchAnswerProvider } from "./questSurfaceModeMatrix.js";
 
 const DEFAULT_LEASE_TTL_MS = 60_000;
 const DEFAULT_PANEL = Object.freeze({
@@ -92,13 +93,40 @@ export class QuestSurfaceFixtureProvider {
     this.consumedOnceGrants = new Set();
   }
 
-  armEpisode({ episodeId, ttlMs = 60_000, actor = "test", provenance = "" } = {}) {
+  armEpisode({ episodeId, ttlMs = 60_000, actor = "test", provenance = "", mode, capability, provider, grant_id, grantId } = {}) {
     const id = String(episodeId ?? `ep-${Date.now()}-${Math.random().toString(16).slice(2,8)}`).trim();
     if (!id) throw providerError("episode_id_required", "Episode id required");
     const ttl = boundedInteger(ttlMs, 1, QUEST_SURFACE_MAX_LEASE_TTL_MS, "episode_ttl_invalid");
-    this.armedEpisode = { id, expiresAtMs: this.now() + ttl, actor: String(actor ?? ""), provenance: String(provenance ?? ""), ttlMs: ttl };
+    // I-1 tuple binding: {mode, capability, provider, grant_id} — default to text/local live if not supplied (backward compat)
+    let boundMode = mode ?? null;
+    let boundCapability = capability ?? null;
+    let boundProvider = provider ?? null;
+    let boundGrantId = grant_id ?? grantId ?? null;
+    // allow mode as string "text:local" or object
+    if (typeof boundMode === "string") {
+      const [ic, dest] = String(boundMode).split(":");
+      boundMode = { input_class: ic, destination: dest };
+    }
+    if (!boundMode && !boundCapability && !boundProvider && !boundGrantId) {
+      // legacy audio path: default to text/local hard floor (fail-closed, no bypass) — panel-only sessions stay exempt because they never hit audio path
+      boundMode = { input_class: "text", destination: "local" };
+      boundCapability = "model.context.audio.microphone.local.attach";
+      boundProvider = QUEST_SURFACE_PROVIDER_ID;
+      boundGrantId = "grant-local";
+      // allow grant-local as window or once; matcher will verify via hasLeaseFor mapping to local_attach
+    } else {
+      // default leaf for text/local if not supplied
+      if (!boundMode) boundMode = { input_class: "text", destination: "local" };
+      if (!boundCapability) {
+        const leafFor = { "text:local": "model.context.audio.microphone.local.attach", "text:remote": "model.context.audio.microphone.remote.attach", "raw_audio:local": "model.context.audio.microphone.raw.local.attach", "raw_audio:remote": "model.context.audio.microphone.raw.remote.attach" };
+        boundCapability = leafFor[`${boundMode.input_class}:${boundMode.destination}`] ?? "model.context.audio.microphone.local.attach";
+      }
+      if (!boundProvider) boundProvider = QUEST_SURFACE_PROVIDER_ID;
+      if (!boundGrantId) boundGrantId = `grant-${boundCapability}`;
+    }
+    this.armedEpisode = { id, expiresAtMs: this.now() + ttl, actor: String(actor ?? ""), provenance: String(provenance ?? ""), ttlMs: ttl, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId, grantId: boundGrantId };
     this.armedWindow = true;
-    this.#emit("quest.surface.episode_armed", { episode_id: id, expires_at_ms: this.armedEpisode.expiresAtMs, actor });
+    this.#emit("quest.surface.episode_armed", { episode_id: id, expires_at_ms: this.armedEpisode.expiresAtMs, actor, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId });
     return this.armedEpisode;
   }
 
@@ -676,6 +704,19 @@ class QuestSurfaceProviderSession {
       }
       return authorizeLocalAttach();
     };
+    // I-1 second enforcement point: provider selection must prove same tuple as manifest issuance (hard floor)
+    const episodeForAnswer = this.getArmedEpisode ? this.getArmedEpisode() : null;
+    if (episodeForAnswer && episodeForAnswer.mode) {
+      try {
+        // manifest for matching is the issued manifest (contains real leases)
+        matchAnswerProvider({ armedEpisode: episodeForAnswer, providerRegistry: this.providerRegistry, manifest: this.manifest });
+      } catch (err) {
+        const code = err.code ?? "answer_mode_mismatch";
+        this.eventSink("quest.surface.answer_failed", { session_epoch: frame.session_epoch, stream_id: frame.stream_id, reason: code, utterance_id: frame.payload?.utterance_id ?? "" });
+        try { this.#sendError(code, frame); } catch {}
+        return;
+      }
+    }
     try {
       const result = await this.pipeline.handleUtteranceEnd({ sessionEpoch: frame.session_epoch, streamId: frame.stream_id, payload: frame.payload, manifestLeases: this.manifest ? this.manifest.leases : null, authorizeLocalAttach: authorizeLocalAttachRecheck });
       if (result.dropped) {
@@ -985,6 +1026,16 @@ class QuestSurfaceProviderSession {
         issuedAtMs,
         leases,
       });
+      // I-1 first enforcement point: manifest issuance must prove same tuple as provider selection (hard floor for audio)
+      const episodeForManifest = this.getArmedEpisode ? this.getArmedEpisode() : null;
+      if (episodeForManifest && episodeForManifest.mode) {
+        try {
+          matchAnswerProvider({ armedEpisode: episodeForManifest, providerRegistry: this.providerRegistry, manifest });
+        } catch (err) {
+          this.eventSink("quest.surface.manifest_not_armed", { reason: "answer_mode_mismatch", code: err.code ?? String(err.message), mode: episodeForManifest.mode });
+          return null;
+        }
+      }
       return { allowed: true, leases, manifest, grantIds };
     } catch {
       return null;

@@ -481,7 +481,61 @@
           "provider_contract": "soma.interaction.quest.surface.audio.wearer_directed.present.v1b",
           "output_schema": "soma.interaction.quest.surface.audio.chunk.v1b"
         }
-      ]
+      ],
+      "answer": {
+        "input_class": "text",
+        "destination": "local",
+        "required_leaf": "model.context.audio.microphone.local.attach"
+      }
+    },
+    {
+      "id": "soma.provider.answer.text-remote",
+      "name": "Answer Text Remote (Inert v1b)",
+      "version": "0.1.0",
+      "runtime": "disabled-inert",
+      "local_only": false,
+      "network_access": true,
+      "network_scope": "governed egress pinned endpoint",
+      "activation_status": "disabled",
+      "capabilities": [],
+      "answer": {
+        "input_class": "text",
+        "destination": "remote",
+        "required_leaf": "model.context.audio.microphone.remote.attach",
+        "remote_destination": "https://pinned.local-frontier.invalid/answer"
+      }
+    },
+    {
+      "id": "soma.provider.answer.raw-audio-local",
+      "name": "Answer Raw Audio Local (Inert v1b)",
+      "version": "0.1.0",
+      "runtime": "disabled-inert",
+      "local_only": true,
+      "network_access": false,
+      "activation_status": "disabled",
+      "capabilities": [],
+      "answer": {
+        "input_class": "raw_audio",
+        "destination": "local",
+        "required_leaf": "model.context.audio.microphone.raw.local.attach"
+      }
+    },
+    {
+      "id": "soma.provider.answer.raw-audio-remote",
+      "name": "Answer Raw Audio Remote (Inert v1b)",
+      "version": "0.1.0",
+      "runtime": "disabled-inert",
+      "local_only": false,
+      "network_access": true,
+      "network_scope": "governed egress pinned endpoint",
+      "activation_status": "disabled",
+      "capabilities": [],
+      "answer": {
+        "input_class": "raw_audio",
+        "destination": "remote",
+        "required_leaf": "model.context.audio.microphone.raw.remote.attach",
+        "remote_destination": "https://pinned.local-frontier.invalid/answer"
+      }
     },
     {
       "id": "soma.provider.remote_desktop.sunshine",

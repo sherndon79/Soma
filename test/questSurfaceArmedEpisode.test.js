@@ -36,7 +36,7 @@ function catalog() {
   return { capabilities: [{ key: QUEST_SURFACE_CAPABILITY }, { key: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE }, { key: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT }, { key: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH }] };
 }
 function registry() {
-  return { providers: [{ id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT] }, { id: "soma.provider.local-model", capabilities: [QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH] }] };
+  return { providers: [{ id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT], answer: { input_class: "text", destination: "local", required_leaf: "model.context.audio.microphone.local.attach" } }, { id: "soma.provider.local-model", capabilities: [QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH] }] };
 }
 
 test("armed episode: default unarmed fails closed to panel-only LEASE (no manifest)", async (t) => {

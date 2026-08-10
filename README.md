@@ -12,6 +12,16 @@ provenance, scoped read-only file access, text-only cognitive-load stewardship, 
 desktop accessibility inspection, including authorized structure-only recursive traversal
 (role/count topology only; text-bearing content remains excluded and gated separately).
 
+An explicitly disabled Quest v1a fixture/client path can present one grant-bound snapshot panel
+over compositor-owned passthrough. It exports no head pose or other headset perception and latches
+suspended on focus/presence loss. The positive on-device path—mTLS authentication, lease and
+snapshot delivery, composition, and actual-bounds acknowledgement—was verified on 2026-08-09;
+the live negative-path suite remains open. The v1b Java client now has inert, fake-hardware-tested
+manifest/audio protocol and lifecycle integration, but no `AudioRecord`/`AudioTrack` path or live
+audio authority has been activated; bounded 200 ms queue/backpressure work also remains separate.
+See the
+[Quest surface v1a runbook](./docs/runbooks/quest_surface_v1a.md).
+
 ## Architecture Direction
 
 Soma's early service plane is implemented in Node.js for fast iteration on HTTP, JSON, policy,

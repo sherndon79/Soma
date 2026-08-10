@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The client reaches only the operator-configured Soma fixture over mutually authenticated TLS. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <uses-feature
+        android:name="android.hardware.vr.headtracking"
+        android:required="true"
+        android:version="1" />
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <!-- Passthrough composition gives the wearer room context; the app never receives camera pixels. -->
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="true" />
+
+    <!-- Deliberately absent through inert v1b: RECORD_AUDIO, CAMERA, USE_SCENE, hand/eye/face/body tracking. -->
+    <application
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:hasCode="true"
+        android:label="Soma Quest Surface"
+        android:usesCleartextTraffic="false">
+
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest3" />
+
+        <activity
+            android:name=".QuestSurfaceActivity"
+            android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|density"
+            android:excludeFromRecents="false"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+            <meta-data android:name="android.app.lib_name" android:value="somaquestsurface" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

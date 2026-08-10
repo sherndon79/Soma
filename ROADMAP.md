@@ -663,6 +663,11 @@ Constraints:
 
 ## Near-Term
 
+- Complete the remaining live-device Quest v1a negative cases: no-listener, wrong-grant,
+  stale/mismatched content, focus/presence loss, re-don non-resume, and independent local stop. The
+  positive mTLS → lease → snapshot → composed-frame acknowledgement path was verified on
+  2026-08-09. The v1b Java protocol/runtime path is integrated through fake hardware; real device
+  audio and the bounded 200 ms queue/backpressure slice remain separate and unstarted.
 - Add writable grant/revocation mutation only after the grant lifecycle prerequisites are met.
 - Preserve operator narrowing controls as traversal and focused inspection evolve.
 - Keep text-bearing desktop traversal separate under `desktop.inspect.text`; do not fold child

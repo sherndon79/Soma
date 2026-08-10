@@ -1,10 +1,18 @@
 # Quest agent-interaction client — architecture & v1 plan
 
-**Status: PROPOSED / DRAFT. Nothing here is applied. No implementation is authorized.**
+**Status: APPROVED ARCHITECTURE; v1a POSITIVE LIVE PATH VERIFIED, live negative cases pending.**
 Produced by the `spec/quest3-agent-client` workflow (Claude + Codex, independent-first research →
 convergence → review). Lives in Soma because **the client is Soma's** (it reaches the wearer and
 carries perception, gated by Soma's consent/floor machinery) per Threshold `AGENTS.md` rule 6.
 Threshold retains only the native toolchain and hardware probes (§12), which link here.
+
+Supersession note (2026-08-09): the original header said no implementation was authorized. Seth
+subsequently approved the architecture, placement, and v1a→v1b milestone through the workflow's
+human gate. v1a now exists under `clients/quest-surface/`, `src/questSurface*.js`, and the disabled
+catalog/provider entries. The 2026-08-09 device exercise verified mTLS, a fresh lease and snapshot,
+composition, and the actual-bounds acknowledgement; it did not close the live negative-case suite.
+This preserves the earlier proposal state while naming its replacement; v1b has not started. See
+`docs/runbooks/quest_surface_v1a.md` for the current operator contract and evidence boundary.
 
 ---
 

@@ -12,6 +12,7 @@ import { loadRuntimeProfiles } from "./runtimeProfiles.js";
 import { runtimeWritePostureFromEnv } from "./runtimeWritePosture.js";
 import { createRemoteGraphicalRuntime } from "./remoteGraphicalRuntime.js";
 import { createSensoriumRuntime } from "./sensoriumRuntime.js";
+import { createQuestSurfaceRuntime } from "./questSurfaceRuntime.js";
 
 const port = Number.parseInt(process.env.SOMA_PORT ?? "8765", 10);
 const harness = await loadHarness();
@@ -102,6 +103,13 @@ const runtimeWritePosture = runtimeWritePostureFromEnv(process.env);
 const modelClient = new ModelClient();
 const sensoriumRuntime = await createSensoriumRuntime({ logger: console });
 const remoteGraphicalRuntime = await createRemoteGraphicalRuntime();
+const questSurfaceRuntime = await createQuestSurfaceRuntime({
+  grantStore,
+  grantRecoveryReport,
+  capabilityCatalog,
+  providerRegistry,
+  logger: console,
+});
 const app = createApp({
   harness,
   capabilityCatalog,
@@ -160,4 +168,5 @@ async function shutdown(signal) {
   });
   await sensoriumRuntime.stop();
   await remoteGraphicalRuntime.stop();
+  await questSurfaceRuntime.stop();
 }

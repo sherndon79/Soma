@@ -632,6 +632,34 @@ Expected behavior:
 - offer inspection or recovery steps before retry
 - record provenance and any known side effects
 
+### Quest Surface Session Refused, Offline, Or Suspended
+
+Triggers:
+
+- the v1a runtime opt-in or an external TLS path is absent
+- mTLS authentication, hostname validation, exact grant authorization, version negotiation, epoch,
+  lease, sequence, document revision/hash/length/TTL, or surface-bound validation fails
+- the provider disconnects or exhausts its bounded retry budget
+- OpenXR is not `FOCUSED`, affirmative user presence has not arrived, or focus/presence is lost
+
+Expected behavior:
+
+- display no capability content before focus, presence, mTLS, fresh epoch, and exact lease all hold
+- reject malformed, stale, oversized, mismatched, unleased, wrong-direction, or non-v1a-stream input
+- clear remote content on disconnect, expiry, focus loss, or presence loss
+- permit only a bounded narrowing/teardown report after local validity is lost
+- latch the Activity suspended; re-don never resumes it, and deliberate exit/relaunch must negotiate
+  a fresh epoch and lease
+- retain a local stop path that closes transport without waiting for the workstation
+- never broaden into cleartext, trust-all TLS, arbitrary resource fetch, head-pose export, or another
+  modality as a recovery path
+
+Provenance:
+
+- record transport/auth/session/lease/revision/bounds metadata and bounded reason codes only
+- do not record panel text, document bytes, TLS private material, head pose, camera pixels, or other
+  headset sensor data
+
 ### Participant Cognitively Overloaded During Approval
 
 Expected behavior:

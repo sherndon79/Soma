@@ -1,0 +1,25 @@
+{
+  "description": "Node-produced hashed v2 PANEL_SNAPSHOT payload for cross-language E proof",
+  "input": {
+    "revision": "42",
+    "lease_ref": "lease-v2-fixture",
+    "text": "HELLO V2 FROM NODE",
+    "surface_id": "panel.main",
+    "ttl_ms": 30000,
+    "answer_id": "ans-v2-fixture-001",
+    "utterance_id": "utt-v2-fixture-001"
+  },
+  "payload": {
+    "document_encoding": "base64-json-utf8",
+    "document_byte_length": 527,
+    "document_sha256": "846ea8705123c1106e45f84fb3d2ae729954d6baff2ca80a13c534e3363ff3ef",
+    "document_b64": "eyJzY2hlbWFfdmVyc2lvbiI6MiwicmV2aXNpb24iOiI0MiIsInR0bF9tcyI6MzAwMDAsImxlYXNlX3JlZiI6ImxlYXNlLXYyLWZpeHR1cmUiLCJzdXJmYWNlIjp7ImlkIjoicGFuZWwubWFpbiIsImtpbmQiOiJwYW5lbCIsInNwYWNlIjoidmlldyIsInBvc2UiOnsicG9zaXRpb24iOnsieCI6MCwieSI6MCwieiI6LTEuNX0sIm9yaWVudGF0aW9uIjp7IngiOjAsInkiOjAsInoiOjAsInciOjF9fSwiYm91bmRzIjp7IndpZHRoX20iOjAuOSwiaGVpZ2h0X20iOjAuNX0sInJlc291cmNlIjp7Im1lZGlhX3R5cGUiOiJ0ZXh0L3BsYWluO2NoYXJzZXQ9dXRmLTgiLCJlbmNvZGluZyI6InV0Zi04IiwiYnl0ZV9sZW5ndGgiOjE4LCJzaGEyNTYiOiJmMjk0ZDhkYmUyYjVkNGFiM2ZhZmJlZjI2YWJiYWUxNGFlYjljOTNjMGYyY2I5MzcyN2I0Y2YyZjZlYjZkMmM3IiwidGV4dCI6IkhFTExPIFYyIEZST00gTk9ERSJ9fSwiYW5zd2VyX2lkIjoiYW5zLXYyLWZpeHR1cmUtMDAxIiwidXR0ZXJhbmNlX2lkIjoidXR0LXYyLWZpeHR1cmUtMDAxIn0="
+  },
+  "expected": {
+    "answer_id": "ans-v2-fixture-001",
+    "utterance_id": "utt-v2-fixture-001",
+    "revision": "42",
+    "lease_ref": "lease-v2-fixture",
+    "surface_id": "panel.main"
+  }
+}

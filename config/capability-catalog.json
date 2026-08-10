@@ -1470,6 +1470,116 @@
       "description": "Subscribe to static location samples from a remote Sensorium publisher node. Current producer publishes operator-configured coordinates with source=\"static\"; a future GPS-backed publisher would emit the same payload shape with source=\"gps\". Treated as Sensitive even in identity-only mode (site label, no coordinates) because the channel can be upgraded without consumer-side code change."
     },
     {
+      "key": "interaction.quest.surface.panel.present",
+      "name": "Quest Spatial Panel Presentation",
+      "category": "interaction",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "bounded UTF-8 panel text to one mutually authenticated Quest client",
+        "view-space panel pose and physical bounds",
+        "document revision and content hashes"
+      ],
+      "excluded_by_default": [
+        "head pose export",
+        "hand, controller, gaze, camera, scene, depth, microphone, or other perception",
+        "audio output",
+        "durable spatial persistence",
+        "arbitrary assets, URLs, filesystem paths, executable code, shaders, or streamed media",
+        "automatic resume after focus or presence loss"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.interaction.quest.surface.panel.v1a",
+      "description": "Present one bounded snapshot-only text panel to an enrolled Quest client under a short-lived session lease. mTLS identifies transport and grants no authority; focus and presence reports can only narrow the session."
+    },
+    {
+      "key": "interaction.quest.surface.microphone.capture",
+      "name": "Quest Microphone Capture",
+      "category": "interaction",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "bounded PCM audio frames (48kHz mono, 20ms) from Quest microphone",
+        "utterance id and audio chunk metadata",
+        "capture stream binding"
+      ],
+      "excluded_by_default": [
+        "continuous streaming without VAD-gated utterance",
+        "head pose export",
+        "camera/depth/scene perception",
+        "durable retention",
+        "remote model egress without local-model sink authorization",
+        "automatic resume after focus or presence loss"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.interaction.quest.surface.microphone.capture.v1b",
+      "description": "Capture bounded microphone audio from an enrolled Quest client under a short-lived session lease. Requires separate explicit grant; audio is VAD-gated utterance only, host-side armed window + mic-off latch enforced, and capture lease alone does not authorize model delivery or playback. Proposed migration key per Soma §13; not matrix-aligned."
+    },
+    {
+      "key": "interaction.quest.surface.audio.wearer_directed.present",
+      "name": "Quest Wearer-Directed Audio Presentation",
+      "category": "interaction",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "bounded PCM audio frames (48kHz stereo, 20ms) directed to Quest wearer",
+        "playback utterance id and stream binding",
+        "wearer-directed not private"
+      ],
+      "excluded_by_default": [
+        "remote egress",
+        "durable persistence",
+        "head pose export",
+        "non-wearer audio routing",
+        "automatic resume after focus or presence loss"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.interaction.quest.surface.audio.wearer_directed.present.v1b",
+      "description": "Present bounded wearer-directed stereo audio to an enrolled Quest client under a short-lived session lease. Threshold-proven audibility, not privacy; requires separate explicit grant and is checked per-playback stream. Proposed migration key per Soma §13."
+    },
+    {
+      "key": "model.context.audio.microphone.local.attach",
+      "name": "Model Context Microphone Audio Local Attachment",
+      "category": "model",
+      "risk_class": "high",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "once",
+        "window"
+      ],
+      "data_exposed": [
+        "one bounded transcribed utterance from Quest microphone capture",
+        "utterance id, answer_id correlation",
+        "local model target only",
+        "source capture lease ref"
+      ],
+      "excluded_by_default": [
+        "remote model delivery",
+        "durable retention",
+        "training use",
+        "full audio export beyond transcribed text",
+        "hidden recording without armed window",
+        "background delivery without VAD gating"
+      ],
+      "reversible": false,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.model.context.audio.microphone.local.attach.v1",
+      "description": "Attach one VAD-gated Quest microphone-derived utterance to a local model turn only. Requires both the microphone capture grant and a separate local-model sink authorization re-checked at sink time with armed window; remote delivery, persistence, and training excluded. Proposed migration key; does not broaden perception.microphone.",
+      "bridge_state": false
+    },
+    {
       "key": "perception.sensorium.status.subscribe",
       "name": "Sensorium Status Subscription",
       "category": "perception",

@@ -139,6 +139,30 @@
       "description": "Present occupant-owned visual cues through the local sensorium gate without desktop actuation."
     },
     {
+      "key": "interaction.quest.surface.panel.present",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Present one bounded snapshot-only panel to an enrolled Quest client under a short-lived session lease."
+    },
+    {
+      "key": "interaction.quest.surface.microphone.capture",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Capture bounded microphone audio from Quest. Proposed migration key; disabled-first, VAD-gated utterance only."
+    },
+    {
+      "key": "interaction.quest.surface.audio.wearer_directed.present",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Present wearer-directed stereo audio to Quest. Proposed migration key; disabled-first, per-playback lease."
+    },
+    {
+      "key": "model.context.audio.microphone.local.attach",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Attach VAD-gated mic utterance to local model turn only. Proposed migration key; disabled-first, sink re-checked."
+    },
+    {
       "key": "tool.files.read",
       "status": "allowed",
       "revocable": true,

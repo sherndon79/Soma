@@ -5,3 +5,9 @@ models/
 !.env.example
 npm-debug.log*
 target/
+clients/quest-surface/.gradle/
+clients/quest-surface/build/
+clients/quest-surface/app/.cxx/
+clients/quest-surface/app/build/
+clients/quest-surface/local.properties
+clients/quest-surface/local-tls/

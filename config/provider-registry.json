@@ -58,6 +58,11 @@
           "key": "model.context.visual.composite.sequence.attach",
           "provider_contract": "soma.model.context.visual.composite.sequence.attach.v1",
           "output_schema": "soma.model.context.visual.sequence.attach.proposal.v1"
+        },
+        {
+          "key": "model.context.audio.microphone.local.attach",
+          "provider_contract": "soma.model.context.audio.microphone.local.attach.v1",
+          "output_schema": "soma.model.context.audio.attach.proposal.v1"
         }
       ]
     },
@@ -442,6 +447,39 @@
           "key": "comms.fixture.send",
           "provider_contract": "soma.comms.fixture.send.v1",
           "output_schema": "soma.comms.fixture.send.response.v1"
+        }
+      ]
+    },
+    {
+      "id": "soma.provider.quest-surface-fixture",
+      "name": "Quest Surface Fixture Provider",
+      "version": "0.2.0",
+      "runtime": "node-mtls-server-fixture",
+      "local_only": false,
+      "network_access": true,
+      "network_scope": "operator-configured LAN listener with mutually authenticated TLS",
+      "activation_status": "disabled",
+      "requires": [
+        "external server TLS key and certificate",
+        "external client CA",
+        "active exact session grant",
+        "explicit SOMA_QUEST_SURFACE_ENABLED runtime opt-in"
+      ],
+      "capabilities": [
+        {
+          "key": "interaction.quest.surface.panel.present",
+          "provider_contract": "soma.interaction.quest.surface.panel.v1a",
+          "output_schema": "soma.interaction.quest.surface.panel.snapshot.v1a"
+        },
+        {
+          "key": "interaction.quest.surface.microphone.capture",
+          "provider_contract": "soma.interaction.quest.surface.microphone.capture.v1b",
+          "output_schema": "soma.interaction.quest.surface.audio.chunk.v1b"
+        },
+        {
+          "key": "interaction.quest.surface.audio.wearer_directed.present",
+          "provider_contract": "soma.interaction.quest.surface.audio.wearer_directed.present.v1b",
+          "output_schema": "soma.interaction.quest.surface.audio.chunk.v1b"
         }
       ]
     },

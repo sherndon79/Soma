@@ -17,6 +17,7 @@ import {
   createAudioChunkPayload,
   createLeaseManifestPayload,
   createPanelSnapshotPayload,
+  createAnswerEndPayload,
   createQuestSurfaceFrame,
   createQuestSurfaceLease,
   decodeAudioChunkPayload,
@@ -693,6 +694,9 @@ class QuestSurfaceProviderSession {
       for (const chunk of result.ttsChunks) {
         this.#send("AUDIO_CHUNK", chunk, { leaseRef: audioLeaseRef, streamId: playbackStreamId });
       }
+      // H: terminal ANSWER_END after chunks — same stream/lease, exact correlation, drain-then-clear
+      const answerEnd = createAnswerEndPayload({ utteranceId: result.utteranceId, answerId: result.answerId });
+      this.#send("ANSWER_END", answerEnd, { leaseRef: audioLeaseRef, streamId: playbackStreamId });
       this.eventSink("quest.surface.answer_delivered", {
         session_epoch: frame.session_epoch,
         stream_id: frame.stream_id,

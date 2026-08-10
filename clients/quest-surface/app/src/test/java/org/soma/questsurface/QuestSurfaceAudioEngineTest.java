@@ -165,4 +165,154 @@ public final class QuestSurfaceAudioEngineTest {
         assertEquals(1, events.size());
         assertEquals(0, engine.activeCount());
     }
+
+    // H: jitter queues, flush, per-stream isolation, ANSWER_END terminal
+    @Test
+    public void jitterQueueDropOldestPerStreamIsolation() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startCapture("1", 1, "utt-1", "lease-mic");
+        // fill capture jitter to capacity 10, then overflow 11th drops oldest
+        for (int i=0;i<11;i++) {
+            byte[] pcm = new byte[1920]; pcm[0]=(byte)i;
+            engine.enqueueCaptureChunk("1",1, pcm);
+        }
+        assertEquals(10, engine.captureJitterSize("1",1));
+        byte[] first = engine.peekCaptureChunk("1",1);
+        assertEquals(1, first[0]); // oldest (0) dropped
+        // per-stream isolation: second stream unaffected
+        engine.startCapture("1", 2, "utt-2", "lease-mic");
+        byte[] other = new byte[1920]; other[0]=99;
+        engine.enqueueCaptureChunk("1",2, other);
+        assertEquals(10, engine.captureJitterSize("1",1));
+        assertEquals(1, engine.captureJitterSize("1",2));
+        // playback jitter same cap (duration-based: 10*20ms=200ms)
+        engine.startPlayback("1",3,"lease-audio","ans-1","utt-1", new byte[3840]);
+        for (int i=0;i<11;i++) {
+            byte[] pcm = new byte[3840]; pcm[0]=(byte)i;
+            engine.enqueuePlaybackChunk("1",3,"ans-1", pcm);
+        }
+        assertEquals(10, engine.playbackJitterSize("1",3,"ans-1"));
+    }
+
+    @Test
+    public void flushOnCancelFocusRevokeDisconnectAndExpiry() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startCapture("1", 1, "utt-1", "lease-mic");
+        engine.enqueueCaptureChunk("1",1, new byte[1920]);
+        engine.startPlayback("1",1,"lease-audio","ans-1","utt-1", new byte[3840]);
+        engine.enqueuePlaybackChunk("1",1,"ans-1", new byte[3840]);
+        assertEquals(1, engine.captureJitterSize("1",1));
+        assertEquals(1, engine.playbackJitterSize("1",1,"ans-1"));
+        // cancel flushes only capture (direction-isolated) — playback on same numeric stream stays
+        assertTrue(engine.cancel("1",1,"utt-1"));
+        assertEquals(0, engine.captureJitterSize("1",1));
+        assertEquals(1, engine.playbackJitterSize("1",1,"ans-1"));
+        // focus latch flushes all
+        engine.startCapture("2", 1, "utt-2", "lease-mic");
+        engine.enqueueCaptureChunk("2",1, new byte[1920]);
+        engine.startCapture("2", 2, "utt-3", "lease-mic");
+        engine.enqueueCaptureChunk("2",2, new byte[1920]);
+        engine.latch("focus_lost","2");
+        assertEquals(0, engine.captureJitterSize("2",1));
+        assertEquals(0, engine.captureJitterSize("2",2));
+        assertTrue(engine.isLatched());
+        // revoke flush
+        assertTrue(engine.deliberateResume("3", true));
+        engine.startCapture("3",5,"utt-5","lease-mic");
+        engine.enqueueCaptureChunk("3",5, new byte[1920]);
+        engine.latch("revoke","3");
+        assertEquals(0, engine.captureJitterSize("3",5));
+        // disconnect flush
+        assertTrue(engine.deliberateResume("4", true));
+        engine.startCapture("4",6,"utt-6","lease-mic");
+        engine.enqueueCaptureChunk("4",6, new byte[1920]);
+        engine.latch("disconnect","4");
+        assertEquals(0, engine.captureJitterSize("4",6));
+    }
+
+    @Test
+    public void answerEndTerminalDrainThenClearAndPostTerminalRefusals() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startPlayback("10",5,"lease-audio","ans-1","utt-1", new byte[3840]);
+        engine.enqueuePlaybackChunk("10",5,"ans-1", new byte[3840]);
+        engine.enqueuePlaybackChunk("10",5,"ans-1", new byte[3840]);
+        assertEquals(2, engine.playbackJitterSize("10",5,"ans-1"));
+        // ANSWER_END closes admission but retains queued PCM
+        engine.handleAnswerEnd("10",5,"lease-audio","utt-1","ans-1", 1);
+        assertTrue(engine.isAnswerTerminal("10",5,"ans-1"));
+        assertEquals(2, engine.playbackJitterSize("10",5,"ans-1"));
+        // post-terminal AUDIO_CHUNK refused
+        try { engine.enqueuePlaybackChunk("10",5,"ans-1", new byte[3840]); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("answer_ended", e.code); }
+        // duplicate terminal refused
+        try { engine.handleAnswerEnd("10",5,"lease-audio","utt-1","ans-1", 2); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("answer_ended", e.code); }
+        // stale seq refused
+        try { engine.handleAnswerEnd("10",5,"lease-audio","utt-1","ans-1", 1); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("seq_stale", e.code); }
+        // wrong correlation (no playback) => stream-scoped refusal
+        try { engine.handleAnswerEnd("10",6,"lease-audio","utt-1","ans-1", 3); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("playback_not_started", e.code); }
+        // stream 0 refused
+        try { engine.handleAnswerEnd("10",0,"lease-audio","utt-1","ans-1", 4); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("stream_id_invalid", e.code); }
+        // drain-then-clear
+        int drained = engine.drainPlayback("10",5,"ans-1");
+        assertEquals(2, drained);
+        assertEquals(0, engine.playbackJitterSize("10",5,"ans-1"));
+        assertFalse(engine.isAnswerTerminal("10",5,"ans-1"));
+        assertEquals(0, engine.playbackCount());
+    }
+
+    @Test
+    public void expiredManifestAtTerminalLatchesVsMismatchRefuses() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startPlayback("20",7,"lease-audio","ans-9","utt-9", new byte[3840]);
+        // expired manifest at terminal -> latch (fail-closed)
+        try { engine.handleAnswerEndWithExpiry("20",7,"lease-audio","utt-9","ans-9", 1, true); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("lease_expired", e.code); }
+        assertTrue(engine.isLatched());
+        assertEquals("lease_expired", engine.latchReason());
+        // mismatch (wrong lease still present but no playback) -> stream-scoped, not latch
+        QuestSurfaceAudioEngine engine2 = new QuestSurfaceAudioEngine();
+        engine2.startPlayback("21",8,"lease-audio","ans-10","utt-10", new byte[3840]);
+        try { engine2.handleAnswerEnd("21",8,"","utt-10","ans-10", 1); fail(); }
+        catch (QuestSurfaceAudioEngine.EngineException e) { assertEquals("lease_ref_required", e.code); }
+        assertFalse(engine2.isLatched());
+    }
+
+    @Test
+    public void latchOverridesTerminalDrain() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startPlayback("30",9,"lease-audio","ans-20","utt-20", new byte[3840]);
+        engine.enqueuePlaybackChunk("30",9,"ans-20", new byte[3840]);
+        engine.handleAnswerEnd("30",9,"lease-audio","utt-20","ans-20", 5);
+        assertTrue(engine.isAnswerTerminal("30",9,"ans-20"));
+        // latch mid-drain flushes synchronously and wins
+        engine.latch("focus_lost","30");
+        assertEquals(0, engine.playbackJitterSize("30",9,"ans-20"));
+        assertFalse(engine.isAnswerTerminal("30",9,"ans-20"));
+        assertTrue(engine.isLatched());
+    }
+
+    @Test
+    public void burstOfferSix40msThenPumpSendsNewestFive() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        engine.startCapture("99", 10, "utt-burst", "lease-mic");
+        // offer 6x40ms before pumping
+        for (int i=0;i<6;i++) { byte[] pcm = new byte[3840]; pcm[0]=(byte)i; engine.enqueueCaptureChunk("99",10, pcm); }
+        // duration-bound: 6*40=240 >200, drop oldest (0) → 5 retained (1..5)
+        assertEquals(5, engine.captureJitterSize("99",10));
+        assertEquals(1, engine.peekCaptureChunk("99",10)[0]);
+        // pump in order via poll
+        for (int i=1;i<6;i++) { byte[] polled = engine.pollCaptureChunk("99",10); assertEquals(i, polled[0]); }
+        assertEquals(0, engine.captureJitterSize("99",10));
+        // playback burst 6x40 → 5 retained, then consume
+        engine.startPlayback("99", 20, "lease-audio", "ans-burst", "utt-burst", new byte[3840]);
+        for (int i=0;i<6;i++) { byte[] pcm = new byte[7680]; pcm[0]=(byte)i; engine.enqueuePlaybackChunk("99",20,"ans-burst", pcm); }
+        assertEquals(5, engine.playbackJitterSize("99",20,"ans-burst"));
+        // consumer polls retained in order then stop
+        for (int i=1;i<6;i++) { byte[] polled = engine.pollPlaybackChunk("99",20,"ans-burst"); assertEquals(i, polled[0]); }
+        assertEquals(0, engine.playbackJitterSize("99",20,"ans-burst"));
+    }
 }

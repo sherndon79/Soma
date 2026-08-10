@@ -62,12 +62,14 @@ export const QUEST_SURFACE_AUDIO_FRAME_TYPES = new Set([
   "AUDIO_CHUNK",
   "UTTERANCE_END",
   "CANCEL",
+  "ANSWER_END",
 ]);
 export const QUEST_SURFACE_LEASED_AUDIO_TYPES = new Set([
   "UTTERANCE_START",
   "AUDIO_CHUNK",
   "UTTERANCE_END",
   "CANCEL",
+  "ANSWER_END",
   "PANEL_SNAPSHOT",
   "ACTUAL_BOUNDS_ACK",
 ]);
@@ -461,6 +463,22 @@ export function decodeCancelPayload(payload) {
   const utterance = requireToken(payload.utterance_id, "utterance_id_missing");
   const reason = requireToken(payload.reason, "cancel_reason_invalid");
   return { utterance_id: utterance, reason };
+}
+
+export function createAnswerEndPayload({ utteranceId, answerId } = {}) {
+  const utterance = requireToken(utteranceId, "utterance_id_missing");
+  const answer = requireToken(answerId, "answer_id_invalid");
+  if (answer.length > 256) throw protocolError("answer_id_invalid", "Answer id too long");
+  return { utterance_id: utterance, answer_id: answer };
+}
+
+export function decodeAnswerEndPayload(payload) {
+  requirePlainObject(payload, "answer_end_invalid", "ANSWER_END payload must be an object.");
+  requireExactFields(payload, new Set(["utterance_id", "answer_id"]), "answer_end_fields_invalid");
+  const utterance = requireToken(payload.utterance_id, "utterance_id_missing");
+  const answer = requireToken(payload.answer_id, "answer_id_invalid");
+  if (answer.length > 256) throw protocolError("answer_id_invalid", "Answer id too long");
+  return { utterance_id: utterance, answer_id: answer };
 }
 
 export function isVadVoicedChunk(pcmBytes, threshold = QUEST_SURFACE_VAD_ENERGY_THRESHOLD) {

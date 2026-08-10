@@ -12,6 +12,7 @@ import {
   decodeUtteranceEndPayload,
   decodeCancelPayload,
   decodeAudioChunkPayload,
+  decodeAnswerEndPayload,
   isVadVoicedChunk,
 } from "./questSurfaceProtocol.js";
 
@@ -59,9 +60,19 @@ export function createQuestSurfaceAudioPipeline({
   const streams = new Map(); // key -> { utteranceId, chunks: Buffer[], voiced: number, chunkMsTotal: number, bytesTotal: number, startedAtMs, state, generation }
   const completed = new Set(); // answerIds already emitted (for dedup test)
   let sessionGeneration = 0; // #5: bumped on lifecycle close to invalidate in-flight awaits
+  // H: jitter queues ≤200ms drop-oldest (duration-based) per-stream isolated, non-blocking capture
+  const captureJitter = new Map(); // k -> Array<Buffer>
+  const playbackJitter = new Map(); // k(answer) -> Array<Buffer>
+  const answerTerminal = new Map(); // k(answer) -> true
+  const closedAnswers = new Set();
+  const lastSeq = new Map(); // seqKey -> BigInt
+  const JITTER_MS = 200;
 
   function keyFor(sessionEpoch, streamId) {
     return `${String(sessionEpoch)}:${String(streamId)}`;
+  }
+  function answerKeyFor(sessionEpoch, streamId, answerId) {
+    return `${String(sessionEpoch)}:${String(streamId)}:${String(answerId)}`;
   }
 
   function ensureStream(sessionEpoch, streamId) {
@@ -128,6 +139,71 @@ export function createQuestSurfaceAudioPipeline({
     return { voiced, total: state.chunks.length };
   }
 
+  function jitterMsForCapture(buf) { return buf.length === 1920 ? 20 : buf.length === 3840 ? 40 : 0; }
+  function jitterMsForPlayback(buf) { return buf.length === 3840 ? 20 : buf.length === 7680 ? 40 : 0; }
+  function totalJitterMs(q, isCapture) { let ms=0; for (const b of q) ms += isCapture ? jitterMsForCapture(b) : jitterMsForPlayback(b); return ms; }
+  function enqueueCaptureChunk(sessionEpoch, streamId, pcmBytes) {
+    if (Number(streamId) === 0) throw pipelineError("stream_id_invalid", "Stream 0 invalid");
+    const buf = Buffer.isBuffer(pcmBytes) ? pcmBytes : Buffer.from(pcmBytes);
+    if (buf.length !== 1920 && buf.length !== 3840) throw pipelineError("pcm_bytes_invalid", "Capture PCM must be 1920 or 3840");
+    const k = keyFor(sessionEpoch, streamId);
+    const state = streams.get(k);
+    if (!state || state.state !== "collecting") throw pipelineError("utterance_not_started", `No collecting utterance on stream ${k}`);
+    let q = captureJitter.get(k);
+    if (!q) { q = []; captureJitter.set(k, q); }
+    q.push(buf);
+    while (totalJitterMs(q, true) > JITTER_MS) q.shift();
+  }
+  function captureJitterSize(sessionEpoch, streamId) {
+    const q = captureJitter.get(keyFor(sessionEpoch, streamId));
+    return q ? q.length : 0;
+  }
+  function enqueuePlaybackChunk(sessionEpoch, streamId, answerId, pcmBytes) {
+    if (Number(streamId) === 0) throw pipelineError("stream_id_invalid", "Stream 0 invalid");
+    const buf = Buffer.isBuffer(pcmBytes) ? pcmBytes : Buffer.from(pcmBytes);
+    if (buf.length !== 3840 && buf.length !== 7680) throw pipelineError("pcm_bytes_invalid", "Playback PCM must be 3840 or 7680");
+    const ak = answerKeyFor(sessionEpoch, streamId, answerId);
+    if (answerTerminal.has(ak) || closedAnswers.has(ak)) throw pipelineError("answer_ended", "Answer already terminal");
+    let q = playbackJitter.get(ak);
+    if (!q) { q = []; playbackJitter.set(ak, q); }
+    q.push(buf);
+    while (totalJitterMs(q, false) > JITTER_MS) q.shift();
+  }
+  function playbackJitterSize(sessionEpoch, streamId, answerId) {
+    const q = playbackJitter.get(answerKeyFor(sessionEpoch, streamId, answerId));
+    return q ? q.length : 0;
+  }
+  function handleAnswerEnd({ sessionEpoch, streamId, leaseRef, payload, seq }) {
+    const { utterance_id, answer_id } = decodeAnswerEndPayload(payload);
+    if (Number(streamId) === 0) throw pipelineError("stream_id_invalid", "Stream 0 invalid for ANSWER_END");
+    if (!leaseRef || String(leaseRef).trim() === "") throw pipelineError("lease_ref_required", "ANSWER_END requires lease");
+    const seqBi = BigInt(String(seq));
+    const seqKey = `${String(sessionEpoch)}:${String(streamId)}:downlink`;
+    const last = lastSeq.get(seqKey);
+    if (last !== undefined && seqBi <= last) throw pipelineError("seq_stale", "ANSWER_END seq stale");
+    lastSeq.set(seqKey, seqBi);
+    const ak = answerKeyFor(sessionEpoch, streamId, answer_id);
+    if (closedAnswers.has(ak) || answerTerminal.has(ak)) throw pipelineError("answer_ended", "Duplicate ANSWER_END");
+    answerTerminal.set(ak, true);
+    return { utterance_id, answer_id };
+  }
+  function handleAnswerEndWithExpiry({ sessionEpoch, streamId, leaseRef, payload, seq, manifestExpired }) {
+    if (manifestExpired) {
+      handleLifecycleClose("lease_expired");
+      throw pipelineError("lease_expired", "Manifest expired at ANSWER_END");
+    }
+    return handleAnswerEnd({ sessionEpoch, streamId, leaseRef, payload, seq });
+  }
+  function drainPlayback(sessionEpoch, streamId, answerId) {
+    const ak = answerKeyFor(sessionEpoch, streamId, answerId);
+    const q = playbackJitter.get(ak);
+    let drained=0;
+    if (q) { while(q.length>0){ q.shift(); drained++; } playbackJitter.delete(ak); }
+    answerTerminal.delete(ak);
+    closedAnswers.add(ak);
+    return drained;
+  }
+
   function handleCancel({ sessionEpoch, streamId, payload }) {
     const { utterance_id } = decodeCancelPayload(payload);
     const k = keyFor(sessionEpoch, streamId);
@@ -148,6 +224,8 @@ export function createQuestSurfaceAudioPipeline({
     state.chunks = [];
     state.bytesTotal = 0;
     streams.set(k, null);
+    // H: synchronous flush per-stream capture jitter only (direction-isolated)
+    captureJitter.delete(k);
     eventSink({ event_type: "quest.surface.utterance_cancelled", session_epoch: String(sessionEpoch), stream_id: Number(streamId), utterance_id: utteranceId, reason: payload?.reason ?? "client_cancel" });
     return { cancelled: true, utteranceId };
   }
@@ -338,6 +416,12 @@ export function createQuestSurfaceAudioPipeline({
       }
     }
     streams.clear();
+    // H: synchronous flush of jitter queues and terminal overrides drain
+    captureJitter.clear();
+    playbackJitter.clear();
+    answerTerminal.clear();
+    closedAnswers.clear();
+    lastSeq.clear();
     return cleared;
   }
 
@@ -359,7 +443,17 @@ export function createQuestSurfaceAudioPipeline({
     handleLifecycleClose,
     getActiveUtterance,
     getRemainingBufferBytes,
+    enqueueCaptureChunk,
+    captureJitterSize,
+    enqueuePlaybackChunk,
+    playbackJitterSize,
+    handleAnswerEnd,
+    handleAnswerEndWithExpiry,
+    drainPlayback,
     _streams: streams,
+    _captureJitter: captureJitter,
+    _playbackJitter: playbackJitter,
+    _answerTerminal: answerTerminal,
   };
 }
 

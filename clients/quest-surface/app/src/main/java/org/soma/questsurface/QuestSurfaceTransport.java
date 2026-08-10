@@ -338,6 +338,29 @@ final class QuestSurfaceTransport {
                 }
                 continue;
             }
+            if (frame.type.equals("ANSWER_END")) {
+                try {
+                    runtime.acceptAnswerEnd(frame, SystemClock.elapsedRealtime());
+                    // H narrowed: consumer drains retained frames in order then stops hardware
+                    runtime.consumePlaybackQueue(frame.streamId, frame.payload.getString("answer_id"));
+                } catch (QuestSurfaceProtocol.ProtocolException error) {
+                    // lease_expired should latch, not just stream reject
+                    if ("lease_expired".equals(error.code)) {
+                        runtime.latch(error.code);
+                        throw new IOException(error.code, error);
+                    }
+                    runtime.rejectPlaybackStream(frame.streamId);
+                    logAudioStreamFailure(frame.streamId, error.code);
+                } catch (QuestSurfaceAudioEngine.EngineException error) {
+                    if ("lease_expired".equals(error.code)) {
+                        runtime.latch(error.code);
+                        throw new IOException(error.code, error);
+                    }
+                    runtime.rejectPlaybackStream(frame.streamId);
+                    logAudioStreamFailure(frame.streamId, error.code);
+                }
+                continue;
+            }
             throw new IOException("unexpected_server_message");
         }
     }
@@ -398,13 +421,28 @@ final class QuestSurfaceTransport {
 
     void sendAudioChunk(long streamId, String utteranceId, byte[] pcm) throws Exception {
         long now = SystemClock.elapsedRealtime();
-        JSONObject payload = runtime.pushCapture(streamId, utteranceId, pcm, now);
+        // H reshaped: offer to bounded queue governs I/O
+        runtime.pushCapture(streamId, utteranceId, pcm, now);
+        // pump one retained frame (drop-oldest already applied)
+        byte[] toSend = runtime.pollCaptureChunkForTransport(streamId);
+        if (toSend == null) return;
+        JSONObject payload = QuestSurfaceProtocol.audioChunkPayload(utteranceId, "", toSend, 1);
         QuestSurfaceProtocol.Lease micLease = runtime.micLease();
         try {
             send("AUDIO_CHUNK", runtime.sessionEpoch(), streamId, micLease.leaseId, payload);
         } catch (Exception error) {
             runtime.rejectCaptureStream(streamId);
             throw error;
+        }
+    }
+
+    // H reshaped: pump all retained capture frames (burst before pumping)
+    void pumpCaptureQueue(long streamId, String utteranceId) throws Exception {
+        byte[] toSend;
+        while ((toSend = runtime.pollCaptureChunkForTransport(streamId)) != null) {
+            JSONObject payload = QuestSurfaceProtocol.audioChunkPayload(utteranceId, "", toSend, 1);
+            QuestSurfaceProtocol.Lease micLease = runtime.micLease();
+            send("AUDIO_CHUNK", runtime.sessionEpoch(), streamId, micLease.leaseId, payload);
         }
     }
 

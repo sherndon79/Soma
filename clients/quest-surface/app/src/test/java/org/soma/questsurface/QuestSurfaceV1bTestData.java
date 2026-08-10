@@ -117,6 +117,17 @@ final class QuestSurfaceV1bTestData {
                 QuestSurfaceProtocol.audioChunkPayload(utteranceId, answerId, pcm, 2));
     }
 
+    static QuestSurfaceProtocol.Frame answerEndFrame(
+            String epoch,
+            long streamId,
+            String leaseId,
+            long sequence,
+            String answerId,
+            String utteranceId) throws Exception {
+        JSONObject payload = new JSONObject().put("utterance_id", utteranceId).put("answer_id", answerId);
+        return serverFrame("ANSWER_END", epoch, streamId, leaseId, sequence, payload);
+    }
+
     static QuestSurfaceProtocol.Frame serverFrame(
             String type,
             String epoch,
@@ -136,8 +147,20 @@ final class QuestSurfaceV1bTestData {
         return pcm;
     }
 
+    static byte[] mono40() {
+        byte[] pcm = new byte[3_840];
+        pcm[0] = 1;
+        return pcm;
+    }
+
     static byte[] stereo20() {
         byte[] pcm = new byte[3_840];
+        pcm[0] = 1;
+        return pcm;
+    }
+
+    static byte[] stereo40() {
+        byte[] pcm = new byte[7_680];
         pcm[0] = 1;
         return pcm;
     }

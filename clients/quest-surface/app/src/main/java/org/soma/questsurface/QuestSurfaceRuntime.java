@@ -116,10 +116,36 @@ final class QuestSurfaceRuntime {
                     "answer_correlation_mismatch",
                     "Playback does not match the accepted panel answer.");
         }
-        audioEngine.startPlayback(
-                frame.sessionEpoch.toString(), frame.streamId, lease.leaseId,
-                chunk.answerId, chunk.pcm);
+        // H narrowed: enqueue governs; hardware via consumer
+        audioEngine.ensurePlaybackEntry(frame.sessionEpoch.toString(), frame.streamId, lease.leaseId, chunk.answerId, chunk.utteranceId);
+        audioEngine.enqueuePlaybackChunk(frame.sessionEpoch.toString(), frame.streamId, chunk.answerId, chunk.pcm);
         return chunk;
+    }
+
+    // H narrowed: playback consumer polls retained PCM and passes only retained frames to hardware
+    synchronized void consumePlaybackQueue(long streamId, String answerId) throws QuestSurfaceAudioEngine.EngineException {
+        byte[] pcm;
+        while ((pcm = audioEngine.pollPlaybackChunk(sessionEpoch.toString(), streamId, answerId)) != null) {
+            // startHardware for each retained frame in order
+            audioEngine.startHardwareForPolledPlayback(sessionEpoch.toString(), streamId, answerId, pcm);
+        }
+        // after draining retained, stop hardware (drain will also add to closedAnswers via handleAnswerEnd's drain if needed)
+        audioEngine.stopPlayback(sessionEpoch.toString(), streamId, answerId);
+    }
+
+    synchronized void acceptAnswerEnd(
+            QuestSurfaceProtocol.Frame frame, long nowElapsedMs)
+            throws QuestSurfaceProtocol.ProtocolException, QuestSurfaceAudioEngine.EngineException {
+        QuestSurfaceProtocol.Lease lease = requireManifestLease("audio_present", nowElapsedMs);
+        // validate as ANSWER_END downlink with exact lease and seq
+        QuestSurfaceProtocol.validateAnswerEnd(frame, "downlink", lease, nowElapsedMs, expectedAnswerId, expectedUtteranceId);
+        audioEngine.handleAnswerEnd(frame.sessionEpoch.toString(), frame.streamId, lease.leaseId, expectedUtteranceId, expectedAnswerId, frame.seq.toString());
+        // drain is now via consumePlaybackQueue after ANSWER_END (consumer polls retained frames)
+    }
+
+    synchronized int drainPlaybackAfterAnswerEnd(long streamId) {
+        if (expectedAnswerId.isEmpty()) return 0;
+        return audioEngine.drainPlayback(sessionEpoch.toString(), streamId, expectedAnswerId);
     }
 
     synchronized JSONObject startCapture(long streamId, String utteranceId, long nowElapsedMs)
@@ -137,10 +163,18 @@ final class QuestSurfaceRuntime {
             throws QuestSurfaceProtocol.ProtocolException, QuestSurfaceAudioEngine.EngineException {
         requireAudioStream(streamId);
         requireManifestLease("mic_capture", nowElapsedMs);
+        // H reshaped: producer offers PCM to bounded queue (governs I/O, fails closed on latch/full)
+        audioEngine.enqueueCaptureChunk(sessionEpoch.toString(), streamId, pcm);
+        // pushChunk validates utterance binding and counts toward 30s/byte limits
         JSONObject payload = QuestSurfaceProtocol.audioChunkPayload(
                 utteranceId, "", pcm, 1);
         audioEngine.pushChunk(sessionEpoch.toString(), streamId, utteranceId, pcm);
         return payload;
+    }
+
+    synchronized byte[] pollCaptureChunkForTransport(long streamId) {
+        if (sessionEpoch == null) return null;
+        return audioEngine.pollCaptureChunk(sessionEpoch.toString(), streamId);
     }
 
     synchronized JSONObject endCapture(long streamId, String utteranceId, long nowElapsedMs)

@@ -153,6 +153,5 @@ uninstall or replace it as part of cleanup.
 
 - **[item I]** real local STT/model/TTS adapters, host loopback artifact (§4), no-retention audit
   (§7), and the exact arm surface (§3).
-- **[item H]** bounded ≤200 ms drop-oldest capture/playback queues with synchronous
-  lifecycle flush — a precondition for the real audio path under load.
+- **[item H]** bounded ≤200 ms drop-oldest capture/playback queues (20 ms = 1920 B mono / 3840 B stereo, 40 ms = 3840 B mono / 7680 B stereo, duration-bound ≤200 ms, per-stream isolated, synchronous flush) and `ANSWER_END` terminal (drain-then-clear, lifecycle latch preempts, exact lease/correlation, `BigInt` seq, stream 0 / late refusal) — fake-hardware-tested via `Threshold/docker/quest-build.sh` + `g++` + `node --test` (H production seam).
 - Real `AudioRecord`/`AudioTrack` capture/playback and `RECORD_AUDIO` handling on device.

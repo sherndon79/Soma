@@ -80,6 +80,12 @@ test("fixture manifest + audio: on->ask->paired panel+playback->off->nothing per
   assert.equal(audioAnswer.payload.utterance_id, utteranceId);
   const answerId = audioAnswer.payload.answer_id;
   assert.ok(answerId && answerId.length > 0);
+  // H terminal: ANSWER_END after PANEL_SNAPSHOT + AUDIO_CHUNK
+  const answerEnd = await client.nextOrTimeout(3000);
+  assert.equal(answerEnd.type, "ANSWER_END");
+  assert.equal(answerEnd.payload.answer_id, answerId);
+  assert.equal(answerEnd.payload.utterance_id, utteranceId);
+  assert.equal(answerEnd.lease_ref, audioLease);
   // panel and audio share answer via events
   await waitFor(() => events.some((e) => e.event_type === "quest.surface.answer_delivered" && e.answer_id === answerId));
   const doc = JSON.parse(Buffer.from(panelAnswer.payload.document_b64, "base64").toString("utf8"));
@@ -128,6 +134,10 @@ test("fixture audio: silence-only dropped, cancel isolated, wrong lease rejected
   // drain the paired audio chunk so next test isn't polluted
   const audioForPanel = await waitForFrame(client, "AUDIO_CHUNK", 2000);
   assert.equal(audioForPanel.type, "AUDIO_CHUNK");
+  // H terminal: drain ANSWER_END so subsequent reads align
+  const answerEnd1 = await waitForFrame(client, "ANSWER_END", 2000);
+  assert.equal(answerEnd1.type, "ANSWER_END");
+  assert.equal(answerEnd1.payload.answer_id, audioForPanel.payload.answer_id);
 
   // cancel isolation: start utterance on stream 2, cancel only that
   const cancelId = "utt-cancel";
@@ -143,6 +153,9 @@ test("fixture audio: silence-only dropped, cancel isolated, wrong lease rejected
   assert.equal(panel2.type, "PANEL_SNAPSHOT");
   const audioForPanel2 = await waitForFrame(client, "AUDIO_CHUNK", 2000);
   assert.equal(audioForPanel2.type, "AUDIO_CHUNK");
+  const answerEnd2 = await waitForFrame(client, "ANSWER_END", 2000);
+  assert.equal(answerEnd2.type, "ANSWER_END");
+  assert.equal(answerEnd2.payload.answer_id, audioForPanel2.payload.answer_id);
 
   // wrong lease: use panel lease for mic capture -> should get lease_ref_mismatch
   client.send("UTTERANCE_START", { utterance_id: "utt-wrong-lease" }, { epoch, leaseRef: panelLease, streamId: 3 });
@@ -200,6 +213,11 @@ test("fixture audio: per-stream failure does not tear down other stream's uttera
   const doc = JSON.parse(Buffer.from(panel.payload.document_b64, "base64").toString("utf8"));
   assert.equal(doc.answer_id, audio.payload.answer_id);
   assert.equal(doc.utterance_id, "utt-stream1");
+  // H terminal: drain ANSWER_END before duplicate ERROR check
+  const answerEnd = await client.nextOrTimeout(2000);
+  assert.equal(answerEnd.type, "ANSWER_END");
+  assert.equal(answerEnd.payload.answer_id, audio.payload.answer_id);
+  assert.equal(answerEnd.payload.utterance_id, "utt-stream1");
   // bounded post-success check: no duplicate ERROR after sibling success
   let extra = null;
   try { extra = await client.nextOrTimeout(400); } catch { extra = null; }
@@ -268,6 +286,11 @@ test("fixture audio: async pipeline failure is stream-scoped, cleared, and reusa
   const document = JSON.parse(Buffer.from(panel.payload.document_b64, "base64").toString("utf8"));
   assert.equal(document.answer_id, audio.payload.answer_id);
   assert.equal(document.utterance_id, retryId);
+  // H terminal: drain ANSWER_END before checking for duplicate ERROR
+  const answerEnd = await client.nextOrTimeout(2000);
+  assert.equal(answerEnd.type, "ANSWER_END");
+  assert.equal(answerEnd.payload.answer_id, audio.payload.answer_id);
+  assert.equal(answerEnd.payload.utterance_id, retryId);
   await assert.rejects(client.nextOrTimeout(400), /Timed out waiting for frame/, "successful retry must not emit a duplicate ERROR");
 });
 

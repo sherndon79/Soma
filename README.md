@@ -17,8 +17,7 @@ over compositor-owned passthrough. It exports no head pose or other headset perc
 suspended on focus/presence loss. The positive on-device path—mTLS authentication, lease and
 snapshot delivery, composition, and actual-bounds acknowledgement—was verified on 2026-08-09;
 the live negative-path suite remains open. The v1b Java client now has inert, fake-hardware-tested
-manifest/audio protocol and lifecycle integration, but no `AudioRecord`/`AudioTrack` path or live
-audio authority has been activated; bounded 200 ms queue/backpressure work also remains separate.
+manifest/audio protocol and lifecycle integration, plus bounded ≤200 ms drop-oldest jitter queues (20 ms/40 ms duration-bound) and `ANSWER_END` terminal (drain-then-clear, lifecycle latch preempts, per-stream isolation); no `AudioRecord`/`AudioTrack` path or live audio authority has been activated.
 See the
 [Quest surface v1a runbook](./docs/runbooks/quest_surface_v1a.md).
 

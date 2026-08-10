@@ -531,6 +531,19 @@ final class QuestSurfaceProtocol {
         return parsed;
     }
 
+    static void validateAnswerEnd(
+            Frame frame, String expectedDirection, Lease lease, long nowElapsedMs,
+            String expectedAnswerId, String expectedUtteranceId) throws ProtocolException {
+        requireLeasedFrame(frame, "ANSWER_END", expectedDirection, lease, nowElapsedMs);
+        exactFields(frame.payload, Set.of("utterance_id", "answer_id"), "answer_end_fields_invalid");
+        String utteranceId = token(string(frame.payload, "utterance_id", "utterance_id_missing"), "utterance_id_missing");
+        String answerId = token(string(frame.payload, "answer_id", "answer_id_invalid"), "answer_id_invalid");
+        if (!utteranceId.equals(expectedUtteranceId) || !answerId.equals(expectedAnswerId)) {
+            throw failure("answer_correlation_mismatch", "ANSWER_END does not match panel correlation.");
+        }
+        if (frame.streamId == 0) throw failure("stream_id_invalid", "ANSWER_END requires nonzero stream");
+    }
+
     static String validateError(Frame frame) throws ProtocolException {
         requireType(frame, "ERROR");
         exactFields(frame.payload, Set.of("code", "retryable"), "error_fields_invalid");

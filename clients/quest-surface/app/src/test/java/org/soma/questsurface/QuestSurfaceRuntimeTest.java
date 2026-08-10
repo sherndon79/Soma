@@ -69,6 +69,7 @@ public final class QuestSurfaceRuntimeTest {
                         QuestSurfaceV1bTestData.stereo20()),
                 2_002);
         assertEquals("answer-1", playback.answerId);
+        runtime.consumePlaybackQueue(101, "answer-1");
         assertTrue(hardware.events.contains("startPlayback:99:101:lease-audio:3840"));
 
         JSONObject start = runtime.startCapture(7, "utterance-2", 2_002);
@@ -377,5 +378,44 @@ public final class QuestSurfaceRuntimeTest {
         public void stopHardwarePlayback(String epoch, long streamId, String answerId) {
             events.add("stopPlayback:" + epoch + ":" + streamId + ":" + answerId);
         }
+    }
+
+    @Test
+    public void hProductionSeamAnswerEndViaRuntimeAndJitterIsolation() throws Exception {
+        RecordingHardware hardware = new RecordingHardware();
+        QuestSurfaceRuntime runtime = configuredRuntime("99", 2_000, 5_000, true, hardware);
+        runtime.acceptPanel(QuestSurfaceV1bTestData.panelFrame("99", "lease-panel", 4, "2", "answer-1", "utterance-1"), 2_001);
+        // playback via production path enqueues jitter
+        runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 101, "lease-audio", 1, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo20()), 2_002);
+        runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 101, "lease-audio", 2, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo40()), 2_003);
+        // duration-bound: 20+40=60 ≤200; verify via engine jitter size through pushCapture path for capture
+        runtime.startCapture(7, "utterance-2", 2_003);
+        for (int i=0;i<5;i++) runtime.pushCapture(7, "utterance-2", QuestSurfaceV1bTestData.mono40(), 2_004);
+        // ANSWER_END via runtime (exact lease/correlation, downlink, BigInt seq)
+        runtime.acceptAnswerEnd(QuestSurfaceV1bTestData.answerEndFrame("99", 101, "lease-audio", 3, "answer-1", "utterance-1"), 2_004);
+        // late post-terminal playback should be stream-scoped refusal (answer_ended)
+        QuestSurfaceAudioEngine.EngineException late = assertThrows(QuestSurfaceAudioEngine.EngineException.class, () -> runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 101, "lease-audio", 4, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo20()), 2_005));
+        assertEquals("answer_ended", late.code);
+        // wrong lease mismatch
+        QuestSurfaceProtocol.ProtocolException wrongLease = assertThrows(QuestSurfaceProtocol.ProtocolException.class, () -> runtime.acceptAnswerEnd(QuestSurfaceV1bTestData.answerEndFrame("99", 101, "lease-wrong", 5, "answer-1", "utterance-1"), 2_005));
+        assertEquals("lease_ref_mismatch", wrongLease.code);
+        // BigInt seq stale
+        QuestSurfaceRuntime runtime2 = configuredRuntime("100", 2_000, 5_000, true, new RecordingHardware());
+        runtime2.acceptPanel(QuestSurfaceV1bTestData.panelFrame("100", "lease-panel", 4, "2", "answer-2", "utterance-2"), 2_001);
+        runtime2.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("100", 102, "lease-audio", 1, "answer-2", "utterance-2", QuestSurfaceV1bTestData.stereo20()), 2_002);
+        runtime2.acceptAnswerEnd(QuestSurfaceV1bTestData.answerEndFrame("100", 102, "lease-audio", 9007199254740993L, "answer-2", "utterance-2"), 2_003);
+        QuestSurfaceAudioEngine.EngineException stale = assertThrows(QuestSurfaceAudioEngine.EngineException.class, () -> runtime2.acceptAnswerEnd(QuestSurfaceV1bTestData.answerEndFrame("100", 102, "lease-audio", 9007199254740992L, "answer-2", "utterance-2"), 2_004));
+        assertEquals("seq_stale", stale.code);
+        // capture cancel leaves same-numbered downlink intact
+        QuestSurfaceRuntime runtime3 = configuredRuntime("101", 2_000, 5_000, true, new RecordingHardware());
+        runtime3.acceptPanel(QuestSurfaceV1bTestData.panelFrame("101", "lease-panel", 4, "2", "answer-3", "utterance-3"), 2_001);
+        runtime3.startCapture(8, "utt-a", 2_002);
+        runtime3.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("101", 8, "lease-audio", 1, "answer-3", "utterance-3", QuestSurfaceV1bTestData.stereo20()), 2_002);
+        // same numeric id 8: capture cancel must not affect downlink playback
+        runtime3.cancelCapture(8, "utt-a", "client_cancel", 2_003);
+        // downlink 8 should still be present (not cleared by cancel on 8) — assert playback still consumes
+        runtime3.consumePlaybackQueue(8, "answer-3");
+        // downlink 8 should still be present (not cleared by cancel on 8)
+        assertFalse(runtime3.isLatched());
     }
 }

@@ -105,14 +105,26 @@ export function createTextLocalAnswerProvider({ stt, model, tts } = {}) {
       required_leaf: LEAF_FOR["text:local"],
     },
     async *respond({ pcm, utteranceId, answerId, context, signal } = {}) {
+      // Interruption core: abort promptly between stages (the adapters also honor
+      // `signal` on their fetches; these checks stop the stream even between them).
+      const stopIfAborted = () => {
+        if (signal && signal.aborted) {
+          const e = new Error("answer aborted");
+          e.code = "answer_aborted";
+          throw e;
+        }
+      };
+      stopIfAborted();
       // STT: pcm -> transcript
       const sttResult = await stt(pcm, { utteranceId, answerId, context, signal });
       const transcript = typeof sttResult === "string" ? sttResult : (sttResult && sttResult.transcript) ?? "";
+      stopIfAborted();
       // structural firewall: model receives transcript only, never PCM
       const modelInput = transcript;
       // model: transcript -> answer text
       const modelResult = await model(modelInput, { utteranceId, answerId, context, signal, transcript });
       const answerText = typeof modelResult === "string" ? modelResult : (modelResult && (modelResult.answerText ?? modelResult.text ?? modelResult.answer)) ?? "";
+      stopIfAborted();
       // emit answer text
       if (answerText) {
         yield { answerText, utteranceId, answerId };
@@ -121,6 +133,7 @@ export function createTextLocalAnswerProvider({ stt, model, tts } = {}) {
       const ttsResult = await tts(answerText, { utteranceId, answerId, context, signal, transcript });
       const chunks = Array.isArray(ttsResult) ? ttsResult : (ttsResult && ttsResult.chunks) ? ttsResult.chunks : ttsResult ? [ttsResult] : [];
       for (const chunk of chunks) {
+        stopIfAborted();
         if (Buffer.isBuffer(chunk) || chunk instanceof Uint8Array) {
           yield { audioChunk: chunk, utteranceId, answerId };
         } else if (chunk && (chunk.pcm || chunk.audioChunk)) {

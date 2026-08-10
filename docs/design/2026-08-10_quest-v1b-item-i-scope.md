@@ -13,6 +13,26 @@ structural "text-mode model receives zero PCM" invariant, remote destinations pi
 existing egress floor, and the transcript-only floor as the shipped default. See the AMQ record on
 `spec/quest3-v1b` (dual-mode + enforcement rulings) and the canonical draft.
 
+## Status & decisions (updated 2026-08-10)
+
+- **I-1 CLOSED** (mode matrix + inert leaves + enforcement wiring; commit 9d87e4c). **I-2 CLOSED**
+  (local service reachability; committed with the scope doc). The three I-3 **adapters CLOSED**
+  (Whisper STT, Gemma model, Kokoro TTS — each fail-closed, tested) + the factory
+  `src/questSurfaceRealAnswerProvider.js` proven by an integration test. Uncommitted until the I-3
+  seam + I-4 land as one coherent checkpoint.
+- **EXECUTION-PATH DECISION — option (B), ratified by Seth 2026-08-10.** The provider executes the
+  matched answer provider's **streaming `respond()`** (not the batch pipeline). The batch-pipeline
+  shortcut (inject real adapters as pipeline stages) was rejected because **interruption / barge-in
+  requires streaming**: batch can only stop playback of an already-generated answer and cannot
+  interrupt a long generation at all. Making `respond()` the live path also makes an audio-native
+  provider a clean swap later. Cost accepted: a careful refactor of the consent-critical answer path.
+- **Voice-brief default set:** `VOICE_BRIEF_SYSTEM_PROMPT` in the factory (one or two short spoken
+  sentences, no lists/markdown, "offer to say more") — the cheap pacing lever against long answers.
+- **Barge-in / conversation pacing is a defined FOLLOW-ON slice** (see below), not item I. The
+  abort/flush machinery it needs already exists (the Fix-C/A4 AbortSignal cancellation + H's
+  synchronous latch-flush); barge-in is "cancel triggered by VAD-detecting-the-user-speaking"
+  reusing that path.
+
 ## Current-code touchpoints
 
 - `src/questSurfaceFixtureProvider.js`: `armEpisode({episodeId, ttlMs, actor, provenance})` →
@@ -56,18 +76,22 @@ existing egress floor, and the transcript-only floor as the shipped default. See
 ### I-3 — real text-local provider — the integration — Claude owns the seam, muse the adapter mechanics
 - **One hard thing:** real `PCM → Whisper → transcript → Gemma → text → Kokoro → PCM stream +
   ANSWER_END`, streaming, replacing fixtures, fail-closed.
-- **Scope:** the text-local provider behind the I-1 seam; incremental audio+text streaming (not the
-  batch `{panelPayload, ttsChunks}`); the once-grant reserve immediately before the **model** call;
-  fail-closed on any adapter unavailable/abort (no remote fallback); panel carries answer text
-  (+ transcript when emitted). The three HTTP adapters (Whisper/Gemma/Kokoro marshaling) are
-  contained sub-contracts for muse.
-- **Acceptance:** a real utterance produces a real answer (audio+text+ANSWER_END) through the seam;
-  fail-closed when an adapter is down; the no-PCM-to-model invariant holds with the real STT adapter
-  in place; the once-grant is reserved exactly once.
-- **Verify:** an integration test against the real (or a real-shaped injected) adapters; the I-1
-  suite still green.
-- **Owner:** Claude carries the streaming/fail-closed/sink seam; muse owns the adapter mechanics as
-  sub-contracts; Claude takes the mechanics too if muse stalls. **Deps:** I-1 + I-2.
+- **Scope:** the three HTTP adapters (Whisper/Gemma/Kokoro) — **DONE** — plus the **provider-drive
+  refactor (option B)**: the provider executes the matched answer provider's streaming `respond()`
+  (get the collected utterance PCM → `respond({pcm,…,signal})` → marshal `{answerText}` →
+  PANEL_SNAPSHOT, `{audioChunk}` → AUDIO_CHUNK per chunk, `{terminal}` → ANSWER_END), replacing the
+  batch pipeline for the answer path. The once-grant reserve stays immediately before the **model**
+  call; fail-closed on any adapter throw (no fallback); a **per-utterance AbortController** whose
+  `signal` propagates into the adapters — the single cancellation trigger for disarm / focus-loss /
+  revoke / (later) barge-in. Panel carries answer text (+ transcript when emitted).
+- **Acceptance:** a real utterance produces a real answer (audio+text+ANSWER_END) through the
+  `respond()` path; fail-closed when an adapter is down; no-PCM-to-model holds; the once-grant is
+  reserved exactly once; aborting the signal mid-stream stops generation/TTS and emits no further
+  output.
+- **Verify:** the factory integration test (DONE, injected fetch through all three adapters) + a
+  provider-level streaming test (once-sink, fail-closed, abort-mid-stream); the I-1 suite still green.
+- **Owner:** Claude carries the provider-drive/streaming/fail-closed/sink seam (consent-adjacent).
+  Adapters were muse sub-contracts (closed). **Deps:** I-1 + I-2.
 
 ### I-4 — host loopback artifact + no-retention audit — CONSENT-CRITICAL — Claude authors acceptance
 - **One hard thing:** the real-class end-to-end proof plus empty-retention.
@@ -90,3 +114,26 @@ Critical path: **I-1 → I-3 → I-4**. I-1 and I-2 start in parallel (independe
 Consent-critical slices (I-1, I-4) get reviewer-authored acceptance tests and close under Claude's
 verify + semantic review; with Codex out, Claude is the sole reviewer and carries those closely.
 The integration slice (I-3) is split at the seam so muse is not handed a G-class integration whole.
+
+## Follow-on (post-item-I): conversation pacing / barge-in
+
+A defined next slice, **not** item I. Motivated by Seth 2026-08-10: long spoken answers are
+cumbersome, so interruption must be a first-class capability. Research (2026 voice-agent practice)
+and our architecture converge:
+
+- **The abort/flush machinery already exists.** Barge-in = flush the TTS (<60 ms), abort the
+  in-flight generation, start the new utterance — which is exactly the Fix-C/A4 AbortSignal
+  cancellation + H's synchronous latch-flush, triggered by VAD-detects-user-speaking instead of by
+  disarm. Item I's option-(B) streaming path is the foundation (interruptible generation).
+- **What the slice adds:** (1) a **mic-active-during-playback** state-machine change (today: capture
+  → END → play; barge-in keeps the mic scoring during the agent's turn); (2) **VAD barge-in
+  detection** with false-barge-in avoidance (min-window threshold + backchannel filtering; 2026
+  production targets: turn-gap 200–400 ms, false-barge-in <2%, TTS flush <60 ms; end-of-turn =
+  silence threshold + semantic-completeness scoring); (3) **streaming TTS** (synthesize per sentence)
+  so playback starts sooner and interrupts cleanly.
+- **Consent nuance to design:** mic-active-during-playback is a broader capture window (the mic is on
+  during the agent's turn, not only the wearer's), still inside the armed episode and the
+  transcript-only floor — worth its own explicit design pass.
+- **Audio-native angle:** full-duplex speech models (Moshi-class) handle barge-in/turn-taking
+  natively, and on-device STT would let barge-in VAD run headset-side (lowest latency) — both reasons
+  to keep the dual-mode + on-device foundations ready.

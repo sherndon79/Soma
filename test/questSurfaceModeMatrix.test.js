@@ -187,3 +187,42 @@ test("I-1 structural: a text-mode provider feeds the model transcript only, neve
   // And the provider still produces answer text + audio downstream.
   assert.ok(events.some((e) => e.answerText || e.audioChunk || e.terminal), "provider emits answer events");
 });
+
+test("I-3(B) interruption: respond honors AbortSignal — abort after STT stops before the model", async () => {
+  const ac = new AbortController();
+  let modelCalled = 0;
+  let ttsCalled = 0;
+  const stt = async () => { ac.abort(); return { transcript: "hello soma" }; }; // user barges in right after STT
+  const model = async () => { modelCalled += 1; return { answerText: "hi there" }; };
+  const tts = async () => { ttsCalled += 1; return [Buffer.alloc(3840)]; };
+  const provider = createTextLocalAnswerProvider({ stt, model, tts });
+  const emitted = [];
+  await assert.rejects(
+    async () => {
+      for await (const ev of provider.respond({ pcm: Buffer.alloc(1920, 1), utteranceId: "u", answerId: "a", signal: ac.signal })) {
+        emitted.push(ev);
+      }
+    },
+    (err) => err && err.code === "answer_aborted",
+    "an aborted signal must throw answer_aborted",
+  );
+  assert.equal(modelCalled, 0, "abort after STT must stop BEFORE the model call (no wasted generation)");
+  assert.equal(ttsCalled, 0, "and before TTS");
+  assert.equal(emitted.length, 0, "no answer events emitted after abort");
+});
+
+test("I-3(B) interruption: abort during TTS chunk stream stops emitting further chunks", async () => {
+  const ac = new AbortController();
+  const stt = async () => ({ transcript: "hello soma" });
+  const model = async () => ({ answerText: "hi there" });
+  // three chunks; abort fires as the stream is consumed
+  const tts = async () => [Buffer.alloc(3840, 1), Buffer.alloc(3840, 2), Buffer.alloc(3840, 3)];
+  const provider = createTextLocalAnswerProvider({ stt, model, tts });
+  const chunks = [];
+  await assert.rejects(async () => {
+    for await (const ev of provider.respond({ pcm: Buffer.alloc(1920, 1), utteranceId: "u", answerId: "a", signal: ac.signal })) {
+      if (ev.audioChunk) { chunks.push(ev.audioChunk); ac.abort(); } // barge-in after the first chunk plays
+    }
+  }, (err) => err && err.code === "answer_aborted");
+  assert.equal(chunks.length, 1, "abort mid-playback stops after the current chunk, no further chunks");
+});

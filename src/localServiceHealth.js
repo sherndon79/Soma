@@ -16,6 +16,9 @@ export function getLocalServiceEndpoints(env = process.env) {
     whisper: { url: whisperUrl, healthPath: "/health" },
     kokoro: { url: kokoroUrl, healthPath: "/health" },
     gemma: { url: llmUrl, healthPath: "/health", model: llmModel },
+    llm: { url: llmUrl, healthPath: "/health", model: llmModel },
+    llmUrl,
+    llmModel,
   };
 }
 

@@ -63,6 +63,7 @@ export class QuestSurfaceFixtureProvider {
     serverFactory = (options, handler) => tls.createServer(options, handler),
     now = () => Date.now(),
     pipelineFactory = null,
+    answerStages = null,
   } = {}) {
     this.tlsOptions = validateTlsOptions(tlsOptions);
     this.grantStore = grantStore ?? { schema_version: 1, grants: [] };
@@ -82,6 +83,7 @@ export class QuestSurfaceFixtureProvider {
     this.serverFactory = serverFactory;
     this.now = now;
     this.pipelineFactory = pipelineFactory;
+    this.answerStages = answerStages;
     this.server = null;
     this.sessions = new Set();
     // #6: device latch persists across reconnects (provider lifetime)
@@ -252,6 +254,7 @@ export class QuestSurfaceFixtureProvider {
       now: this.now,
       onClose: () => this.sessions.delete(session),
       pipelineFactory: this.pipelineFactory,
+      answerStages: this.answerStages,
     });
     this.sessions.add(session);
     session.start();
@@ -345,6 +348,7 @@ class QuestSurfaceProviderSession {
     now,
     onClose,
     pipelineFactory = null,
+    answerStages = null,
   }) {
     this.socket = socket;
     this.peerFingerprint256 = peerFingerprint256;
@@ -376,6 +380,7 @@ class QuestSurfaceProviderSession {
     this.micLatch = deviceMicLatch ?? new QuestSurfaceMicLatch();
     this.pipeline = null;
     this.pipelineFactory = pipelineFactory;
+    this.answerStages = answerStages;
     this.revisionCounter = BigInt(this.panel.revision ?? "1");
   }
 
@@ -644,6 +649,10 @@ class QuestSurfaceProviderSession {
       },
       eventSink: (e) => this.eventSink(e.type ?? e.event_type, e),
       logger: this.logger,
+      // Item-I real execution path: when real answer stages are configured they
+      // replace the fixture transcribe/chat/synthesize; the pipeline's abort-aware
+      // withAbort wrapping makes them interruptible. Absent, fixtures are used.
+      ...(this.answerStages ?? {}),
     });
   }
 

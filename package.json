@@ -22,7 +22,8 @@
     "systemd-provider:attended-host": "node scripts/systemd-provider-attended-host.mjs",
     "systemd-provider:controlled-test": "bash scripts/systemd-provider-controlled-test.sh",
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:quest-v1b-loopback": "node --test test/questSurfaceLoopback.test.js"
   },
   "engines": {
     "node": ">=22"

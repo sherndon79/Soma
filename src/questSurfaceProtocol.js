@@ -804,13 +804,31 @@ function normalizeLeaseConstraints(capability, constraints = {}) {
   } : {};
   if (typeof constraints !== "object" || Array.isArray(constraints)) throw protocolError("lease_constraints_invalid", "Constraints must be a plain object");
   const keys = Object.keys(constraints);
-  if (capability !== QUEST_SURFACE_CAPABILITY) {
-    if (keys.length > 0) throw protocolError("lease_constraints_unsupported", `Constraints not supported for ${capability} until v1b schema is committed`);
-    return {};
+  const allowed = capability === QUEST_SURFACE_CAPABILITY
+    ? new Set(["max_panel_text_bytes", "allowed_surface_ids", "device_fingerprint256", "lease_ttl_ms"])
+    : new Set(["device_fingerprint256", "lease_ttl_ms"]);
+  for (const k of keys) {
+    if (!allowed.has(k)) {
+      throw protocolError(
+        "lease_constraints_unknown_field",
+        `Unknown ${capability === QUEST_SURFACE_CAPABILITY ? "panel" : "lease"} constraint ${k}`,
+      );
+    }
   }
-  const allowed = new Set(["max_panel_text_bytes", "allowed_surface_ids", "device_fingerprint256", "lease_ttl_ms"]);
-  for (const k of keys) if (!allowed.has(k)) throw protocolError("lease_constraints_unknown_field", `Unknown panel constraint ${k}`);
   const source = constraints;
+  if (capability !== QUEST_SURFACE_CAPABILITY) {
+    if (Object.hasOwn(source, "lease_ttl_ms")) {
+      boundedInteger(
+        source.lease_ttl_ms,
+        1,
+        QUEST_SURFACE_MAX_LEASE_TTL_MS,
+        "lease_ttl_invalid",
+      );
+    }
+    return {
+      device_fingerprint256: String(source.device_fingerprint256 ?? ""),
+    };
+  }
   const allowedSurfaceIds = Array.isArray(source.allowed_surface_ids)
     ? source.allowed_surface_ids.map((value) => requireToken(value, "lease_surface_id_invalid"))
     : ["panel.main"];

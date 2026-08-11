@@ -20496,6 +20496,90 @@ test("sensorium.perception.read returns active derived presence and pose summari
   assert.equal(response.body.entries[0].activation_performed, false);
 });
 
+test("Quest Gate-2 routes expose only the injected loopback control facade", async () => {
+  const calls = [];
+  const status = {
+    enabled: true,
+    armed: false,
+    episode_id: "",
+    armed_at_ms: null,
+    expires_at_ms: null,
+    ttl_ms: 0,
+    session_active: false,
+    mode: null,
+    capability: "",
+    answer_provider_id: "",
+    grant_ids: null,
+    content_included: false,
+    payload_bytes_included: false,
+    durable: false,
+  };
+  const control = {
+    status() {
+      calls.push(["status"]);
+      return status;
+    },
+    armTextLocal(body) {
+      calls.push(["arm", body]);
+      return { changed: true, status: { ...status, armed: true, episode_id: body.episode_id } };
+    },
+    disarm(body) {
+      calls.push(["disarm", body]);
+      return { changed: true, status };
+    },
+  };
+  const handler = makeHandler({ questSurfaceControl: control });
+
+  let response = await invokeHandler(handler, { method: "GET", url: "/quest-surface/episode" });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, status);
+
+  const armBody = {
+    actor: "user",
+    episode_id: "quest-worn-1",
+    ttl_ms: 900_000,
+    reason: "One bounded worn test.",
+    provenance_id: "gate/quest-v1b-arm/approval-1",
+  };
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/quest-surface/episode/arm",
+    body: armBody,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status.armed, true);
+
+  response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/quest-surface/episode/disarm",
+    body: { actor: "assistant", reason: "narrow_now" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status.armed, false);
+  assert.deepEqual(calls, [
+    ["status"],
+    ["arm", armBody],
+    ["disarm", { actor: "assistant", reason: "narrow_now" }],
+  ]);
+});
+
+test("Quest Gate-2 routes fail closed when no runtime control is injected", async () => {
+  const handler = makeHandler();
+  const response = await invokeHandler(handler, {
+    method: "POST",
+    url: "/quest-surface/episode/arm",
+    body: {
+      actor: "user",
+      episode_id: "quest-worn-1",
+      ttl_ms: 900_000,
+      reason: "One bounded worn test.",
+      provenance_id: "gate/quest-v1b-arm/approval-1",
+    },
+  });
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.body.error, "quest_surface_runtime_disabled");
+});
+
 function makeHandler({
   harness = allowedHarness,
   capabilityCatalog: catalog = capabilityCatalog,
@@ -20555,6 +20639,7 @@ function makeHandler({
   capabilityProposals,
   provenanceLog,
   desktopActuationTable,
+  questSurfaceControl,
 } = {}) {
   return createRequestHandler({
     harness,
@@ -20592,6 +20677,7 @@ function makeHandler({
     capabilityProposals,
     provenanceLog,
     desktopActuationTable,
+    questSurfaceControl,
     logger: { info() {} },
   });
 }

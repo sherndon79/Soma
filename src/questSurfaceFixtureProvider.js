@@ -34,6 +34,11 @@ import {
 import { createQuestSurfaceAudioPipeline } from "./questSurfaceAudioPipeline.js";
 import { QuestSurfaceMicLatch } from "./questSurfaceMicLatch.js";
 import { matchAnswerProvider } from "./questSurfaceModeMatrix.js";
+import {
+  QUEST_SURFACE_DEFAULT_EPISODE_TTL_MS,
+  QUEST_SURFACE_MIN_EPISODE_TTL_MS,
+  QUEST_SURFACE_MAX_EPISODE_TTL_MS,
+} from "./questSurfaceControl.js";
 
 const DEFAULT_LEASE_TTL_MS = 60_000;
 const DEFAULT_PANEL = Object.freeze({
@@ -48,6 +53,29 @@ const DEFAULT_PANEL = Object.freeze({
   bounds: { width_m: 0.9, height_m: 0.5 },
 });
 
+const QUEST_SURFACE_GRANT_DEFINITIONS = Object.freeze({
+  panel: Object.freeze({
+    capability: QUEST_SURFACE_CAPABILITY,
+    provider: QUEST_SURFACE_PROVIDER_ID,
+    scope: "session",
+  }),
+  mic_capture: Object.freeze({
+    capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE,
+    provider: QUEST_SURFACE_PROVIDER_ID,
+    scope: "session",
+  }),
+  audio_present: Object.freeze({
+    capability: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT,
+    provider: QUEST_SURFACE_PROVIDER_ID,
+    scope: "session",
+  }),
+  local_attach: Object.freeze({
+    capability: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH,
+    provider: "soma.provider.local-model",
+    scope: "configured",
+  }),
+});
+
 export class QuestSurfaceFixtureProvider {
   constructor({
     tlsOptions,
@@ -56,12 +84,16 @@ export class QuestSurfaceFixtureProvider {
     capabilityCatalog = null,
     providerRegistry = null,
     grantId,
+    grantIds = null,
+    localAttachScope = "window",
     panel = DEFAULT_PANEL,
     leaseTtlMs = DEFAULT_LEASE_TTL_MS,
     eventSink = () => {},
     logger = console,
     serverFactory = (options, handler) => tls.createServer(options, handler),
     now = () => Date.now(),
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
     pipelineFactory = null,
     answerStages = null,
   } = {}) {
@@ -70,7 +102,18 @@ export class QuestSurfaceFixtureProvider {
     this.grantRecoveryReport = grantRecoveryReport;
     this.capabilityCatalog = capabilityCatalog;
     this.providerRegistry = providerRegistry;
-    this.grantId = requireText(grantId, "quest_surface_grant_id_required");
+    this.grantIds = normalizeConfiguredGrantIds(grantIds);
+    if (this.grantIds && grantId && String(grantId).trim() !== this.grantIds.panel) {
+      throw providerError(
+        "quest_surface_panel_grant_configuration_mismatch",
+        "Quest surface legacy and exact panel grant ids do not match.",
+      );
+    }
+    this.grantId = requireText(
+      this.grantIds?.panel ?? grantId,
+      "quest_surface_grant_id_required",
+    );
+    this.localAttachScope = normalizeLocalAttachScope(localAttachScope);
     this.panel = normalizePanel(panel);
     this.leaseTtlMs = boundedInteger(
       leaseTtlMs,
@@ -82,23 +125,32 @@ export class QuestSurfaceFixtureProvider {
     this.logger = logger;
     this.serverFactory = serverFactory;
     this.now = now;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
     this.pipelineFactory = pipelineFactory;
     this.answerStages = answerStages;
     this.server = null;
     this.sessions = new Set();
-    // #6: device latch persists across reconnects (provider lifetime)
+    // #6: device latch persists across reconnects within an armed episode.
     this.deviceMicLatch = new QuestSurfaceMicLatch();
     // #2: bounded armed episode window, default not armed
     this.armedEpisode = null;
+    this.episodeTimer = null;
     this.armedWindow = false; // legacy alias for tests
     // #3: track consumed once local_attach grants
     this.consumedOnceGrants = new Set();
   }
 
-  armEpisode({ episodeId, ttlMs = 60_000, actor = "test", provenance = "", mode, capability, provider, grant_id, grantId } = {}) {
+  armEpisode({ episodeId, ttlMs = QUEST_SURFACE_DEFAULT_EPISODE_TTL_MS, actor = "test", provenance = "", reason = "", mode, capability, provider, grant_id, grantId } = {}) {
+    this.#expireEpisodeIfNeeded();
     const id = String(episodeId ?? `ep-${Date.now()}-${Math.random().toString(16).slice(2,8)}`).trim();
     if (!id) throw providerError("episode_id_required", "Episode id required");
-    const ttl = boundedInteger(ttlMs, 1, QUEST_SURFACE_MAX_LEASE_TTL_MS, "episode_ttl_invalid");
+    const ttl = boundedInteger(
+      ttlMs,
+      QUEST_SURFACE_MIN_EPISODE_TTL_MS,
+      QUEST_SURFACE_MAX_EPISODE_TTL_MS,
+      "episode_ttl_invalid",
+    );
     // I-1 tuple binding: {mode, capability, provider, grant_id} — default to text/local live if not supplied (backward compat)
     let boundMode = mode ?? null;
     let boundCapability = capability ?? null;
@@ -126,17 +178,35 @@ export class QuestSurfaceFixtureProvider {
       if (!boundProvider) boundProvider = QUEST_SURFACE_PROVIDER_ID;
       if (!boundGrantId) boundGrantId = `grant-${boundCapability}`;
     }
-    this.armedEpisode = { id, expiresAtMs: this.now() + ttl, actor: String(actor ?? ""), provenance: String(provenance ?? ""), ttlMs: ttl, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId, grantId: boundGrantId };
+    const replacedEpisodeId = this.armedEpisode?.id ?? "";
+    const armedAtMs = this.now();
+    this.clearTimer(this.episodeTimer);
+    this.episodeTimer = null;
+    // A successful arm is the deliberate boundary for a fresh episode. Give
+    // future sessions a fresh latch without clearing the latch object retained
+    // by any session issued under the prior episode.
+    this.deviceMicLatch = new QuestSurfaceMicLatch();
+    this.armedEpisode = { id, armedAtMs, expiresAtMs: armedAtMs + ttl, actor: String(actor ?? ""), provenance: String(provenance ?? ""), ttlMs: ttl, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId, grantId: boundGrantId };
     this.armedWindow = true;
-    this.#emit("quest.surface.episode_armed", { episode_id: id, expires_at_ms: this.armedEpisode.expiresAtMs, actor, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId });
+    this.episodeTimer = this.setTimer(() => {
+      this.revokeEpisode("episode_expired", {
+        actor: "system",
+        eventType: "quest.surface.episode_expired",
+      });
+    }, ttl);
+    this.episodeTimer?.unref?.();
+    this.#emit("quest.surface.episode_armed", { episode_id: id, replaced_episode_id: replacedEpisodeId, armed_at_ms: armedAtMs, expires_at_ms: this.armedEpisode.expiresAtMs, ttl_ms: ttl, actor, provenance_id: String(provenance ?? ""), reason_included: false, mode: boundMode, capability: boundCapability, provider: boundProvider, grant_id: boundGrantId });
     return this.armedEpisode;
   }
 
-  revokeEpisode(reason = "revoked") {
+  revokeEpisode(reason = "revoked", { actor = "", eventType = "quest.surface.episode_revoked" } = {}) {
     const episodeId = this.armedEpisode?.id ?? "none";
-    if (this.armedEpisode) {
-      this.#emit("quest.surface.episode_revoked", { episode_id: episodeId, reason });
+    if (!this.armedEpisode) {
+      return false;
     }
+    this.clearTimer(this.episodeTimer);
+    this.episodeTimer = null;
+    this.#emit(eventType, { episode_id: episodeId, reason, actor, reason_included: false });
     this.armedEpisode = null;
     this.armedWindow = false;
     // Fix 4: narrow already-issued sessions — close active sessions and cancel pipelines
@@ -150,6 +220,61 @@ export class QuestSurfaceFixtureProvider {
         session.close(reason);
       } catch {}
     }
+    return true;
+  }
+
+  episodeStatus() {
+    this.#expireEpisodeIfNeeded();
+    if (!this.armedEpisode) {
+      return {
+        armed: false,
+        episode_id: "",
+        armed_at_ms: null,
+        expires_at_ms: null,
+        ttl_ms: 0,
+      };
+    }
+    return {
+      armed: true,
+      episode_id: this.armedEpisode.id,
+      armed_at_ms: this.armedEpisode.armedAtMs,
+      expires_at_ms: this.armedEpisode.expiresAtMs,
+      ttl_ms: this.armedEpisode.ttlMs,
+    };
+  }
+
+  hasActiveSessions() {
+    return this.sessions.size > 0;
+  }
+
+  validateConfiguredGrantBindings({ peerFingerprint256 = "" } = {}) {
+    if (!this.grantIds) {
+      throw providerError(
+        "quest_surface_grant_tuple_required",
+        "Quest surface v1b requires four exact configured grant ids.",
+      );
+    }
+    const results = authorizeConfiguredQuestGrants({
+      grantStore: this.grantStore,
+      grantRecoveryReport: this.grantRecoveryReport,
+      capabilityCatalog: this.capabilityCatalog,
+      providerRegistry: this.providerRegistry,
+      grantIds: this.grantIds,
+      localAttachScope: this.localAttachScope,
+      peerFingerprint256,
+      panel: this.panel,
+    });
+    const denied = Object.values(results).find((authorization) => !authorization.allowed);
+    if (denied) {
+      const error = providerError(denied.code, "Quest surface exact grant tuple is not authorized.");
+      error.details = denied.details;
+      throw error;
+    }
+    return {
+      allowed: true,
+      grants: Object.fromEntries(Object.entries(results).map(([key, value]) => [key, value.grant])),
+      grant_ids: { ...this.grantIds },
+    };
   }
 
   async start({ host = "127.0.0.1", port = 0 } = {}) {
@@ -197,6 +322,10 @@ export class QuestSurfaceFixtureProvider {
   }
 
   async stop() {
+    this.clearTimer(this.episodeTimer);
+    this.episodeTimer = null;
+    this.armedEpisode = null;
+    this.armedWindow = false;
     for (const session of [...this.sessions]) {
       session.close("runtime_shutdown");
     }
@@ -212,6 +341,15 @@ export class QuestSurfaceFixtureProvider {
 
   address() {
     return this.server?.address() ?? null;
+  }
+
+  #expireEpisodeIfNeeded() {
+    if (this.armedEpisode && this.now() >= this.armedEpisode.expiresAtMs) {
+      this.revokeEpisode("episode_expired", {
+        actor: "system",
+        eventType: "quest.surface.episode_expired",
+      });
+    }
   }
 
   #accept(socket) {
@@ -250,6 +388,8 @@ export class QuestSurfaceFixtureProvider {
       getArmedEpisode: () => this.armedEpisode,
       consumedOnceGrants: this.consumedOnceGrants,
       configuredPanelGrantId: this.grantId,
+      configuredGrantIds: this.grantIds,
+      localAttachScope: this.localAttachScope,
       eventSink: (eventType, fields) => this.#emit(eventType, fields),
       now: this.now,
       onClose: () => this.sessions.delete(session),
@@ -344,6 +484,8 @@ class QuestSurfaceProviderSession {
     getArmedEpisode = null,
     consumedOnceGrants = null,
     configuredPanelGrantId = null,
+    configuredGrantIds = null,
+    localAttachScope = "window",
     eventSink,
     now,
     onClose,
@@ -364,6 +506,8 @@ class QuestSurfaceProviderSession {
     this.getArmedEpisode = getArmedEpisode;
     this.consumedOnceGrants = consumedOnceGrants;
     this.configuredPanelGrantId = configuredPanelGrantId;
+    this.configuredGrantIds = configuredGrantIds;
+    this.localAttachScope = localAttachScope;
     this.eventSink = eventSink;
     this.now = now;
     this.onClose = onClose;
@@ -890,143 +1034,84 @@ class QuestSurfaceProviderSession {
   }
 
   #tryAuthorizeManifest(panelAuth) {
-    // #A: require exact configured panel grant and bounded episode
     if (!panelAuth || !panelAuth.allowed) {
       this.eventSink("quest.surface.manifest_not_armed", { reason: "panel_auth_failed", code: panelAuth?.code ?? "no_panel_auth" });
       return null;
     }
-    // verify the panel grant is exactly the configured one and device-bound checks passed via #authorize
     if (panelAuth.grant.id !== this.configuredPanelGrantId) {
       this.eventSink("quest.surface.manifest_not_armed", { reason: "panel_grant_mismatch", expected: this.configuredPanelGrantId, actual: panelAuth.grant.id });
       return null;
     }
-    // #2: require bounded armed episode (not timeless boolean) — provider lifetime, read via getter
     const episode = this.getArmedEpisode ? this.getArmedEpisode() : null;
     if (!episode || !episode.id || this.now() >= episode.expiresAtMs) {
       this.eventSink("quest.surface.manifest_not_armed", { reason: "episode_not_armed_or_expired", episode: episode?.id ?? "none" });
       return null;
     }
-    // v1b: require exact grants for all four capabilities; returns manifest if all authorized
-    // Fix 1: panel leaf pinned to panelAuth.grant to prevent divergence when multiple panel grants are active
-    const caps = [
-      { key: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, scope: "session", id: "mic_capture" },
-      { key: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, scope: "session", id: "audio_present" },
-      { key: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, scope: "once", id: "local_attach" },
-    ];
-    const leases = {};
-    const grantIds = {};
-    // verify non-panel leaves are authorized (also try window scope for local_attach)
-    for (const { key, scope } of caps) {
-      let auth = authorizeGrantUse({
-        store: this.grantStore,
-        grantId: "",
-        capability: key,
-        provider: key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? "soma.provider.local-model" : QUEST_SURFACE_PROVIDER_ID,
-        scope,
-        recoveryReport: this.grantRecoveryReport,
-        catalog: this.capabilityCatalog,
-        providerRegistry: this.providerRegistry,
+    if (!this.configuredGrantIds) {
+      this.eventSink("quest.surface.manifest_auth_failed", {
+        capability: "quest_surface_v1b_manifest",
+        reason: "quest_surface_grant_tuple_required",
       });
-      if (!auth.allowed && key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH) {
-        auth = authorizeGrantUse({
-          store: this.grantStore,
-          grantId: "",
-          capability: key,
-          provider: "soma.provider.local-model",
-          scope: "window",
-          recoveryReport: this.grantRecoveryReport,
-          catalog: this.capabilityCatalog,
-          providerRegistry: this.providerRegistry,
+      return null;
+    }
+    const authorizations = authorizeConfiguredQuestGrants({
+      grantStore: this.grantStore,
+      grantRecoveryReport: this.grantRecoveryReport,
+      capabilityCatalog: this.capabilityCatalog,
+      providerRegistry: this.providerRegistry,
+      grantIds: this.configuredGrantIds,
+      localAttachScope: this.localAttachScope,
+      peerFingerprint256: this.peerFingerprint256,
+      panel: this.panel,
+    });
+    for (const [leaf, authorization] of Object.entries(authorizations)) {
+      if (!authorization.allowed) {
+        this.eventSink("quest.surface.manifest_auth_failed", {
+          leaf,
+          capability: QUEST_SURFACE_GRANT_DEFINITIONS[leaf].capability,
+          scope: QUEST_SURFACE_GRANT_DEFINITIONS[leaf].scope === "configured"
+            ? this.localAttachScope
+            : QUEST_SURFACE_GRANT_DEFINITIONS[leaf].scope,
+          reason: authorization.code,
+          details: authorization.details,
         });
-      }
-      if (!auth.allowed) {
-        this.eventSink("quest.surface.manifest_auth_failed", { capability: key, scope, reason: auth.code, details: auth.details });
         return null;
       }
     }
-    // #4: use minimum TTL across runtime and all leaves, preserve synchronous revocation (panel leaf via panelAuth)
-    let ttlMs = this.leaseTtlMs;
-    // panel leaf TTL from pinned grant
-    if (Number.isSafeInteger(panelAuth.grant.constraints?.lease_ttl_ms)) {
-      ttlMs = Math.min(ttlMs, panelAuth.grant.constraints.lease_ttl_ms);
-    }
-    for (const { key, scope } of caps) {
-      let auth = authorizeGrantUse({
-        store: this.grantStore,
-        capability: key,
-        provider: key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? "soma.provider.local-model" : QUEST_SURFACE_PROVIDER_ID,
-        scope,
-        recoveryReport: this.grantRecoveryReport,
-        catalog: this.capabilityCatalog,
-        providerRegistry: this.providerRegistry,
+    if (authorizations.panel.grant.id !== panelAuth.grant.id) {
+      this.eventSink("quest.surface.manifest_auth_failed", {
+        leaf: "panel",
+        reason: "quest_surface_panel_authorization_diverged",
       });
-      if (!auth.allowed && key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH) {
-        auth = authorizeGrantUse({
-          store: this.grantStore,
-          capability: key,
-          provider: "soma.provider.local-model",
-          scope: "window",
-          recoveryReport: this.grantRecoveryReport,
-          catalog: this.capabilityCatalog,
-          providerRegistry: this.providerRegistry,
-        });
-      }
-      if (auth.allowed && Number.isSafeInteger(auth.grant.constraints?.lease_ttl_ms)) {
-        ttlMs = Math.min(ttlMs, auth.grant.constraints.lease_ttl_ms);
+      return null;
+    }
+
+    let ttlMs = this.leaseTtlMs;
+    for (const authorization of Object.values(authorizations)) {
+      if (Number.isSafeInteger(authorization.grant.constraints?.lease_ttl_ms)) {
+        ttlMs = Math.min(ttlMs, authorization.grant.constraints.lease_ttl_ms);
       }
     }
     ttlMs = Math.max(1, Math.min(ttlMs, QUEST_SURFACE_MAX_LEASE_TTL_MS));
     const issuedAtMs = this.now();
-    // Fix 3: cap manifest TTL to remaining episode lifetime
     const episodeRemaining = episode.expiresAtMs - issuedAtMs;
     if (episodeRemaining <= 0) {
       this.eventSink("quest.surface.manifest_not_armed", { reason: "episode_expired_at_issue", episode: episode.id });
       return null;
     }
     ttlMs = Math.min(ttlMs, episodeRemaining);
-    // pin panel leaf to exact configured grant
-    {
+
+    const leases = {};
+    const grantIds = {};
+    for (const [leaf, authorization] of Object.entries(authorizations)) {
       const lease = createQuestSurfaceLease({
         sessionEpoch: this.sessionEpoch,
-        sourceGrant: panelAuth.grant,
+        sourceGrant: authorization.grant,
         ttlMs,
         issuedAtMs,
       });
-      leases["panel"] = lease;
-      grantIds["panel"] = panelAuth.grant.id;
-    }
-    for (const { key, scope, id } of caps) {
-      const provider = key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? "soma.provider.local-model" : QUEST_SURFACE_PROVIDER_ID;
-      let auth = authorizeGrantUse({
-        store: this.grantStore,
-        grantId: "",
-        capability: key,
-        provider,
-        scope,
-        recoveryReport: this.grantRecoveryReport,
-        catalog: this.capabilityCatalog,
-        providerRegistry: this.providerRegistry,
-      });
-      if (!auth.allowed && key === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH) {
-        auth = authorizeGrantUse({
-          store: this.grantStore,
-          capability: key,
-          provider: "soma.provider.local-model",
-          scope: "window",
-          recoveryReport: this.grantRecoveryReport,
-          catalog: this.capabilityCatalog,
-          providerRegistry: this.providerRegistry,
-        });
-      }
-      if (!auth.allowed) return null;
-      const lease = createQuestSurfaceLease({
-        sessionEpoch: this.sessionEpoch,
-        sourceGrant: auth.grant,
-        ttlMs,
-        issuedAtMs,
-      });
-      leases[id] = lease;
-      grantIds[id] = auth.grant.id;
+      leases[leaf] = lease;
+      grantIds[leaf] = authorization.grant.id;
     }
     try {
       const manifest = createLeaseManifestPayload({
@@ -1035,7 +1120,6 @@ class QuestSurfaceProviderSession {
         issuedAtMs,
         leases,
       });
-      // I-1 first enforcement point: manifest issuance must prove same tuple as provider selection (hard floor for audio)
       const episodeForManifest = this.getArmedEpisode ? this.getArmedEpisode() : null;
       if (episodeForManifest && episodeForManifest.mode) {
         try {
@@ -1189,6 +1273,154 @@ function requireAckObject(payload) {
 
 function normalizeFingerprint(value) {
   return String(value ?? "").replaceAll(":", "").trim().toUpperCase();
+}
+
+function normalizeConfiguredGrantIds(grantIds) {
+  if (grantIds === null || grantIds === undefined) {
+    return null;
+  }
+  if (!grantIds || typeof grantIds !== "object" || Array.isArray(grantIds)) {
+    throw providerError(
+      "quest_surface_grant_tuple_invalid",
+      "Quest surface grantIds must be an exact object.",
+    );
+  }
+  const expected = Object.keys(QUEST_SURFACE_GRANT_DEFINITIONS);
+  if (Object.keys(grantIds).length !== expected.length
+      || Object.keys(grantIds).some((key) => !expected.includes(key))) {
+    throw providerError(
+      "quest_surface_grant_tuple_invalid",
+      "Quest surface grantIds must contain exactly panel, mic_capture, audio_present, and local_attach.",
+    );
+  }
+  const normalized = Object.fromEntries(expected.map((key) => [
+    key,
+    requireText(grantIds[key], "quest_surface_grant_tuple_invalid"),
+  ]));
+  if (new Set(Object.values(normalized)).size !== expected.length) {
+    throw providerError(
+      "quest_surface_grant_tuple_duplicate",
+      "Quest surface grantIds must be distinct.",
+    );
+  }
+  return Object.freeze(normalized);
+}
+
+function normalizeLocalAttachScope(scope) {
+  const value = String(scope ?? "window").trim() || "window";
+  if (!new Set(["once", "window"]).has(value)) {
+    throw providerError(
+      "quest_surface_local_attach_scope_invalid",
+      "Quest surface local attach scope must be once or window.",
+    );
+  }
+  return value;
+}
+
+function authorizeConfiguredQuestGrants({
+  grantStore,
+  grantRecoveryReport,
+  capabilityCatalog,
+  providerRegistry,
+  grantIds,
+  localAttachScope,
+  peerFingerprint256,
+  panel,
+}) {
+  if (!grantIds) {
+    return Object.fromEntries(Object.keys(QUEST_SURFACE_GRANT_DEFINITIONS).map((leaf) => [
+      leaf,
+      deniedQuestGrant("quest_surface_grant_tuple_required", { leaf }),
+    ]));
+  }
+  const authorizations = Object.fromEntries(Object.entries(QUEST_SURFACE_GRANT_DEFINITIONS).map(([leaf, definition]) => {
+    const scope = definition.scope === "configured" ? localAttachScope : definition.scope;
+    const authorization = authorizeGrantUse({
+      store: grantStore,
+      grantId: grantIds[leaf],
+      capability: definition.capability,
+      provider: definition.provider,
+      scope,
+      recoveryReport: grantRecoveryReport,
+      catalog: capabilityCatalog,
+      providerRegistry,
+    });
+    if (!authorization.allowed) {
+      return [leaf, authorization];
+    }
+    const constraintFailure = validateQuestGrantConstraints(authorization.grant.constraints ?? {});
+    if (constraintFailure) {
+      return [leaf, deniedQuestGrant(constraintFailure, {
+        leaf,
+        grant_id: grantIds[leaf],
+      })];
+    }
+    const requiredFingerprint = normalizeFingerprint(
+      authorization.grant.constraints?.device_fingerprint256,
+    );
+    if (!/^[A-F0-9]{64}$/.test(requiredFingerprint)) {
+      return [leaf, deniedQuestGrant("quest_surface_device_identity_constraint_required", {
+        leaf,
+        grant_id: grantIds[leaf],
+      })];
+    }
+    const presentedFingerprint = normalizeFingerprint(peerFingerprint256);
+    if (presentedFingerprint && requiredFingerprint !== presentedFingerprint) {
+      return [leaf, deniedQuestGrant("quest_surface_device_identity_mismatch", {
+        leaf,
+        grant_id: grantIds[leaf],
+      })];
+    }
+    if (leaf === "panel") {
+      const allowedSurfaceIds = Array.isArray(authorization.grant.constraints?.allowed_surface_ids)
+        ? authorization.grant.constraints.allowed_surface_ids.map(String)
+        : ["panel.main"];
+      if (!allowedSurfaceIds.includes(panel.surface_id)) {
+        return [leaf, deniedQuestGrant("quest_surface_surface_not_granted", {
+          leaf,
+          grant_id: grantIds[leaf],
+        })];
+      }
+      const maxTextBytes = Number.isSafeInteger(
+        authorization.grant.constraints?.max_panel_text_bytes,
+      )
+        ? authorization.grant.constraints.max_panel_text_bytes
+        : QUEST_SURFACE_MAX_PANEL_TEXT_BYTES;
+      if (Buffer.byteLength(panel.text, "utf8") > maxTextBytes) {
+        return [leaf, deniedQuestGrant("quest_surface_panel_text_exceeds_grant", {
+          leaf,
+          grant_id: grantIds[leaf],
+        })];
+      }
+    }
+    return [leaf, authorization];
+  }));
+  const configuredFingerprints = new Set(
+    Object.values(authorizations)
+      .filter((authorization) => authorization.allowed)
+      .map((authorization) => normalizeFingerprint(
+        authorization.grant.constraints?.device_fingerprint256,
+      )),
+  );
+  if (!normalizeFingerprint(peerFingerprint256) && configuredFingerprints.size > 1) {
+    return Object.fromEntries(Object.keys(authorizations).map((leaf) => [
+      leaf,
+      deniedQuestGrant("quest_surface_device_identity_configuration_mismatch", {
+        leaf,
+        grant_id: grantIds[leaf],
+      }),
+    ]));
+  }
+  return authorizations;
+}
+
+function deniedQuestGrant(code, details) {
+  return {
+    allowed: false,
+    code,
+    grant: null,
+    details,
+  };
 }
 
 function validateQuestGrantConstraints(constraints) {

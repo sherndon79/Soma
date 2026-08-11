@@ -5,8 +5,10 @@
  *   capture is forbidden until `deliberateResume()` is called with a fresh epoch
  *   and explicit user action.
  * - Re-don alone does NOT clear the latch; OS auto-unmute is ignored.
- * - The latch is per-Activity instance (here per-session object), not global.
- * - All state is in-memory; cleared on instance disposal.
+ * - The server shares one latch across reconnects within an armed episode; a
+ *   successful explicit arm creates the next episode's latch.
+ * - All state is in-memory; prior episode/session instances keep their own
+ *   latched object until disposal.
  */
 
 export class QuestSurfaceMicLatch {

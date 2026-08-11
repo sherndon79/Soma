@@ -8,7 +8,10 @@ function baseEnv(overrides = {}) {
     SOMA_QUEST_SURFACE_TLS_KEY: "/tmp/key",
     SOMA_QUEST_SURFACE_TLS_CERT: "/tmp/cert",
     SOMA_QUEST_SURFACE_CLIENT_CA: "/tmp/ca",
-    SOMA_QUEST_SURFACE_GRANT_ID: "grant-test",
+    SOMA_QUEST_SURFACE_PANEL_GRANT_ID: "grant-panel",
+    SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID: "grant-mic",
+    SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID: "grant-audio",
+    SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID: "grant-local",
     ...overrides,
   };
 }

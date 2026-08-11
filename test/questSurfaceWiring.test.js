@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,14 +20,20 @@ import {
 } from "../src/questSurfaceProtocol.js";
 
 const quietLogger = { info() {}, error() {} };
+const grantIds = {
+  panel: "grant-panel",
+  mic_capture: "grant-mic",
+  audio_present: "grant-audio",
+  local_attach: "grant-local",
+};
 function voicedPcm(){ const b=Buffer.alloc(1920,0); for(let i=0;i<b.length;i+=2) b.writeInt16LE(1000,i); return b; }
 
-function grantsFor(){
+function grantsFor(deviceFingerprint256){
   return [
-    { id: "grant-panel", status:"active", capability:QUEST_SURFACE_CAPABILITY, provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{ allowed_surface_ids:["panel.main"], max_panel_text_bytes:512, lease_ttl_ms:5000 }, approved_by:"user", approval_provenance_id:"seth", reason:"panel", created_at:"2026-08-09T00:00:00.000Z" },
-    { id: "grant-mic", status:"active", capability:"interaction.quest.surface.microphone.capture", provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{}, approved_by:"user", approval_provenance_id:"seth", reason:"mic", created_at:"2026-08-09T00:00:00.000Z" },
-    { id: "grant-audio", status:"active", capability:"interaction.quest.surface.audio.wearer_directed.present", provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{}, approved_by:"user", approval_provenance_id:"seth", reason:"audio", created_at:"2026-08-09T00:00:00.000Z" },
-    { id: "grant-local", status:"active", capability:"model.context.audio.microphone.local.attach", provider:"soma.provider.local-model", scope:"window", constraints:{}, approved_by:"user", approval_provenance_id:"seth", reason:"local", created_at:"2026-08-09T00:00:00.000Z" },
+    { id: "grant-panel", status:"active", capability:QUEST_SURFACE_CAPABILITY, provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{ allowed_surface_ids:["panel.main"], max_panel_text_bytes:512, lease_ttl_ms:5000, device_fingerprint256:deviceFingerprint256 }, approved_by:"user", approval_provenance_id:"seth", reason:"panel", created_at:"2026-08-09T00:00:00.000Z" },
+    { id: "grant-mic", status:"active", capability:"interaction.quest.surface.microphone.capture", provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{device_fingerprint256:deviceFingerprint256}, approved_by:"user", approval_provenance_id:"seth", reason:"mic", created_at:"2026-08-09T00:00:00.000Z" },
+    { id: "grant-audio", status:"active", capability:"interaction.quest.surface.audio.wearer_directed.present", provider:QUEST_SURFACE_PROVIDER_ID, scope:"session", constraints:{device_fingerprint256:deviceFingerprint256}, approved_by:"user", approval_provenance_id:"seth", reason:"audio", created_at:"2026-08-09T00:00:00.000Z" },
+    { id: "grant-local", status:"active", capability:"model.context.audio.microphone.local.attach", provider:"soma.provider.local-model", scope:"window", constraints:{device_fingerprint256:deviceFingerprint256}, approved_by:"user", approval_provenance_id:"seth", reason:"local", created_at:"2026-08-09T00:00:00.000Z" },
   ];
 }
 function providerRegistryWithAnswer(){
@@ -49,7 +56,8 @@ async function createTlsCredentials(t){
   execFileSync("openssl", ["req","-newkey","rsa:2048","-nodes","-keyout",f("client.key"),"-out",f("client.csr"),"-subj","/CN=quest-wiring"], {stdio:"ignore"});
   await writeFile(f("client.ext"), "extendedKeyUsage=clientAuth\n");
   execFileSync("openssl", ["x509","-req","-in",f("client.csr"),"-CA",f("ca.pem"),"-CAkey",f("ca.key"),"-CAcreateserial","-out",f("client.pem"),"-days","1","-sha256","-extfile",f("client.ext")], {stdio:"ignore"});
-  return { ca: await readFile(f("ca.pem")), serverKey: await readFile(f("server.key")), serverCert: await readFile(f("server.pem")), clientKey: await readFile(f("client.key")), clientCert: await readFile(f("client.pem")) };
+  const clientCert = await readFile(f("client.pem"));
+  return { ca: await readFile(f("ca.pem")), serverKey: await readFile(f("server.key")), serverCert: await readFile(f("server.pem")), clientKey: await readFile(f("client.key")), clientCert, clientFingerprint256: new X509Certificate(clientCert).fingerprint256 };
 }
 class TestClient {
   constructor(socket){ this.socket=socket; this.decoder=new BoundedLineDecoder(); this.frames=[]; this.waiters=[]; this.seqByStream=new Map();
@@ -72,10 +80,10 @@ test("I-1 wiring: armed text-local -> manifest issues + provider invoked", async
   let pipelineCalls=0;
   const provider=createQuestSurfaceFixtureProvider({
     tlsOptions:{key:creds.serverKey, cert:creds.serverCert, ca:creds.ca},
-    grantStore:{schema_version:1, grants:grantsFor()},
-    capabilityCatalog:{capabilities: grantsFor().map(g=>({key:g.capability}))},
+    grantStore:{schema_version:1, grants:grantsFor(creds.clientFingerprint256)},
+    capabilityCatalog:{capabilities: grantsFor(creds.clientFingerprint256).map(g=>({key:g.capability}))},
     providerRegistry: providerRegistryWithAnswer(),
-    grantId:"grant-panel", leaseTtlMs:5000,
+    grantIds, leaseTtlMs:5000,
     panel:{surface_id:"panel.main", revision:"1", ttl_ms:4000, text:"hi"},
     logger:quietLogger,
     pipelineFactory:(opts)=>{ const p=createQuestSurfaceAudioPipeline(opts); const orig=p.handleUtteranceEnd; p.handleUtteranceEnd=async(...a)=>{ pipelineCalls++; return orig.apply(p,a); }; return p; },
@@ -104,10 +112,10 @@ test("I-1 wiring: mismatched mode refuses BEFORE provider invocation", async (t)
   let pipelineCalls=0;
   const provider=createQuestSurfaceFixtureProvider({
     tlsOptions:{key:creds.serverKey, cert:creds.serverCert, ca:creds.ca},
-    grantStore:{schema_version:1, grants:grantsFor()},
-    capabilityCatalog:{capabilities: grantsFor().map(g=>({key:g.capability}))},
+    grantStore:{schema_version:1, grants:grantsFor(creds.clientFingerprint256)},
+    capabilityCatalog:{capabilities: grantsFor(creds.clientFingerprint256).map(g=>({key:g.capability}))},
     providerRegistry: providerRegistryWithAnswer(),
-    grantId:"grant-panel", leaseTtlMs:5000,
+    grantIds, leaseTtlMs:5000,
     panel:{surface_id:"panel.main", revision:"1", ttl_ms:4000, text:"hi"},
     logger:quietLogger,
     pipelineFactory:(opts)=>{ const p=createQuestSurfaceAudioPipeline(opts); const orig=p.handleUtteranceEnd; p.handleUtteranceEnd=async(...a)=>{ pipelineCalls++; return orig.apply(p,a); }; return p; },
@@ -131,10 +139,10 @@ test("I-1 wiring: mismatched mode refuses BEFORE provider invocation", async (t)
   let pipelineCalls2=0;
   const provider2=createQuestSurfaceFixtureProvider({
     tlsOptions:{key:creds.serverKey, cert:creds.serverCert, ca:creds.ca},
-    grantStore:{schema_version:1, grants:grantsFor()},
-    capabilityCatalog:{capabilities: grantsFor().map(g=>({key:g.capability}))},
+    grantStore:{schema_version:1, grants:grantsFor(creds.clientFingerprint256)},
+    capabilityCatalog:{capabilities: grantsFor(creds.clientFingerprint256).map(g=>({key:g.capability}))},
     providerRegistry: providerRegistryWithAnswer(),
-    grantId:"grant-panel", leaseTtlMs:5000,
+    grantIds, leaseTtlMs:5000,
     panel:{surface_id:"panel.main", revision:"1", ttl_ms:4000, text:"hi"},
     logger:quietLogger,
     pipelineFactory:(opts)=>{ const p=createQuestSurfaceAudioPipeline(opts); const orig=p.handleUtteranceEnd; p.handleUtteranceEnd=async(...a)=>{ pipelineCalls2++; return orig.apply(p,a); }; return p; },
@@ -159,10 +167,10 @@ test("I-1 fail-closed: armed audio episode with registry lacking answer provider
   ]};
   const provider=createQuestSurfaceFixtureProvider({
     tlsOptions:{key:creds.serverKey, cert:creds.serverCert, ca:creds.ca},
-    grantStore:{schema_version:1, grants:grantsFor()},
-    capabilityCatalog:{capabilities: grantsFor().map(g=>({key:g.capability}))},
+    grantStore:{schema_version:1, grants:grantsFor(creds.clientFingerprint256)},
+    capabilityCatalog:{capabilities: grantsFor(creds.clientFingerprint256).map(g=>({key:g.capability}))},
     providerRegistry: legacyRegistry,
-    grantId:"grant-panel", leaseTtlMs:5000,
+    grantIds, leaseTtlMs:5000,
     panel:{surface_id:"panel.main", revision:"1", ttl_ms:4000, text:"hi"},
     logger:quietLogger,
     pipelineFactory:(opts)=>{ const p=createQuestSurfaceAudioPipeline(opts); const orig=p.handleUtteranceEnd; p.handleUtteranceEnd=async(...a)=>{ pipelineCalls++; return orig.apply(p,a); }; return p; },

@@ -294,12 +294,14 @@ test("lease creation requires exact provider and scope coordinates", () => {
   assert.throws(() => createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: { id: "g-mic", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: "", scope: "session", constraints: {} } }), (e) => e.code === "grant_provider_missing");
 });
 
-test("modality constraints are exact — non-panel rejects non-empty constraints and arrays", () => {
+test("modality constraints are exact — non-panel accepts only device/TTL bindings and rejects arrays", () => {
   const epoch = "1";
   const goodMic = { id: "g-mic", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: {} };
   assert.doesNotThrow(() => createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: goodMic }));
+  const boundMic = { ...goodMic, constraints: { device_fingerprint256: "AA".repeat(32), lease_ttl_ms: 5000 } };
+  assert.equal(createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: boundMic }).constraints.device_fingerprint256, "AA".repeat(32));
   const badMic = { id: "g-mic", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: { armed_window_id: "window-1" } };
-  assert.throws(() => createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: badMic }), (e) => e.code === "lease_constraints_unsupported");
+  assert.throws(() => createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: badMic }), (e) => e.code === "lease_constraints_unknown_field");
   const arrayConstraints = { id: "g-mic", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: [] };
   assert.throws(() => createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: arrayConstraints }), (e) => e.code === "lease_constraints_invalid");
   // manifest decode with array constraints should also fail
@@ -327,7 +329,7 @@ test("modality constraints are exact — non-panel rejects non-empty constraints
   assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateArray.leases }), (e) => e.code === "manifest_constraints_invalid" || e.code === "lease_constraints_invalid");
   const badCreateNonEmpty = JSON.parse(JSON.stringify(good2));
   badCreateNonEmpty.leases.mic_capture.constraints = { armed_window_id: "w1" };
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateNonEmpty.leases }), (e) => e.code === "lease_constraints_unsupported");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateNonEmpty.leases }), (e) => e.code === "lease_constraints_unknown_field");
   const badCreatePanelUnknown = JSON.parse(JSON.stringify(good2));
   badCreatePanelUnknown.leases.panel.constraints = { unknown_field: 1 };
   assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreatePanelUnknown.leases }), (e) => e.code === "lease_constraints_unknown_field");

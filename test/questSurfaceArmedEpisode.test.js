@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { X509Certificate } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import tls from "node:tls";
@@ -21,16 +22,23 @@ import {
 
 const quietLogger = { info() {}, error() {} };
 
-function baseGrants(extra = []) {
+function baseGrants(fingerprint256, extra = []) {
   const grants = [
-    { id: "grant-panel", status: "active", capability: QUEST_SURFACE_CAPABILITY, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5000 }, approved_by: "user", approval_provenance_id: "seth", reason: "panel", created_at: "2026-08-09T00:00:00.000Z" },
-    { id: "grant-mic", status: "active", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: {}, approved_by: "user", approval_provenance_id: "seth", reason: "mic", created_at: "2026-08-09T00:00:00.000Z" },
-    { id: "grant-audio", status: "active", capability: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: {}, approved_by: "user", approval_provenance_id: "seth", reason: "audio", created_at: "2026-08-09T00:00:00.000Z" },
-    { id: "grant-local", status: "active", capability: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, provider: "soma.provider.local-model", scope: "window", constraints: {}, approved_by: "user", approval_provenance_id: "seth", reason: "local", created_at: "2026-08-09T00:00:00.000Z" },
+    { id: "grant-panel", status: "active", capability: QUEST_SURFACE_CAPABILITY, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5000, device_fingerprint256: fingerprint256 }, approved_by: "user", approval_provenance_id: "seth", reason: "panel", created_at: "2026-08-09T00:00:00.000Z" },
+    { id: "grant-mic", status: "active", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: { device_fingerprint256: fingerprint256 }, approved_by: "user", approval_provenance_id: "seth", reason: "mic", created_at: "2026-08-09T00:00:00.000Z" },
+    { id: "grant-audio", status: "active", capability: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: { device_fingerprint256: fingerprint256 }, approved_by: "user", approval_provenance_id: "seth", reason: "audio", created_at: "2026-08-09T00:00:00.000Z" },
+    { id: "grant-local", status: "active", capability: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, provider: "soma.provider.local-model", scope: "window", constraints: { device_fingerprint256: fingerprint256 }, approved_by: "user", approval_provenance_id: "seth", reason: "local", created_at: "2026-08-09T00:00:00.000Z" },
     ...extra,
   ];
   return grants;
 }
+
+const exactGrantIds = Object.freeze({
+  panel: "grant-panel",
+  mic_capture: "grant-mic",
+  audio_present: "grant-audio",
+  local_attach: "grant-local",
+});
 
 function catalog() {
   return { capabilities: [{ key: QUEST_SURFACE_CAPABILITY }, { key: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE }, { key: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT }, { key: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH }] };
@@ -43,9 +51,9 @@ test("armed episode: default unarmed fails closed to panel-only LEASE (no manife
   const creds = await createTlsCredentials(t);
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
-    grantStore: { schema_version: 1, grants: baseGrants() },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
   });
@@ -56,7 +64,7 @@ test("armed episode: default unarmed fails closed to panel-only LEASE (no manife
   t.after(() => client.destroy());
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   const second = await client.next();
   assert.equal(second.type, "LEASE", "unarmed must not emit LEASE_MANIFEST");
   const third = await client.next();
@@ -70,9 +78,9 @@ test("armed episode: expired episode fails closed to LEASE only", async (t) => {
   const now = () => nowMs;
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
-    grantStore: { schema_version: 1, grants: baseGrants() },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     now,
@@ -86,7 +94,7 @@ test("armed episode: expired episode fails closed to LEASE only", async (t) => {
   t.after(() => client.destroy());
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   const second = await client.next();
   assert.equal(second.type, "LEASE");
 });
@@ -96,14 +104,25 @@ test("armed episode: revoked before HELLO fails closed to LEASE only and emits r
   const events = [];
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
-    grantStore: { schema_version: 1, grants: baseGrants() },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     eventSink(e) { events.push(e); },
   });
-  provider.armEpisode({ episodeId: "ep-revoked", ttlMs: 60_000, actor: "test" });
+  const armReason = "SENSITIVE-ARM-REASON-MUST-NOT-BE-RETAINED";
+  provider.armEpisode({
+    episodeId: "ep-revoked",
+    ttlMs: 60_000,
+    actor: "test",
+    reason: armReason,
+    provenance: "gate/quest-v1b/test-arm",
+  });
+  const armedEvent = events.find(e => e.event_type === "quest.surface.episode_armed");
+  assert.equal(armedEvent.provenance_id, "gate/quest-v1b/test-arm");
+  assert.equal(armedEvent.reason_included, false);
+  assert.equal(JSON.stringify(armedEvent).includes(armReason), false, "arm reason is not retained");
   provider.revokeEpisode("test-revoke");
   assert.ok(events.some(e => e.event_type === "quest.surface.episode_revoked"), "revoke event emitted");
   t.after(() => provider.stop());
@@ -112,7 +131,7 @@ test("armed episode: revoked before HELLO fails closed to LEASE only and emits r
   t.after(() => client.destroy());
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   const second = await client.next();
   assert.equal(second.type, "LEASE");
 });
@@ -121,12 +140,12 @@ test("configured panel grant pinned despite duplicate/misordered active panel gr
   const creds = await createTlsCredentials(t);
   const duplicate = { id: "grant-panel-dup", status: "active", capability: QUEST_SURFACE_CAPABILITY, provider: QUEST_SURFACE_PROVIDER_ID, scope: "session", constraints: { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5000 }, approved_by: "user", approval_provenance_id: "other", reason: "dup", created_at: "2026-08-09T00:00:00.000Z" };
   // dup first in store to tempt grantId="" discovery to pick wrong one
-  const grants = [duplicate, ...baseGrants()];
+  const grants = [duplicate, ...baseGrants(creds.fingerprint256)];
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
     grantStore: { schema_version: 1, grants },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
   });
@@ -137,7 +156,7 @@ test("configured panel grant pinned despite duplicate/misordered active panel gr
   t.after(() => client.destroy());
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   const manifest = await client.next();
   assert.equal(manifest.type, "LEASE_MANIFEST");
   assert.equal(manifest.payload.leases.panel.source_grant_id, "grant-panel", "panel leaf must be configured grant, not dup");
@@ -149,23 +168,23 @@ test("manifest TTL capped to episode remaining lifetime (boundary)", async (t) =
   const now = () => nowMs;
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
-    grantStore: { schema_version: 1, grants: baseGrants() },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     now,
   });
-  provider.armEpisode({ episodeId: "ep-short", ttlMs: 200, actor: "test" });
-  const episodeExp = nowMs + 200;
-  nowMs += 100; // 100ms remaining at HELLO time
+  provider.armEpisode({ episodeId: "ep-short", ttlMs: 2000, actor: "test" });
+  const episodeExp = nowMs + 2000;
+  nowMs += 1900; // 100ms remaining at HELLO time
   t.after(() => provider.stop());
   const addr = await provider.start({ host: "127.0.0.1", port: 0 });
   const client = await connectClient(addr.port, creds);
   t.after(() => client.destroy());
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   const manifest = await client.next();
   assert.equal(manifest.type, "LEASE_MANIFEST");
   // strict: must not outlive consent
@@ -182,9 +201,9 @@ test("revokeEpisode narrows already-issued session (closes transport and latches
   const events = [];
   const provider = createQuestSurfaceFixtureProvider({
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
-    grantStore: { schema_version: 1, grants: baseGrants() },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     eventSink(e) { events.push(e); },
@@ -197,7 +216,7 @@ test("revokeEpisode narrows already-issued session (closes transport and latches
   client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
   const hello = await client.next();
   const sessionEpoch = hello.session_epoch;
-  assert.equal(hello.type, "HELLO_ACK");
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello.payload));
   await client.next(); // manifest
   await client.next(); // lease
   await client.next(); // snapshot
@@ -210,8 +229,57 @@ test("revokeEpisode narrows already-issued session (closes transport and latches
   assert.ok(events.some(e => e.event_type === "quest.surface.episode_revoked_session"), "session narrowed");
   assert.ok(events.some(e => e.event_type === "quest.surface.session_closed" && e.reason === "consent_withdrawn"), "session_closed with revoke reason");
   assert.ok(socketClosed, "socket closed on revoke");
-  // provider-lifetime latch must record revoked epoch
+  // The completed episode's latch records the revoked epoch and remains
+  // latched even after the next deliberate arm.
   assert.equal(provider.deviceMicLatch.latchedEpoch, sessionEpoch, "latch epoch recorded");
+  const completedEpisodeLatch = provider.deviceMicLatch;
+  provider.armEpisode({ episodeId: "ep-next", ttlMs: 60_000, actor: "test" });
+  assert.notEqual(provider.deviceMicLatch, completedEpisodeLatch, "new episode receives a distinct latch");
+  assert.equal(provider.deviceMicLatch.isLatched(), false, "new episode starts capture-eligible");
+  assert.equal(completedEpisodeLatch.isLatched(), true, "prior episode remains latched");
+});
+
+test("episode TTL expiry synchronously closes and latches an issued session", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const events = [];
+  let expireEpisode = null;
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
+    logger: quietLogger,
+    eventSink(e) { events.push(e); },
+    setTimer(callback) {
+      expireEpisode = callback;
+      return { unref() {} };
+    },
+    clearTimer() {},
+  });
+  provider.armEpisode({ episodeId: "ep-timer-expire", ttlMs: 1000, actor: "user" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+  const client = await connectClient(addr.port, creds);
+  t.after(() => client.destroy());
+  client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const hello = await client.next();
+  assert.equal(hello.type, "HELLO_ACK");
+  await client.next(); // manifest
+  await client.next(); // compatibility lease
+  await client.next(); // panel
+  let socketClosed = false;
+  client.socket.once("close", () => { socketClosed = true; });
+
+  expireEpisode();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  assert.equal(provider.episodeStatus().armed, false);
+  assert.equal(socketClosed, true);
+  assert.ok(events.some((event) => event.event_type === "quest.surface.episode_expired"));
+  assert.ok(events.some((event) => event.event_type === "quest.surface.session_closed"
+    && event.reason === "episode_expired"));
+  assert.equal(provider.deviceMicLatch.latchedEpoch, hello.session_epoch);
 });
 
 // Proper injectable tests: each blocks one stage via AbortSignal
@@ -325,7 +393,7 @@ class TestClient {
 test("B atomic once: concurrent two streams, exactly one enters chat, loser fails before attachment, failed chat does not restore", async (t) => {
   const creds = await createTlsCredentials(t);
   // use once scope for local_attach to enable atomic test
-  const onceGrants = baseGrants().map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
+  const onceGrants = baseGrants(creds.fingerprint256).map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
   let chatCalls = 0;
   const { createQuestSurfaceAudioPipeline } = await import("../src/questSurfaceAudioPipeline.js");
   const pipelineFactory = (opts) => createQuestSurfaceAudioPipeline({
@@ -339,7 +407,7 @@ test("B atomic once: concurrent two streams, exactly one enters chat, loser fail
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
     grantStore: { schema_version: 1, grants: onceGrants },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, localAttachScope: "once", leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     pipelineFactory,
@@ -387,7 +455,7 @@ test("B atomic once: concurrent two streams, exactly one enters chat, loser fail
 
 test("B failed post-reservation chat does not restore once authority (second still refused)", async (t) => {
   const creds = await createTlsCredentials(t);
-  const onceGrants = baseGrants().map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
+  const onceGrants = baseGrants(creds.fingerprint256).map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
   let chatCalls = 0;
   const { createQuestSurfaceAudioPipeline } = await import("../src/questSurfaceAudioPipeline.js");
   const pipelineFactory = (opts) => createQuestSurfaceAudioPipeline({
@@ -402,7 +470,7 @@ test("B failed post-reservation chat does not restore once authority (second sti
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
     grantStore: { schema_version: 1, grants: onceGrants },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, localAttachScope: "once", leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     pipelineFactory,
@@ -435,7 +503,7 @@ test("B failed post-reservation chat does not restore once authority (second sti
 
 test("B sink-time expiry between rechecks uses injected now and fails with grant_expired", async (t) => {
   const creds = await createTlsCredentials(t);
-  const onceGrants = baseGrants().map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
+  const onceGrants = baseGrants(creds.fingerprint256).map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
   let nowMs = 1_000_000;
   const now = () => nowMs;
   const { createQuestSurfaceAudioPipeline } = await import("../src/questSurfaceAudioPipeline.js");
@@ -445,7 +513,7 @@ test("B sink-time expiry between rechecks uses injected now and fails with grant
     transcribe: (pcm, utteranceId, signal) => {
       // advance clock between first recheck (already passed) and second recheck (before chat)
       // first recheck occurs before this transcribe, second before chat — so expire here
-      nowMs = 1_000_000 + 200; // exactly at expiry
+      nowMs = 1_000_000 + 1000; // exactly at expiry
       // also need to return transcript
       return { transcript: "hello" };
     },
@@ -458,14 +526,14 @@ test("B sink-time expiry between rechecks uses injected now and fails with grant
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
     grantStore: { schema_version: 1, grants: onceGrants },
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, localAttachScope: "once", leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     now,
     pipelineFactory,
   });
-  provider.armEpisode({ episodeId: "ep-expire-race", ttlMs: 200, actor: "test" });
-  const episodeExp = nowMs + 200;
+  provider.armEpisode({ episodeId: "ep-expire-race", ttlMs: 1000, actor: "test" });
+  const episodeExp = nowMs + 1000;
   t.after(() => provider.stop());
   const addr = await provider.start({ host: "127.0.0.1", port: 0 });
   const client = await connectClient(addr.port, creds);
@@ -492,7 +560,7 @@ test("B sink-time expiry between rechecks uses injected now and fails with grant
 
 test("B sink-time grant revocation between rechecks fails before chat and does not consume once", async (t) => {
   const creds = await createTlsCredentials(t);
-  const onceGrants = baseGrants().map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
+  const onceGrants = baseGrants(creds.fingerprint256).map(g => g.capability === QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH ? { ...g, scope: "once" } : g);
   let nowMs = 1_000_000;
   const now = () => nowMs;
   const { createQuestSurfaceAudioPipeline } = await import("../src/questSurfaceAudioPipeline.js");
@@ -511,7 +579,7 @@ test("B sink-time grant revocation between rechecks fails before chat and does n
     tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
     grantStore: grantStoreRef,
     capabilityCatalog: catalog(), providerRegistry: registry(),
-    grantId: "grant-panel", leaseTtlMs: 5000,
+    grantId: "grant-panel", grantIds: exactGrantIds, localAttachScope: "once", leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
     logger: quietLogger,
     now,
@@ -547,5 +615,6 @@ async function createTlsCredentials(t) {
   execFileSync("openssl", ["req","-newkey","rsa:2048","-nodes","-keyout",file("client.key"),"-out",file("client.csr"),"-subj","/CN=quest-v1a-test-client"], { stdio: "ignore" });
   await writeFile(file("client.ext"), "extendedKeyUsage=clientAuth\n");
   execFileSync("openssl", ["x509","-req","-in",file("client.csr"),"-CA",file("ca.pem"),"-CAkey",file("ca.key"),"-CAcreateserial","-out",file("client.pem"),"-days","1","-sha256","-extfile",file("client.ext")], { stdio: "ignore" });
-  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert: await readFile(file("client.pem")) };
+  const clientCert = await readFile(file("client.pem"));
+  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert, fingerprint256: new X509Certificate(clientCert).fingerprint256 };
 }

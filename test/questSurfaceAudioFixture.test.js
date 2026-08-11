@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -302,7 +303,7 @@ function createV1bProvider(creds, overrides = {}) {
       capability: QUEST_SURFACE_CAPABILITY,
       provider: QUEST_SURFACE_PROVIDER_ID,
       scope: "session",
-      constraints: { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5_000 },
+      constraints: { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5_000, device_fingerprint256: creds.clientFingerprint256 },
       approved_by: "user",
       approval_provenance_id: "seth-approved-quest-v1b",
       reason: "v1b panel",
@@ -314,7 +315,7 @@ function createV1bProvider(creds, overrides = {}) {
       capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE,
       provider: QUEST_SURFACE_PROVIDER_ID,
       scope: "session",
-      constraints: {},
+      constraints: { device_fingerprint256: creds.clientFingerprint256 },
       approved_by: "user",
       approval_provenance_id: "seth-approved-quest-v1b",
       reason: "mic",
@@ -326,7 +327,7 @@ function createV1bProvider(creds, overrides = {}) {
       capability: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT,
       provider: QUEST_SURFACE_PROVIDER_ID,
       scope: "session",
-      constraints: {},
+      constraints: { device_fingerprint256: creds.clientFingerprint256 },
       approved_by: "user",
       approval_provenance_id: "seth-approved-quest-v1b",
       reason: "audio",
@@ -338,7 +339,7 @@ function createV1bProvider(creds, overrides = {}) {
       capability: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH,
       provider: "soma.provider.local-model",
       scope: "window",
-      constraints: {},
+      constraints: { device_fingerprint256: creds.clientFingerprint256 },
       approved_by: "user",
       approval_provenance_id: "seth-approved-quest-v1b",
       reason: "local attach",
@@ -358,7 +359,12 @@ function createV1bProvider(creds, overrides = {}) {
       { id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT], answer: { input_class: "text", destination: "local", required_leaf: "model.context.audio.microphone.local.attach" } },
       { id: "soma.provider.local-model", capabilities: [QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH] },
     ] },
-    grantId: "grant-panel",
+    grantIds: {
+      panel: "grant-panel",
+      mic_capture: "grant-mic",
+      audio_present: "grant-audio",
+      local_attach: "grant-local",
+    },
     leaseTtlMs: 5_000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4_000, text: "HELLO SETH FROM SOMA" },
     logger: quietLogger,
@@ -464,7 +470,8 @@ async function createTlsCredentials(t) {
   execFileSync("openssl", ["req","-newkey","rsa:2048","-nodes","-keyout",file("client.key"),"-out",file("client.csr"),"-subj","/CN=quest-v1a-test-client"], { stdio: "ignore" });
   await writeFile(file("client.ext"), "extendedKeyUsage=clientAuth\n");
   execFileSync("openssl", ["x509","-req","-in",file("client.csr"),"-CA",file("ca.pem"),"-CAkey",file("ca.key"),"-CAcreateserial","-out",file("client.pem"),"-days","1","-sha256","-extfile",file("client.ext")], { stdio: "ignore" });
-  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert: await readFile(file("client.pem")) };
+  const clientCert = await readFile(file("client.pem"));
+  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert, clientFingerprint256: new X509Certificate(clientCert).fingerprint256 };
 }
 
 async function waitFor(predicate) {

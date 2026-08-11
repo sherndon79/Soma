@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { createApp } from "./app.js";
 import { loadCapabilityCatalog, loadProviderRegistry } from "./capabilityCatalog.js";
 import { loadGrantAuthority } from "./grantAuthority.js";
@@ -13,8 +15,15 @@ import { runtimeWritePostureFromEnv } from "./runtimeWritePosture.js";
 import { createRemoteGraphicalRuntime } from "./remoteGraphicalRuntime.js";
 import { createSensoriumRuntime } from "./sensoriumRuntime.js";
 import { createQuestSurfaceRuntime } from "./questSurfaceRuntime.js";
+import { ProvenanceLog } from "./provenanceLog.js";
 
 const port = Number.parseInt(process.env.SOMA_PORT ?? "8765", 10);
+const QUEST_SURFACE_PROVENANCE_EVENTS = new Set([
+  "quest.surface.episode_armed",
+  "quest.surface.episode_disarmed",
+  "quest.surface.episode_expired",
+  "quest.surface.episode_revoked",
+]);
 const harness = await loadHarness();
 const capabilityCatalog = await loadCapabilityCatalog();
 const providerRegistry = await loadProviderRegistry();
@@ -24,6 +33,7 @@ const {
   grantStorePath,
   grantMutationProvenancePath,
 } = await loadGrantAuthority({
+  grantStorePath: process.env.SOMA_GRANT_STORE_PATH,
   grantMutationProvenancePath: process.env.SOMA_GRANT_MUTATION_PROVENANCE_PATH,
 });
 const {
@@ -101,6 +111,7 @@ const moduleRegistry = await loadHarnessModules();
 const runtimeProfiles = await loadRuntimeProfiles();
 const runtimeWritePosture = runtimeWritePostureFromEnv(process.env);
 const modelClient = new ModelClient();
+const provenanceLog = new ProvenanceLog();
 const sensoriumRuntime = await createSensoriumRuntime({ logger: console });
 const remoteGraphicalRuntime = await createRemoteGraphicalRuntime();
 const questSurfaceRuntime = await createQuestSurfaceRuntime({
@@ -109,6 +120,21 @@ const questSurfaceRuntime = await createQuestSurfaceRuntime({
   capabilityCatalog,
   providerRegistry,
   logger: console,
+  eventSink(event) {
+    if (!QUEST_SURFACE_PROVENANCE_EVENTS.has(event?.event_type)) {
+      return;
+    }
+    provenanceLog.append({
+      id: randomUUID(),
+      ...event,
+      capability: event.capability ?? "interaction.quest.surface.microphone.capture",
+      provider: event.provider ?? "soma.provider.quest-surface-fixture",
+      allowed: true,
+      durable: false,
+      content_included: false,
+      payload_bytes_included: false,
+    });
+  },
 });
 const app = createApp({
   harness,
@@ -138,8 +164,10 @@ const app = createApp({
   moduleRegistry,
   runtimeProfiles,
   modelClient,
+  provenanceLog,
   sensoriumSubscriber: sensoriumRuntime.subscriber,
   remoteGraphicalBroker: remoteGraphicalRuntime.broker,
+  questSurfaceControl: questSurfaceRuntime.control,
 });
 
 const server = app.listen(port, "127.0.0.1", () => {

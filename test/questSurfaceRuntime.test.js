@@ -40,6 +40,28 @@ test("quest surface runtime fails closed on incomplete opt-in configuration", as
   );
 });
 
+test("quest surface runtime refuses a partial or duplicate four-grant tuple", async () => {
+  const base = {
+    SOMA_QUEST_SURFACE_ENABLED: "1",
+    SOMA_QUEST_SURFACE_TLS_KEY: "/tmp/key",
+    SOMA_QUEST_SURFACE_TLS_CERT: "/tmp/cert",
+    SOMA_QUEST_SURFACE_CLIENT_CA: "/tmp/ca",
+    SOMA_QUEST_SURFACE_PANEL_GRANT_ID: "grant-panel",
+    SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID: "grant-mic",
+    SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID: "grant-audio",
+  };
+  await assert.rejects(
+    () => createQuestSurfaceRuntime({ env: base }),
+    (error) => error.code === "quest_surface_configuration_incomplete",
+  );
+  await assert.rejects(
+    () => createQuestSurfaceRuntime({
+      env: { ...base, SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID: "grant-mic" },
+    }),
+    (error) => error.code === "quest_surface_configuration_invalid",
+  );
+});
+
 test("quest surface runtime reads external TLS files and starts the fixture without creating authority", async () => {
   const events = [];
   const provider = {
@@ -58,6 +80,9 @@ test("quest surface runtime reads external TLS files and starts the fixture with
       SOMA_QUEST_SURFACE_TLS_CERT: "/run/quest/server.pem",
       SOMA_QUEST_SURFACE_CLIENT_CA: "/run/quest/ca.pem",
       SOMA_QUEST_SURFACE_GRANT_ID: "grant-quest-v1a",
+      SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID: "grant-quest-mic",
+      SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID: "grant-quest-audio",
+      SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID: "grant-quest-local",
       SOMA_QUEST_SURFACE_HOST: "192.168.50.1",
       SOMA_QUEST_SURFACE_PORT: "8793",
       SOMA_QUEST_SURFACE_LEASE_TTL_MS: "45000",
@@ -70,6 +95,7 @@ test("quest surface runtime reads external TLS files and starts the fixture with
     providerFactory(options) {
       events.push(["provider", {
         grant_id: options.grantId,
+        grant_ids: options.grantIds,
         lease_ttl_ms: options.leaseTtlMs,
         panel_text: options.panel.text,
         key_loaded: Boolean(options.tlsOptions.key),
@@ -90,6 +116,12 @@ test("quest surface runtime reads external TLS files and starts the fixture with
     ["read", "/run/quest/ca.pem"],
     ["provider", {
       grant_id: "grant-quest-v1a",
+      grant_ids: {
+        panel: "grant-quest-v1a",
+        mic_capture: "grant-quest-mic",
+        audio_present: "grant-quest-audio",
+        local_attach: "grant-quest-local",
+      },
       lease_ttl_ms: 45000,
       panel_text: "HELLO QUEST",
       key_loaded: true,
@@ -111,6 +143,9 @@ test("quest surface runtime surfaces unreadable external TLS material without lo
         SOMA_QUEST_SURFACE_TLS_CERT: "/missing/cert",
         SOMA_QUEST_SURFACE_CLIENT_CA: "/missing/ca",
         SOMA_QUEST_SURFACE_GRANT_ID: "grant-quest-v1a",
+        SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID: "grant-quest-mic",
+        SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID: "grant-quest-audio",
+        SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID: "grant-quest-local",
       },
       async readFileImpl() {
         throw new Error("secret-bearing raw read failure");

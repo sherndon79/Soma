@@ -44,6 +44,39 @@ export async function runCli(
     return 0;
   }
 
+  if (command === "quest-surface") {
+    if (subcommand === "status") {
+      const response = await request(baseUrl, "GET", "/quest-surface/episode");
+      writeOutput(stdout, response, jsonOutput, questSurfaceEpisodeSummary(response));
+      return 0;
+    }
+    if (subcommand === "arm") {
+      const ttlValue = requiredFlag(flags["ttl-ms"], "--ttl-ms", "quest-surface arm");
+      const response = await request(baseUrl, "POST", "/quest-surface/episode/arm", {
+        actor: "user",
+        episode_id: requiredFlag(flags["episode-id"], "--episode-id", "quest-surface arm"),
+        ttl_ms: integerFlag(ttlValue, "--ttl-ms", 1_000, 86_400_000, "quest-surface arm"),
+        reason: requiredFlag(flags.reason, "--reason", "quest-surface arm"),
+        provenance_id: requiredFlag(
+          flags["provenance-id"],
+          "--provenance-id",
+          "quest-surface arm",
+        ),
+      });
+      writeOutput(stdout, response, jsonOutput, questSurfaceEpisodeSummary(response));
+      return 0;
+    }
+    if (subcommand === "disarm") {
+      const response = await request(baseUrl, "POST", "/quest-surface/episode/disarm", {
+        actor: "user",
+        reason: String(flags.reason ?? "operator_disarmed").trim() || "operator_disarmed",
+      });
+      writeOutput(stdout, response, jsonOutput, questSurfaceEpisodeSummary(response));
+      return 0;
+    }
+    throw usageError("quest-surface requires arm, status, or disarm.");
+  }
+
   if (command === "status" && subcommand === "snapshot") {
     const grantId = flags["grant-id"] ?? rest[0];
     if (!grantId) {
@@ -2082,6 +2115,26 @@ function capabilityViewSummary(response) {
   return lines.join("\n");
 }
 
+function questSurfaceEpisodeSummary(response) {
+  const status = response.status ?? response;
+  const lines = [
+    "Quest surface episode",
+    `  runtime: ${status.enabled ? "enabled" : "disabled"}`,
+    `  armed: ${booleanText(status.armed)}`,
+    `  session active: ${booleanText(status.session_active)}`,
+  ];
+  if (status.armed) {
+    lines.push(`  episode: ${status.episode_id}`);
+    lines.push(`  expires at ms: ${status.expires_at_ms}`);
+    lines.push(`  ttl ms: ${status.ttl_ms}`);
+    lines.push(`  mode: ${status.mode?.input_class ?? "unknown"}/${status.mode?.destination ?? "unknown"}`);
+    lines.push(`  answer provider: ${status.answer_provider_id ?? "unknown"}`);
+  }
+  lines.push(`  content included: ${booleanText(status.content_included)}`);
+  lines.push(`  payload bytes included: ${booleanText(status.payload_bytes_included)}`);
+  return lines.join("\n");
+}
+
 function appendCountMap(lines, label, value) {
   const entries = Object.entries(value ?? {});
   if (entries.length === 0) {
@@ -2125,6 +2178,9 @@ Usage:
   soma capabilities [--json]
   soma notifications [--status pending] [--json]
   soma modules list|adopt|drop [module-id] [--json]
+  soma quest-surface status [--json]
+  soma quest-surface arm --episode-id id --ttl-ms n --reason text --provenance-id id [--json]
+  soma quest-surface disarm [--reason code] [--json]
   soma grants list [--status active|revoked|expired] [--json]
   soma grants recovery [--json]
   soma grants review-preview --preview-json json [--json]

@@ -2,6 +2,10 @@ import { readFile } from "node:fs/promises";
 
 import { createQuestSurfaceFixtureProvider } from "./questSurfaceFixtureProvider.js";
 import { createRealAnswerStages } from "./questSurfaceRealAnswerProvider.js";
+import {
+  createDisabledQuestSurfaceControl,
+  createQuestSurfaceControl,
+} from "./questSurfaceControl.js";
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on"]);
 
@@ -52,6 +56,8 @@ export async function createQuestSurfaceRuntime({
     capabilityCatalog,
     providerRegistry,
     grantId: config.grant_id,
+    grantIds: config.grant_ids,
+    localAttachScope: "window",
     leaseTtlMs: config.lease_ttl_ms,
     panel: {
       surface_id: "panel.main",
@@ -87,13 +93,16 @@ export async function createQuestSurfaceRuntime({
   logger.info?.(
     `Quest surface fixture enabled on ${formatAddress(address)}; provider registration grants no authority.`,
   );
+  const control = createQuestSurfaceControl({ provider, grantIds: config.grant_ids });
   return {
     enabled: true,
     provider,
+    control,
     address,
     host: config.host,
     port: typeof address === "object" && address ? address.port : config.port,
     grant_id: config.grant_id,
+    grant_ids: { ...config.grant_ids },
     tls_paths: {
       key: config.key_path,
       cert: config.cert_path,
@@ -109,7 +118,23 @@ function resolveRuntimeConfig(env) {
   const keyPath = requiredEnv(env, "SOMA_QUEST_SURFACE_TLS_KEY");
   const certPath = requiredEnv(env, "SOMA_QUEST_SURFACE_TLS_CERT");
   const clientCaPath = requiredEnv(env, "SOMA_QUEST_SURFACE_CLIENT_CA");
-  const grantId = requiredEnv(env, "SOMA_QUEST_SURFACE_GRANT_ID");
+  const grantId = requiredEitherEnv(
+    env,
+    "SOMA_QUEST_SURFACE_PANEL_GRANT_ID",
+    "SOMA_QUEST_SURFACE_GRANT_ID",
+  );
+  const grantIds = {
+    panel: grantId,
+    mic_capture: requiredEnv(env, "SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID"),
+    audio_present: requiredEnv(env, "SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID"),
+    local_attach: requiredEnv(env, "SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID"),
+  };
+  if (new Set(Object.values(grantIds)).size !== 4) {
+    throw runtimeError(
+      "quest_surface_configuration_invalid",
+      "Quest surface runtime requires four distinct grant ids.",
+    );
+  }
   const host = String(env.SOMA_QUEST_SURFACE_HOST ?? "127.0.0.1").trim() || "127.0.0.1";
   const port = parseInteger(env.SOMA_QUEST_SURFACE_PORT ?? "8793", 0, 65_535, "port");
   const leaseTtlMs = parseInteger(
@@ -130,6 +155,7 @@ function resolveRuntimeConfig(env) {
     cert_path: certPath,
     client_ca_path: clientCaPath,
     grant_id: grantId,
+    grant_ids: grantIds,
     host,
     port,
     lease_ttl_ms: leaseTtlMs,
@@ -141,13 +167,33 @@ function disabledRuntime() {
   return {
     enabled: false,
     provider: null,
+    control: createDisabledQuestSurfaceControl(),
     address: null,
     host: "",
     port: 0,
     grant_id: "",
+    grant_ids: null,
     tls_paths: { key: "", cert: "", client_ca: "" },
     async stop() {},
   };
+}
+
+function requiredEitherEnv(env, preferredName, compatibilityName) {
+  const preferred = String(env[preferredName] ?? "").trim();
+  const compatibility = String(env[compatibilityName] ?? "").trim();
+  if (preferred && compatibility && preferred !== compatibility) {
+    throw runtimeError(
+      "quest_surface_configuration_invalid",
+      `Quest surface runtime requires ${preferredName} and ${compatibilityName} to match when both are set.`,
+    );
+  }
+  if (preferred || compatibility) {
+    return preferred || compatibility;
+  }
+  throw runtimeError(
+    "quest_surface_configuration_incomplete",
+    `Quest surface runtime requires ${preferredName}.`,
+  );
 }
 
 function requiredEnv(env, name) {

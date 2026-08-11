@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -100,7 +101,9 @@ function createHProvider(credentials) {
   ];
   const grants = caps.map(([id, cap, prov]) => ({
     id, status: "active", capability: cap, provider: prov, scope: cap === "model.context.audio.microphone.local.attach" ? "window" : "session",
-    constraints: cap === QUEST_SURFACE_CAPABILITY ? { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5000 } : {},
+    constraints: cap === QUEST_SURFACE_CAPABILITY
+      ? { allowed_surface_ids: ["panel.main"], max_panel_text_bytes: 512, lease_ttl_ms: 5000, device_fingerprint256: credentials.clientFingerprint256 }
+      : { device_fingerprint256: credentials.clientFingerprint256 },
     approved_by: "user", approval_provenance_id: "seth-approved-quest-v1a", reason: "H fixture", created_at: "2026-08-09T00:00:00.000Z",
   }));
   const provider = createQuestSurfaceFixtureProvider({
@@ -108,7 +111,12 @@ function createHProvider(credentials) {
     grantStore: { schema_version: 1, grants },
     capabilityCatalog: { capabilities: grants.map(g => ({ key: g.capability })) },
     providerRegistry: { providers: [{ id: QUEST_SURFACE_PROVIDER_ID, capabilities: [QUEST_SURFACE_CAPABILITY, "interaction.quest.surface.microphone.capture", "interaction.quest.surface.audio.wearer_directed.present"], answer: { input_class: "text", destination: "local", required_leaf: "model.context.audio.microphone.local.attach" } }, { id: "soma.provider.local-model", capabilities: ["model.context.audio.microphone.local.attach"] }] },
-    grantId: "grant-quest-panel",
+    grantIds: {
+      panel: "grant-quest-panel",
+      mic_capture: "grant-quest-mic",
+      audio_present: "grant-quest-audio",
+      local_attach: "grant-quest-local",
+    },
     leaseTtlMs: 5000,
     panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "HELLO SETH FROM SOMA" },
     logger: quietLogger,
@@ -172,5 +180,6 @@ async function createTlsCredentials(t) {
   execFileSync("openssl", ["req", "-newkey", "rsa:2048", "-nodes", "-keyout", file("client.key"), "-out", file("client.csr"), "-subj", "/CN=quest-v1a-test-client"], { stdio: "ignore" });
   await writeFile(file("client.ext"), "extendedKeyUsage=clientAuth\n");
   execFileSync("openssl", ["x509", "-req", "-in", file("client.csr"), "-CA", file("ca.pem"), "-CAkey", file("ca.key"), "-CAcreateserial", "-out", file("client.pem"), "-days", "1", "-sha256", "-extfile", file("client.ext")], { stdio: "ignore" });
-  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert: await readFile(file("client.pem")) };
+  const clientCert = await readFile(file("client.pem"));
+  return { ca: await readFile(file("ca.pem")), serverKey: await readFile(file("server.key")), serverCert: await readFile(file("server.pem")), clientKey: await readFile(file("client.key")), clientCert, clientFingerprint256: new X509Certificate(clientCert).fingerprint256 };
 }

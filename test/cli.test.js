@@ -24,6 +24,81 @@ test("parseCli reads command, flags, and default URL", () => {
   assert.equal(parsed.baseUrl, "http://127.0.0.1:9999");
 });
 
+test("quest-surface CLI wraps the loopback Gate-2 control routes", async () => {
+  const calls = [];
+  const writes = [];
+  const request = async (_baseUrl, method, path, body) => {
+    calls.push({ method, path, body });
+    return {
+      changed: method === "POST",
+      status: {
+        enabled: true,
+        armed: path.endsWith("/arm"),
+        episode_id: body?.episode_id ?? "",
+        expires_at_ms: 1_800_000,
+        ttl_ms: body?.ttl_ms ?? 0,
+        session_active: false,
+        content_included: false,
+        payload_bytes_included: false,
+      },
+    };
+  };
+
+  await runCli(parseCli([
+    "node", "soma", "quest-surface", "arm",
+    "--episode-id", "quest-worn-1",
+    "--ttl-ms", "900000",
+    "--reason", "One bounded worn test.",
+    "--provenance-id", "gate/quest-v1b-arm/approval-1",
+  ]), { request, stdout: { write: (value) => writes.push(value) } });
+  await runCli(parseCli(["node", "soma", "quest-surface", "status"]), {
+    request,
+    stdout: { write: (value) => writes.push(value) },
+  });
+  await runCli(parseCli(["node", "soma", "quest-surface", "disarm", "--reason", "done"]), {
+    request,
+    stdout: { write: (value) => writes.push(value) },
+  });
+
+  assert.deepEqual(calls, [
+    {
+      method: "POST",
+      path: "/quest-surface/episode/arm",
+      body: {
+        actor: "user",
+        episode_id: "quest-worn-1",
+        ttl_ms: 900000,
+        reason: "One bounded worn test.",
+        provenance_id: "gate/quest-v1b-arm/approval-1",
+      },
+    },
+    { method: "GET", path: "/quest-surface/episode", body: undefined },
+    {
+      method: "POST",
+      path: "/quest-surface/episode/disarm",
+      body: { actor: "user", reason: "done" },
+    },
+  ]);
+  assert.match(writes.join(""), /Quest surface episode/);
+});
+
+test("quest-surface arm requires the explicit Gate-2 fields", async () => {
+  await assert.rejects(
+    () => runCli(parseCli(["node", "soma", "quest-surface", "arm", "--episode-id", "ep"])),
+    (error) => error.code === "usage_error" && /--ttl-ms/.test(error.message),
+  );
+  await assert.rejects(
+    () => runCli(parseCli([
+      "node", "soma", "quest-surface", "arm",
+      "--episode-id", "ep",
+      "--ttl-ms", "999",
+      "--reason", "bounded-test",
+      "--provenance-id", "gate/test",
+    ])),
+    (error) => error.code === "usage_error" && /--ttl-ms/.test(error.message),
+  );
+});
+
 test("runCli status gathers operator summary", async () => {
   const writes = [];
   const code = await runCli(parseCli(["node", "soma", "status"]), {

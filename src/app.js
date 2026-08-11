@@ -210,6 +210,7 @@ export function createApp({
   sensoriumPresenceState,
   remoteGraphicalBroker,
   desktopActuationTable,
+  questSurfaceControl,
   logger = console,
 } = {}) {
   return createServer(createRequestHandler({
@@ -249,6 +250,7 @@ export function createApp({
     sensoriumPresenceState,
     remoteGraphicalBroker,
     desktopActuationTable,
+    questSurfaceControl,
     logger,
   }));
 }
@@ -305,6 +307,7 @@ export function createRequestHandler({
   sensoriumPresenceState = createSensoriumPresenceState(),
   remoteGraphicalBroker = new RemoteGraphicalBroker(),
   desktopActuationTable = createDesktopActuationTable(),
+  questSurfaceControl = null,
   logger = console,
 } = {}) {
   if (!harness) {
@@ -398,6 +401,25 @@ export function createRequestHandler({
           runtime_write_posture: writePosture,
           force_profile: forceProfileDisclosure(forceProfile),
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/quest-surface/episode") {
+        writeJson(res, 200, requireQuestSurfaceControl(questSurfaceControl).status());
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/quest-surface/episode/arm") {
+        const body = await readJson(req);
+        const result = requireQuestSurfaceControl(questSurfaceControl).armTextLocal(body);
+        writeJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/quest-surface/episode/disarm") {
+        const body = await readJson(req);
+        const result = requireQuestSurfaceControl(questSurfaceControl).disarm(body);
+        writeJson(res, 200, result);
         return;
       }
 
@@ -2302,8 +2324,8 @@ export function createRequestHandler({
       //
       // The public seam. POST starts a subscription, DELETE stops one,
       // GET lists active subscriptions. The path is fail-closed by
-      // absence of an active grant: with the default config/grants.json
-      // (no Sensorium grants), POST returns 403. Tests can inject a
+      // absence of an active grant: with an empty local runtime grant store,
+      // POST returns 403. Tests can inject a
       // grantStore fixture to exercise the success path.
       //
       // If sensoriumSubscriber is not configured (deployments that
@@ -4882,6 +4904,19 @@ function normalizeMemoryEntry(entry) {
     throw error;
   }
   return { role, content, source };
+}
+
+function requireQuestSurfaceControl(control) {
+  if (!control
+      || typeof control.status !== "function"
+      || typeof control.armTextLocal !== "function"
+      || typeof control.disarm !== "function") {
+    const error = new Error("Quest surface runtime is disabled; no control action was performed.");
+    error.code = "quest_surface_runtime_disabled";
+    error.statusCode = 503;
+    throw error;
+  }
+  return control;
 }
 
 function validateDurableMemoryWriteRequest(body) {

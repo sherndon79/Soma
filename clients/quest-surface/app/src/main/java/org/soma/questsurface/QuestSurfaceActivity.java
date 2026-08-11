@@ -106,6 +106,22 @@ public final class QuestSurfaceActivity extends NativeActivity {
         }
     }
 
+    /** PTT hold from native OpenXR action (right trigger). Client-local, bounded by Gate. */
+    public static void onPttHeldFromNative(boolean held) {
+        QuestSurfaceActivity activity = CURRENT.get();
+        if (activity != null && activity.transport != null) {
+            activity.transport.setPttHeld(held);
+        }
+    }
+
+    /** VAD/PTT toggle from native OpenXR action (right A click). Client-local, no protocol. */
+    public static void onToggleModeFromNative() {
+        QuestSurfaceActivity activity = CURRENT.get();
+        if (activity != null && activity.transport != null) {
+            activity.transport.toggleCaptureMode();
+        }
+    }
+
     private static native void nativeOnTransportState(String state, String code, int attempt);
 
     private static native boolean nativeTryDeliberateMicResume(
@@ -128,4 +144,6 @@ public final class QuestSurfaceActivity extends NativeActivity {
             float widthMeters,
             float heightMeters,
             long deadlineElapsedMs);
+
+    static native void nativeOnCaptureStatus(int mode, String state);
 }

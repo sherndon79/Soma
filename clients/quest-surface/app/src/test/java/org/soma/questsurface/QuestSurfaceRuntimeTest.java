@@ -210,6 +210,8 @@ public final class QuestSurfaceRuntimeTest {
                         "99", 7, "lease-audio", 1, "answer-7", "utterance-playback",
                         QuestSurfaceV1bTestData.stereo20()),
                 2_001);
+        // Coalesced playback consumer is scheduled; wait for hardware start before clearing
+        for (int i = 0; i < 50 && !hardware.events.contains("startPlayback:99:7:lease-audio:3840"); i++) Thread.sleep(10);
         hardware.events.clear();
 
         runtime.rejectCaptureStream(7);

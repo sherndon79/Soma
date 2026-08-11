@@ -59,6 +59,16 @@ struct AppState {
     XrSpace view_space = XR_NULL_HANDLE;
     XrSwapchain swapchain = XR_NULL_HANDLE;
     std::vector<XrSwapchainImageOpenGLESKHR> images;
+    // PTT/VAD input (client-local, no protocol). Default PTT.
+    XrActionSet pttActionSet = XR_NULL_HANDLE;
+    XrAction pttHoldAction = XR_NULL_HANDLE;
+    XrAction modeToggleAction = XR_NULL_HANDLE;
+    XrPath rightHandPath = XR_NULL_PATH;
+    bool pttHeld = false;
+    bool prevPttHeld = false;
+    bool prevTogglePressed = false;
+    int captureMode = 0; // 0 PTT, 1 VAD
+    std::string captureState = "idle";
 
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLConfig config = nullptr;
@@ -344,6 +354,13 @@ void build_panel_locked() {
         draw_wrapped(g.shell_state, 48, 190, 5, 28, 5);
         draw_wrapped(g.shell_code, 48, 430, 3, 45, 5);
     }
+    // Client-local status line, separate from server-authored snapshot.text
+    {
+        std::string mode = g.captureMode == 0 ? "[PTT]" : "[VAD]";
+        std::string line = mode + " " + g.captureState;
+        if (g.pttHeld && g.captureMode == 0) line += " (hold)";
+        draw_text(line, 48, 950, 3);
+    }
     g.content_dirty = false;
 }
 
@@ -418,6 +435,124 @@ bool passthrough_init() {
     result = xrCreatePassthroughLayerFB_(g.session, &layer_info, &g.passthrough_layer);
     g.passthrough_running = XR_SUCCEEDED(result);
     return g.passthrough_running;
+}
+
+void call_java_ptt_held(bool held) {
+    bool attached = false;
+    JNIEnv* env = attach_java(&attached);
+    if (env == nullptr) return;
+    jclass activity = env->GetObjectClass(g.app->activity->clazz);
+    jmethodID method = env->GetStaticMethodID(activity, "onPttHeldFromNative", "(Z)V");
+    if (method != nullptr) env->CallStaticVoidMethod(activity, method, held ? JNI_TRUE : JNI_FALSE);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(activity);
+    detach_java(attached);
+}
+
+void call_java_toggle_mode() {
+    bool attached = false;
+    JNIEnv* env = attach_java(&attached);
+    if (env == nullptr) return;
+    jclass activity = env->GetObjectClass(g.app->activity->clazz);
+    jmethodID method = env->GetStaticMethodID(activity, "onToggleModeFromNative", "()V");
+    if (method != nullptr) env->CallStaticVoidMethod(activity, method);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(activity);
+    detach_java(attached);
+}
+
+bool create_ptt_actions() {
+    // Client-local PTT/VAD input. No protocol change, bounded by Gate. Transactional: any failure cleans up.
+    auto fail = []() {
+        if (g.pttActionSet != XR_NULL_HANDLE) xrDestroyActionSet(g.pttActionSet);
+        g.pttActionSet = XR_NULL_HANDLE;
+        g.pttHoldAction = XR_NULL_HANDLE;
+        g.modeToggleAction = XR_NULL_HANDLE;
+        g.rightHandPath = XR_NULL_PATH;
+        log_state("ptt_input_degraded", "action_setup_failed");
+        return false;
+    };
+    XrActionSetCreateInfo set_info{XR_TYPE_ACTION_SET_CREATE_INFO};
+    strcpy(set_info.actionSetName, "soma_ptt");
+    strcpy(set_info.localizedActionSetName, "Soma PTT");
+    set_info.priority = 0;
+    if (XR_FAILED(xrCreateActionSet(g.instance, &set_info, &g.pttActionSet))) return fail();
+    XrActionCreateInfo hold_info{XR_TYPE_ACTION_CREATE_INFO};
+    hold_info.actionType = XR_ACTION_TYPE_FLOAT_INPUT;
+    strcpy(hold_info.actionName, "ptt_hold");
+    strcpy(hold_info.localizedActionName, "PTT Hold");
+    hold_info.countSubactionPaths = 0;
+    if (XR_FAILED(xrCreateAction(g.pttActionSet, &hold_info, &g.pttHoldAction))) return fail();
+    XrActionCreateInfo toggle_info{XR_TYPE_ACTION_CREATE_INFO};
+    toggle_info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
+    strcpy(toggle_info.actionName, "mode_toggle");
+    strcpy(toggle_info.localizedActionName, "Mode Toggle");
+    if (XR_FAILED(xrCreateAction(g.pttActionSet, &toggle_info, &g.modeToggleAction))) return fail();
+    if (XR_FAILED(xrStringToPath(g.instance, "/user/hand/right", &g.rightHandPath))) return fail();
+    XrPath trigger_path = XR_NULL_PATH, a_click_path = XR_NULL_PATH;
+    if (XR_FAILED(xrStringToPath(g.instance, "/user/hand/right/input/trigger/value", &trigger_path))) return fail();
+    if (XR_FAILED(xrStringToPath(g.instance, "/user/hand/right/input/a/click", &a_click_path))) return fail();
+    XrPath profile_path = XR_NULL_PATH;
+    if (XR_FAILED(xrStringToPath(g.instance, "/interaction_profiles/oculus/touch_controller", &profile_path))) return fail();
+    XrActionSuggestedBinding bindings[2] = {};
+    bindings[0].action = g.pttHoldAction;
+    bindings[0].binding = trigger_path;
+    bindings[1].action = g.modeToggleAction;
+    bindings[1].binding = a_click_path;
+    XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    suggested.interactionProfile = profile_path;
+    suggested.countSuggestedBindings = 2;
+    suggested.suggestedBindings = bindings;
+    if (XR_FAILED(xrSuggestInteractionProfileBindings(g.instance, &suggested))) return fail();
+    XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    attach.countActionSets = 1;
+    attach.actionSets = &g.pttActionSet;
+    if (XR_FAILED(xrAttachSessionActionSets(g.session, &attach))) return fail();
+    return true;
+}
+
+void poll_ptt_actions() {
+    if (g.pttActionSet == XR_NULL_HANDLE || g.session == XR_NULL_HANDLE) return;
+    XrActiveActionSet active{};
+    active.actionSet = g.pttActionSet;
+    active.subactionPath = XR_NULL_PATH;
+    XrActionsSyncInfo sync{XR_TYPE_ACTIONS_SYNC_INFO};
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+    if (XR_FAILED(xrSyncActions(g.session, &sync))) {
+        // Fail closed: controller loss while held must not stream indefinitely
+        if (g.pttHeld) {
+            g.pttHeld = false;
+            call_java_ptt_held(false);
+        }
+        return;
+    }
+    // Trigger float with hysteresis 0.6 / 0.4
+    XrActionStateFloat hold_state{XR_TYPE_ACTION_STATE_FLOAT};
+    XrActionStateGetInfo get_hold{XR_TYPE_ACTION_STATE_GET_INFO};
+    get_hold.action = g.pttHoldAction;
+    XrResult hr = xrGetActionStateFloat(g.session, &get_hold, &hold_state);
+    if (XR_FAILED(hr) || hold_state.isActive != XR_TRUE) {
+        if (g.pttHeld) {
+            g.pttHeld = false;
+            call_java_ptt_held(false);
+        }
+    } else {
+        bool held = false;
+        if (g.pttHeld) held = hold_state.currentState > 0.4f;
+        else held = hold_state.currentState > 0.6f;
+        if (held != g.pttHeld) {
+            g.pttHeld = held;
+            call_java_ptt_held(held);
+        }
+    }
+    XrActionStateBoolean toggle_state{XR_TYPE_ACTION_STATE_BOOLEAN};
+    XrActionStateGetInfo get_toggle{XR_TYPE_ACTION_STATE_GET_INFO};
+    get_toggle.action = g.modeToggleAction;
+    if (XR_SUCCEEDED(xrGetActionStateBoolean(g.session, &get_toggle, &toggle_state)) && toggle_state.isActive == XR_TRUE) {
+        bool pressed = toggle_state.currentState == XR_TRUE && toggle_state.changedSinceLastSync == XR_TRUE;
+        if (pressed) call_java_toggle_mode();
+    }
 }
 
 bool xr_init(android_app* app) {
@@ -521,6 +656,8 @@ bool xr_init(android_app* app) {
     space_info.poseInReferenceSpace.orientation.w = 1.0f;
     result = xrCreateReferenceSpace(g.session, &space_info, &g.view_space);
     if (XR_FAILED(result)) return false;
+    // Best-effort PTT actions; Codex reviews lifecycle. Failure does not abort init (degraded input).
+    create_ptt_actions();
 
     uint32_t format_count = 0;
     result = xrEnumerateSwapchainFormats(g.session, 0, &format_count, nullptr);
@@ -626,6 +763,7 @@ bool render_frame() {
     XrFrameState frame_state{XR_TYPE_FRAME_STATE};
     XrResult result = xrWaitFrame(g.session, &wait_info, &frame_state);
     if (XR_FAILED(result)) return false;
+    if (g.session_state == XR_SESSION_STATE_FOCUSED) poll_ptt_actions();
     XrFrameBeginInfo begin_info{XR_TYPE_FRAME_BEGIN_INFO};
     result = xrBeginFrame(g.session, &begin_info);
     if (XR_FAILED(result)) return false;
@@ -729,6 +867,10 @@ bool render_frame() {
 }
 
 void teardown() {
+    if (g.pttActionSet != XR_NULL_HANDLE) xrDestroyActionSet(g.pttActionSet);
+    g.pttActionSet = XR_NULL_HANDLE;
+    g.pttHoldAction = XR_NULL_HANDLE;
+    g.modeToggleAction = XR_NULL_HANDLE;
     if (g.passthrough_layer != XR_NULL_HANDLE && xrDestroyPassthroughLayerFB_ != nullptr) {
         xrDestroyPassthroughLayerFB_(g.passthrough_layer);
     }
@@ -822,6 +964,18 @@ Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnPanelSnapshot(
     std::lock_guard<std::mutex> lock(g.mutex);
     if (g.suspended_latched) return;
     g.snapshot = std::move(snapshot);
+    g.content_dirty = true;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnCaptureStatus(
+        JNIEnv* env, jclass, jint mode, jstring state) {
+    std::string next = from_jstring(env, state);
+    if (next.empty()) next = "idle";
+    std::lock_guard<std::mutex> lock(g.mutex);
+    if (g.captureMode == static_cast<int>(mode) && g.captureState == next) return;
+    g.captureMode = static_cast<int>(mode);
+    g.captureState = next;
     g.content_dirty = true;
 }
 

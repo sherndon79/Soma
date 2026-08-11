@@ -70,6 +70,7 @@ public final class QuestSurfaceCaptureDriverTest {
         FakeMic mic = new FakeMic(script);
         RecordingUplink up = new RecordingUplink();
         QuestSurfaceCaptureDriver d = new QuestSurfaceCaptureDriver(mic, () -> true, up);
+        d.setMode(QuestSurfaceCaptureDriver.Mode.VAD);
         d.start();
         assertTrue("mic reached EOF", mic.eof.await(4, TimeUnit.SECONDS));
         d.stop("test");
@@ -104,6 +105,7 @@ public final class QuestSurfaceCaptureDriverTest {
         final AtomicInteger reads = new AtomicInteger(0);
         QuestSurfaceCaptureDriver.Gate flipping = () -> reads.incrementAndGet() < 12; // eligible for first ~11 checks
         QuestSurfaceCaptureDriver d = new QuestSurfaceCaptureDriver(mic, flipping, up);
+        d.setMode(QuestSurfaceCaptureDriver.Mode.VAD);
         d.start();
         for (int i = 0; i < 200 && d.isRunning(); i++) Thread.sleep(5);
         d.stop("test");

@@ -116,7 +116,22 @@ final class QuestSurfaceTransport {
                     @Override public void cancel(long streamId, String utteranceId, String reason) {
                         try { sendCancel(streamId, utteranceId, reason); } catch (Exception ignored) {}
                     }
+                },
+                QuestSurfaceVad.Config.defaults(),
+                null,
+                (mode, state) -> {
+                    try { QuestSurfaceActivity.nativeOnCaptureStatus(mode == QuestSurfaceCaptureDriver.Mode.PTT ? 0 : 1, state); } catch (Throwable ignored) {}
                 });
+    }
+
+    void setPttHeld(boolean held) {
+        QuestSurfaceCaptureDriver d = captureDriver;
+        if (d != null) d.setPttHeld(held);
+    }
+
+    void toggleCaptureMode() {
+        QuestSurfaceCaptureDriver d = captureDriver;
+        if (d != null) d.toggleMode();
     }
 
     QuestSurfaceTransport(

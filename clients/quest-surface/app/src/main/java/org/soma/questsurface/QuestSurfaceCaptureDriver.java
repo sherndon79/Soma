@@ -45,25 +45,75 @@ final class QuestSurfaceCaptureDriver {
         void cancel(long streamId, String utteranceId, String reason);
     }
 
+    /** Capture segmentation mode — client-local, no protocol change. Default PTT. */
+    enum Mode { PTT, VAD }
+
+    /** PTT hold signal (native trigger or fake for JVM tests). */
+    interface PttSignal {
+        boolean held();
+    }
+
+    /** Client-local status push to native for on-panel display. */
+    interface StatusSink {
+        void onStatus(Mode mode, String state);
+    }
+
     private final MicSource mic;
     private final Gate gate;
     private final UplinkSink uplink;
     private final QuestSurfaceVad.Config vadConfig;
+    private final PttSignal pttSignal;
+    private final StatusSink statusSink;
 
     private Thread thread;
     private volatile boolean running = false;
     private long streamCounter = 0;
 
+    private volatile Mode desiredMode = Mode.PTT;
+    private volatile boolean pttHeldState = false;
+    private volatile Mode lastStatusMode = null;
+    private volatile String lastStatusState = null;
+
     QuestSurfaceCaptureDriver(MicSource mic, Gate gate, UplinkSink uplink) {
-        this(mic, gate, uplink, QuestSurfaceVad.Config.defaults());
+        this(mic, gate, uplink, QuestSurfaceVad.Config.defaults(), () -> false, null);
     }
 
     QuestSurfaceCaptureDriver(MicSource mic, Gate gate, UplinkSink uplink, QuestSurfaceVad.Config vadConfig) {
+        this(mic, gate, uplink, vadConfig, () -> false, null);
+    }
+
+    QuestSurfaceCaptureDriver(MicSource mic, Gate gate, UplinkSink uplink, QuestSurfaceVad.Config vadConfig, PttSignal pttSignal, StatusSink statusSink) {
         if (mic == null || gate == null || uplink == null) throw new IllegalArgumentException("mic, gate, uplink required");
         this.mic = mic;
         this.gate = gate;
         this.uplink = uplink;
         this.vadConfig = vadConfig != null ? vadConfig : QuestSurfaceVad.Config.defaults();
+        this.pttSignal = pttSignal != null ? pttSignal : () -> pttHeldState;
+        this.statusSink = statusSink;
+    }
+
+    // Mode/PTT public surface (client-local, no protocol, not authority). Bounded by Gate.
+    Mode mode() { return desiredMode; }
+    void setMode(Mode m) {
+        if (m == null) return;
+        desiredMode = m;
+    }
+    void toggleMode() { setMode(desiredMode == Mode.PTT ? Mode.VAD : Mode.PTT); }
+    void setPttHeld(boolean held) { pttHeldState = held; }
+    boolean pttHeld() { return pttHeldState; }
+
+    private volatile boolean inUtterancePtt = false;
+    private void pushStatusDeduped(Mode mode, String state) {
+        if (statusSink == null || state == null) return;
+        Mode prevMode = lastStatusMode;
+        String prevState = lastStatusState;
+        if (mode == prevMode && state.equals(prevState)) return;
+        lastStatusMode = mode;
+        lastStatusState = state;
+        try { statusSink.onStatus(mode, state); } catch (Exception ignored) {}
+    }
+    private void pushStatus(String state) {
+        pushStatusDeduped(desiredMode, state);
     }
 
     /** Real AudioRecord-backed mic source (device only). VOICE_RECOGNITION source is tuned for ASR. */
@@ -112,38 +162,90 @@ final class QuestSurfaceCaptureDriver {
         });
 
         try {
-            if (!gate.captureEligible()) return;               // never open the mic unless eligible
+            if (!gate.captureEligible()) return;
             mic.open();
+            pushStatusDeduped(desiredMode, "idle");
             byte[] acc = new byte[QuestSurfaceVad.FRAME_BYTES];
             int filled = 0;
+            Mode appliedMode = desiredMode;
             while (running && gate.captureEligible()) {
                 int n;
                 try {
                     n = mic.read(acc, filled, QuestSurfaceVad.FRAME_BYTES - filled);
                 } catch (Exception readError) {
-                    break;                                      // read failure -> fail closed
+                    break;
                 }
-                if (n < 0) break;                               // hardware error
-                if (n == 0) continue;                           // no data yet
+                if (n < 0) break;
+                if (n == 0) continue;
                 filled += n;
-                if (filled < QuestSurfaceVad.FRAME_BYTES) continue; // accumulate to a full 20 ms frame
+                if (filled < QuestSurfaceVad.FRAME_BYTES) continue;
                 filled = 0;
-                if (!gate.captureEligible()) break;             // re-check right before the frame reaches the wire
-                byte[] frame = acc.clone();                     // own the buffer past this loop iteration
+                if (!gate.captureEligible()) break;
+                Mode desired = desiredMode;
+                if (desired != appliedMode) {
+                    if (appliedMode == Mode.PTT && inUtterancePtt) {
+                        try {
+                            uplink.utteranceEnd(curStream[0], curUtt[0]);
+                        } catch (Exception endError) {
+                            try { uplink.cancel(curStream[0], curUtt[0], "mode_switch_end_failed"); } catch (Exception ignored) {}
+                            inUtterancePtt = false;
+                            break; // fail closed: do not enter new mode/stream on failed END
+                        }
+                        inUtterancePtt = false;
+                    } else if (appliedMode == Mode.VAD && vad.inUtterance()) {
+                        try { uplink.cancel(curStream[0], curUtt[0], "mode_switch"); } catch (Exception ignored) {}
+                        vad.reset();
+                    }
+                    appliedMode = desired;
+                    pushStatusDeduped(appliedMode, inUtterancePtt || vad.inUtterance() ? "capturing" : "idle");
+                }
+                byte[] frame = acc.clone();
                 try {
-                    vad.feed(frame);
+                    if (appliedMode == Mode.PTT) {
+                        boolean held = false;
+                        try { held = pttSignal.held(); } catch (Exception ignored) {}
+                        if (!held) {
+                            if (inUtterancePtt) {
+                                uplink.utteranceEnd(curStream[0], curUtt[0]);
+                                inUtterancePtt = false;
+                                pushStatusDeduped(appliedMode, "idle");
+                            }
+                            continue;
+                        }
+                        if (!inUtterancePtt) {
+                            curStream[0] = ++streamCounter;
+                            curUtt[0] = "utt-" + curStream[0];
+                            uplink.utteranceStart(curStream[0], curUtt[0]);
+                            inUtterancePtt = true;
+                            pushStatusDeduped(appliedMode, "capturing");
+                        }
+                        uplink.audioChunk(curStream[0], curUtt[0], frame);
+                    } else {
+                        vad.feed(frame);
+                        if (vad.inUtterance()) pushStatusDeduped(appliedMode, "capturing"); else pushStatusDeduped(appliedMode, "idle");
+                    }
                 } catch (Exception feedError) {
-                    // uplink refused (latch / lease expiry) -> cancel in-flight and stop
-                    if (vad.inUtterance()) {
+                    if (appliedMode == Mode.PTT && inUtterancePtt) {
+                        try { uplink.cancel(curStream[0], curUtt[0], "capture_fault"); } catch (Exception ignored) {}
+                        inUtterancePtt = false;
+                    } else if (appliedMode == Mode.VAD && vad.inUtterance()) {
                         try { uplink.cancel(curStream[0], curUtt[0], "capture_fault"); } catch (Exception ignored) {}
                     }
                     break;
                 }
             }
+            // Abnormal exit (stop/gate loss/read failure) while PTT held must NOT send END (P2/N2: no answer on abort).
+            // Only observed trigger release while running+eligible and deliberate PTT->VAD switch may END normally.
+            if (inUtterancePtt) {
+                try { uplink.cancel(curStream[0], curUtt[0], "abandon"); } catch (Exception ignored) {}
+                inUtterancePtt = false;
+            }
         } catch (Exception openError) {
-            // open failed -> fail closed, capture never started
+            // open failed -> fail closed
         } finally {
-            vad.reset();                                        // abandon any in-flight utterance silently
+            vad.reset();
+            inUtterancePtt = false;
+            pushStatusDeduped(desiredMode, "idle");
             try { mic.close(); } catch (Exception ignored) {}
             running = false;
         }

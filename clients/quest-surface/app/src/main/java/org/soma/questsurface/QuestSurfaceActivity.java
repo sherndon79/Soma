@@ -1,8 +1,6 @@
 package org.soma.questsurface;
 
-import android.Manifest;
 import android.app.NativeActivity;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -21,18 +19,6 @@ public final class QuestSurfaceActivity extends NativeActivity {
     private static final AtomicReference<QuestSurfaceActivity> CURRENT = new AtomicReference<>();
 
     private QuestSurfaceTransport transport;
-    // Permission seam: injectable for JVM tests; default null means real gateway.
-    private QuestSurfaceAudioPermission audioPermission;
-    private QuestSurfaceAudioPermission.Gateway permissionGatewayForTest;
-
-    /** Package-private test seam. */
-    void setPermissionGatewayForTest(QuestSurfaceAudioPermission.Gateway gateway) {
-        this.permissionGatewayForTest = gateway;
-    }
-
-    QuestSurfaceAudioPermission getAudioPermissionForTest() {
-        return audioPermission;
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,42 +30,6 @@ public final class QuestSurfaceActivity extends NativeActivity {
                 QuestSurfaceActivity::nativeOnTransportState,
                 QuestSurfaceActivity::nativeOnPanelSnapshot);
         CURRENT.set(this);
-        ensureRecordAudioPermission();
-    }
-
-    private QuestSurfaceAudioPermission.Gateway createRealGateway() {
-        return new QuestSurfaceAudioPermission.Gateway() {
-            @Override
-            public boolean isRecordAudioGranted() {
-                return checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                        == PackageManager.PERMISSION_GRANTED;
-            }
-
-            @Override
-            public void requestRecordAudioPermission(int requestCode) {
-                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, requestCode);
-            }
-        };
-    }
-
-    private void ensureRecordAudioPermission() {
-        QuestSurfaceAudioPermission.Gateway gateway =
-                permissionGatewayForTest != null ? permissionGatewayForTest : createRealGateway();
-        if (audioPermission == null) {
-            audioPermission = new QuestSurfaceAudioPermission(gateway);
-        }
-        audioPermission.ensure();
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (audioPermission != null) {
-            boolean granted = grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            audioPermission.onRequestPermissionsResult(requestCode, granted);
-        }
-        // fail-closed on denial: no retry, transport continues; grant does NOT arm capture.
     }
 
     @Override

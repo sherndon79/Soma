@@ -31,6 +31,27 @@ public final class QuestSurfaceProtocolV1bTest {
     }
 
     @Test
+    public void fourLeafManifestWithFingerprintIsAcceptedCauseMatchedRedToGreen() throws Exception {
+        // Before fix, non-panel leaves with {device_fingerprint256} were rejected as
+        // lease_constraints_unsupported (empty constraints required). Server correctly
+        // sends {device_fingerprint256} for all four leaves; client must accept it.
+        JSONObject payload = QuestSurfaceV1bTestData.manifestPayload("99", 10_000, 5_000);
+        // verify non-panel leaves carry exactly {device_fingerprint256}
+        for (String name : new String[]{"mic_capture", "audio_present", "local_attach"}) {
+            JSONObject c = payload.getJSONObject("leases").getJSONObject(name).getJSONObject("constraints");
+            assertEquals(1, c.length());
+            assertEquals("", c.getString("device_fingerprint256"));
+        }
+        QuestSurfaceProtocol.Frame frame = QuestSurfaceV1bTestData.serverFrame(
+                "LEASE_MANIFEST", "99", 0, "", 2, payload);
+        QuestSurfaceProtocol.Manifest manifest = QuestSurfaceProtocol.validateManifest(
+                frame, new BigInteger("99"), 2_000);
+        assertEquals(4, manifest.leases.size());
+        assertEquals(QuestSurfaceProtocol.MIC_CAPTURE_CAPABILITY, manifest.lease("mic_capture").capability);
+        assertEquals(QuestSurfaceProtocol.AUDIO_PRESENT_CAPABILITY, manifest.lease("audio_present").capability);
+    }
+
+    @Test
     public void rejectsManifestShapeAuthorityIdentityTimeAndConstraintDrift() throws Exception {
         JSONObject base = QuestSurfaceV1bTestData.manifestPayload("99", 10_000, 5_000);
 

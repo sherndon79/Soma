@@ -15,6 +15,16 @@ final class QuestSurfaceRuntime {
     private final QuestSurfaceAudioEngine audioEngine;
     private final QuestSurfaceSequenceTracker receiveSequences =
             new QuestSurfaceSequenceTracker();
+    private final java.util.concurrent.ExecutorService playbackConsumer =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "quest-playback-consumer");
+                t.setDaemon(true);
+                return t;
+            });
+    private final java.util.Set<String> scheduledPlaybackDrains =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    private final java.util.Set<String> runningPlaybackDrains =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     private BigInteger sessionEpoch;
     private QuestSurfaceProtocol.Lease panelLease;
@@ -116,21 +126,82 @@ final class QuestSurfaceRuntime {
                     "answer_correlation_mismatch",
                     "Playback does not match the accepted panel answer.");
         }
-        // H narrowed: enqueue governs; hardware via consumer
         audioEngine.ensurePlaybackEntry(frame.sessionEpoch.toString(), frame.streamId, lease.leaseId, chunk.answerId, chunk.utteranceId);
         audioEngine.enqueuePlaybackChunk(frame.sessionEpoch.toString(), frame.streamId, chunk.answerId, chunk.pcm);
+        schedulePlaybackDrain(frame.sessionEpoch.toString(), frame.streamId, chunk.answerId);
         return chunk;
     }
 
-    // H narrowed: playback consumer polls retained PCM and passes only retained frames to hardware
+    private void schedulePlaybackDrain(String epoch, long streamId, String answerId) {
+        String key = epoch + ":" + streamId + ":" + answerId;
+        synchronized (scheduledPlaybackDrains) {
+            if (scheduledPlaybackDrains.contains(key) || runningPlaybackDrains.contains(key)) {
+                return;
+            }
+            scheduledPlaybackDrains.add(key);
+        }
+        try {
+            playbackConsumer.submit(() -> {
+                try {
+                    synchronized (scheduledPlaybackDrains) {
+                        scheduledPlaybackDrains.remove(key);
+                        runningPlaybackDrains.add(key);
+                    }
+                    drainPlaybackToHardware(epoch, streamId, answerId);
+                } finally {
+                    synchronized (scheduledPlaybackDrains) {
+                        runningPlaybackDrains.remove(key);
+                        // Race-safe reschedule only if PCM arrived after drain observed empty
+                        if (audioEngine.playbackJitterSize(epoch, streamId, answerId) > 0) {
+                            scheduledPlaybackDrains.remove(key);
+                            runningPlaybackDrains.remove(key);
+                            schedulePlaybackDrain(epoch, streamId, answerId);
+                        }
+                    }
+                    // Clear scheduling metadata on lifecycle close is handled by latch/stop paths
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            synchronized (scheduledPlaybackDrains) {
+                scheduledPlaybackDrains.remove(key);
+            }
+        }
+    }
+
+    private synchronized void drainPlaybackToHardware(String epoch, long streamId, String answerId) {
+        // Drain the finite per-answer queue while respecting terminal/closed and stream isolation.
+        // Poll + write in engine order; stop is deferred to ANSWER_END / lifecycle.
+        byte[] pcm;
+        while ((pcm = audioEngine.pollPlaybackChunk(epoch, streamId, answerId)) != null) {
+            try {
+                audioEngine.startHardwareForPolledPlayback(epoch, streamId, answerId, pcm);
+            } catch (QuestSurfaceAudioEngine.EngineException ignored) {
+                break;
+            }
+        }
+    }
+
+    // Test helper: wait for all queued playback drains to complete (deterministic for JVM tests)
+    void awaitPlaybackDrainForTest() throws Exception {
+        java.util.concurrent.Future<?> f = playbackConsumer.submit(() -> {});
+        f.get(2, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
     synchronized void consumePlaybackQueue(long streamId, String answerId) throws QuestSurfaceAudioEngine.EngineException {
+        // After writing bounded tail, transition to durable closed tombstone so answerTerminal becomes closedAnswers
         byte[] pcm;
         while ((pcm = audioEngine.pollPlaybackChunk(sessionEpoch.toString(), streamId, answerId)) != null) {
-            // startHardware for each retained frame in order
-            audioEngine.startHardwareForPolledPlayback(sessionEpoch.toString(), streamId, answerId, pcm);
+            try {
+                audioEngine.startHardwareForPolledPlayback(sessionEpoch.toString(), streamId, answerId, pcm);
+            } catch (QuestSurfaceAudioEngine.EngineException ignored) {
+                break;
+            }
         }
-        // after draining retained, stop hardware (drain will also add to closedAnswers via handleAnswerEnd's drain if needed)
-        audioEngine.stopPlayback(sessionEpoch.toString(), streamId, answerId);
+        // Terminal drain/close transition: answerTerminal -> closedAnswers (durable)
+        audioEngine.drainPlayback(sessionEpoch.toString(), streamId, answerId);
+        String key = sessionEpoch.toString() + ":" + streamId + ":" + answerId;
+        scheduledPlaybackDrains.remove(key);
+        runningPlaybackDrains.remove(key);
     }
 
     synchronized void acceptAnswerEnd(
@@ -204,13 +275,26 @@ final class QuestSurfaceRuntime {
 
     synchronized void rejectPlaybackStream(long streamId) {
         if (sessionEpoch != null) {
-            audioEngine.stopPlaybackStream(sessionEpoch.toString(), streamId);
+            String epochStr = sessionEpoch.toString();
+            audioEngine.stopPlaybackStream(epochStr, streamId);
+            // Clear coalescing metadata for this stream (lifecycle close preempts consumer)
+            String prefix = epochStr + ":" + streamId + ":";
+            synchronized (scheduledPlaybackDrains) {
+                scheduledPlaybackDrains.removeIf(k -> k.startsWith(prefix));
+                runningPlaybackDrains.removeIf(k -> k.startsWith(prefix));
+            }
         }
     }
 
     synchronized void latch(String reason) {
         String epoch = sessionEpoch == null ? "" : sessionEpoch.toString();
         audioEngine.latch(reason, epoch);
+        // Preempt consumer: engine.latch already cleared jitter queues and stopped hardware
+        // (focus loss / disconnect / expiry / latch). Pending consumer tasks will find empty queue.
+        synchronized (scheduledPlaybackDrains) {
+            scheduledPlaybackDrains.clear();
+            runningPlaybackDrains.clear();
+        }
         clearSessionState();
     }
 

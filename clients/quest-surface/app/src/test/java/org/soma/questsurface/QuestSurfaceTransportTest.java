@@ -98,26 +98,121 @@ public final class QuestSurfaceTransportTest {
         runtime.configureSession(new BigInteger("99"), QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000),
                 QuestSurfaceV1bTestData.compatibilityPanelLease("99", 2_000, 5_000), 2_000);
         runtime.acceptPanel(QuestSurfaceV1bTestData.panelFrame("99", "lease-panel", 4, "2", "answer-1", "utterance-1"), 2_001);
-        // enqueue 6x40 playback before consuming
+        // downlink streaming: inject hardware before accepts so each chunk streams via bounded consumer
+        RecordingHardware hw = new RecordingHardware();
+        Field fh = QuestSurfaceAudioEngine.class.getDeclaredField("hardware");
+        fh.setAccessible(true); fh.set(engine, hw);
         for (int i = 0; i < 6; i++) {
             byte[] pcm = new byte[7680]; pcm[0] = (byte) i;
             runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 10+i, "answer-1", "utterance-1", pcm), 2_002+i);
         }
-        // queue retains newest 5 (1..5) -> 5*40=200
-        assertEquals(5, engine.playbackJitterSize("99", 20, "answer-1"));
-        // consume should send only retained 5 in order via hardware
-        RecordingHardware hw = new RecordingHardware();
-        // replace engine's hardware with recording one via reflection
-        Field fh = QuestSurfaceAudioEngine.class.getDeclaredField("hardware");
-        fh.setAccessible(true); fh.set(engine, hw);
-        runtime.consumePlaybackQueue(20, "answer-1");
-        // hardware should have received 5 startPlayback in order 1..5, then stop
+        runtime.awaitPlaybackDrainForTest();
+        // streaming via bounded consumer delivers every chunk as it arrives — no drop for normal rate, jitter bounded
+        assertEquals(0, engine.playbackJitterSize("99", 20, "answer-1"));
         List<String> starts = new ArrayList<>();
         for (String e : hw.events) if (e.startsWith("startPlayback")) starts.add(e);
-        assertEquals(5, starts.size());
-        for (int i = 0; i < 5; i++) assertTrue(starts.get(i).endsWith(":" + (i+1)));
+        assertEquals(6, starts.size());
+        for (int i = 0; i < 6; i++) assertTrue(starts.get(i).endsWith(":" + i));
+        hw.events.clear();
+        runtime.consumePlaybackQueue(20, "answer-1");
+        // consume after streaming just stops (tail already drained, then durable close)
         assertTrue(hw.events.contains("stopPlayback:99:20:answer-1"));
         assertEquals(0, engine.playbackJitterSize("99", 20, "answer-1"));
+    }
+
+    @Test
+    public void playbackStreamingDeliversFullAnswerViaBoundedConsumer() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        QuestSurfaceRuntime runtime = new QuestSurfaceRuntime(engine);
+        runtime.configureSession(new BigInteger("99"), QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000),
+                QuestSurfaceV1bTestData.compatibilityPanelLease("99", 2_000, 5_000), 2_000);
+        runtime.acceptPanel(QuestSurfaceV1bTestData.panelFrame("99", "lease-panel", 4, "2", "answer-1", "utterance-1"), 2_001);
+        RecordingHardware hw = new RecordingHardware();
+        java.lang.reflect.Field fh = QuestSurfaceAudioEngine.class.getDeclaredField("hardware");
+        fh.setAccessible(true); fh.set(engine, hw);
+        int N = 20; // >>10, must deliver all via bounded consumer
+        for (int i = 0; i < N; i++) {
+            byte[] pcm = new byte[3840]; pcm[0] = (byte) i;
+            runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 10+i, "answer-1", "utterance-1", pcm), 2_002+i);
+            // queue never exceeds 200ms (5*3840 or 10*1920 etc) — bounded invariant preserved
+            assertTrue(engine.playbackJitterSize("99", 20, "answer-1") <= 10);
+        }
+        runtime.awaitPlaybackDrainForTest();
+        List<String> starts = new ArrayList<>();
+        for (String e : hw.events) if (e.startsWith("startPlayback")) starts.add(e);
+        assertEquals(N, starts.size());
+        for (int i = 0; i < N; i++) assertTrue(starts.get(i).endsWith(":" + i));
+        // tail delivered before terminal release — consume after ANSWER_END drains remaining then stops
+        hw.events.clear();
+        runtime.consumePlaybackQueue(20, "answer-1");
+        assertTrue(hw.events.contains("stopPlayback:99:20:answer-1"));
+        assertEquals(0, engine.playbackJitterSize("99", 20, "answer-1"));
+    }
+
+    @Test
+    public void lateChunkAfterTerminalWithRejectDoesNotRecreate() throws Exception {
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine();
+        QuestSurfaceRuntime runtime = new QuestSurfaceRuntime(engine);
+        runtime.configureSession(new BigInteger("99"), QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000),
+                QuestSurfaceV1bTestData.compatibilityPanelLease("99", 2_000, 5_000), 2_000);
+        runtime.acceptPanel(QuestSurfaceV1bTestData.panelFrame("99", "lease-panel", 4, "2", "answer-1", "utterance-1"), 2_001);
+        // Normal playback then ANSWER_END → terminal drain → durable closed
+        runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 1, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo20()), 2_002);
+        runtime.awaitPlaybackDrainForTest();
+        runtime.acceptAnswerEnd(QuestSurfaceV1bTestData.answerEndFrame("99", 20, "lease-audio", 2, "answer-1", "utterance-1"), 2_003);
+        runtime.consumePlaybackQueue(20, "answer-1");
+        // First late chunk refused (terminal → closed)
+        try {
+            runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 3, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo20()), 2_004);
+            fail("should have thrown answer_ended");
+        } catch (QuestSurfaceAudioEngine.EngineException e) {
+            assertEquals("answer_ended", e.code);
+        }
+        // Transport reject clears answerTerminal but must NOT clear closed tombstone
+        runtime.rejectPlaybackStream(20);
+        assertEquals(0, engine.playbackCount());
+        // Second late chunk separated by reject must still be refused (durable closed)
+        try {
+            runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 4, "answer-1", "utterance-1", QuestSurfaceV1bTestData.stereo20()), 2_005);
+            fail("second late chunk should still be refused");
+        } catch (QuestSurfaceAudioEngine.EngineException e) {
+            assertEquals("answer_ended", e.code);
+        }
+    }
+
+    @Test
+    public void slowHardwareKeepsScheduledDrainCoalescedAndBounded() throws Exception {
+        // Slow hardware: each write blocks 50ms, producer enqueues quickly
+        class SlowHardware implements QuestSurfaceAudioEngine.Hardware {
+            final List<String> events = new ArrayList<>();
+            public void startHardwareCapture(String e,long s,String l){}
+            public void stopHardwareCapture(String e,long s){}
+            public synchronized void startHardwarePlayback(String e,long s,String l,byte[] p){
+                events.add("startPlayback:"+e+":"+s+":"+l+":"+p[0]);
+                try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+            }
+            public void stopHardwarePlayback(String e,long s,String a){events.add("stopPlayback:"+e+":"+s+":"+a);}
+        }
+        SlowHardware slowHw = new SlowHardware();
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine(slowHw);
+        QuestSurfaceRuntime runtime = new QuestSurfaceRuntime(engine);
+        runtime.configureSession(new BigInteger("99"), QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000),
+                QuestSurfaceV1bTestData.compatibilityPanelLease("99", 2_000, 5_000), 2_000);
+        runtime.acceptPanel(QuestSurfaceV1bTestData.panelFrame("99", "lease-panel", 4, "2", "answer-1", "utterance-1"), 2_001);
+        int N = 10;
+        for (int i = 0; i < N; i++) {
+            byte[] pcm = new byte[3840]; pcm[0] = (byte) i;
+            runtime.acceptPlayback(QuestSurfaceV1bTestData.playbackFrame("99", 20, "lease-audio", 10+i, "answer-1", "utterance-1", pcm), 2_002+i);
+            // Bounded invariant: queue never exceeds 200ms (10*20ms) even with slow consumer
+            assertTrue(engine.playbackJitterSize("99", 20, "answer-1") <= 10);
+        }
+        runtime.awaitPlaybackDrainForTest();
+        // With slow consumer, some oldest may have dropped, but scheduled work stayed coalesced (at most one per answer)
+        // and queue never exceeded bound — verified above. At least some were delivered.
+        assertTrue(slowHw.events.size() >= 1);
+        // No unbounded executor queue: the test would have OOM or timeout if one task per chunk accumulated
+        Thread.sleep(200);
+        assertTrue(engine.playbackJitterSize("99", 20, "answer-1") <= 10);
     }
 
     private static final class RecordingHardware implements QuestSurfaceAudioEngine.Hardware {

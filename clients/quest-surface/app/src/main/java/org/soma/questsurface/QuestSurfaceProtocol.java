@@ -811,7 +811,8 @@ final class QuestSurfaceProtocol {
             string(constraints, "device_fingerprint256", "lease_fingerprint_invalid");
             allowedSurfaceIds = parsedIds;
         } else {
-            exactFields(constraints, Set.of(), "lease_constraints_unsupported");
+            exactFields(constraints, Set.of("device_fingerprint256"), "lease_constraints_unsupported");
+            string(constraints, "device_fingerprint256", "lease_fingerprint_invalid");
         }
         return new Lease(
                 leaseId,

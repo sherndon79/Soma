@@ -22,15 +22,15 @@ final class QuestSurfaceV1bTestData {
                 .put("mic_capture", leaf(
                         "lease-mic", "grant-mic", QuestSurfaceProtocol.MIC_CAPTURE_CAPABILITY,
                         QuestSurfaceProtocol.PROVIDER, "session", epoch, issuedAtMs, ttlMs,
-                        new JSONObject()))
+                        new JSONObject().put("device_fingerprint256", "")))
                 .put("audio_present", leaf(
                         "lease-audio", "grant-audio", QuestSurfaceProtocol.AUDIO_PRESENT_CAPABILITY,
                         QuestSurfaceProtocol.PROVIDER, "session", epoch, issuedAtMs, ttlMs,
-                        new JSONObject()))
+                        new JSONObject().put("device_fingerprint256", "")))
                 .put("local_attach", leaf(
                         "lease-local", "grant-local", QuestSurfaceProtocol.LOCAL_ATTACH_CAPABILITY,
                         QuestSurfaceProtocol.LOCAL_MODEL_PROVIDER, "once", epoch, issuedAtMs, ttlMs,
-                        new JSONObject()));
+                        new JSONObject().put("device_fingerprint256", "")));
         return new JSONObject()
                 .put("schema_version", 1)
                 .put("session_epoch", epoch)

@@ -57,6 +57,9 @@ final class QuestSurfaceAudioEngine {
         void stopHardwareCapture(String sessionEpoch, long streamId);
         void startHardwarePlayback(String sessionEpoch, long streamId, String leaseRef, byte[] pcm) throws Exception;
         void stopHardwarePlayback(String sessionEpoch, long streamId, String answerId);
+        default void stopHardwarePlaybackGraceful(String sessionEpoch, long streamId, String answerId) {
+            stopHardwarePlayback(sessionEpoch, streamId, answerId);
+        }
     }
 
     private static final class Utterance {
@@ -345,7 +348,7 @@ final class QuestSurfaceAudioEngine {
         java.util.ArrayDeque<byte[]> q = playbackJitter.get(key);
         int drained = 0;
         if (q != null) {
-            // consume-to-empty: poll each queued PCM before cleanup
+            // consume-to-empty: poll each queued PCM before cleanup (tail already drained to hardware via consumer)
             while (!q.isEmpty()) { q.removeFirst(); drained++; }
             playbackJitter.remove(key);
         }
@@ -354,7 +357,10 @@ final class QuestSurfaceAudioEngine {
         // durable closure: further AUDIO_CHUNK or ANSWER_END for same answer must stay refused
         closedAnswers.add(key);
         if (p != null) {
-            try { hardware.stopHardwarePlayback(p.sessionEpoch, p.streamId, p.answerId); } catch (Exception ignored) {}
+            // Graceful for normal terminal: drain to playback head then release, preemptible by lifecycle immediate stop
+            try { hardware.stopHardwarePlaybackGraceful(p.sessionEpoch, p.streamId, p.answerId); } catch (Exception ignored) {
+                try { hardware.stopHardwarePlayback(p.sessionEpoch, p.streamId, p.answerId); } catch (Exception ignored2) {}
+            }
         }
         return drained;
     }

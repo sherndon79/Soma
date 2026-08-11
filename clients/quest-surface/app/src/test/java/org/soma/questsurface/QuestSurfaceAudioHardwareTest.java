@@ -11,26 +11,35 @@ import java.util.List;
 
 public final class QuestSurfaceAudioHardwareTest {
 
-    private static final class FakeHandle implements QuestSurfaceAudioHardware.AudioTrackHandle {
+    private static class FakeHandle implements QuestSurfaceAudioHardware.AudioTrackHandle {
         final List<byte[]> writes = new ArrayList<>();
         boolean playing = false;
         boolean stopped = false;
+        boolean flushed = false;
         boolean released = false;
         int releaseCount = 0;
+        int framesWritten = 0;
+        int playbackHeadPosition = 0;
 
         @Override public void play() { playing = true; }
         @Override public int write(byte[] audioData, int offset, int size) {
             byte[] copy = new byte[size];
             System.arraycopy(audioData, offset, copy, 0, size);
             writes.add(copy);
+            int frames = size / 4;
+            framesWritten += frames;
+            // For test, immediately advance head to simulate quick drain (or slow for specific test)
+            playbackHeadPosition = framesWritten;
             return size;
         }
         @Override public void stop() { stopped = true; playing = false; }
-        @Override public void flush() {}
+        @Override public void flush() { flushed = true; }
         @Override public void release() { released = true; releaseCount++; }
+        @Override public int getPlaybackHeadPosition() { return playbackHeadPosition; }
+        @Override public int getFramesWritten() { return framesWritten; }
     }
 
-    private static final class FakeFactory implements QuestSurfaceAudioHardware.AudioTrackFactory {
+    private static class FakeFactory implements QuestSurfaceAudioHardware.AudioTrackFactory {
         int lastSampleRate = -1;
         int lastChannelMask = -1;
         int lastEncoding = -1;
@@ -162,5 +171,173 @@ public final class QuestSurfaceAudioHardwareTest {
         assertTrue(h.stopped);
         assertEquals(0, hw.activeTrackCount());
         assertEquals(0, engine.playbackCount());
+    }
+
+    @Test
+    public void gracefulTerminalDoesNotFlushWhileLifecycleDoes() throws Exception {
+        FakeFactory factory = new FakeFactory();
+        QuestSurfaceAudioHardware hw = new QuestSurfaceAudioHardware(factory);
+        QuestSurfaceAudioEngine engine = new QuestSurfaceAudioEngine(hw);
+        // Normal terminal: drainPlayback should use graceful (no flush)
+        engine.startPlayback("10", 5, "lease-audio", "ans-1", "utt-1", new byte[3840]);
+        engine.enqueuePlaybackChunk("10", 5, "ans-1", new byte[3840]);
+        FakeHandle h = factory.lastHandle;
+        assertFalse(h.flushed);
+        engine.handleAnswerEnd("10", 5, "lease-audio", "utt-1", "ans-1", 1);
+        int drained = engine.drainPlayback("10", 5, "ans-1");
+        assertEquals(1, drained);
+        assertTrue(h.released);
+        assertFalse(h.flushed); // graceful: no flush
+        assertEquals(h.framesWritten, h.getPlaybackHeadPosition()); // waited for head
+
+        // Lifecycle immediate: latch must flush
+        FakeFactory factory2 = new FakeFactory();
+        QuestSurfaceAudioHardware hw2 = new QuestSurfaceAudioHardware(factory2);
+        QuestSurfaceAudioEngine engine2 = new QuestSurfaceAudioEngine(hw2);
+        engine2.startPlayback("10", 6, "lease-audio", "ans-2", new byte[3840]);
+        FakeHandle h2 = factory2.lastHandle;
+        engine2.latch("focus_lost", "10");
+        assertTrue(h2.flushed);
+        assertTrue(h2.released);
+    }
+
+    @Test
+    public void gracefulWaitsForHeadBeforeStopAndPreemptibleByImmediate() throws Exception {
+        // Fake where head lags: write sets written, head advances only on getPlaybackHeadPosition while playing
+        class LaggingHandle implements QuestSurfaceAudioHardware.AudioTrackHandle {
+            int framesWritten = 0;
+            int playbackHead = 0;
+            int headAtStop = -1;
+            boolean playing = false;
+            boolean stopped = false;
+            boolean flushed = false;
+            boolean released = false;
+            @Override public void play() { playing = true; }
+            @Override public int write(byte[] audioData, int offset, int size) {
+                int frames = size / 4;
+                framesWritten += frames;
+                return size;
+            }
+            @Override public void stop() {
+                headAtStop = playbackHead;
+                stopped = true; playing = false; playbackHead = 0;
+            }
+            @Override public void flush() { flushed = true; }
+            @Override public void release() { released = true; }
+            @Override public int getPlaybackHeadPosition() {
+                if (playing && playbackHead < framesWritten) {
+                    playbackHead = Math.min(framesWritten, playbackHead + 96);
+                }
+                return playbackHead;
+            }
+            @Override public int getFramesWritten() { return framesWritten; }
+        }
+        class LaggingFactory implements QuestSurfaceAudioHardware.AudioTrackFactory {
+            LaggingHandle handle = new LaggingHandle();
+            @Override public int getMinBufferSize(int sr, int cm, int enc) { return 3840; }
+            @Override public QuestSurfaceAudioHardware.AudioTrackHandle create(int sr, int cm, int enc, int buf) {
+                handle.play();
+                return handle;
+            }
+        }
+        LaggingFactory factory = new LaggingFactory();
+        QuestSurfaceAudioHardware hw = new QuestSurfaceAudioHardware(factory);
+        byte[] pcm = new byte[3840]; // 960 frames
+        hw.startHardwarePlayback("1", 1, "lease-a", pcm);
+        LaggingHandle h = factory.handle;
+        assertEquals(960, h.framesWritten);
+        assertTrue(h.playing);
+        assertEquals(0, h.playbackHead);
+        long start = System.currentTimeMillis();
+        hw.stopHardwarePlaybackGraceful("1", 1, "ans-1");
+        long elapsed = System.currentTimeMillis() - start;
+        assertTrue(elapsed >= 10);
+        assertTrue(h.stopped);
+        assertFalse(h.flushed);
+        assertTrue(h.released);
+        assertEquals(960, h.headAtStop); // proves head reached written before stop, not after 2s timeout with head==0
+        // Preemption: deterministic with non-advancing fake + CountDownLatch
+        class BlockingHandle implements QuestSurfaceAudioHardware.AudioTrackHandle {
+            int framesWritten = 0;
+            boolean playing = false;
+            boolean stopped = false;
+            boolean flushed = false;
+            boolean released = false;
+            final java.util.concurrent.CountDownLatch enteredPoll = new java.util.concurrent.CountDownLatch(1);
+            @Override public void play() { playing = true; }
+            @Override public int write(byte[] audioData, int offset, int size) {
+                framesWritten += size / 4;
+                return size;
+            }
+            @Override public void stop() { stopped = true; playing = false; }
+            @Override public void flush() { flushed = true; }
+            @Override public void release() { released = true; }
+            @Override public int getPlaybackHeadPosition() {
+                enteredPoll.countDown();
+                return 0; // never advances, would need 2s timeout if not preempted
+            }
+            @Override public int getFramesWritten() { return framesWritten; }
+        }
+        class BlockingFactory implements QuestSurfaceAudioHardware.AudioTrackFactory {
+            BlockingHandle handle = new BlockingHandle();
+            @Override public int getMinBufferSize(int sr, int cm, int enc) { return 3840; }
+            @Override public QuestSurfaceAudioHardware.AudioTrackHandle create(int sr, int cm, int enc, int buf) {
+                handle.play();
+                return handle;
+            }
+        }
+        BlockingFactory factory2 = new BlockingFactory();
+        QuestSurfaceAudioHardware hw2 = new QuestSurfaceAudioHardware(factory2);
+        hw2.startHardwarePlayback("2", 2, "lease-b", pcm);
+        BlockingHandle h2 = factory2.handle;
+        Thread gracefulThread = new Thread(() -> hw2.stopHardwarePlaybackGraceful("2", 2, "ans-2"));
+        gracefulThread.start();
+        assertTrue(h2.enteredPoll.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        long preemptStart = System.currentTimeMillis();
+        hw2.stopHardwarePlayback("2", 2, "ans-2"); // immediate preempts
+        gracefulThread.join(1000);
+        long preemptElapsed = System.currentTimeMillis() - preemptStart;
+        assertTrue(preemptElapsed < 500);
+        assertTrue(h2.stopped);
+        assertTrue(h2.flushed);
+        assertTrue(h2.released);
+        assertFalse(gracefulThread.isAlive());
+    }
+
+    @Test
+    public void writeHandlesShortReturns() throws Exception {
+        FakeFactory factory = new FakeFactory() {
+            @Override public QuestSurfaceAudioHardware.AudioTrackHandle create(int sr, int cm, int enc, int buf) {
+                lastSampleRate = sr; lastChannelMask = cm; lastEncoding = enc; lastBufferSize = buf;
+                createCount++;
+                // Short-write handle: first write returns half, second returns rest
+                FakeHandle h = new FakeHandle() {
+                    boolean first = true;
+                    @Override public int write(byte[] audioData, int offset, int size) {
+                        if (first) {
+                            first = false;
+                            int half = size / 2;
+                            byte[] copy = new byte[half];
+                            System.arraycopy(audioData, offset, copy, 0, half);
+                            writes.add(copy);
+                            framesWritten += half / 4;
+                            playbackHeadPosition = framesWritten;
+                            return half;
+                        }
+                        return super.write(audioData, offset, size);
+                    }
+                };
+                lastHandle = h; handles.add(h); return h;
+            }
+        };
+        QuestSurfaceAudioHardware hw = new QuestSurfaceAudioHardware(factory);
+        byte[] pcm = new byte[3840]; pcm[0] = 9;
+        hw.startHardwarePlayback("1", 1, "lease-a", pcm);
+        FakeHandle h = factory.lastHandle;
+        // Should have looped and written full chunk despite short first return
+        int totalBytes = 0;
+        for (byte[] w : h.writes) totalBytes += w.length;
+        assertEquals(3840, totalBytes);
+        assertEquals(1, factory.createCount);
     }
 }

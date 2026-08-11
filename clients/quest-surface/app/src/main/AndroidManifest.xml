@@ -24,6 +24,17 @@
         <meta-data android:name="com.oculus.supportedDevices" android:value="quest3" />
 
         <activity
+            android:name=".QuestSurfacePermissionActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".QuestSurfaceActivity"
             android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|density"
             android:excludeFromRecents="false"
@@ -37,7 +48,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
     </application>

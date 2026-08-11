@@ -185,7 +185,7 @@ public final class QuestSurfaceAudioEngineTest {
         engine.enqueueCaptureChunk("1",2, other);
         assertEquals(10, engine.captureJitterSize("1",1));
         assertEquals(1, engine.captureJitterSize("1",2));
-        // playback jitter same cap (duration-based: 10*20ms=200ms)
+        // playback jitter: bounded 200ms drop-oldest (item-H) — continuous consumer drains while chunks arrive
         engine.startPlayback("1",3,"lease-audio","ans-1","utt-1", new byte[3840]);
         for (int i=0;i<11;i++) {
             byte[] pcm = new byte[3840]; pcm[0]=(byte)i;
@@ -307,11 +307,11 @@ public final class QuestSurfaceAudioEngineTest {
         // pump in order via poll
         for (int i=1;i<6;i++) { byte[] polled = engine.pollCaptureChunk("99",10); assertEquals(i, polled[0]); }
         assertEquals(0, engine.captureJitterSize("99",10));
-        // playback burst 6x40 → 5 retained, then consume
+        // playback burst 6x40 → 5 retained (bounded 200ms), then consume drains tail
         engine.startPlayback("99", 20, "lease-audio", "ans-burst", "utt-burst", new byte[3840]);
         for (int i=0;i<6;i++) { byte[] pcm = new byte[7680]; pcm[0]=(byte)i; engine.enqueuePlaybackChunk("99",20,"ans-burst", pcm); }
         assertEquals(5, engine.playbackJitterSize("99",20,"ans-burst"));
-        // consumer polls retained in order then stop
+        // consumer polls retained (1..5) in order then stop — oldest dropped
         for (int i=1;i<6;i++) { byte[] polled = engine.pollPlaybackChunk("99",20,"ans-burst"); assertEquals(i, polled[0]); }
         assertEquals(0, engine.playbackJitterSize("99",20,"ans-burst"));
     }

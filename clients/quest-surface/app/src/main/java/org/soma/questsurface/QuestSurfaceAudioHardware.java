@@ -30,6 +30,8 @@ final class QuestSurfaceAudioHardware implements QuestSurfaceAudioEngine.Hardwar
         void stop();
         void flush();
         void release();
+        default int getPlaybackHeadPosition() { return 0; }
+        default int getFramesWritten() { return 0; }
     }
 
     interface AudioTrackFactory {
@@ -66,14 +68,19 @@ final class QuestSurfaceAudioHardware implements QuestSurfaceAudioEngine.Hardwar
 
     private static final class RealHandle implements AudioTrackHandle {
         private final AudioTrack track;
+        private int framesWritten = 0;
         RealHandle(AudioTrack track) { this.track = track; }
         @Override public void play() { track.play(); }
         @Override public int write(byte[] audioData, int offsetInBytes, int sizeInBytes) {
-            return track.write(audioData, offsetInBytes, sizeInBytes);
+            int ret = track.write(audioData, offsetInBytes, sizeInBytes);
+            if (ret > 0) framesWritten += ret / 4;
+            return ret;
         }
         @Override public void stop() { track.stop(); }
         @Override public void flush() { track.flush(); }
         @Override public void release() { track.release(); }
+        @Override public int getPlaybackHeadPosition() { return track.getPlaybackHeadPosition(); }
+        @Override public int getFramesWritten() { return framesWritten; }
     }
 
     private final AudioTrackFactory factory;
@@ -106,19 +113,28 @@ final class QuestSurfaceAudioHardware implements QuestSurfaceAudioEngine.Hardwar
         AudioTrackHandle track = tracks.get(key);
         if (track == null) {
             int minBuf = factory.getMinBufferSize(SAMPLE_RATE, CHANNEL_MASK, ENCODING);
-            // Ensure buffer holds at least a few chunks; max of minBuf and 4*3840
             int bufSize = Math.max(minBuf, 4 * 3840);
-            // Align to frame size (stereo 16-bit = 4 bytes per frame)
             if (bufSize % 4 != 0) bufSize += 4 - (bufSize % 4);
             track = factory.create(SAMPLE_RATE, CHANNEL_MASK, ENCODING, bufSize);
             track.play();
             tracks.put(key, track);
         }
-        track.write(pcm, 0, pcm.length);
+        // Handle short/error returns: loop until full chunk written
+        int offset = 0;
+        int remaining = pcm.length;
+        while (remaining > 0) {
+            int written = track.write(pcm, offset, remaining);
+            if (written <= 0) {
+                throw new java.io.IOException("AudioTrack write failed: " + written);
+            }
+            offset += written;
+            remaining -= written;
+        }
     }
 
     @Override
     public synchronized void stopHardwarePlayback(String sessionEpoch, long streamId, String answerId) {
+        // Immediate teardown for lifecycle (latch/focus/disconnect/reject): stop+flush discards
         String key = sessionEpoch + ":" + streamId;
         AudioTrackHandle track = tracks.remove(key);
         if (track != null) {
@@ -126,6 +142,42 @@ final class QuestSurfaceAudioHardware implements QuestSurfaceAudioEngine.Hardwar
             try { track.flush(); } catch (Exception ignored) {}
             try { track.release(); } catch (Exception ignored) {}
         }
+    }
+
+    @Override
+    public void stopHardwarePlaybackGraceful(String sessionEpoch, long streamId, String answerId) {
+        // Graceful terminal completion for ANSWER_END: drain to playback head then release, preemptible by lifecycle
+        // Keep track playing while polling head toward written; do not hold monitor during wait;
+        // retain ownership in map so immediate teardown can atomically remove and stop+flush+release.
+        String key = sessionEpoch + ":" + streamId;
+        AudioTrackHandle track;
+        synchronized (this) {
+            track = tracks.get(key);
+            if (track == null) return;
+        }
+        long deadlineMs = System.currentTimeMillis() + 2000; // 2s bound
+        while (System.currentTimeMillis() < deadlineMs) {
+            int head;
+            int written;
+            try {
+                head = track.getPlaybackHeadPosition();
+                written = track.getFramesWritten();
+            } catch (Exception ignored) { break; }
+            if (head >= written) break;
+            // Check if still owned; if immediate teardown removed it, exit without touching
+            synchronized (this) {
+                if (tracks.get(key) != track) return;
+            }
+            try { Thread.sleep(5); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+        }
+        // After head reached (or timeout as bounded forced teardown), atomically remove-if-same before stop+release
+        synchronized (this) {
+            if (tracks.get(key) != track) return; // preempted by immediate
+            tracks.remove(key);
+        }
+        try { track.stop(); } catch (Exception ignored) {}
+        // Do NOT flush — flush would discard tail
+        try { track.release(); } catch (Exception ignored) {}
     }
 
     // Visible for tests: number of active tracks

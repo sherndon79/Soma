@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { createGrantMutationProvenanceFile } from "./grantMutationProvenanceFile.js";
@@ -18,16 +19,24 @@ export async function loadGrantAuthority({
   try {
     grantStore = await loadGrantStore(grantStorePath);
   } catch (error) {
-    const emptyGrantStore = normalizeGrantStore({ schema_version: 1, grants: [], examples: [] });
-    return {
-      grantStore: emptyGrantStore,
-      grantRecoveryReport: unreadableGrantStoreRecoveryReport({
+    if (error?.code === "ENOENT") {
+      try {
+        await initializeEmptyGrantStore(grantStorePath);
+        grantStore = await loadGrantStore(grantStorePath);
+      } catch (initializationError) {
+        return unreadableGrantAuthority({
+          grantStorePath,
+          grantMutationProvenancePath,
+          error: initializationError,
+        });
+      }
+    } else {
+      return unreadableGrantAuthority({
         grantStorePath,
+        grantMutationProvenancePath,
         error,
-      }),
-      grantStorePath: pathString(grantStorePath),
-      grantMutationProvenancePath: pathString(grantMutationProvenancePath),
-    };
+      });
+    }
   }
   const normalizedGrantStore = normalizeGrantStore(grantStore);
   let provenanceEvents = [];
@@ -49,6 +58,44 @@ export async function loadGrantAuthority({
     grantRecoveryReport: inspectGrantMutationRecovery({
       store: normalizedGrantStore,
       provenanceEvents,
+    }),
+    grantStorePath: pathString(grantStorePath),
+    grantMutationProvenancePath: pathString(grantMutationProvenancePath),
+  };
+}
+
+async function initializeEmptyGrantStore(grantStorePath) {
+  const contents = `${JSON.stringify({
+    schema_version: 1,
+    grants: [],
+    examples: [],
+  }, null, 2)}\n`;
+  try {
+    await writeFile(grantStorePath, contents, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+  } catch (error) {
+    // Another startup may have won the create-only race. The subsequent read
+    // remains authoritative and will still fail closed if that file is invalid.
+    if (error?.code !== "EEXIST") {
+      throw error;
+    }
+  }
+}
+
+function unreadableGrantAuthority({
+  grantStorePath,
+  grantMutationProvenancePath,
+  error,
+}) {
+  const emptyGrantStore = normalizeGrantStore({ schema_version: 1, grants: [], examples: [] });
+  return {
+    grantStore: emptyGrantStore,
+    grantRecoveryReport: unreadableGrantStoreRecoveryReport({
+      grantStorePath,
+      error,
     }),
     grantStorePath: pathString(grantStorePath),
     grantMutationProvenancePath: pathString(grantMutationProvenancePath),

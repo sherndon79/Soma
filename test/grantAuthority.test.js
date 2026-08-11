@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -45,6 +45,27 @@ test("loadGrantAuthority pairs grant store with clean mutation recovery inspecti
   assert.equal(authority.grantRecoveryReport.ok, true);
   assert.equal(authority.grantRecoveryReport.degraded, false);
   assert.deepEqual(authority.grantRecoveryReport.findings, []);
+});
+
+test("loadGrantAuthority initializes a missing runtime store with no authority", async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "soma-grant-authority-"));
+  const grantStorePath = path.join(workspace, "grants.json");
+  const provenancePath = path.join(workspace, "grant-mutations.ndjson");
+
+  const authority = await loadGrantAuthority({
+    grantStorePath,
+    grantMutationProvenancePath: provenancePath,
+  });
+
+  assert.deepEqual(JSON.parse(await readFile(grantStorePath, "utf8")), {
+    schema_version: 1,
+    grants: [],
+    examples: [],
+  });
+  assert.equal((await stat(grantStorePath)).mode & 0o777, 0o600);
+  assert.equal(authority.grantStore.grants.length, 0);
+  assert.equal(authority.grantRecoveryReport.ok, true);
+  assert.equal(authority.grantRecoveryReport.degraded, false);
 });
 
 test("loadGrantAuthority keeps durable grants authorizing after restart with file URL paths", async () => {

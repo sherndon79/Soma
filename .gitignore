@@ -11,3 +11,10 @@ clients/quest-surface/app/.cxx/
 clients/quest-surface/app/build/
 clients/quest-surface/local.properties
 clients/quest-surface/local-tls/
+# Client TLS identity/CA staged into assets at build time — secret, never commit.
+clients/quest-surface/app/src/main/assets/
+
+# Durable runtime authority. These files are local state, not repository config;
+# config/grants.example.json is the committed non-authorizing shape.
+config/grants.json
+config/grant-mutations.ndjson

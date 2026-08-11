@@ -77,7 +77,7 @@ test("public path fail-closed: capability view reports all Sensorium entries as 
 // ── Grants layer ────────────────────────────────────────────────────────────
 
 test("public path fail-closed: no active grant authorizes any Sensorium capability", () => {
-  const grantsPath = path.join(REPO_ROOT, "config", "grants.json");
+  const grantsPath = path.join(REPO_ROOT, "config", "grants.example.json");
   const raw = readFileSync(grantsPath, "utf8");
   const config = JSON.parse(raw);
 
@@ -91,7 +91,7 @@ test("public path fail-closed: no active grant authorizes any Sensorium capabili
     0,
     `found ${offending.length} active grant(s) for Sensorium capabilities: ${offending
       .map((g) => `${g.id} → ${g.capability}`)
-      .join(", ")} — fail-closed broken at the grant store`,
+      .join(", ")} — fail-closed broken in the committed non-authorizing grant shape`,
   );
 });
 

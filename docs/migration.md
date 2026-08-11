@@ -1,6 +1,6 @@
 # Migration And Versioning
 
-Status: initial policy before durable grants or durable memory
+Status: active policy for current durable grants, memory, provenance, and runtime state
 
 Soma should treat schema and catalog changes as authority changes when they affect what a model,
 provider, memory item, or grant may do. Migration is not only data compatibility; it is consent
@@ -27,6 +27,9 @@ Current file-backed records:
 - `config/provider-registry.json`
 - `config/harness-modules.json`
 - `config/runtime-profiles.json`
+- gitignored `config/grants.json` plus `config/grant-mutations.ndjson`
+- `config/grants.example.json` (shape only; never authority)
+- durable and occupant memory stores plus their mutation provenance
 - desktop inspection result schema
 
 Current in-process records:
@@ -38,9 +41,6 @@ Current in-process records:
 
 Future durable records:
 
-- grants
-- durable memory items
-- durable provenance
 - provider trust metadata
 - migration history
 
@@ -186,6 +186,27 @@ Grant migration rules:
 
 If a grant cannot be migrated safely, Soma should mark it inactive and review-required rather than
 deleting it silently.
+
+### Runtime Grant Path Ownership
+
+The runtime grant store and its append-only mutation provenance are one authority record. Their
+default paths remain `config/grants.json` and `config/grant-mutations.ndjson`, but both are
+gitignored local state. `config/grants.example.json` is the committed empty schema shape and grants
+nothing.
+
+The transition from tracked to ignored state is deliberately non-destructive: remove the two
+runtime files from the Git index while leaving their working-tree bytes in place. Verify their
+checksums before and after that index-only operation. Once the removal is committed, ordinary
+checkout, restore, and pull operations no longer own or rewrite the runtime files.
+
+When moving state with `SOMA_GRANT_STORE_PATH` and
+`SOMA_GRANT_MUTATION_PROVENANCE_PATH`:
+
+- copy the store and provenance together; never synthesize one from the other
+- preserve the source until startup recovery inspection reports clean at the destination
+- do not merge two stores or treat the committed example as a migration source
+- if the destination store is absent, Soma may create only an empty mode-`0600` store
+- if provenance is absent, corrupt, or mismatched for active grants, fail closed and require repair
 
 ## Proposal Record Migration
 

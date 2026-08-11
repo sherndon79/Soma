@@ -85,6 +85,9 @@ final class QuestSurfaceTransport {
     private final QuestSurfaceSequenceTracker sendSequences =
             new QuestSurfaceSequenceTracker();
     private final QuestSurfaceRuntime runtime;
+    // Device-only mic driver (real AudioRecord), gated on eligibility. Null in the test constructor:
+    // capture-driver behavior is unit-tested directly, not through the socket transport.
+    private QuestSurfaceCaptureDriver captureDriver;
 
     private volatile OutputStream output;
 
@@ -94,8 +97,26 @@ final class QuestSurfaceTransport {
             int port,
             StateSink stateSink,
             SnapshotSink snapshotSink) {
+        // Device path: real AudioTrack playback hardware + a real AudioRecord capture driver.
         this(assets, host, port, stateSink, snapshotSink,
-                new QuestSurfaceRuntime(new QuestSurfaceAudioEngine()));
+                new QuestSurfaceRuntime(new QuestSurfaceAudioEngine(new QuestSurfaceAudioHardware())));
+        this.captureDriver = new QuestSurfaceCaptureDriver(
+                QuestSurfaceCaptureDriver.audioRecordSource(),
+                this::captureEligible,
+                new QuestSurfaceCaptureDriver.UplinkSink() {
+                    @Override public void utteranceStart(long streamId, String utteranceId) throws Exception {
+                        sendUtteranceStart(streamId, utteranceId);
+                    }
+                    @Override public void audioChunk(long streamId, String utteranceId, byte[] pcm) throws Exception {
+                        sendAudioChunk(streamId, utteranceId, pcm);
+                    }
+                    @Override public void utteranceEnd(long streamId, String utteranceId) throws Exception {
+                        sendUtteranceEnd(streamId, utteranceId);
+                    }
+                    @Override public void cancel(long streamId, String utteranceId, String reason) {
+                        try { sendCancel(streamId, utteranceId, reason); } catch (Exception ignored) {}
+                    }
+                });
     }
 
     QuestSurfaceTransport(
@@ -111,6 +132,16 @@ final class QuestSurfaceTransport {
         this.stateSink = stateSink;
         this.snapshotSink = snapshotSink;
         this.runtime = runtime;
+        this.captureDriver = null;
+    }
+
+    /** Capture is authorized only while focused+started, armed with a live mic lease, and unlatched. */
+    private boolean captureEligible() {
+        return !stoppedPermanently.get()
+                && started.get()
+                && runtime.hasManifest()
+                && runtime.micLease() != null
+                && !runtime.isLatched();
     }
 
     boolean startIfEligible() {
@@ -128,7 +159,11 @@ final class QuestSurfaceTransport {
             return;
         }
         // Hardware stop and socket close are both local, synchronous narrowing operations. Neither
-        // waits for a workstation write or acknowledgement.
+        // waits for a workstation write or acknowledgement. Stop the mic first (closes AudioRecord,
+        // abandons any in-flight utterance with no trailing audio), then latch the engine.
+        if (captureDriver != null) {
+            captureDriver.stop(reason == null ? "local_stop" : reason);
+        }
         runtime.latch(reason == null ? "local_stop" : reason);
         abortSocket(socket.getAndSet(null));
         output = null;
@@ -291,6 +326,12 @@ final class QuestSurfaceTransport {
                 snapshotFrame, SystemClock.elapsedRealtime());
         stateSink.accept("leased", "panel_ready", attempt);
         deliverSnapshot(snapshot);
+
+        // Armed episode with a mic leaf -> start the continuous capture driver. Idempotent: the gate
+        // governs each frame, and the driver thread exits whenever eligibility drops (mic released).
+        if (captureDriver != null && runtime.micLease() != null) {
+            captureDriver.start();
+        }
 
         // Bootstrap reads are bounded. Once leased, each read is bounded by the locally derived
         // lease deadline; local stop closes the socket to unblock it immediately.

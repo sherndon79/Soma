@@ -187,10 +187,19 @@ route, the `SOMA_QUEST_SURFACE_REAL_ANSWER` runtime flag, the loopback + no-rete
 verified against injected-fetch adapters / fake hardware.
 
 **Remaining before the headset run:**
+- ~~Real `AudioRecord`/`AudioTrack` capture/playback and `RECORD_AUDIO` handling on device.~~
+  **BUILT + host-verified 2026-08-10** (device-audio slice; see
+  `docs/design/2026-08-10_quest-v1b-device-audio-scope.md`). Real `AudioTrack` playback hardware
+  (`QuestSurfaceAudioHardware`), `RECORD_AUDIO` permission (declared + runtime-requested, fail-closed
+  on denial, grant does not arm), and a continuous VAD-gated `AudioRecord` capture driver
+  (`QuestSurfaceCaptureDriver` + `QuestSurfaceVad`) wired above the transport. 55/55 JVM tests green.
+  The mic opens only within the armed episode and closes the instant eligibility drops; on-device
+  behavior (does the mic hear Seth, is playback audible) is the worn test itself.
 - The **live-services loopback** (§4) — one host-side utterance through the real
   Whisper/Gemma/Kokoro services. The ultimate pre-Gate-2 proof; the mocked loopback cannot catch
-  live-service behavior.
-- Real `AudioRecord`/`AudioTrack` capture/playback and `RECORD_AUDIO` handling on device.
+  live-service behavior. **(Ran green earlier: real ~2.7 s round trip, voice-brief answer.)**
+- **APK build + install** — build in the pinned Threshold container (needs the external dev-TLS
+  identities from v1a §1) and `adb install`; then server config (§5) and Gate 2 (§3, Seth arms).
 - The operator-facing **arm surface** (§3) — `armEpisode` binds `{mode, capability, provider,
   grant_id}` today; a real operator console for issuing/arming (rather than a code path) is a
   companion build.

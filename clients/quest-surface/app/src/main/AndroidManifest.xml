@@ -3,6 +3,7 @@
 
     <!-- The client reaches only the operator-configured Soma fixture over mutually authenticated TLS. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature
         android:name="android.hardware.vr.headtracking"
@@ -12,7 +13,7 @@
     <!-- Passthrough composition gives the wearer room context; the app never receives camera pixels. -->
     <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="true" />
 
-    <!-- Deliberately absent through inert v1b: RECORD_AUDIO, CAMERA, USE_SCENE, hand/eye/face/body tracking. -->
+    <!-- Deliberately absent: CAMERA, USE_SCENE, hand/eye/face/body tracking. RECORD_AUDIO is declared above. -->
     <application
         android:allowBackup="false"
         android:extractNativeLibs="true"

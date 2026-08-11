@@ -12,14 +12,13 @@ provenance, scoped read-only file access, text-only cognitive-load stewardship, 
 desktop accessibility inspection, including authorized structure-only recursive traversal
 (role/count topology only; text-bearing content remains excluded and gated separately).
 
-An explicitly disabled Quest v1a fixture/client path can present one grant-bound snapshot panel
-over compositor-owned passthrough. It exports no head pose or other headset perception and latches
-suspended on focus/presence loss. The positive on-device path—mTLS authentication, lease and
-snapshot delivery, composition, and actual-bounds acknowledgement—was verified on 2026-08-09;
-the live negative-path suite remains open. The v1b Java client now has inert, fake-hardware-tested
-manifest/audio protocol and lifecycle integration, plus bounded ≤200 ms drop-oldest jitter queues (20 ms/40 ms duration-bound) and `ANSWER_END` terminal (drain-then-clear, lifecycle latch preempts, per-stream isolation); no `AudioRecord`/`AudioTrack` path or live audio authority has been activated.
-See the
-[Quest surface v1a runbook](./docs/runbooks/quest_surface_v1a.md).
+An explicitly disabled Quest path can present a grant-bound snapshot panel over compositor-owned
+passthrough and, under a separate RAM-only armed episode, run the exact four-leaf v1b local voice
+path. It exports no head pose or camera perception and latches suspended on focus/presence loss.
+The v1b host path includes exact grant/device binding, bounded audio transport, a local-only answer
+route, and loopback arm/status/disarm control; the built Android capture/playback and permission path
+still needs worn headset validation. See the
+[Quest surface v1b runbook](./docs/runbooks/quest_surface_v1b.md).
 
 ## Architecture Direction
 
@@ -113,9 +112,10 @@ subscriber when explicitly enabled:
 SOMA_SENSORIUM_ENABLED=1 npm start
 ```
 
-Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. No Sensorium grants
-ship in `config/grants.json`, so subscription requests still fail closed until an explicit active
-grant exists for the exact `perception.sensorium.*.subscribe` capability.
+Override the helper path with `SOMA_SENSOR_BROKER=/path/to/soma-sensor-broker`. The committed
+`config/grants.example.json` carries no authority, so subscription requests still fail closed until
+an explicit active grant exists in the local runtime store for the exact
+`perception.sensorium.*.subscribe` capability.
 
 If the Sensorium publisher is on another routed subnet, Zenoh multicast discovery may not cross
 the network boundary. Provide `SOMA_SENSORIUM_ZENOH_CONFIG=/path/to/zenoh-client.json5` to pass an
@@ -156,9 +156,9 @@ subscription:
 npm run cli -- sensorium grant-create proposal-id --by user
 ```
 
-Runtime session grants can be revoked explicitly. Revocation does not write to
-`config/grants.json`; if active subscriptions are tied to the grant, they are stopped with
-revocation provenance:
+Runtime session grants can be revoked explicitly. Revocation does not write to the durable runtime
+grant store; if active subscriptions are tied to the grant, they are stopped with revocation
+provenance:
 
 ```bash
 npm run cli -- sensorium grant-revoke grant-id --by user --reason "No longer needed."

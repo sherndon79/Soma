@@ -227,7 +227,10 @@ provenance inspection. Missing provenance for active durable grants produces deg
 findings; unreadable provenance produces non-authorizing findings instead of silently authorizing
 durable grants. A corrupt grant store is loaded as empty in-memory authority with
 `grant_store_status: corrupt`, a global `grant_store_unreadable` finding, and durable writes blocked
-before any file rewrite.
+before any file rewrite. The default runtime store and provenance log are gitignored local state;
+`config/grants.example.json` is the committed non-authorizing shape. A missing runtime store is
+initialized empty with mode `0600`, and `SOMA_GRANT_STORE_PATH` plus
+`SOMA_GRANT_MUTATION_PROVENANCE_PATH` can move the paired state outside the worktree.
 
 ### `POST /grants`
 
@@ -837,7 +840,7 @@ capabilities remain disabled.
 MVP does not enable perception beyond submitted chat text by default. Sensorium subscription
 capabilities exist in the catalog and provider registry, and the HTTP seam exists for injected test
 or opt-in runtimes, but default server startup does not configure a subscriber and
-`config/grants.json` does not include active Sensorium grants.
+The committed `config/grants.example.json` does not include active Sensorium grants.
 
 Remote graphical sessions, including possible Sunshine/Moonlight support, remain unimplemented and
 disabled. They should be treated as high-risk visual perception and separate input-actuation

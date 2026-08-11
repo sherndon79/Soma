@@ -38,9 +38,14 @@ Primary paths:
 
 - `src/capabilityCatalog.js`
 - `src/grants.js`
+- `src/grantAuthority.js`
 - `config/capability-catalog.json`
 - `config/provider-registry.json`
-- `config/grants.json`
+- `config/grants.example.json`
+
+The live `config/grants.json` and `config/grant-mutations.ndjson` are gitignored runtime authority,
+not review fixtures. Inspect them only when the current task explicitly includes local authority
+state.
 
 Supporting docs:
 

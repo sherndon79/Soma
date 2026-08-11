@@ -120,6 +120,34 @@ tight turn-gaps. Named here so it does not calcify silently.
   follow-on). Does not add controller/hand/gaze/scene/camera. Does not prove audibility or that the
   mic hears sound — that is the worn functional test itself.
 
+## First worn attempt — live findings (2026-08-10 night)
+
+Proven live on the Quest 3 (worn, mTLS to `192.168.50.1:8793`, v1a TLS reused):
+- The device stack works end-to-end: the app reaches OpenXR **FOCUSED**, starts the transport,
+  and **completes mTLS** (server: `transport_authenticated`).
+- The **consent floor holds on real hardware**: with no armed episode the server issues no manifest
+  → `manifest_not_armed` → `lease_refused` → `session_closed`; the client retries its bounded 8
+  attempts (`message_type_unexpected`) and gives up. No panel, no capture — **N1 confirmed live.**
+
+Two device-only blockers (host tests could not catch either — the recurring lesson):
+1. **RECORD_AUDIO request in `onCreate` breaks immersion.** Firing a 2D permission dialog during
+   immersive launch pulls the app out of its OpenXR session and it is killed (destroy timeout),
+   before the transport ever starts. Confirmed by a deferred-permission rebuild that then reached
+   mTLS. **Fix needed:** a separate 2D launcher activity that obtains RECORD_AUDIO *before* starting
+   the immersive `NativeActivity` (the Threshold-catalogued `XrSceneModel` shim pattern). Piece A's
+   `onCreate` request must move there.
+2. **v1b has no unarmed path — even the panel needs an armed episode.** The panel snapshot is a leaf
+   of the four-leaf manifest, which only issues when armed. So the worn test (panel *or* voice)
+   requires arming, and today nothing arms a running headset-facing listener (the env server builds
+   an unarmed provider and never calls `armEpisode`; the provider is not exposed for external
+   arming). Only the `panel.present` grant exists; the three audio leaf grants
+   (mic/audio/model-attach) are not yet created.
+
+**Next slices before a worn round trip:** (a) the permission launcher-shim; (b) a **live arm
+surface** — a headset-facing listener that builds the four-leaf manifest and exposes a Seth-triggered
+arm action (Gate 2 → `armEpisode` with the text/local leaf) — plus creating the three missing leaf
+grants bound to fingerprint `DD1F83…`. Then the worn voice test.
+
 ## Verification ceiling (be honest about it)
 JVM unit tests cover the VAD segmenter, the permission-check seam, the playback-write seam, and the
 gating logic against synthetic input. They **cannot** prove `AudioRecord`/`AudioTrack` behave on the

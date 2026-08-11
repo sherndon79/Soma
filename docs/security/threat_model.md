@@ -328,7 +328,10 @@ Implemented controls:
 - file-backed provider registry
 - read-only capability view
 - proposal store with approval/denial records and no activation
-- read-only file-backed grant/revocation record shape with no activation
+- file-backed grant/revocation authority with explicit runtime-write opt-in, fail-closed recovery,
+  and no implicit activation
+- gitignored runtime grant/provenance state separated from the committed non-authorizing example,
+  preventing ordinary Git operations from rewriting live authority
 - in-process provenance log
 - steward history projection publication and grant-bound curated occupant history read
 - self-scoped narrowing modules
@@ -339,7 +342,6 @@ Implemented controls:
 
 Design controls not yet fully implemented:
 
-- writable grant store and revocation mutation paths
 - successor delivery
 - durable provenance retention policy
 - provider binary verification
@@ -452,6 +454,48 @@ Controls:
   permitted
 - provenance is count/class metadata only and never contains memory content, snippets, or summaries
 
+## Quest Voice Episode Control
+
+Quest v1b adds a bounded microphone-to-local-model-to-wearer path. The primary threats are ambient
+capture without a fresh consent act, grant discovery or substitution, device-identity mismatch,
+authority added to an existing session, auto-resume after doff/disconnect, remote model fallback,
+and retention of PCM, transcript, or answer content.
+
+Current controls:
+
+- the device mTLS listener and the episode-control API are separate: device traffic uses the
+  configured `:8793` listener while control remains on Soma's existing `127.0.0.1:8765` API
+- arming requires `actor=user`, an explicit episode id, participant-facing reason, provenance id,
+  and bounded TTL; it exposes only the fixed `text/local` mode
+- the episode TTL is RAM-only, independent of manifest lease TTL, bounded to 24 hours, and never
+  refreshed by status reads
+- re-arm validates the complete request and exact grant tuple before atomically replacing the RAM
+  window; a failed replacement leaves the prior episode and expiry timer untouched
+- manifests issue at HELLO; the operator arms before launch/relaunch rather than treating re-arm as
+  a way to rewrite an already-issued manifest
+- startup pins four distinct grant ids; authorization resolves those ids exactly and validates each
+  capability, provider, scope, constraint set, and the same enrolled client-certificate fingerprint
+- local attach is pinned to `soma.provider.local-model` with `window` scope; the answer provider is
+  the Quest surface provider and has no remote fallback
+- grant creation/discovery/refresh is outside arming, and the provider receives an immutable grant
+  snapshot at construction
+- disarm and expiry synchronously latch and close issued sessions, abort in-flight stages, and make
+  deliberate client relaunch/fresh epoch necessary; disarm is idempotent and restart clears the arm
+- each successful explicit arm creates a fresh server-side episode latch; it does not clear the
+  prior episode's latch object or revive any already-issued session
+- lifecycle provenance is metadata-only and declares content/payload bytes absent; PCM, transcripts,
+  answers, and participant-facing arm reasons are not retained in those events
+
+Residual risks:
+
+- loopback and `actor=user` are an operational single-user-host convention, not cryptographic proof
+  that the wearer issued the command; another process under the same account could call the API
+- host or same-user compromise can bypass this control boundary
+- Android permission state and an armed host episode are independent; either existing alone is not
+  proof of current wearer intent
+- a Local Control Authenticator could strengthen same-user attribution later, but is intentionally
+  outside this slice
+
 ## Non-Defenses
 
 Soma currently does not defend against:
@@ -466,7 +510,8 @@ Soma currently does not defend against:
 - browser automation attacks
 - filesystem writes
 - shell execution
-- camera, microphone, screen capture, or desktop actuation
+- arbitrary camera, microphone, screen-capture, or desktop-actuation paths outside their explicit
+  governed implementations
 - multi-user or shared-machine memory isolation failures
 - cross-device synchronization attacks
 
@@ -477,7 +522,7 @@ review before implementation.
 
 Update this threat model before:
 
-- adding a grant store
+- changing grant-store schemas, path ownership, or recovery behavior
 - activating approved proposals
 - adding durable memory
 - adding durable provenance
@@ -486,7 +531,7 @@ Update this threat model before:
 - adding third-party providers or MCP adapters
 - adding filesystem writes
 - adding shell execution
-- adding text inspection, screenshots, camera, microphone, screen capture, or actuation
+- adding another text-inspection, screenshot, camera, microphone, screen-capture, or actuation path
 - supporting multiple users, multiple agents, or cross-device sync
 
 ## Principle

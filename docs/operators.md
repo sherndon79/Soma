@@ -117,6 +117,50 @@ Hermes currently consumes the same `:8000` endpoint and pins the Gemma model id.
 will break Hermes chat until a separate cutover updates Hermes configuration. Do not change Hermes
 as part of bake-off setup.
 
+### Quest Surface Episode Control
+
+The Quest v1b listener is opt-in and requires four distinct, exact durable grant ids at startup:
+
+```bash
+SOMA_QUEST_SURFACE_ENABLED=1 \
+SOMA_QUEST_SURFACE_TLS_KEY=/external/path/server.key \
+SOMA_QUEST_SURFACE_TLS_CERT=/external/path/server.pem \
+SOMA_QUEST_SURFACE_CLIENT_CA=/external/path/client-ca.pem \
+SOMA_QUEST_SURFACE_PANEL_GRANT_ID=grant-panel-id \
+SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID=grant-mic-id \
+SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID=grant-audio-id \
+SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID=grant-local-id \
+npm start
+```
+
+Create the grants before this startup so the provider receives the current immutable authority
+snapshot. The first three grants use the Quest fixture provider with `session` scope; local attach
+uses `soma.provider.local-model` with `window` scope. Every leaf must pin the enrolled client
+certificate through `device_fingerprint256`. The legacy `SOMA_QUEST_SURFACE_GRANT_ID` name remains
+only as a panel-id compatibility alias.
+
+The operator control surface stays on Soma's existing loopback API (`127.0.0.1:8765`), not the
+device mTLS listener (`:8793`):
+
+```bash
+npm run cli -- quest-surface status
+npm run cli -- quest-surface arm \
+  --episode-id quest-worn-1 --ttl-ms 900000 \
+  --reason "Authorize one bounded worn Quest voice test." \
+  --provenance-id gate/quest-v1b/worn-1
+npm run cli -- quest-surface disarm --reason operator_disarmed
+```
+
+Arm accepts only `actor=user` through the CLI, the fixed `text/local` path, explicit provenance,
+and a 1 s–24 h TTL; use an explicit 15-minute TTL for a worn run. Re-arm validates first and then
+atomically replaces the prior RAM window; failure leaves the prior window and timer unchanged.
+Arm before client launch/relaunch so HELLO receives the intended episode. Status is byte-free and
+does not refresh authority. Disarm and
+expiry synchronously close and latch active sessions; disarm is idempotent and process restart
+clears the RAM-only arm. Loopback plus the single-user host convention is an operational gate, not
+same-user cryptographic proof. See the [v1b runbook](./runbooks/quest_surface_v1b.md) for grant
+creation, fresh-epoch order, validation, and cleanup.
+
 ## Check Status
 
 ```bash
@@ -746,9 +790,10 @@ step and is not implied by either proposal creation or proposal approval.
 
 ## Inspect Grants
 
-The file-backed grant store is read-only. It records durable grant shape and examples. Sensorium
-session grants are process-local runtime grants created through the Sensorium-specific flow below;
-they do not mutate `config/grants.json`.
+The file-backed local runtime store records durable grant authority and is inspectable here.
+Durable writes remain separately opt-in; inspection does not mutate or activate anything. Sensorium
+session grants are process-local grants created through the Sensorium-specific flow below; they do
+not mutate the durable runtime store.
 
 List grants:
 
@@ -796,17 +841,32 @@ When no recovery inspection is available, the route reports
 When degraded findings exist, the route returns bounded finding metadata such as grant id,
 capability, provider, scope, event type, mismatched field name, or durable provenance read failure
 class; it does not copy mismatch values or grant reason text into the response.
-If `config/grants.json` is corrupt or unreadable at startup, Soma starts with an empty in-memory
+The local runtime grant store defaults to the gitignored `config/grants.json`; its append-only
+provenance defaults to the gitignored `config/grant-mutations.ndjson`. The committed
+`config/grants.example.json` documents the empty, non-authorizing shape. If the runtime store is
+absent, startup creates that empty shape with mode `0600`; it does not infer authority from the
+example, proposals, or mutation history. Override the two runtime paths together when state should
+live outside the worktree:
+
+```bash
+SOMA_GRANT_STORE_PATH=/var/lib/soma/grants.json \
+SOMA_GRANT_MUTATION_PROVENANCE_PATH=/var/lib/soma/grant-mutations.ndjson \
+npm start
+```
+
+Git checkout, restore, and pull no longer own either default runtime file. Back up and migrate the
+store and provenance as one authority record; a missing or mismatched provenance history remains a
+degraded, non-authorizing condition.
+
+If the runtime grant store is corrupt or unreadable at startup, Soma starts with an empty in-memory
 grant store, marks recovery degraded, and reports `grant_store_status: corrupt` plus
 `grant_store_degraded_reason: grant_store_unreadable` in `/health`, `GET /grants`, and
 `GET /grants/recovery`. Durable grants are not honored while this global recovery finding is
 present, and durable mutation routes refuse before writing, preserving the corrupt file for operator
 inspection.
 
-At server startup, Soma loads `config/grants.json` together with the append-only grant mutation
+At server startup, Soma loads the runtime store together with its append-only grant mutation
 provenance log and supplies the resulting recovery report to policy gates and this inspection route.
-The provenance log path defaults to `config/grant-mutations.ndjson` and can be overridden with
-`SOMA_GRANT_MUTATION_PROVENANCE_PATH`.
 
 Durable grant mutation can be previewed without writing authority:
 
@@ -947,8 +1007,8 @@ The enabled posture sets `runtime_writes_enabled: true`,
 `POST /grants`, `POST /grants/:id/revoke`, `grants create`, and `grants revoke` return
 `durable_grant_mutation_not_enabled` with explicit non-write flags.
 
-With the opt-in enabled, durable grant creation writes `config/grants.json` by default and appends
-metadata-only provenance to `config/grant-mutations.ndjson`:
+With the opt-in enabled, durable grant creation writes the gitignored runtime store and appends
+metadata-only provenance to the paired gitignored runtime log by default:
 
 ```bash
 npm run cli -- grants create \
@@ -1182,8 +1242,9 @@ curl http://127.0.0.1:8765/sensorium/subscriptions
 
 Starting a subscription still requires an active grant for the exact
 `perception.sensorium.*.subscribe` capability. The route validates the request, provider support,
-and hostname-scoped topic before the helper is reached. No Sensorium grants ship in
-`config/grants.json`.
+and hostname-scoped topic before the helper is reached. No Sensorium grants ship in the committed
+`config/grants.example.json`; the local runtime store may contain only authority created explicitly
+by its operator.
 
 Request constraints must stay within the active grant's declared bounds. `max_seconds` and
 `max_fps` cannot exceed the grant maximum, `format_required` must match when pinned, and
@@ -1240,8 +1301,8 @@ npm run cli -- sensorium grant-create proposal-id --by user
 
 The underlying endpoint is `POST /sensorium/grants`. It consumes the approved proposal's validated
 grant candidate, appends an in-memory session grant, and returns `activation_performed: false`,
-`subscription_activated: false`, and `file_written: false`. It does not mutate
-`config/grants.json` and does not start a subscription.
+`subscription_activated: false`, and `file_written: false`. It does not mutate the durable runtime
+store and does not start a subscription.
 
 ## Model Visual Attach Review
 
@@ -1298,7 +1359,7 @@ npm run cli -- sensorium grant-revoke grant-id --by user --reason "No longer nee
 ```
 
 The underlying endpoint is `POST /sensorium/grants/:id/revoke`. It requires an explicit user actor
-and reason, marks the in-memory grant revoked, and leaves `config/grants.json` unchanged. If active
+and reason, marks the in-memory grant revoked, and leaves the durable runtime store unchanged. If active
 subscriptions are tied to the grant, they are stopped with termination reason `revoked` before the
 revocation response returns. The response remains metadata-only and returns
 `subscription_activated: false`.

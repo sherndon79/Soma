@@ -1,17 +1,17 @@
 # Quest surface v1b operator runbook — voice + panel round trip
 
-Status: **Host path BUILT; device run is Gate 2 (Seth-only), still closed.** The v1b wire/consent
+Status: **Host path and Gate 2 operator surface BUILT; headset validation remains.** The v1b wire/consent
 machinery (armed episode, four-leaf manifest, per-stream audio, correlated answer panel, fail-closed
 latch) and the **real local-only answer route** (Whisper STT → local Gemma → Kokoro TTS behind the
 abort-aware pipeline — interruptible, fail-closed, transcript-firewalled, no-retention, voice-brief)
 are built and verified host-side against injected-fetch adapters (`npm run test:quest-v1b-loopback`).
-Two things remain before this runbook is fully executable on the headset: the **live-services
-loopback** (run against the real Whisper/Gemma/Kokoro services — the ultimate pre-Gate-2 proof), and
-real `AudioRecord`/`AudioTrack` capture/playback on device. Those are called out inline.
+The injected-adapter and live-services host loops have both run green. The remaining proof is the
+worn headset validation of the built `AudioRecord`/`AudioTrack` path and Android permission shim.
 
-**Gate 2 is Seth-only.** Arming the episode window and running live microphone capture on the
-headset are not agent actions. Everything below the pre-device host loopback is an operator
-exercise the wearer performs deliberately; nothing here arms capture on its own.
+**Gate 2 remains an explicit operator decision.** The loopback control API gives the local operator
+an operational arm/disarm mechanism; it does not prove which same-account process or person issued
+the command. Nothing here arms capture on its own, and the headset still requires its separate
+Android microphone permission and a fresh authenticated session.
 
 v1b adds, on top of the v1a bounded panel: wearer microphone **capture**, wearer-directed audio
 **playback**, a **host-local** STT→model→TTS answer route (local destination only, no remote
@@ -51,6 +51,8 @@ content, audio, or retained state.
   cleared. Re-don does not resume; exit and deliberately relaunch to negotiate a fresh epoch.
 - The independent local mute latch is wearer-controlled and survives re-don; only a deliberate
   fresh-epoch resume clears it.
+- A deliberate disarm followed by a new arm starts a fresh server-side episode latch. It does not
+  revive the prior session or clear the headset Activity latch; freshly launch the client.
 - The answer route has a **local model destination only**. An unavailable or aborted local adapter
   fails closed; there is no remote fallback.
 - Teardown acknowledgement never extends authority; a missing client ack governs only cleanup
@@ -62,36 +64,88 @@ Reuse the v1a disposable-identity procedure (`scripts/quest-surface-dev-tls.sh`,
 outside the repo, fixed compatibility PKCS#12 password, treat APK + PKCS#12 as secret). See
 `quest_surface_v1a.md` §1. No change for v1b.
 
-## 2. Create the four-leaf grants
+## 2. Create the four exact grants, then restart
 
 v1b authority is a manifest over four independently revocable leaves (the text-local mode). Create
 each grant through the operator mutation surface, substituting the step-1 fingerprint. The four leaf
 capabilities are shipped in the catalog; the three expansion leaves (text-remote, raw-audio-local/
 remote) are defined but disabled and are **not** used here.
 
+Start a temporary write-enabled Soma process and create four durable grants. Every grant carries the
+same enrolled client-certificate SHA-256 fingerprint; the panel leaf also carries its surface/text
+limits. Use `session` scope for the first three leaves and `window` for local attach.
+
 ```bash
 SOMA_RUNTIME_WRITES_ENABLED=1 npm start
-# panel.present            — as v1a (max_panel_text_bytes sized to carry answer text + transcript)
-# mic_capture              — interaction.quest.surface.microphone.capture
-# audio.wearer_directed    — interaction.quest.surface.audio.wearer_directed.present
-# model.context.local.attach — model.context.audio.microphone.local.attach (provider: local; scope: window)
-npm run cli -- grants create --capability <leaf> --provider <provider> --scope <scope> \
-  --reason "Authorize one bounded Quest v1b voice+panel test episode." \
-  --constraints-json '{"device_fingerprint256":"CLIENT_SHA256_WITHOUT_COLONS", ...}'
+
+npm run cli -- grants create \
+  --capability interaction.quest.surface.panel.present \
+  --provider soma.provider.quest-surface-fixture --scope session \
+  --reason "Authorize the bounded Quest v1b panel leaf." \
+  --constraints-json '{"allowed_surface_ids":["panel.main"],"max_panel_text_bytes":2048,"lease_ttl_ms":60000,"device_fingerprint256":"CLIENT_SHA256_WITHOUT_COLONS"}' --json
+
+npm run cli -- grants create \
+  --capability interaction.quest.surface.microphone.capture \
+  --provider soma.provider.quest-surface-fixture --scope session \
+  --reason "Authorize the bounded Quest v1b microphone leaf." \
+  --constraints-json '{"lease_ttl_ms":60000,"device_fingerprint256":"CLIENT_SHA256_WITHOUT_COLONS"}' --json
+
+npm run cli -- grants create \
+  --capability interaction.quest.surface.audio.wearer_directed.present \
+  --provider soma.provider.quest-surface-fixture --scope session \
+  --reason "Authorize the bounded Quest v1b wearer-audio leaf." \
+  --constraints-json '{"lease_ttl_ms":60000,"device_fingerprint256":"CLIENT_SHA256_WITHOUT_COLONS"}' --json
+
+npm run cli -- grants create \
+  --capability model.context.audio.microphone.local.attach \
+  --provider soma.provider.local-model --scope window \
+  --reason "Authorize local attachment for one bounded Quest v1b window." \
+  --constraints-json '{"lease_ttl_ms":60000,"device_fingerprint256":"CLIENT_SHA256_WITHOUT_COLONS"}' --json
 ```
 
-Record each grant id. Grant creation is separate from arming and from runtime activation; it
-contacts no headset and arms no microphone.
+Record each returned grant id, then stop this process. Grant creation is separate from arming and
+runtime activation; it contacts no headset and arms no microphone. The Quest provider receives an
+immutable authority snapshot at construction, so create all four grants **before** restarting it
+with the §5 environment. Arming never creates, discovers, or refreshes a grant.
 
 ## 3. Arm the episode window — **Gate 2, Seth-only**
 
-The armed episode is the consent act. `armEpisode` binds an exact `{mode, capability, provider,
-grant_id}` tuple (here: mode `text/local`) — the armed leaf selects the mode, and only the exactly-
-matching answer provider is invoked. It is operator-only, carries an episode id, an explicit
-TTL, and deliberate provenance, and is instantly revocable. Arming is what distinguishes a v1b
-session that *may* capture from four grants that merely *exist*. The exact arm/disarm surface
-finalizes with item I; it must record who armed it, when, and for how long, and expose an instant
-revoke. Do not proceed past this step in any run Seth has not personally armed.
+The armed episode is the consent act. The control binds the exact `text/local` mode, local-attach
+capability, Quest answer provider, and configured local-attach grant. It requires an explicit
+episode id, reason, provenance id, and TTL. Episode TTL is independent from the shorter manifest
+lease TTL: the supported range is 1 second through 24 hours, the provider default is 1 hour, and a
+worn validation should explicitly use 15 minutes. Arm **before** launching or deliberately
+relaunching the headset client so the episode is evaluated at the natural HELLO-time issuance
+point. Re-arm validates its complete request and exact grant tuple first, then atomically replaces
+the RAM window in one command. A failed replacement leaves the prior episode and expiry timer
+untouched; it does not partially disarm or extend the old window.
+
+With the §5 process running:
+
+```bash
+npm run cli -- quest-surface status
+npm run cli -- quest-surface arm \
+  --episode-id quest-worn-2026-08-11-1 \
+  --ttl-ms 900000 \
+  --reason "Authorize one bounded worn Quest voice test." \
+  --provenance-id gate/quest-v1b/worn-2026-08-11-1
+```
+
+The CLI talks only to Soma's existing loopback API at `127.0.0.1:8765`; it never exposes the Quest
+mTLS listener on `:8793` as a control plane. `status` is content- and payload-byte-free and does not
+refresh the TTL. The current boundary relies on loopback plus the single-user host convention; it
+is an operational gate, not cryptographic proof that the human wearer typed the command. A future
+Local Control Authenticator may strengthen that boundary, but it is not part of this slice.
+
+Disarm is immediate, narrowing-only, and idempotent:
+
+```bash
+npm run cli -- quest-surface disarm --reason operator_disarmed
+```
+
+Disarm or episode expiry closes every issued session, latches capture/playback off, aborts in-flight
+work, and requires a deliberate client relaunch for a fresh epoch. Process restart also clears the
+RAM-only arm state.
 
 ## 4. Pre-device host loopback — run this **before** the headset
 
@@ -136,11 +190,17 @@ path (useful for wire/consent testing without the services).
 SOMA_QUEST_SURFACE_ENABLED=1 \
 SOMA_QUEST_SURFACE_HOST=192.168.50.20 SOMA_QUEST_SURFACE_PORT=8793 \
 # ...TLS key/cert/client-ca as v1a...
-# ...four grant ids...
+SOMA_QUEST_SURFACE_PANEL_GRANT_ID=grant-panel-id \
+SOMA_QUEST_SURFACE_MIC_CAPTURE_GRANT_ID=grant-mic-id \
+SOMA_QUEST_SURFACE_AUDIO_PRESENT_GRANT_ID=grant-audio-id \
+SOMA_QUEST_SURFACE_LOCAL_ATTACH_GRANT_ID=grant-local-id \
 SOMA_QUEST_SURFACE_REAL_ANSWER=1 \
 SOMA_WHISPER_URL=http://127.0.0.1:4001 SOMA_KOKORO_URL=http://127.0.0.1:4010 SOMA_LLM_URL=http://127.0.0.1:8000 \
 npm start
 ```
+
+`SOMA_QUEST_SURFACE_GRANT_ID` remains a compatibility alias for the panel id; when both panel names
+are set, they must match. All four ids are otherwise required, distinct, and resolved exactly.
 
 The provider emits content-free lifecycle/metadata only; it logs no PCM, transcript, or answer text.
 The answer is voice-brief by default (short spoken sentences); a long answer offers to say more.
@@ -150,7 +210,8 @@ The answer is voice-brief by default (short spoken sentences); a long answer off
 Build the APK in the pinned container as in v1a §4 (`RECORD_AUDIO` permission is requested at first
 capture; granting it is a device-side deliberate act, not a standing authority). Then:
 
-1. **On.** Don the headset; wait for OpenXR `FOCUSED` + affirmative presence. Client completes
+1. **On.** Arm with §3, then freshly launch the client and don the headset; wait for OpenXR
+   `FOCUSED` + affirmative presence. Client completes
    mTLS, consumes the epoch, and — only within the armed episode — receives the four-leaf manifest.
    *(N1: with no armed episode, no manifest issues; capture is never offered.)*
 2. **Ask.** Speak one utterance. VAD gates uplink; capture frames flow on a nonzero stream.
@@ -175,16 +236,18 @@ built to emit content-free metadata only; the audit is the proof, not the promis
 
 ## Cleanup
 
-Disarm the episode (instant), revoke each of the four grants, stop Soma. Remove the external TLS
+Run `npm run cli -- quest-surface disarm` (instant), revoke each of the four grants, then stop Soma.
+Remove the external TLS
 directory when evidence no longer needs it; an installed APK still carries its packaged identity —
 uninstall or replace it as part of cleanup.
 
-## Open before this runbook is executable
+## Remaining before headset validation
 
-**Built (host-side, committed):** item H (bounded ≤200 ms drop-oldest queues + `ANSWER_END`
+**Built (host-side):** item H (bounded ≤200 ms drop-oldest queues + `ANSWER_END`
 terminal), item I (mode-matrix enforcement, the four leaves, the real Whisper→Gemma→Kokoro answer
-route, the `SOMA_QUEST_SURFACE_REAL_ANSWER` runtime flag, the loopback + no-retention audit). All
-verified against injected-fetch adapters / fake hardware.
+route, the `SOMA_QUEST_SURFACE_REAL_ANSWER` runtime flag, exact-grant/fingerprint enforcement, the
+loopback arm/status/disarm surface, and the loopback + no-retention audit). All are verified against
+injected-fetch adapters / fake hardware.
 
 **Remaining before the headset run:**
 - ~~Real `AudioRecord`/`AudioTrack` capture/playback and `RECORD_AUDIO` handling on device.~~
@@ -200,6 +263,6 @@ verified against injected-fetch adapters / fake hardware.
   live-service behavior. **(Ran green earlier: real ~2.7 s round trip, voice-brief answer.)**
 - **APK build + install** — build in the pinned Threshold container (needs the external dev-TLS
   identities from v1a §1) and `adb install`; then server config (§5) and Gate 2 (§3, Seth arms).
-- The operator-facing **arm surface** (§3) — `armEpisode` binds `{mode, capability, provider,
-  grant_id}` today; a real operator console for issuing/arming (rather than a code path) is a
-  companion build.
+- ~~The operator-facing arm surface.~~ **BUILT + host-verified 2026-08-11:** the loopback CLI/API
+  exposes fixed `text/local` arm, byte-free status, and idempotent disarm without putting control on
+  the device listener. The residual same-user attribution limitation is explicit in §3.

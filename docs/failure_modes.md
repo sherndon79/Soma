@@ -397,8 +397,9 @@ Recovery:
 
 ### Grant Store Corrupt Or Unavailable
 
-The current MVP grant store is read-only and does not activate capabilities. Corruption or
-unavailability should block grant inspection, not base harness operation.
+The durable grant store is gitignored runtime authority. A missing store is initialized as an empty,
+non-authorizing mode-`0600` file. Corruption, an unreadable path, or mismatched/missing provenance
+degrades grant authority without blocking the base harness.
 
 Expected behavior:
 
@@ -406,6 +407,7 @@ Expected behavior:
 - preserve base harness and self-scoped narrowing modules
 - do not infer grants from proposal history alone
 - do not treat ambiguous grant status or revocation state as active authority
+- do not reconstruct runtime authority from the committed `config/grants.example.json`
 - require repair or explicit re-approval
 
 ### Durable Memory Corrupt Or Ambiguous
@@ -636,15 +638,31 @@ Expected behavior:
 
 Triggers:
 
-- the v1a runtime opt-in or an external TLS path is absent
-- mTLS authentication, hostname validation, exact grant authorization, version negotiation, epoch,
+- the runtime opt-in, an external TLS path, or any of the four configured grant ids is absent
+- a configured grant id is duplicated, missing, wrong-capability, wrong-provider, wrong-scope,
+  malformed, inactive, or bound to a different device fingerprint
+- mTLS authentication, hostname validation, version negotiation, epoch,
   lease, sequence, document revision/hash/length/TTL, or surface-bound validation fails
+- an atomic re-arm replacement fails request or exact-grant preflight validation
+- arm omits its explicit episode id, TTL, reason, provenance id, or `actor=user`
+- the episode is disarmed, expires, or the process restarts
 - the provider disconnects or exhausts its bounded retry budget
 - OpenXR is not `FOCUSED`, affirmative user presence has not arrived, or focus/presence is lost
 
 Expected behavior:
 
 - display no capability content before focus, presence, mTLS, fresh epoch, and exact lease all hold
+- fail startup on an incomplete/duplicate configured grant-id tuple; do not discover substitutes
+- refuse invalid arm requests without creating or changing episode state
+- leave the prior episode and expiry timer unchanged when re-arm validation fails
+- evaluate the intended arm at HELLO by arming before deliberate client launch/relaunch; re-arm does
+  not rewrite an already-issued manifest
+- keep status content-free and do not extend the episode TTL
+- make disarm idempotent; on disarm or expiry, synchronously latch and close issued sessions and
+  abort capture, playback, and in-flight answer stages
+- give a subsequent explicit arm a fresh server-side episode latch without clearing the prior
+  episode's latch or reviving any already-issued session
+- keep arm state RAM-only so restart returns to disarmed
 - reject malformed, stale, oversized, mismatched, unleased, wrong-direction, or non-v1a-stream input
 - clear remote content on disconnect, expiry, focus loss, or presence loss
 - permit only a bounded narrowing/teardown report after local validity is lost
@@ -656,9 +674,11 @@ Expected behavior:
 
 Provenance:
 
-- record transport/auth/session/lease/revision/bounds metadata and bounded reason codes only
+- record arm/disarm/expiry and transport/auth/session/lease/revision/bounds metadata plus bounded
+  reason/provenance identifiers only
 - do not record panel text, document bytes, TLS private material, head pose, camera pixels, or other
   headset sensor data
+- do not record the participant-facing arm reason, PCM, transcript, answer text, or payload bytes
 
 ### Participant Cognitively Overloaded During Approval
 

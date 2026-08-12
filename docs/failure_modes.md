@@ -666,8 +666,30 @@ Expected behavior:
 - reject malformed, stale, oversized, mismatched, unleased, wrong-direction, or non-v1a-stream input
 - clear remote content on disconnect, expiry, focus loss, or presence loss
 - permit only a bounded narrowing/teardown report after local validity is lost
-- latch the Activity suspended; re-don never resumes it, and deliberate exit/relaunch must negotiate
-  a fresh epoch and lease
+- treat presence loss and viable transient focus loss as resumable only after synchronous hardware
+  stop, content clear, runtime latch, and old-socket abort; re-don/focus regain alone stays inert
+- allow one new right-A rising edge to start one short bounded resume window; require a new TLS
+  connection whose exact resume intent presents the opaque handle minted for the current armed
+  episode, and withhold panel/capture until the server proves that same original episode/current
+  grants, issues a distinct fresh epoch + four fresh leases while preserving the handle, and both
+  Java/native latch clears succeed
+- reject held-across-loss A, trigger, mode toggle, server traffic, or mere presence/focus as resume;
+  a failed bounded attempt returns to suspended and requires another new A act
+- keep lease expiry, transport loss, disarm/revoke, EXITING/LOSS_PENDING, Activity destroy, and
+  true terminal failures terminal; STOPPING and PAUSE/STOP after first focus are **resumable**
+  (explicit A required, fresh TLS + handle reproof), pre-first-focus PAUSE/STOP/STOPPING are inert
+- accept `LEASE_RENEWAL` only before the old deadline when generation increases, exact four lease
+  ids/epoch remain stable, no authority fields are present, and both server/local expiry strictly
+  extend; malformed/stale/late/dropped renewal leaves the old deadline unchanged
+- make renewal ACK observational and send each renewal once without retry; old-deadline expiry is
+  the deterministic degraded mode, and renewal preserves the episode handle and never clears a
+  mic/resume latch
+- keep Android lifecycle dispatch bounded: synchronous capture-gate/PTT narrowing precedes an
+  Activity-owned worker whose durable terminal slot cannot be displaced by queue pressure;
+  generation/sequence checks ignore stale Activity callbacks and START/RESUME results
+- keep pumping Android glue after finish/init failure until destroy, cap OpenXR events per pass,
+  avoid render calls while Android is paused, and reset every static native run field on Activity
+  recreation
 - retain a local stop path that closes transport without waiting for the workstation
 - never broaden into cleartext, trust-all TLS, arbitrary resource fetch, head-pose export, or another
   modality as a recovery path

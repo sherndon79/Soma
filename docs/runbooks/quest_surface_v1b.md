@@ -30,13 +30,13 @@ content, audio, or retained state.
 |---|---|---|---|
 | P1 | `on → ask → answer → off` succeeds | §6 round trip | Spoken answer heard; answer panel shows answer text (+ transcript if emitted), correlated by `answer_id` |
 | P2 | Mic stop on focus loss / disconnect is **immediate** | §6.4 doff / §6.5 unplug | Capture and playback stop the instant focus/presence is lost or the socket drops; no trailing audio |
-| P3 | **No** sensitive auto-resume | §6.4 re-don | After doff, re-don leaves the Activity `SUSPENDED`/latched; capture never resumes without deliberate relaunch **and** a fresh authenticated epoch |
+| P3 | **No** sensitive auto-resume | §6.4 re-don | Re-don alone stays `SUSPENDED`; one new right-A rising edge starts a short bounded resume that must prove the same armed episode and mint a fresh authenticated epoch + four fresh leases before content/capture returns |
 | P4 | **No** persistence / retention | §7 audit | Post-close audit finds no raw PCM, transcript, or answer text on disk or in a live process |
 | P5 | Local model destination only | §5 config + §7 audit | No remote egress during the answer route; provider bound to the local adapters with no fallback |
 | N1 | Unarmed session | §6.1 | Four grants + mTLS present but no armed episode → no manifest issued, no capture offered |
 | N2 | Expired / revoked episode mid-utterance | §6.6 | Revoke during capture → immediate latch, capture + in-flight STT/model/TTS aborted, PCM released, no answer |
 | N3 | Wrong / stale lease, wrong epoch/revision | §6.6 | Refused before capture/playback; only the named stream torn down, session survives where the contract says so |
-| N4 | Disconnect → offline, no-Soma recovery | §6.5 | Client latches, shows offline shell, re-negotiates only on deliberate relaunch |
+| N4 | Disconnect → offline, no-Soma recovery | §6.5 | Client latches terminal/offline; it does not use the doff-resume path or retry indefinitely |
 
 ## Safety and authority boundary
 
@@ -46,17 +46,44 @@ content, audio, or retained state.
   1 s–24 h) **and** an exact four-leaf manifest (`panel.present`, `mic_capture`,
   `audio.wearer_directed.present`, `model.context.audio.microphone.local.attach`). Audio never
   rides the panel lease.
-- Focus/presence loss, transport loss, lease/episode expiry, and server revoke each **latch this
-  Activity fail-closed**: hardware capture and playback stop immediately and all session state is
-  cleared. Re-don does not resume; exit and deliberately relaunch to negotiate a fresh epoch.
+- Presence loss and a viable transient OpenXR focus loss **latch this Activity fail-closed**:
+  hardware capture and playback stop immediately, remote content and session state clear, and
+  re-don/focus regain alone remains inert. One new right-A rising edge may start a short bounded
+  resume. The server then requires the opaque handle minted for the still-current original armed
+  episode, the exact four current grants/mode, and a distinct fresh epoch; the resumed manifest
+  preserves that handle while minting four fresh lease ids. The client withholds panel and capture
+  until its Java and native latches both clear.
+- Transport loss, lease/episode expiry, disarm/revoke, OpenXR EXITING/LOSS_PENDING, Activity
+  destroy, and true terminal failures are **terminal** for the current Activity. STOPPING and
+  PAUSE/STOP after first focus are **resumable** (explicit A), pre-first-focus PAUSE/STOP/STOPPING
+  inert. They never invoke resume unsolicited. Recovery after
+  episode/disconnect termination requires the ordinary operator re-arm/relaunch path.
 - The independent local mute latch is wearer-controlled and survives re-don; only a deliberate
   fresh-epoch resume clears it.
 - A deliberate disarm followed by a new arm starts a fresh server-side episode latch. It does not
-  revive the prior session or clear the headset Activity latch; freshly launch the client.
+  revive the prior session or clear a terminal headset Activity; freshly launch the client.
 - The answer route has a **local model destination only**. An unavailable or aborted local adapter
   fails closed; there is no remote fallback.
 - Teardown acknowledgement never extends authority; a missing client ack governs only cleanup
   reporting.
+- `LEASE_RENEWAL` is same-session continuity, not new authority: it preserves the exact four lease
+  ids, episode handle, and every authority field, advances only generation/timing, and is issued
+  around half-life only after revalidating the original episode, exact grants, mode, and provider.
+  The client accepts it only before the old deadline when both server and monotonic local expiry
+  strictly extend. One server push is made with no retry; the optional ACK is observational. A
+  lost/invalid/late renewal leaves the old deadline intact, whose expiry is terminal. Renewal can
+  never clear a resume latch.
+- Native lifecycle callbacks do not perform socket, audio, executor-shutdown, or TLS work. Each
+  `NativeActivity` owns one bounded control worker and immutable generation. Terminal and suspend
+  have dedicated durable/coalesced slots ahead of the 30-command normal lane; pressure discards an
+  observational bounds ACK first. START/RESUME admission and completion carry exact
+  generation/sequence pairs, so an old Activity or stale result cannot reopen a replacement.
+- Capture narrowing is not queued: focus/presence/pause/stop closes the Activity-owned capture gate
+  and publishes PTT false before heavy suspend/terminal work. PTT false bypasses transport ACTIVE
+  state. The native loop caps OpenXR event work, stops render calls while Android is paused, keeps a
+  viable suspended session frame-pumped so a new A edge remains observable, and exits only after
+  `APP_CMD_DESTROY`/`destroyRequested`. Init failure requests finish and continues pumping glue to
+  that destroy boundary.
 
 ## 1. Development identities
 
@@ -144,8 +171,8 @@ npm run cli -- quest-surface disarm --reason operator_disarmed
 ```
 
 Disarm or episode expiry closes every issued session, latches capture/playback off, aborts in-flight
-work, and requires a deliberate client relaunch for a fresh epoch. Process restart also clears the
-RAM-only arm state.
+work, and makes doff-style resume ineligible. Re-arm and deliberately relaunch for a new episode and
+fresh epoch. Process restart also clears the RAM-only arm state.
 
 ## 4. Pre-device host loopback — run this **before** the headset
 
@@ -218,13 +245,19 @@ capture; granting it is a device-side deliberate act, not a standing authority).
 3. **Answer.** Hear the wearer-directed TTS answer; the answer panel shows the answer text (and the
    recognized-input transcript when the provider emits one), correlated to the audio by `answer_id`.
    *(P1)*
-4. **Off / re-don.** Remove the headset mid- and post-utterance. Capture + playback stop
-   immediately *(P2)*; on re-don the Activity stays `SUSPENDED`/latched and does not resume *(P3)*.
-   Exercise the wearer mute latch and confirm it survives re-don.
-5. **Unplug.** Drop the network / stop Soma. Client latches, shows the offline shell, recovers only
-   on deliberate relaunch *(N4)*.
+4. **Off / re-don / A.** Remove the headset mid- and post-utterance. Capture + playback stop
+   immediately *(P2)*. Re-don and focus regain alone leave the local-only `SUSPENDED — PRESS A TO
+   RESUME` shell inert: no old panel and no capture. A trigger press, held A from before doff, or
+   mode-toggle traffic must not resume. Press and release right A once after return. Confirm one
+   short `RESUMING…` window, a fresh epoch and four fresh lease ids under the same episode, then the
+   fresh panel/capture path *(P3)*. The resume A press must not also toggle PTT/VAD, and trigger must
+   be observed released once before PTT is eligible.
+5. **Unplug.** Drop the network / stop Soma. Client latches terminal/offline and does not enter the
+   doff-resume flow or retry indefinitely *(N4)*.
 6. **Negatives.** Exercise mid-utterance revoke *(N2)*, wrong/stale lease and wrong epoch/revision
-   *(N3)*. No negative case may play audio, display capability content, or leave retained state.
+   *(N3)*, disarm while suspended/resuming, re-arm with a replacement episode,
+   malformed/wrong-handle resume intent, and a dropped renewal. Each remains off or expires at the
+   old deadline; no case may play audio, display capability content, or leave retained state.
 
 ## 7. No-retention audit
 

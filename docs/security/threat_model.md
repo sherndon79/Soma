@@ -480,9 +480,34 @@ Current controls:
 - grant creation/discovery/refresh is outside arming, and the provider receives an immutable grant
   snapshot at construction
 - disarm and expiry synchronously latch and close issued sessions, abort in-flight stages, and make
-  deliberate client relaunch/fresh epoch necessary; disarm is idempotent and restart clears the arm
+  the doff-resume path ineligible; disarm is idempotent and restart clears the arm
 - each successful explicit arm creates a fresh server-side episode latch; it does not clear the
-  prior episode's latch object or revive any already-issued session
+  prior episode's latch object or revive any already-issued session; the latch carries an opaque
+  random resume handle that is replaced by the next arm and is never logged
+- presence loss and viable transient focus loss synchronously stop hardware, clear remote content,
+  latch Java/native state, and abort the old socket. Re-don alone remains inert. One new right-A
+  rising edge may assert a bounded resume intent over fresh mTLS; the server independently requires
+  the current opaque resume handle, still-current original episode, exact current four-grant tuple,
+  mode/provider match, and a distinct fresh epoch before clearing its latch. A post-clear bootstrap
+  loss re-latches the fresh epoch under the same episode handle so a bounded retry can recover
+- the client validates the complete fresh manifest/compatibility lease/snapshot while still locally
+  latched, then clears Java followed by native state; panel delivery and capture start only after
+  both succeed. Partial failure closes and re-latches. Lease expiry, network loss, disarm/revoke,
+  EXITING/LOSS_PENDING, Activity destroy, and true terminal failures never use this resume path;
+  STOPPING and PAUSE/STOP after first focus are resumable (explicit A), pre-first-focus inert
+- same-session `LEASE_RENEWAL` changes timing only: four lease ids, epoch, episode handle, grants,
+  capabilities, providers, scopes, and constraints remain stable; the server revalidates the
+  original episode and exact grant/mode tuple before one half-life push. Invalid, late, or dropped
+  renewal leaves the old client deadline intact; ACK is observational and renewal cannot clear a
+  latch
+- the JNI seam is instance-bound: each Activity owns its control lane and capture gate, native
+  commands/results carry immutable Activity generation plus command sequence, and stale callbacks
+  are ignored. Terminal and suspend do not compete for normal queue capacity; terminal is a durable
+  watermark and bounds ACK is the first pressure sacrifice
+- lifecycle narrowing closes the capture gate and forces PTT false synchronously before queued
+  transport work. PTT false bypasses session state, so blocked TLS/socket/executor teardown cannot
+  extend microphone eligibility. Android glue continues to the destroy boundary without doing
+  heavy work in `onAppCmd`
 - lifecycle provenance is metadata-only and declares content/payload bytes absent; PCM, transcripts,
   answers, and participant-facing arm reasons are not retained in those events
 
@@ -493,6 +518,15 @@ Residual risks:
 - host or same-user compromise can bypass this control boundary
 - Android permission state and an armed host episode are independent; either existing alone is not
   proof of current wearer intent
+- the server can prove credential possession, epoch/episode/grant continuity, and that the client
+  asserted an explicit local action; it cannot prove the OpenXR cause or bind the A press to a
+  particular person. A buggy or hostile credential-bearing client can assert resume intent, and a
+  different wearer could press the device-local A button during the still-armed episode
+- the episode handle is continuity evidence, not authority. A stale same-episode intent can be
+  replayed while that armed episode remains current; mTLS prevents network injection, a hostile
+  credential-bearing client could already assert a fresh intent, and the honest native client
+  permits only a new one-shot A rising edge. A new arm replaces the handle, and process relaunch
+  loses the Activity-scoped copy and requires the ordinary arm/relaunch path
 - a Local Control Authenticator could strengthen same-user attribution later, but is intentionally
   outside this slice
 

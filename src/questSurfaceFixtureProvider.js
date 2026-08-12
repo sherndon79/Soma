@@ -16,12 +16,15 @@ import {
   QuestSurfaceProtocolError,
   createAudioChunkPayload,
   createLeaseManifestPayload,
+  createLeaseRenewalPayload,
   createPanelSnapshotPayload,
   createAnswerEndPayload,
   createQuestSurfaceFrame,
   createQuestSurfaceLease,
   decodeAudioChunkPayload,
   decodeCancelPayload,
+  decodeHelloResumeIntent,
+  decodeLeaseRenewalAckPayload,
   decodePanelSnapshotPayload,
   decodeUtteranceEndPayload,
   decodeUtteranceStartPayload,
@@ -520,6 +523,13 @@ class QuestSurfaceProviderSession {
     this.snapshot = null;
     this.manifest = null;
     this.leaseTimer = null;
+    this.renewalTimer = null;
+    this.manifestExpiryTimer = null;
+    this.manifestTimerToken = 0;
+    this.renewalGeneration = 0;
+    this.issuedEpisodeId = "";
+    this.manifestGrantIds = null;
+    this.suppressLatchOnClose = false;
     this.closed = false;
     this.micLatch = deviceMicLatch ?? new QuestSurfaceMicLatch();
     this.pipeline = null;
@@ -551,9 +561,11 @@ class QuestSurfaceProviderSession {
       return;
     }
     this.closed = true;
-    clearTimeout(this.leaseTimer);
+    this.#clearLeaseTimers();
     // #3: latch on disconnect/lease expiry at provider lifetime
-    this.micLatch.latch(reason, this.sessionEpoch, this.now());
+    if (!this.suppressLatchOnClose) {
+      this.micLatch.latch(reason, this.sessionEpoch, this.now(), this.issuedEpisodeId);
+    }
     if (this.pipeline) {
       this.pipeline.handleLifecycleClose(reason);
     }
@@ -573,8 +585,10 @@ class QuestSurfaceProviderSession {
       return;
     }
     this.closed = true;
-    clearTimeout(this.leaseTimer);
-    this.micLatch.latch(reason, this.sessionEpoch, this.now());
+    this.#clearLeaseTimers();
+    if (!this.suppressLatchOnClose) {
+      this.micLatch.latch(reason, this.sessionEpoch, this.now(), this.issuedEpisodeId);
+    }
     if (this.pipeline) {
       this.pipeline.handleLifecycleClose(reason);
     }
@@ -662,6 +676,9 @@ class QuestSurfaceProviderSession {
     if (this.helloReceived && frame.type === "PANEL_SNAPSHOT" && frame.stream_id !== 0) {
       throw new QuestSurfaceProtocolError("stream_id_unsupported", "PANEL_SNAPSHOT must be stream 0.");
     }
+    if (this.helloReceived && frame.type === "LEASE_RENEWAL_ACK" && frame.stream_id !== 0) {
+      throw new QuestSurfaceProtocolError("stream_id_unsupported", "LEASE_RENEWAL_ACK must be stream 0.");
+    }
     const sequenceKey = `${frame.session_epoch}:${frame.stream_id}:${frame.direction}`;
     const seq = BigInt(frame.seq);
     const priorSeq = this.clientSequences.get(sequenceKey) ?? 0n;
@@ -684,8 +701,17 @@ class QuestSurfaceProviderSession {
       this.#handleBoundsAck(frame);
       return;
     }
+    if (frame.type === "LEASE_RENEWAL_ACK") {
+      this.#handleLeaseRenewalAck(frame);
+      return;
+    }
     if (frame.type === "FOCUS_LOST" || frame.type === "SUSPEND") {
-      this.micLatch.latch(frame.type.toLowerCase(), this.sessionEpoch, this.now());
+      this.micLatch.latch(
+        frame.type.toLowerCase(),
+        this.sessionEpoch,
+        this.now(),
+        this.issuedEpisodeId,
+      );
       if (this.pipeline) this.pipeline.handleLifecycleClose(frame.type.toLowerCase());
       this.eventSink("quest.surface.session_narrowed", {
         session_epoch: this.sessionEpoch,
@@ -915,20 +941,81 @@ class QuestSurfaceProviderSession {
   }
 
   #handleHello(frame) {
+    const resumeRequested = Boolean(
+      frame.payload
+      && typeof frame.payload === "object"
+      && !Array.isArray(frame.payload)
+      && Object.prototype.hasOwnProperty.call(frame.payload, "resume_intent"),
+    );
+    // Any rejected resume attempt must leave the shared latch byte-for-byte
+    // unchanged, including the no-latch case.
+    this.suppressLatchOnClose = resumeRequested;
+    const resumeIntent = decodeHelloResumeIntent(frame.payload);
     const selectedVersion = selectHighestQuestSurfaceVersion(frame.payload?.supported_versions);
     if (selectedVersion === null) {
       this.#sendError("version_no_overlap");
       this.close("version_no_overlap");
       return;
     }
+    if (!resumeIntent && this.micLatch.isLatched() && this.micLatch.latchedEpisodeId) {
+      throw new QuestSurfaceProtocolError(
+        "resume_required",
+        "A normal HELLO cannot clear an active device microphone latch.",
+      );
+    }
+    if (resumeIntent) {
+      const currentEpisode = this.getArmedEpisode ? this.getArmedEpisode() : null;
+      if (!this.micLatch.isLatched()) {
+        throw new QuestSurfaceProtocolError("resume_latch_missing", "No latched session is resumable.");
+      }
+      if (resumeIntent.resume_handle !== this.micLatch.resumeHandle) {
+        throw new QuestSurfaceProtocolError("resume_handle_mismatch", "Resume handle does not match the active episode latch.");
+      }
+      if (!currentEpisode
+          || !currentEpisode.id
+          || currentEpisode.id !== this.micLatch.latchedEpisodeId
+          || this.now() >= currentEpisode.expiresAtMs) {
+        throw new QuestSurfaceProtocolError("resume_episode_mismatch", "The originally issued episode is not current and armed.");
+      }
+      if (this.sessionEpoch === "0" || this.sessionEpoch === this.micLatch.latchedEpoch) {
+        throw new QuestSurfaceProtocolError("resume_fresh_epoch_required", "Resume requires a fresh nonzero session epoch.");
+      }
+    }
+
     // #A: require exact configured panel grant + bounded episode for v1b
     const panelAuthForManifest = this.authorize();
     // Try v1b manifest first if the store has grants for all four capabilities and episode is armed
     const manifestAuth = this.#tryAuthorizeManifest(panelAuthForManifest);
+    if (resumeIntent && (!manifestAuth || !manifestAuth.allowed)) {
+      throw new QuestSurfaceProtocolError("resume_not_authorized", "Resume manifest authority is unavailable.");
+    }
+    if (resumeIntent) {
+      const resumed = this.micLatch.deliberateResume({
+        freshEpoch: this.sessionEpoch,
+        resumeHandle: resumeIntent.resume_handle,
+        currentEpisodeId: manifestAuth.episodeId,
+        explicit: resumeIntent.explicit_local_action,
+      });
+      if (!resumed) {
+        throw new QuestSurfaceProtocolError("resume_latch_rejected", "The device microphone latch rejected resume.");
+      }
+      // From this point on, any bootstrap or transport failure must relatch to
+      // the fresh epoch and the same episode.
+      this.issuedEpisodeId = manifestAuth.episodeId;
+      this.suppressLatchOnClose = false;
+      this.eventSink("quest.surface.session_resume_authorized", {
+        session_epoch: this.sessionEpoch,
+        episode_id: manifestAuth.episodeId,
+        explicit_local_action: true,
+      });
+    }
     if (manifestAuth && manifestAuth.allowed) {
       this.helloReceived = true;
       this.lease = manifestAuth.leases.panel; // for backward compat ack path
       this.manifest = manifestAuth.manifest;
+      this.issuedEpisodeId = manifestAuth.episodeId;
+      this.manifestGrantIds = { ...manifestAuth.grantIds };
+      this.renewalGeneration = 0;
       const ttlMs = this.manifest.ttl_ms;
       this.snapshot = createPanelSnapshotPayload({
         revision: this.panel.revision,
@@ -961,11 +1048,7 @@ class QuestSurfaceProviderSession {
         panel_text_included: false,
         manifest: true,
       });
-      this.leaseTimer = setTimeout(() => {
-        this.#sendError("lease_expired");
-        this.close("lease_expired");
-      }, ttlMs);
-      this.leaseTimer.unref?.();
+      this.#scheduleManifestTimers();
       return;
     }
 
@@ -1116,6 +1199,7 @@ class QuestSurfaceProviderSession {
     try {
       const manifest = createLeaseManifestPayload({
         sessionEpoch: this.sessionEpoch,
+        resumeHandle: this.micLatch.resumeHandle,
         ttlMs,
         issuedAtMs,
         leases,
@@ -1129,10 +1213,217 @@ class QuestSurfaceProviderSession {
           return null;
         }
       }
-      return { allowed: true, leases, manifest, grantIds };
+      return { allowed: true, leases, manifest, grantIds, episodeId: episode.id };
     } catch {
       return null;
     }
+  }
+
+  #scheduleManifestTimers() {
+    clearTimeout(this.renewalTimer);
+    clearTimeout(this.manifestExpiryTimer);
+    this.renewalTimer = null;
+    this.manifestExpiryTimer = null;
+    const manifest = this.manifest;
+    if (this.closed || !manifest) return;
+
+    const token = ++this.manifestTimerToken;
+    const nowMs = this.now();
+    const expiryDelay = Math.max(0, manifest.expires_at_ms - nowMs);
+    this.manifestExpiryTimer = setTimeout(() => this.#handleManifestExpiry(token), expiryDelay);
+    this.manifestExpiryTimer.unref?.();
+
+    const targetAtMs = manifest.issued_at_ms + Math.floor(manifest.ttl_ms / 2);
+    const renewalDelay = Math.max(0, targetAtMs - nowMs);
+    this.renewalTimer = setTimeout(() => this.#attemptLeaseRenewal(token), renewalDelay);
+    this.renewalTimer.unref?.();
+  }
+
+  #handleManifestExpiry(token) {
+    if (this.closed || token !== this.manifestTimerToken || !this.manifest) return;
+    const remainingMs = this.manifest.expires_at_ms - this.now();
+    if (remainingMs > 0) {
+      this.manifestExpiryTimer = setTimeout(() => this.#handleManifestExpiry(token), remainingMs);
+      this.manifestExpiryTimer.unref?.();
+      return;
+    }
+    this.#sendError("lease_expired");
+    this.close("lease_expired");
+  }
+
+  #attemptLeaseRenewal(token) {
+    if (this.closed || token !== this.manifestTimerToken || !this.manifest) return;
+    const nowMs = this.now();
+    const targetAtMs = this.manifest.issued_at_ms + Math.floor(this.manifest.ttl_ms / 2);
+    if (nowMs < targetAtMs) {
+      this.renewalTimer = setTimeout(() => this.#attemptLeaseRenewal(token), targetAtMs - nowMs);
+      this.renewalTimer.unref?.();
+      return;
+    }
+    const minimumLeadMs = Math.min(5_000, Math.max(1, Math.floor(this.manifest.ttl_ms / 4)));
+    if (nowMs >= this.manifest.expires_at_ms - minimumLeadMs) {
+      this.#withholdLeaseRenewal("renewal_window_missed");
+      return;
+    }
+    if (this.micLatch.isLatched()) {
+      this.#withholdLeaseRenewal("session_narrowed");
+      return;
+    }
+    if (this.renewalGeneration >= Number.MAX_SAFE_INTEGER) {
+      this.#withholdLeaseRenewal("renewal_generation_exhausted");
+      return;
+    }
+
+    const candidate = this.#buildRenewedManifest(nowMs);
+    if (!candidate) return;
+    const nextGeneration = this.renewalGeneration + 1;
+    const leaseIds = Object.fromEntries(Object.entries(candidate.manifest.leases).map(
+      ([leaf, lease]) => [leaf, lease.lease_id],
+    ));
+    const payload = createLeaseRenewalPayload({
+      sessionEpoch: this.sessionEpoch,
+      generation: nextGeneration,
+      issuedAtMs: candidate.manifest.issued_at_ms,
+      ttlMs: candidate.manifest.ttl_ms,
+      leaseIds,
+    });
+    try {
+      this.#send("LEASE_RENEWAL", payload, { leaseRef: "", streamId: 0 });
+    } catch {
+      this.close("lease_renewal_send_failed");
+      return;
+    }
+    if (this.closed || token !== this.manifestTimerToken) return;
+    this.manifest = candidate.manifest;
+    this.lease = candidate.manifest.leases.panel;
+    this.renewalGeneration = nextGeneration;
+    this.eventSink("quest.surface.lease_renewed", {
+      session_epoch: this.sessionEpoch,
+      generation: nextGeneration,
+      issued_episode_id: this.issuedEpisodeId,
+      expires_at_ms: candidate.manifest.expires_at_ms,
+      lease_ids: leaseIds,
+    });
+    this.#scheduleManifestTimers();
+  }
+
+  #buildRenewedManifest(issuedAtMs) {
+    const episode = this.getArmedEpisode ? this.getArmedEpisode() : null;
+    if (!episode || episode.id !== this.issuedEpisodeId || issuedAtMs >= episode.expiresAtMs) {
+      this.#withholdLeaseRenewal("issued_episode_not_current");
+      return null;
+    }
+    const authorizations = authorizeConfiguredQuestGrants({
+      grantStore: this.grantStore,
+      grantRecoveryReport: this.grantRecoveryReport,
+      capabilityCatalog: this.capabilityCatalog,
+      providerRegistry: this.providerRegistry,
+      grantIds: this.configuredGrantIds,
+      localAttachScope: this.localAttachScope,
+      peerFingerprint256: this.peerFingerprint256,
+      panel: this.panel,
+    });
+    let ttlMs = this.leaseTtlMs;
+    const projectedLeases = {};
+    for (const [leaf, authorization] of Object.entries(authorizations)) {
+      if (!authorization.allowed) {
+        this.#withholdLeaseRenewal(`grant_${leaf}_${authorization.code}`);
+        return null;
+      }
+      const original = this.manifest.leases[leaf];
+      if (!original || authorization.grant.id !== this.manifestGrantIds?.[leaf]) {
+        this.#withholdLeaseRenewal(`grant_${leaf}_identity_changed`);
+        return null;
+      }
+      if (Number.isSafeInteger(authorization.grant.constraints?.lease_ttl_ms)) {
+        ttlMs = Math.min(ttlMs, authorization.grant.constraints.lease_ttl_ms);
+      }
+      projectedLeases[leaf] = createQuestSurfaceLease({
+        sessionEpoch: this.sessionEpoch,
+        sourceGrant: authorization.grant,
+        ttlMs: 1,
+        issuedAtMs,
+        leaseId: original.lease_id,
+      });
+      if (!sameStableLeaseAuthority(original, projectedLeases[leaf])) {
+        this.#withholdLeaseRenewal(`grant_${leaf}_authority_changed`);
+        return null;
+      }
+    }
+    ttlMs = Math.max(1, Math.min(
+      ttlMs,
+      QUEST_SURFACE_MAX_LEASE_TTL_MS,
+      episode.expiresAtMs - issuedAtMs,
+    ));
+    const expiresAtMs = issuedAtMs + ttlMs;
+    if (expiresAtMs <= this.manifest.expires_at_ms) {
+      this.#withholdLeaseRenewal("renewal_does_not_extend");
+      return null;
+    }
+    for (const lease of Object.values(projectedLeases)) {
+      lease.ttl_ms = ttlMs;
+      lease.expires_at_ms = expiresAtMs;
+    }
+    try {
+      const manifest = createLeaseManifestPayload({
+        sessionEpoch: this.sessionEpoch,
+        resumeHandle: this.micLatch.resumeHandle,
+        ttlMs,
+        issuedAtMs,
+        leases: projectedLeases,
+      });
+      if (episode.mode) {
+        matchAnswerProvider({ armedEpisode: episode, providerRegistry: this.providerRegistry, manifest });
+      }
+      return { manifest };
+    } catch (error) {
+      this.#withholdLeaseRenewal(error.code ?? "renewal_manifest_invalid");
+      return null;
+    }
+  }
+
+  #withholdLeaseRenewal(reason) {
+    this.eventSink("quest.surface.lease_renewal_withheld", {
+      session_epoch: this.sessionEpoch,
+      generation: this.renewalGeneration,
+      issued_episode_id: this.issuedEpisodeId,
+      reason,
+    });
+  }
+
+  #handleLeaseRenewalAck(frame) {
+    try {
+      const payload = decodeLeaseRenewalAckPayload(frame.payload);
+      if (!this.manifest || payload.generation > this.renewalGeneration) {
+        this.eventSink("quest.surface.lease_renewal_ack_rejected", {
+          session_epoch: this.sessionEpoch,
+          generation: payload.generation,
+          reason: "generation_not_issued",
+        });
+        return;
+      }
+      this.eventSink("quest.surface.lease_renewal_acknowledged", {
+        session_epoch: this.sessionEpoch,
+        generation: payload.generation,
+        authority_effect: "none",
+      });
+    } catch (error) {
+      this.eventSink("quest.surface.lease_renewal_ack_rejected", {
+        session_epoch: this.sessionEpoch,
+        generation: 0,
+        reason: error.code ?? "renewal_ack_invalid",
+      });
+    }
+  }
+
+  #clearLeaseTimers() {
+    clearTimeout(this.leaseTimer);
+    clearTimeout(this.renewalTimer);
+    clearTimeout(this.manifestExpiryTimer);
+    this.leaseTimer = null;
+    this.renewalTimer = null;
+    this.manifestExpiryTimer = null;
+    this.manifestTimerToken += 1;
   }
 
   #handleBoundsAck(frame) {
@@ -1421,6 +1712,17 @@ function deniedQuestGrant(code, details) {
     grant: null,
     details,
   };
+}
+
+function sameStableLeaseAuthority(first, second) {
+  return Boolean(first && second
+    && first.lease_id === second.lease_id
+    && first.source_grant_id === second.source_grant_id
+    && first.capability === second.capability
+    && first.provider === second.provider
+    && first.scope === second.scope
+    && first.session_epoch === second.session_epoch
+    && JSON.stringify(first.constraints) === JSON.stringify(second.constraints));
 }
 
 function validateQuestGrantConstraints(constraints) {

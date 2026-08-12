@@ -72,6 +72,43 @@ test("armed episode: default unarmed fails closed to panel-only LEASE (no manife
   // ensure no manifest in first 3 frames
 });
 
+test("disconnected panel-only session reconnects without clearing its empty mic latch", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
+    logger: quietLogger,
+  });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+
+  const first = await connectClient(addr.port, creds);
+  first.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  assert.equal((await first.next()).type, "HELLO_ACK");
+  assert.equal((await first.next()).type, "LEASE");
+  assert.equal((await first.next()).type, "PANEL_SNAPSHOT");
+  first.destroy();
+  await waitForSocketClose(first.socket);
+  await waitFor(() => provider.deviceMicLatch.isLatched());
+
+  assert.equal(provider.deviceMicLatch.isLatched(), true);
+  assert.equal(provider.deviceMicLatch.latchedEpisodeId, "");
+  const latchedEpoch = provider.deviceMicLatch.latchedEpoch;
+
+  const second = await connectClient(addr.port, creds);
+  t.after(() => second.destroy());
+  second.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  assert.equal((await second.next()).type, "HELLO_ACK");
+  assert.equal((await second.next()).type, "LEASE");
+  assert.equal((await second.next()).type, "PANEL_SNAPSHOT");
+  assert.equal(provider.deviceMicLatch.isLatched(), true);
+  assert.equal(provider.deviceMicLatch.latchedEpoch, latchedEpoch);
+  assert.equal(provider.deviceMicLatch.latchedEpisodeId, "");
+});
+
 test("armed episode: expired episode fails closed to LEASE only", async (t) => {
   const creds = await createTlsCredentials(t);
   let nowMs = Date.now();
@@ -233,8 +270,10 @@ test("revokeEpisode narrows already-issued session (closes transport and latches
   // latched even after the next deliberate arm.
   assert.equal(provider.deviceMicLatch.latchedEpoch, sessionEpoch, "latch epoch recorded");
   const completedEpisodeLatch = provider.deviceMicLatch;
+  const completedResumeHandle = completedEpisodeLatch.resumeHandle;
   provider.armEpisode({ episodeId: "ep-next", ttlMs: 60_000, actor: "test" });
   assert.notEqual(provider.deviceMicLatch, completedEpisodeLatch, "new episode receives a distinct latch");
+  assert.notEqual(provider.deviceMicLatch.resumeHandle, completedResumeHandle, "new episode rotates the opaque resume handle");
   assert.equal(provider.deviceMicLatch.isLatched(), false, "new episode starts capture-eligible");
   assert.equal(completedEpisodeLatch.isLatched(), true, "prior episode remains latched");
 });
@@ -378,6 +417,324 @@ test("revoke aborts during TTS (synthesize blocked) — abort observed, PCM rele
   assert.ok(threw);
 });
 
+test("lease renewal extends the exact four stable ids across multiple original TTLs", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const events = [];
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 240,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
+    logger: quietLogger,
+    eventSink(event) { events.push(event); },
+  });
+  provider.armEpisode({ episodeId: "ep-renew", ttlMs: 2_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+  const client = await connectClient(addr.port, creds);
+  t.after(() => client.destroy());
+  client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const hello = await client.next();
+  const manifest = await client.next();
+  await client.next(); // compatibility lease
+  await client.next(); // snapshot
+  const leaseIds = Object.fromEntries(Object.entries(manifest.payload.leases).map(
+    ([leaf, lease]) => [leaf, lease.lease_id],
+  ));
+
+  const first = await client.nextOrTimeout(1_000);
+  assert.equal(first.type, "LEASE_RENEWAL");
+  assert.equal(first.session_epoch, hello.session_epoch);
+  assert.equal(first.lease_ref, "");
+  assert.equal(first.payload.generation, 1);
+  assert.deepEqual(first.payload.lease_ids, leaseIds);
+  assert.deepEqual(
+    Object.keys(first.payload).sort(),
+    ["expires_at_ms", "generation", "issued_at_ms", "lease_ids", "schema_version", "session_epoch", "ttl_ms"].sort(),
+  );
+  client.send("LEASE_RENEWAL_ACK", { schema_version: 1, generation: 1 }, {
+    epoch: hello.session_epoch,
+    leaseRef: "",
+  });
+
+  const second = await client.nextOrTimeout(1_000);
+  assert.equal(second.type, "LEASE_RENEWAL");
+  assert.equal(second.payload.generation, 2);
+  assert.deepEqual(second.payload.lease_ids, leaseIds);
+  assert.ok(second.payload.expires_at_ms > manifest.payload.expires_at_ms);
+  assert.ok(events.some((event) => event.event_type === "quest.surface.lease_renewed"));
+  assert.ok(events.some((event) => event.event_type === "quest.surface.lease_renewal_acknowledged"));
+});
+
+test("a replacement episode cannot renew a session issued by the prior episode", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const events = [];
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 240,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4000, text: "hi" },
+    logger: quietLogger,
+    eventSink(event) { events.push(event); },
+  });
+  provider.armEpisode({ episodeId: "ep-before", ttlMs: 2_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+  const client = await connectClient(addr.port, creds);
+  t.after(() => client.destroy());
+  client.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  await client.next(); // hello
+  await client.next(); // manifest
+  await client.next(); // compatibility lease
+  await client.next(); // snapshot
+
+  provider.armEpisode({ episodeId: "ep-after", ttlMs: 2_000, actor: "test" });
+  const terminal = await client.nextOrTimeout(1_000);
+  assert.equal(terminal.type, "ERROR");
+  assert.equal(terminal.payload.code, "lease_expired");
+  assert.ok(events.some((event) => (
+    event.event_type === "quest.surface.lease_renewal_withheld"
+      && event.reason === "issued_episode_not_current"
+  )));
+  assert.equal(events.some((event) => event.event_type === "quest.surface.lease_renewed"), false);
+});
+
+test("deliberate resume requires the active latch, opaque handle, and original episode", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const events = [];
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5_000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4_000, text: "hi" },
+    logger: quietLogger,
+    eventSink(event) { events.push(event); },
+  });
+  provider.armEpisode({ episodeId: "ep-resume", ttlMs: 60_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+
+  const initial = await connectClient(addr.port, creds);
+  t.after(() => initial.destroy());
+  initial.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const firstHello = await initial.next();
+  const firstManifest = await initial.next();
+  await initial.next(); // compatibility lease
+  await initial.next(); // panel snapshot
+  initial.send("SUSPEND", {}, { epoch: firstHello.session_epoch, leaseRef: "" });
+  assert.equal((await initial.next()).type, "TEARDOWN_ACK");
+  await waitForSocketClose(initial.socket);
+
+  const latchedState = () => ({
+    latched: provider.deviceMicLatch.latched,
+    reason: provider.deviceMicLatch.reason,
+    latchedAtMs: provider.deviceMicLatch.latchedAtMs,
+    latchedEpoch: provider.deviceMicLatch.latchedEpoch,
+    latchedEpisodeId: provider.deviceMicLatch.latchedEpisodeId,
+  });
+  const expectedLatch = latchedState();
+  assert.equal(expectedLatch.latched, true);
+  assert.equal(expectedLatch.latchedEpoch, firstHello.session_epoch);
+  assert.equal(expectedLatch.latchedEpisodeId, "ep-resume");
+
+  const normal = await connectClient(addr.port, creds);
+  normal.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const normalError = await normal.next();
+  assert.equal(normalError.type, "ERROR");
+  assert.equal(normalError.payload.code, "resume_required");
+  await waitForSocketClose(normal.socket);
+  assert.deepEqual(latchedState(), expectedLatch, "normal HELLO must not mutate the latch");
+
+  const stale = await connectClient(addr.port, creds);
+  stale.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: "wrong-resume-handle",
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const staleError = await stale.next();
+  assert.equal(staleError.type, "ERROR");
+  assert.equal(staleError.payload.code, "resume_handle_mismatch");
+  await waitForSocketClose(stale.socket);
+  assert.deepEqual(latchedState(), expectedLatch, "denied resume must leave latch byte-for-byte unchanged");
+
+  const resumed = await connectClient(addr.port, creds);
+  t.after(() => resumed.destroy());
+  resumed.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: firstManifest.payload.resume_handle,
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const resumedHello = await resumed.next();
+  const resumedManifest = await resumed.next();
+  await resumed.next(); // compatibility lease
+  await resumed.next(); // panel snapshot
+  assert.equal(resumedHello.type, "HELLO_ACK");
+  assert.notEqual(resumedHello.session_epoch, firstHello.session_epoch);
+  assert.equal(resumedManifest.type, "LEASE_MANIFEST");
+  assert.equal(resumedManifest.payload.resume_handle, firstManifest.payload.resume_handle);
+  for (const leaf of ["panel", "mic_capture", "audio_present", "local_attach"]) {
+    assert.notEqual(
+      resumedManifest.payload.leases[leaf].lease_id,
+      firstManifest.payload.leases[leaf].lease_id,
+      `${leaf} must receive a fresh lease id`,
+    );
+  }
+  assert.equal(provider.deviceMicLatch.isLatched(), false);
+  assert.ok(events.some((event) => (
+    event.event_type === "quest.surface.session_resume_authorized"
+      && event.session_epoch === resumedHello.session_epoch
+  )));
+});
+
+test("resume intent without a prior latch is rejected without creating one", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5_000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4_000, text: "hi" },
+    logger: quietLogger,
+  });
+  provider.armEpisode({ episodeId: "ep-no-latch", ttlMs: 60_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+  const client = await connectClient(addr.port, creds);
+  client.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: "resume-without-latch",
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const error = await client.next();
+  assert.equal(error.type, "ERROR");
+  assert.equal(error.payload.code, "resume_latch_missing");
+  await waitForSocketClose(client.socket);
+  assert.equal(provider.deviceMicLatch.isLatched(), false);
+  assert.equal(provider.deviceMicLatch.latchedEpoch, "");
+  assert.equal(provider.deviceMicLatch.latchedEpisodeId, "");
+});
+
+test("resume handle survives a post-clear bootstrap loss and authorizes a fresh retry", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5_000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4_000, text: "hi" },
+    logger: quietLogger,
+  });
+  provider.armEpisode({ episodeId: "ep-loss-retry", ttlMs: 60_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+
+  const initial = await connectClient(addr.port, creds);
+  initial.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const firstHello = await initial.next();
+  const firstManifest = await initial.next();
+  await initial.next();
+  await initial.next();
+  initial.send("SUSPEND", {}, { epoch: firstHello.session_epoch, leaseRef: "" });
+  await initial.next();
+  await waitForSocketClose(initial.socket);
+
+  const resumeHandle = firstManifest.payload.resume_handle;
+  const interrupted = await connectClient(addr.port, creds);
+  interrupted.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: resumeHandle,
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const interruptedHello = await interrupted.next();
+  assert.equal(interruptedHello.type, "HELLO_ACK");
+  interrupted.destroy();
+  await waitFor(() => provider.deviceMicLatch.isLatched()
+    && provider.deviceMicLatch.latchedEpoch === interruptedHello.session_epoch);
+  assert.equal(provider.deviceMicLatch.resumeHandle, resumeHandle);
+
+  const retry = await connectClient(addr.port, creds);
+  t.after(() => retry.destroy());
+  retry.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: resumeHandle,
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const retryHello = await retry.next();
+  const retryManifest = await retry.next();
+  assert.equal(retryHello.type, "HELLO_ACK");
+  assert.notEqual(retryHello.session_epoch, interruptedHello.session_epoch);
+  assert.equal(retryManifest.payload.resume_handle, resumeHandle);
+});
+
+test("disarm while suspended makes the exact original episode non-resumable", async (t) => {
+  const creds = await createTlsCredentials(t);
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: { key: creds.serverKey, cert: creds.serverCert, ca: creds.ca },
+    grantStore: { schema_version: 1, grants: baseGrants(creds.fingerprint256) },
+    capabilityCatalog: catalog(), providerRegistry: registry(),
+    grantId: "grant-panel", grantIds: exactGrantIds, leaseTtlMs: 5_000,
+    panel: { surface_id: "panel.main", revision: "1", ttl_ms: 4_000, text: "hi" },
+    logger: quietLogger,
+  });
+  provider.armEpisode({ episodeId: "ep-disarm-resume", ttlMs: 60_000, actor: "test" });
+  t.after(() => provider.stop());
+  const addr = await provider.start({ host: "127.0.0.1", port: 0 });
+  const initial = await connectClient(addr.port, creds);
+  initial.send("HELLO", { supported_versions: [1] }, { epoch: "0", leaseRef: "" });
+  const hello = await initial.next();
+  const manifest = await initial.next();
+  await initial.next();
+  await initial.next();
+  initial.send("SUSPEND", {}, { epoch: hello.session_epoch, leaseRef: "" });
+  await initial.next();
+  await waitForSocketClose(initial.socket);
+  const latchBefore = {
+    reason: provider.deviceMicLatch.reason,
+    latchedAtMs: provider.deviceMicLatch.latchedAtMs,
+    latchedEpoch: provider.deviceMicLatch.latchedEpoch,
+    latchedEpisodeId: provider.deviceMicLatch.latchedEpisodeId,
+  };
+
+  provider.revokeEpisode("operator_disarmed");
+  const resume = await connectClient(addr.port, creds);
+  resume.send("HELLO", {
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: manifest.payload.resume_handle,
+      explicit_local_action: true,
+    },
+  }, { epoch: "0", leaseRef: "" });
+  const error = await resume.next();
+  assert.equal(error.type, "ERROR");
+  assert.equal(error.payload.code, "resume_episode_mismatch");
+  await waitForSocketClose(resume.socket);
+  assert.deepEqual({
+    reason: provider.deviceMicLatch.reason,
+    latchedAtMs: provider.deviceMicLatch.latchedAtMs,
+    latchedEpoch: provider.deviceMicLatch.latchedEpoch,
+    latchedEpisodeId: provider.deviceMicLatch.latchedEpisodeId,
+  }, latchBefore);
+});
+
 async function connectClient(port, creds) {
   const socket = tls.connect({ host: "127.0.0.1", port, servername: "localhost", key: creds.clientKey, cert: creds.clientCert, ca: creds.ca, rejectUnauthorized: true, minVersion: "TLSv1.3" });
   await new Promise((resolve, reject) => { socket.once("secureConnect", resolve); socket.once("error", reject); });
@@ -389,6 +746,18 @@ class TestClient {
   next() { const f = this.frames.shift(); if (f) return Promise.resolve(f); return new Promise((resolve, reject) => { const to = setTimeout(() => reject(new Error("Timed out waiting for frame")), 4000); this.waiters.push({ resolve(v){ clearTimeout(to); resolve(v); }, reject(e){ clearTimeout(to); reject(e);} }); }); }
   nextOrTimeout(ms) { const f = this.frames.shift(); if (f) return Promise.resolve(f); return new Promise((resolve, reject) => { const to = setTimeout(() => reject(new Error("Timed out waiting for frame")), ms); this.waiters.push({ resolve(v){ clearTimeout(to); resolve(v); }, reject(e){ clearTimeout(to); reject(e);} }); }); }
   destroy(){ this.socket.destroy(); }
+}
+function waitForSocketClose(socket) {
+  if (socket.destroyed) return Promise.resolve();
+  return new Promise((resolve) => socket.once("close", resolve));
+}
+
+async function waitFor(predicate, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 test("B atomic once: concurrent two streams, exactly one enters chat, loser fails before attachment, failed chat does not restore", async (t) => {
   const creds = await createTlsCredentials(t);

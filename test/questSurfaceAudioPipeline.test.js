@@ -83,14 +83,16 @@ test("VAD: silence-only utterance is dropped, no panel/playback", async () => {
 });
 
 test("mic latch: focus loss latches and requires deliberate fresh-epoch explicit resume", async () => {
-  const latch = new QuestSurfaceMicLatch();
+  const latch = new QuestSurfaceMicLatch({ resumeHandle: "resume-ep-1" });
   assert.equal(latch.isLatched(), false);
-  latch.latch("focus_lost", Date.now());
+  latch.latch("focus_lost", "98", Date.now(), "ep-1");
   assert.equal(latch.isLatched(), true);
-  assert.equal(latch.deliberateResume({ freshEpoch: "0", explicit: true }), false);
-  assert.equal(latch.deliberateResume({ freshEpoch: "99", explicit: false }), false);
+  assert.equal(latch.deliberateResume({ freshEpoch: "0", resumeHandle: "resume-ep-1", currentEpisodeId: "ep-1", explicit: true }), false);
+  assert.equal(latch.deliberateResume({ freshEpoch: "99", resumeHandle: "wrong", currentEpisodeId: "ep-1", explicit: true }), false);
+  assert.equal(latch.deliberateResume({ freshEpoch: "99", resumeHandle: "resume-ep-1", currentEpisodeId: "wrong", explicit: true }), false);
+  assert.equal(latch.deliberateResume({ freshEpoch: "99", resumeHandle: "resume-ep-1", currentEpisodeId: "ep-1", explicit: false }), false);
   assert.equal(latch.isLatched(), true);
-  assert.equal(latch.deliberateResume({ freshEpoch: "99", explicit: true }), true);
+  assert.equal(latch.deliberateResume({ freshEpoch: "99", resumeHandle: "resume-ep-1", currentEpisodeId: "ep-1", explicit: true }), true);
   assert.equal(latch.isLatched(), false);
 
   // pipeline lifecycle also clears

@@ -14,22 +14,58 @@ import {
   QUEST_SURFACE_AUDIO_PLAYBACK_BYTES,
   createAudioChunkPayload,
   createLeaseManifestPayload,
+  createLeaseRenewalAckPayload,
+  createLeaseRenewalPayload,
   createPanelSnapshotPayload,
   createQuestSurfaceFrame,
   createQuestSurfaceLease,
   decodeAudioChunkPayload,
+  decodeHelloResumeIntent,
   decodeLeaseManifestPayload,
+  decodeLeaseRenewalAckPayload,
+  decodeLeaseRenewalPayload,
   decodePanelSnapshotPayload,
   parseQuestSurfaceFrame,
   selectHighestQuestSurfaceVersion,
   serializeQuestSurfaceFrame,
 } from "../src/questSurfaceProtocol.js";
 
+const RESUME_HANDLE = "resume-test-handle";
+
 test("quest surface negotiation selects the highest mutual version from an advertised set", () => {
   assert.equal(selectHighestQuestSurfaceVersion([0, 2, 1]), 1);
   assert.equal(selectHighestQuestSurfaceVersion([0, 2]), null);
   assert.equal(selectHighestQuestSurfaceVersion(["1", 1.5]), null);
   assert.equal(selectHighestQuestSurfaceVersion(null), null);
+});
+
+test("HELLO resume intent is exact, explicit, and bound to an opaque resume handle", () => {
+  assert.equal(decodeHelloResumeIntent({ supported_versions: [1] }), null);
+  assert.deepEqual(decodeHelloResumeIntent({
+    supported_versions: [1],
+    resume_intent: {
+      schema_version: 1,
+      resume_handle: "resume-episode-99",
+      explicit_local_action: true,
+    },
+  }), {
+    schema_version: 1,
+    resume_handle: "resume-episode-99",
+    explicit_local_action: true,
+  });
+  for (const resume_intent of [
+    null,
+    { schema_version: 1, resume_handle: "", explicit_local_action: true },
+    { schema_version: 1, resume_handle: "resume-episode-99", explicit_local_action: false },
+    { schema_version: 2, resume_handle: "resume-episode-99", explicit_local_action: true },
+    { schema_version: 1, resume_handle: "resume-episode-99", explicit_local_action: true, extra: true },
+    { schema_version: 1, resume_handle: "resume-episode-99" },
+  ]) {
+    assert.throws(
+      () => decodeHelloResumeIntent({ supported_versions: [1], resume_intent }),
+      (error) => error instanceof Error && error.code?.startsWith("resume_"),
+    );
+  }
 });
 
 test("quest surface frame preserves u64 values as decimal strings and exact payload bytes", () => {
@@ -238,22 +274,23 @@ test("lease manifest enforces exact four-leaf set, ID uniqueness, and leaf valid
   const lMic = createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: gMic, issuedAtMs: issued, ttlMs: ttl, leaseId: "lease-mic" });
   const lAudio = createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: gAudio, issuedAtMs: issued, ttlMs: ttl, leaseId: "lease-audio" });
   const lLocal = createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: gLocal, issuedAtMs: issued, ttlMs: ttl, leaseId: "lease-local" });
-  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
+  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
+  assert.equal(manifest.resume_handle, RESUME_HANDLE);
   assert.equal(manifest.leases.panel.capability, QUEST_SURFACE_CAPABILITY);
   assert.doesNotThrow(() => decodeLeaseManifestPayload(JSON.parse(JSON.stringify(manifest))));
   // missing leaf
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio } }), (e) => e.code === "manifest_leaves_extra" || e.code === "manifest_leases_missing");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio } }), (e) => e.code === "manifest_leaves_extra" || e.code === "manifest_leases_missing");
   // extra leaf
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal, extra: lPanel } }), (e) => e.code === "manifest_leaves_extra");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal, extra: lPanel } }), (e) => e.code === "manifest_leaves_extra");
   // duplicate lease_id
   const dup = createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant: mkGrant("g-dup", QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, "soma.provider.local-model", "window"), issuedAtMs: issued, ttlMs: ttl, leaseId: "lease-panel" });
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: dup } }), (e) => e.code === "manifest_duplicate_lease_id");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: dup } }), (e) => e.code === "manifest_duplicate_lease_id");
   // wrong capability in leaf position
   const wrongCap = { ...lLocal, capability: QUEST_SURFACE_CAPABILITY };
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: wrongCap } }), (e) => e.code === "manifest_capability_mismatch");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: wrongCap } }), (e) => e.code === "manifest_capability_mismatch");
   // wrong epoch
   const lWrongEpoch = createQuestSurfaceLease({ sessionEpoch: "999", sourceGrant: gLocal, issuedAtMs: issued, ttlMs: ttl, leaseId: "lease-local2" });
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lWrongEpoch } }), (e) => e.code === "manifest_epoch_mismatch");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lWrongEpoch } }), (e) => e.code === "manifest_epoch_mismatch");
   // decode with extra leaf and wrong provider
   const badManifest = JSON.parse(JSON.stringify(manifest));
   badManifest.leases.extra = badManifest.leases.panel;
@@ -269,6 +306,115 @@ test("lease manifest enforces exact four-leaf set, ID uniqueness, and leaf valid
   assert.throws(() => decodeLeaseManifestPayload(badExpiry), (e) => e.code === "manifest_expires_mismatch");
 });
 
+test("v1b manifest fixture is reproducible and carries the exact resume handle", () => {
+  const fixture = JSON.parse(readFileSync(
+    new URL("../clients/quest-surface/app/src/test/resources/questSurfaceV1bManifestFixture.json", import.meta.url),
+    "utf8",
+  ));
+  const { session_epoch: epoch, resume_handle: resumeHandle, issued_at_ms: issuedAtMs, ttl_ms: ttlMs } = fixture.input;
+  const grants = {
+    panel: { id: "grant-panel", capability: QUEST_SURFACE_CAPABILITY, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: { max_panel_text_bytes: 512, allowed_surface_ids: ["panel.main"], device_fingerprint256: "" } },
+    mic_capture: { id: "grant-mic", capability: QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: { device_fingerprint256: "" } },
+    audio_present: { id: "grant-audio", capability: QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: { device_fingerprint256: "" } },
+    local_attach: { id: "grant-local", capability: QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, provider: "soma.provider.local-model", scope: "once", constraints: { device_fingerprint256: "" } },
+  };
+  const leaseIds = { panel: "lease-panel", mic_capture: "lease-mic", audio_present: "lease-audio", local_attach: "lease-local" };
+  const leases = Object.fromEntries(Object.entries(grants).map(([name, sourceGrant]) => [
+    name,
+    createQuestSurfaceLease({ sessionEpoch: epoch, sourceGrant, issuedAtMs, ttlMs, leaseId: leaseIds[name] }),
+  ]));
+  const generated = createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle, issuedAtMs, ttlMs, leases });
+
+  assert.deepEqual(generated, fixture.payload, "fixture must remain exactly reproducible by the JS encoder");
+  assert.equal(decodeLeaseManifestPayload(structuredClone(generated)).resume_handle, resumeHandle);
+});
+
+test("lease renewal is an unleased exact four-id time extension with observational ack", () => {
+  const renewal = createLeaseRenewalPayload({
+    sessionEpoch: "12345",
+    generation: 2,
+    issuedAtMs: 10_000,
+    ttlMs: 5_000,
+    leaseIds: {
+      panel: "lease-panel",
+      mic_capture: "lease-mic",
+      audio_present: "lease-audio",
+      local_attach: "lease-local",
+    },
+  });
+  assert.deepEqual(decodeLeaseRenewalPayload(renewal), renewal);
+  assert.doesNotThrow(() => createQuestSurfaceFrame({
+    type: "LEASE_RENEWAL",
+    sessionEpoch: "12345",
+    direction: "downlink",
+    leaseRef: "",
+    seq: "9",
+    payload: renewal,
+  }));
+
+  const ack = createLeaseRenewalAckPayload({ generation: 2 });
+  assert.deepEqual(decodeLeaseRenewalAckPayload(ack), ack);
+  assert.doesNotThrow(() => createQuestSurfaceFrame({
+    type: "LEASE_RENEWAL_ACK",
+    sessionEpoch: "12345",
+    direction: "uplink",
+    leaseRef: "",
+    seq: "10",
+    payload: ack,
+  }));
+});
+
+test("lease renewal rejects authority fields, changed shape, duplicate ids, and invalid time", () => {
+  const base = createLeaseRenewalPayload({
+    sessionEpoch: "12345",
+    generation: 1,
+    issuedAtMs: 10_000,
+    ttlMs: 5_000,
+    leaseIds: {
+      panel: "lease-panel",
+      mic_capture: "lease-mic",
+      audio_present: "lease-audio",
+      local_attach: "lease-local",
+    },
+  });
+  assert.throws(
+    () => decodeLeaseRenewalPayload({ ...base, capability: QUEST_SURFACE_CAPABILITY }),
+    (error) => error.code === "renewal_payload_fields_invalid",
+  );
+  assert.throws(
+    () => decodeLeaseRenewalPayload({
+      ...base,
+      lease_ids: { ...base.lease_ids, local_attach: "lease-panel" },
+    }),
+    (error) => error.code === "renewal_duplicate_lease_id",
+  );
+  assert.throws(
+    () => decodeLeaseRenewalPayload({ ...base, expires_at_ms: base.expires_at_ms + 1 }),
+    (error) => error.code === "renewal_expires_mismatch",
+  );
+  assert.throws(
+    () => createLeaseRenewalPayload({
+      sessionEpoch: base.session_epoch,
+      generation: 0,
+      issuedAtMs: base.issued_at_ms,
+      ttlMs: base.ttl_ms,
+      leaseIds: base.lease_ids,
+    }),
+    (error) => error.code === "renewal_generation_invalid",
+  );
+  assert.throws(
+    () => createQuestSurfaceFrame({
+      type: "LEASE_RENEWAL",
+      sessionEpoch: "12345",
+      direction: "downlink",
+      leaseRef: "lease-panel",
+      seq: "9",
+      payload: base,
+    }),
+    (error) => error.code === "lease_ref_unexpected",
+  );
+});
+
 test("manifest expiry must not outlive leaves and leaf timing consistent", () => {
   const epoch = "555";
   const issued = 1000000;
@@ -278,10 +424,10 @@ test("manifest expiry must not outlive leaves and leaf timing consistent", () =>
   const lMic = mk("g2", QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, "soma.provider.quest-surface-fixture", "session", "l2");
   const lAudio = mk("g3", QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, "soma.provider.quest-surface-fixture", "session", "l3");
   const lLocal = mk("g4", QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, "soma.provider.local-model", "once", "l4");
-  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
+  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
   // tamper leaf expiry to be shorter than manifest
   const shortLeaf = { ...lLocal, expires_at_ms: issued + 1000 };
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: shortLeaf } }), (e) => e.code === "manifest_expires_mismatch" || e.code === "manifest_leaf_expires_mismatch");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, ttlMs: ttl, issuedAtMs: issued, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: shortLeaf } }), (e) => e.code === "manifest_expires_mismatch" || e.code === "manifest_leaf_expires_mismatch");
 });
 
 test("lease creation requires exact provider and scope coordinates", () => {
@@ -310,7 +456,7 @@ test("modality constraints are exact — non-panel accepts only device/TTL bindi
   const lMic = mk("g2", QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, "soma.provider.quest-surface-fixture", "session");
   const lAudio = mk("g3", QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, "soma.provider.quest-surface-fixture", "session");
   const lLocal = mk("g4", QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, "soma.provider.local-model", "once");
-  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
+  const manifest = createLeaseManifestPayload({ sessionEpoch: epoch, resumeHandle: RESUME_HANDLE, leases: { panel: lPanel, mic_capture: lMic, audio_present: lAudio, local_attach: lLocal } });
   const badArray = JSON.parse(JSON.stringify(manifest));
   badArray.leases.mic_capture.constraints = [];
   assert.throws(() => decodeLeaseManifestPayload(badArray), (e) => e.code === "manifest_constraints_invalid" || e.code === "lease_constraints_invalid");
@@ -323,19 +469,19 @@ test("modality constraints are exact — non-panel accepts only device/TTL bindi
   const m2 = mk2("g2", QUEST_SURFACE_CAPABILITY_MIC_CAPTURE, "soma.provider.quest-surface-fixture", "session");
   const a2 = mk2("g3", QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT, "soma.provider.quest-surface-fixture", "session");
   const lo2 = mk2("g4", QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH, "soma.provider.local-model", "once");
-  const good2 = createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: { panel: p2, mic_capture: m2, audio_present: a2, local_attach: lo2 } });
+  const good2 = createLeaseManifestPayload({ sessionEpoch: epoch2, resumeHandle: RESUME_HANDLE, ttlMs: ttl2, issuedAtMs: issued2, leases: { panel: p2, mic_capture: m2, audio_present: a2, local_attach: lo2 } });
   const badCreateArray = JSON.parse(JSON.stringify(good2));
   badCreateArray.leases.mic_capture.constraints = [];
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateArray.leases }), (e) => e.code === "manifest_constraints_invalid" || e.code === "lease_constraints_invalid");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, resumeHandle: RESUME_HANDLE, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateArray.leases }), (e) => e.code === "manifest_constraints_invalid" || e.code === "lease_constraints_invalid");
   const badCreateNonEmpty = JSON.parse(JSON.stringify(good2));
   badCreateNonEmpty.leases.mic_capture.constraints = { armed_window_id: "w1" };
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateNonEmpty.leases }), (e) => e.code === "lease_constraints_unknown_field");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, resumeHandle: RESUME_HANDLE, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreateNonEmpty.leases }), (e) => e.code === "lease_constraints_unknown_field");
   const badCreatePanelUnknown = JSON.parse(JSON.stringify(good2));
   badCreatePanelUnknown.leases.panel.constraints = { unknown_field: 1 };
-  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreatePanelUnknown.leases }), (e) => e.code === "lease_constraints_unknown_field");
+  assert.throws(() => createLeaseManifestPayload({ sessionEpoch: epoch2, resumeHandle: RESUME_HANDLE, ttlMs: ttl2, issuedAtMs: issued2, leases: badCreatePanelUnknown.leases }), (e) => e.code === "lease_constraints_unknown_field");
   // positive exact-panel constraint round trip
   const panelWithBytes = createQuestSurfaceLease({ sessionEpoch: epoch2, issuedAtMs: issued2, ttlMs: ttl2, sourceGrant: { id: "g-panel-512", capability: QUEST_SURFACE_CAPABILITY, provider: "soma.provider.quest-surface-fixture", scope: "session", constraints: { max_panel_text_bytes: 512 } }, leaseId: "l2-panel-512" });
-  const goodPanel = createLeaseManifestPayload({ sessionEpoch: epoch2, ttlMs: ttl2, issuedAtMs: issued2, leases: { panel: panelWithBytes, mic_capture: m2, audio_present: a2, local_attach: lo2 } });
+  const goodPanel = createLeaseManifestPayload({ sessionEpoch: epoch2, resumeHandle: RESUME_HANDLE, ttlMs: ttl2, issuedAtMs: issued2, leases: { panel: panelWithBytes, mic_capture: m2, audio_present: a2, local_attach: lo2 } });
   assert.doesNotThrow(() => decodeLeaseManifestPayload(JSON.parse(JSON.stringify(goodPanel))));
 });
 

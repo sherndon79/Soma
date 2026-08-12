@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 /**
  * Mic-off latch per §8/§10.2 — narrowing-only, requires deliberate resume.
  *
@@ -12,39 +14,48 @@
  */
 
 export class QuestSurfaceMicLatch {
-  constructor() {
+  constructor({ resumeHandle = randomUUID() } = {}) {
+    this.resumeHandle = String(resumeHandle ?? "").trim();
+    if (!this.resumeHandle) throw new TypeError("resumeHandle is required");
     this.latched = false;
     this.reason = "";
     this.latchedAtMs = 0;
     this.latchedEpoch = "";
+    this.latchedEpisodeId = "";
   }
 
   isLatched() {
     return this.latched;
   }
 
-  latch(reason, epoch = "", nowMs = Date.now()) {
+  latch(reason, epoch = "", nowMs = Date.now(), episodeId = "") {
     if (this.latched) return;
     this.latched = true;
     this.reason = String(reason ?? "latch").trim() || "latch";
     this.latchedAtMs = nowMs;
     this.latchedEpoch = String(epoch ?? "");
+    this.latchedEpisodeId = String(episodeId ?? "").trim();
   }
 
   /**
-   * Deliberate resume requires both a fresh epoch and explicit intent.
-   * Must be different authenticated epoch plus explicit.
+   * Deliberate resume requires a fresh epoch, the exact episode-scoped opaque
+   * handle and originally issued episode, plus explicit local intent.
    */
-  deliberateResume({ freshEpoch, explicit } = {}) {
-    if (!this.latched) return true;
+  deliberateResume({ freshEpoch, resumeHandle, currentEpisodeId, explicit } = {}) {
+    if (!this.latched) return false;
     if (!explicit) return false;
     const fe = String(freshEpoch ?? "").trim();
+    const handle = String(resumeHandle ?? "").trim();
+    const currentEpisode = String(currentEpisodeId ?? "").trim();
     if (!fe || fe === "0") return false;
     if (fe === this.latchedEpoch) return false;
+    if (!handle || handle !== this.resumeHandle) return false;
+    if (!this.latchedEpisodeId || currentEpisode !== this.latchedEpisodeId) return false;
     this.latched = false;
     this.reason = "";
     this.latchedAtMs = 0;
     this.latchedEpoch = "";
+    this.latchedEpisodeId = "";
     return true;
   }
 
@@ -53,5 +64,6 @@ export class QuestSurfaceMicLatch {
     this.reason = "";
     this.latchedAtMs = 0;
     this.latchedEpoch = "";
+    this.latchedEpisodeId = "";
   }
 }

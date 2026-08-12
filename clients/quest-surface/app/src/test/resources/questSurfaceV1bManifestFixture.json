@@ -1,0 +1,79 @@
+{
+  "description": "Node-produced v1b LEASE_MANIFEST payload for JS/Java resume-handle cross-conformance",
+  "input": {
+    "session_epoch": "99",
+    "resume_handle": "resume-test-handle",
+    "issued_at_ms": 10000,
+    "ttl_ms": 5000
+  },
+  "payload": {
+    "schema_version": 1,
+    "session_epoch": "99",
+    "resume_handle": "resume-test-handle",
+    "issued_at_ms": 10000,
+    "ttl_ms": 5000,
+    "expires_at_ms": 15000,
+    "leases": {
+      "panel": {
+        "lease_id": "lease-panel",
+        "source_grant_id": "grant-panel",
+        "capability": "interaction.quest.surface.panel.present",
+        "provider": "soma.provider.quest-surface-fixture",
+        "scope": "session",
+        "session_epoch": "99",
+        "issued_at_ms": 10000,
+        "ttl_ms": 5000,
+        "expires_at_ms": 15000,
+        "constraints": {
+          "max_panel_text_bytes": 512,
+          "allowed_surface_ids": [
+            "panel.main"
+          ],
+          "device_fingerprint256": ""
+        }
+      },
+      "mic_capture": {
+        "lease_id": "lease-mic",
+        "source_grant_id": "grant-mic",
+        "capability": "interaction.quest.surface.microphone.capture",
+        "provider": "soma.provider.quest-surface-fixture",
+        "scope": "session",
+        "session_epoch": "99",
+        "issued_at_ms": 10000,
+        "ttl_ms": 5000,
+        "expires_at_ms": 15000,
+        "constraints": {
+          "device_fingerprint256": ""
+        }
+      },
+      "audio_present": {
+        "lease_id": "lease-audio",
+        "source_grant_id": "grant-audio",
+        "capability": "interaction.quest.surface.audio.wearer_directed.present",
+        "provider": "soma.provider.quest-surface-fixture",
+        "scope": "session",
+        "session_epoch": "99",
+        "issued_at_ms": 10000,
+        "ttl_ms": 5000,
+        "expires_at_ms": 15000,
+        "constraints": {
+          "device_fingerprint256": ""
+        }
+      },
+      "local_attach": {
+        "lease_id": "lease-local",
+        "source_grant_id": "grant-local",
+        "capability": "model.context.audio.microphone.local.attach",
+        "provider": "soma.provider.local-model",
+        "scope": "once",
+        "session_epoch": "99",
+        "issued_at_ms": 10000,
+        "ttl_ms": 5000,
+        "expires_at_ms": 15000,
+        "constraints": {
+          "device_fingerprint256": ""
+        }
+      }
+    }
+  }
+}

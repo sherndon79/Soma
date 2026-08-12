@@ -52,6 +52,8 @@ const UNLEASED_TYPES = new Set([
   "HELLO_ACK",
   "LEASE",
   "LEASE_MANIFEST",
+  "LEASE_RENEWAL",
+  "LEASE_RENEWAL_ACK",
   "FOCUS_LOST",
   "SUSPEND",
   "TEARDOWN_ACK",
@@ -96,6 +98,39 @@ export function selectHighestQuestSurfaceVersion(supportedVersions) {
     && version === QUEST_SURFACE_PROTOCOL_VERSION
   ));
   return mutual.length === 0 ? null : Math.max(...mutual);
+}
+
+export function decodeHelloResumeIntent(payload) {
+  requirePlainObject(payload, "hello_payload_invalid", "HELLO payload must be an object.");
+  if (!Object.prototype.hasOwnProperty.call(payload, "resume_intent")) {
+    return null;
+  }
+  const intent = payload.resume_intent;
+  requirePlainObject(
+    intent,
+    "resume_intent_invalid",
+    "HELLO resume_intent must be an object.",
+  );
+  requireExactFields(intent, new Set([
+    "schema_version",
+    "resume_handle",
+    "explicit_local_action",
+  ]), "resume_intent_invalid");
+  if (intent.schema_version !== 1) {
+    throw protocolError("resume_intent_invalid", "Resume intent schema version is unsupported.");
+  }
+  const resumeHandle = requireToken(intent.resume_handle, "resume_handle_invalid");
+  if (intent.explicit_local_action !== true) {
+    throw protocolError(
+      "resume_explicit_action_required",
+      "Resume requires an explicit local action.",
+    );
+  }
+  return {
+    schema_version: 1,
+    resume_handle: resumeHandle,
+    explicit_local_action: true,
+  };
 }
 
 export class BoundedLineDecoder {
@@ -499,11 +534,13 @@ export function isVadVoicedChunk(pcmBytes, threshold = QUEST_SURFACE_VAD_ENERGY_
 
 export function createLeaseManifestPayload({
   sessionEpoch,
+  resumeHandle,
   ttlMs = 60_000,
   issuedAtMs = Date.now(),
   leases,
 } = {}) {
   const epoch = decimalU64(sessionEpoch, "invalid_session_epoch");
+  const handle = requireToken(resumeHandle, "resume_handle_invalid");
   const ttl = boundedInteger(ttlMs, 1, QUEST_SURFACE_MAX_LEASE_TTL_MS, "lease_ttl_invalid");
   const issued = boundedInteger(issuedAtMs, 0, Number.MAX_SAFE_INTEGER, "lease_issued_at_invalid");
   requirePlainObject(leases, "manifest_leases_invalid", "Manifest leases must be an object.");
@@ -544,6 +581,7 @@ export function createLeaseManifestPayload({
   return {
     schema_version: 1,
     session_epoch: epoch,
+    resume_handle: handle,
     issued_at_ms: issued,
     ttl_ms: ttl,
     expires_at_ms: issued + ttl,
@@ -558,9 +596,10 @@ export function createLeaseManifestPayload({
 
 export function decodeLeaseManifestPayload(payload) {
   requirePlainObject(payload, "manifest_payload_invalid", "Manifest payload must be object");
-  requireExactFields(payload, new Set(["schema_version","session_epoch","issued_at_ms","ttl_ms","expires_at_ms","leases"]), "manifest_payload_fields_invalid");
+  requireExactFields(payload, new Set(["schema_version","session_epoch","resume_handle","issued_at_ms","ttl_ms","expires_at_ms","leases"]), "manifest_payload_fields_invalid");
   if (payload.schema_version !== 1) throw protocolError("manifest_schema_unsupported", "Unsupported manifest schema");
   payload.session_epoch = decimalU64(payload.session_epoch, "invalid_session_epoch");
+  payload.resume_handle = requireToken(payload.resume_handle, "resume_handle_invalid");
   payload.ttl_ms = boundedInteger(payload.ttl_ms, 1, QUEST_SURFACE_MAX_LEASE_TTL_MS, "manifest_ttl_invalid");
   payload.issued_at_ms = boundedInteger(payload.issued_at_ms, 0, Number.MAX_SAFE_INTEGER, "manifest_issued_invalid");
   payload.expires_at_ms = boundedInteger(payload.expires_at_ms, 0, Number.MAX_SAFE_INTEGER, "manifest_expires_invalid");
@@ -611,6 +650,108 @@ export function decodeLeaseManifestPayload(payload) {
     if (payload.expires_at_ms > leaf.expires_at_ms) throw protocolError("manifest_outlives_leaf", "Manifest outlives leaf");
   }
   return payload;
+}
+
+export function createLeaseRenewalPayload({
+  sessionEpoch,
+  generation,
+  issuedAtMs = Date.now(),
+  ttlMs,
+  leaseIds,
+} = {}) {
+  const epoch = decimalU64(sessionEpoch, "invalid_session_epoch");
+  const nextGeneration = boundedInteger(
+    generation,
+    1,
+    Number.MAX_SAFE_INTEGER,
+    "renewal_generation_invalid",
+  );
+  const issued = boundedInteger(
+    issuedAtMs,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    "renewal_issued_invalid",
+  );
+  const ttl = boundedInteger(
+    ttlMs,
+    1,
+    QUEST_SURFACE_MAX_LEASE_TTL_MS,
+    "renewal_ttl_invalid",
+  );
+  if (issued > Number.MAX_SAFE_INTEGER - ttl) {
+    throw protocolError("renewal_expires_invalid", "Renewal expiry exceeds the safe integer range.");
+  }
+  return {
+    schema_version: 1,
+    session_epoch: epoch,
+    generation: nextGeneration,
+    issued_at_ms: issued,
+    ttl_ms: ttl,
+    expires_at_ms: issued + ttl,
+    lease_ids: normalizeRenewalLeaseIds(leaseIds),
+  };
+}
+
+export function decodeLeaseRenewalPayload(payload) {
+  requirePlainObject(payload, "renewal_payload_invalid", "Lease renewal payload must be an object.");
+  requireExactFields(
+    payload,
+    new Set([
+      "schema_version",
+      "session_epoch",
+      "generation",
+      "issued_at_ms",
+      "ttl_ms",
+      "expires_at_ms",
+      "lease_ids",
+    ]),
+    "renewal_payload_fields_invalid",
+  );
+  if (payload.schema_version !== 1) {
+    throw protocolError("renewal_schema_unsupported", "Lease renewal schema is unsupported.");
+  }
+  const normalized = createLeaseRenewalPayload({
+    sessionEpoch: payload.session_epoch,
+    generation: payload.generation,
+    issuedAtMs: payload.issued_at_ms,
+    ttlMs: payload.ttl_ms,
+    leaseIds: payload.lease_ids,
+  });
+  const expiresAt = boundedInteger(
+    payload.expires_at_ms,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    "renewal_expires_invalid",
+  );
+  if (expiresAt !== normalized.expires_at_ms) {
+    throw protocolError("renewal_expires_mismatch", "Lease renewal expiry is inconsistent.");
+  }
+  return normalized;
+}
+
+export function createLeaseRenewalAckPayload({ generation } = {}) {
+  return {
+    schema_version: 1,
+    generation: boundedInteger(
+      generation,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "renewal_generation_invalid",
+    ),
+  };
+}
+
+export function decodeLeaseRenewalAckPayload(payload) {
+  requirePlainObject(payload, "renewal_ack_invalid", "Lease renewal acknowledgement must be an object.");
+  requireExactFields(
+    payload,
+    new Set(["schema_version", "generation"]),
+    "renewal_ack_fields_invalid",
+  );
+  if (payload.schema_version !== 1) {
+    throw protocolError("renewal_ack_schema_unsupported", "Lease renewal acknowledgement schema is unsupported.");
+  }
+  return createLeaseRenewalAckPayload({ generation: payload.generation });
 }
 
 const QUEST_SURFACE_PROVIDER_FOR_CAPABILITY = {
@@ -881,6 +1022,23 @@ function validateLeaseBinding(frame) {
       && frame.lease_ref) {
     throw protocolError("lease_ref_unexpected", "Pre-authority control must not claim a lease.");
   }
+}
+
+function normalizeRenewalLeaseIds(leaseIds) {
+  requirePlainObject(leaseIds, "renewal_lease_ids_invalid", "Renewal lease ids must be an object.");
+  const required = ["panel", "mic_capture", "audio_present", "local_attach"];
+  requireExactFields(leaseIds, new Set(required), "renewal_lease_ids_fields_invalid");
+  const normalized = {};
+  const seen = new Set();
+  for (const name of required) {
+    const leaseId = requireToken(leaseIds[name], "renewal_lease_id_invalid");
+    if (seen.has(leaseId)) {
+      throw protocolError("renewal_duplicate_lease_id", "Renewal lease ids must be unique.");
+    }
+    seen.add(leaseId);
+    normalized[name] = leaseId;
+  }
+  return normalized;
 }
 
 function publicFrame(frame) {

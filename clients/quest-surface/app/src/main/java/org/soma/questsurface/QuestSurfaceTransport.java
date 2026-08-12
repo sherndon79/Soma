@@ -401,6 +401,42 @@ final class QuestSurfaceTransport {
         }
     }
 
+    void sendSpatialAdmissionReceipt(String sessionEpoch, String leaseRef, String documentId, String documentRevision, String documentSha256, String profileId, String profileSha256, String outcome, JSONObject extra) {
+        try {
+            writeExecutor.execute(() -> {
+                try {
+                    JSONObject common = QuestSurfaceProtocol.commonSpatialIdentity(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256);
+                    JSONObject payload = QuestSurfaceProtocol.spatialAdmissionReceipt(common, outcome, extra);
+                    send("SPATIAL_ADMISSION_RECEIPT", sessionEpoch, 0, leaseRef, payload);
+                } catch (Exception ignored) {}
+            });
+        } catch (RejectedExecutionException ignored) {}
+    }
+
+    void sendSpatialDisplayReceipt(String sessionEpoch, String leaseRef, String documentId, String documentRevision, String documentSha256, String profileId, String profileSha256, long generation) {
+        try {
+            writeExecutor.execute(() -> {
+                try {
+                    JSONObject common = QuestSurfaceProtocol.commonSpatialIdentity(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256);
+                    JSONObject payload = QuestSurfaceProtocol.spatialDisplayReceipt(common, generation);
+                    send("SPATIAL_DISPLAY_RECEIPT", sessionEpoch, 0, leaseRef, payload);
+                } catch (Exception ignored) {}
+            });
+        } catch (RejectedExecutionException ignored) {}
+    }
+
+    void sendSpatialRollbackReceipt(String sessionEpoch, String leaseRef, String documentId, String documentRevision, String documentSha256, String profileId, String profileSha256, long failedGeneration, Long restoredGeneration, String target, String reason) {
+        try {
+            writeExecutor.execute(() -> {
+                try {
+                    JSONObject common = QuestSurfaceProtocol.commonSpatialIdentity(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256);
+                    JSONObject payload = QuestSurfaceProtocol.spatialRollbackReceipt(common, failedGeneration, restoredGeneration, target, reason);
+                    send("SPATIAL_ROLLBACK_RECEIPT", sessionEpoch, 0, leaseRef, payload);
+                } catch (Exception ignored) {}
+            });
+        } catch (RejectedExecutionException ignored) {}
+    }
+
     private void sendActualBoundsAckOnWriter(
             String sessionEpoch,
             String leaseId,
@@ -548,8 +584,14 @@ final class QuestSurfaceTransport {
 
         String originalLatchedEpoch = latchedSessionEpoch;
         String requestedResumeHandle = resumeHandle;
-        JSONObject hello = QuestSurfaceProtocol.helloPayload(
-                resumeAttempt ? requestedResumeHandle : null);
+        JSONObject hello;
+        try {
+            hello = QuestSurfaceProtocol.helloPayload(
+                    resumeAttempt ? requestedResumeHandle : null,
+                    QuestSurfaceProtocol.defaultSpatialProfiles());
+        } catch (QuestSurfaceProtocol.ProtocolException e) {
+            hello = QuestSurfaceProtocol.helloPayload(resumeAttempt ? requestedResumeHandle : null);
+        }
         if (resumeAttempt) {
             if (originalLatchedEpoch.isEmpty()
                     || originalLatchedEpoch.equals("0")
@@ -563,6 +605,14 @@ final class QuestSurfaceTransport {
         QuestSurfaceProtocol.Frame helloAck = receive(reader);
         requireServerEnvelope(helloAck, "HELLO_ACK", null);
         QuestSurfaceProtocol.validateHelloAck(helloAck);
+        // Bind negotiated spatial_profile hash for §4 document binding — additive, optional for v1a.
+        String negotiatedSpatialProfileHash = null;
+        if (helloAck.payload.has("spatial_profile")) {
+            try {
+                org.json.JSONObject wrapper = helloAck.payload.getJSONObject("spatial_profile");
+                negotiatedSpatialProfileHash = wrapper.optString("profile_sha256", null);
+            } catch (Exception ignored) {}
+        }
         if (resumeAttempt) {
             if (helloAck.sessionEpoch.toString().equals(originalLatchedEpoch)) {
                 throw new IOException("resume_fresh_epoch_required");

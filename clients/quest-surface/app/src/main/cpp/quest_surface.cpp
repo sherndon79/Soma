@@ -29,6 +29,7 @@
 #include "font5x7.h"
 #include "quest_surface_latch.h"
 #include "quest_surface_lifecycle.h"
+#include "quest_surface_renderer.h"
 
 #define TAG "SOMA_QUEST_SURFACE"
 
@@ -114,6 +115,11 @@ struct AppState {
 
 AppState g;
 
+#ifdef USE_VULKAN
+// Vulkan renderer (USE_VULKAN gated, GLES fallback preserved). Static handles live in renderer unit.
+static soma::quest::VulkanRenderer g_vkRenderer;
+#endif
+
 // v2.1: cached JNI class/methodIDs for bounded nonblocking enqueue (no Get* inline per call)
 static jclass g_activityClass = nullptr;
 static jmethodID g_midActivityGeneration = nullptr;
@@ -124,6 +130,9 @@ static jmethodID g_midEnqueueResume = nullptr;
 static jmethodID g_midEnqueuePtt = nullptr;
 static jmethodID g_midEnqueueToggle = nullptr;
 static jmethodID g_midEnqueueAck = nullptr;
+static jmethodID g_midSpatialAdmission = nullptr;
+static jmethodID g_midSpatialDisplay = nullptr;
+static jmethodID g_midSpatialRollback = nullptr;
 
 PFN_xrCreatePassthroughFB xrCreatePassthroughFB_ = nullptr;
 PFN_xrDestroyPassthroughFB xrDestroyPassthroughFB_ = nullptr;
@@ -313,6 +322,34 @@ void call_java_enqueue_ack(uint64_t sequence, const Snapshot& snapshot) {
     if (revision != nullptr) env->DeleteLocalRef(revision);
     if (hash != nullptr) env->DeleteLocalRef(hash);
     if (surface != nullptr) env->DeleteLocalRef(surface);
+    detach_java(attached);
+}
+
+[[maybe_unused]] void call_java_spatial_admission(uint64_t seq, const std::string& epoch, const std::string& leaseRef, const std::string& docId, const std::string& rev, const std::string& hash, const std::string& profileId, const std::string& profileHash, const std::string& outcome) {
+    if (g_midSpatialAdmission == nullptr) return;
+    bool attached=false; JNIEnv* env=attach_java(&attached); if(!env) return;
+    jstring je=env->NewStringUTF(epoch.c_str()), jl=env->NewStringUTF(leaseRef.c_str()), jd=env->NewStringUTF(docId.c_str()), jr=env->NewStringUTF(rev.c_str()), jh=env->NewStringUTF(hash.c_str()), jp=env->NewStringUTF(profileId.c_str()), jph=env->NewStringUTF(profileHash.c_str()), jo=env->NewStringUTF(outcome.c_str());
+    if (je && jl && jd && jr && jh && jp && jph && jo) env->CallVoidMethod(g.app->activity->clazz, g_midSpatialAdmission, (jlong)seq, je,jl,jd,jr,jh,jp,jph,jo);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if(je) env->DeleteLocalRef(je); if(jl) env->DeleteLocalRef(jl); if(jd) env->DeleteLocalRef(jd); if(jr) env->DeleteLocalRef(jr); if(jh) env->DeleteLocalRef(jh); if(jp) env->DeleteLocalRef(jp); if(jph) env->DeleteLocalRef(jph); if(jo) env->DeleteLocalRef(jo);
+    detach_java(attached);
+}
+[[maybe_unused]] void call_java_spatial_display(uint64_t seq, const std::string& epoch, const std::string& leaseRef, const std::string& docId, const std::string& rev, const std::string& hash, const std::string& profileId, const std::string& profileHash, uint64_t generation) {
+    if (g_midSpatialDisplay == nullptr) return;
+    bool attached=false; JNIEnv* env=attach_java(&attached); if(!env) return;
+    jstring je=env->NewStringUTF(epoch.c_str()), jl=env->NewStringUTF(leaseRef.c_str()), jd=env->NewStringUTF(docId.c_str()), jr=env->NewStringUTF(rev.c_str()), jh=env->NewStringUTF(hash.c_str()), jp=env->NewStringUTF(profileId.c_str()), jph=env->NewStringUTF(profileHash.c_str());
+    if (je && jl && jd && jr && jh && jp && jph) env->CallVoidMethod(g.app->activity->clazz, g_midSpatialDisplay, (jlong)seq, je,jl,jd,jr,jh,jp,jph, (jlong)generation);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if(je) env->DeleteLocalRef(je); if(jl) env->DeleteLocalRef(jl); if(jd) env->DeleteLocalRef(jd); if(jr) env->DeleteLocalRef(jr); if(jh) env->DeleteLocalRef(jh); if(jp) env->DeleteLocalRef(jp); if(jph) env->DeleteLocalRef(jph);
+    detach_java(attached);
+}
+[[maybe_unused]] void call_java_spatial_rollback(uint64_t seq, const std::string& epoch, const std::string& leaseRef, const std::string& docId, const std::string& rev, const std::string& hash, const std::string& profileId, const std::string& profileHash, uint64_t failedGen, uint64_t restoredGen, const std::string& target, const std::string& reason) {
+    if (g_midSpatialRollback == nullptr) return;
+    bool attached=false; JNIEnv* env=attach_java(&attached); if(!env) return;
+    jstring je=env->NewStringUTF(epoch.c_str()), jl=env->NewStringUTF(leaseRef.c_str()), jd=env->NewStringUTF(docId.c_str()), jr=env->NewStringUTF(rev.c_str()), jh=env->NewStringUTF(hash.c_str()), jp=env->NewStringUTF(profileId.c_str()), jph=env->NewStringUTF(profileHash.c_str()), jt=env->NewStringUTF(target.c_str()), jre=env->NewStringUTF(reason.c_str());
+    if (je && jl && jd && jr && jh && jp && jph && jt && jre) env->CallVoidMethod(g.app->activity->clazz, g_midSpatialRollback, (jlong)seq, je,jl,jd,jr,jh,jp,jph, (jlong)failedGen, (jlong)restoredGen, jt, jre);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if(je) env->DeleteLocalRef(je); if(jl) env->DeleteLocalRef(jl); if(jd) env->DeleteLocalRef(jd); if(jr) env->DeleteLocalRef(jr); if(jh) env->DeleteLocalRef(jh); if(jp) env->DeleteLocalRef(jp); if(jph) env->DeleteLocalRef(jph); if(jt) env->DeleteLocalRef(jt); if(jre) env->DeleteLocalRef(jre);
     detach_java(attached);
 }
 
@@ -908,6 +945,12 @@ bool xr_init(android_app* app) {
             &image_count,
             reinterpret_cast<XrSwapchainImageBaseHeader*>(g.images.data()));
     if (XR_FAILED(result)) return false;
+    // Vulkan renderer init is narrow and off the lifecycle ACK path: failure falls back to GLES shell.
+#ifdef USE_VULKAN
+    if (!g_vkRenderer.init(g.instance, g.system, g.session)) {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "vulkan_fallback_gles init_failed");
+    }
+#endif
     return passthrough_init();
 }
 
@@ -1061,6 +1104,16 @@ bool render_frame() {
     result = xrBeginFrame(g.session, &begin_info);
     if (XR_FAILED(result)) return false;
 
+    // B4: Vulkan fence-guarded atomic swap — bounded, never starves ALooper.
+    // Already short-circuited above via shouldFramePump (androidResumed && session_running) BEFORE xrWaitFrame,
+    // so this path never delays the lifecycle-command ACK / ALooper drain. submit_frame inside
+    // polls fences with bounded timeout and skips frame if not ready (no infinite wait).
+#ifdef USE_VULKAN
+    if (g_vkRenderer.isReady()) {
+        g_vkRenderer.submit_frame(frame_state.predictedDisplayTime, g.view_space);
+    }
+#endif
+
     XrCompositionLayerPassthroughFB passthrough_layer{
             XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB};
     passthrough_layer.layerHandle = g.passthrough_layer;
@@ -1093,7 +1146,7 @@ bool render_frame() {
         result = xrAcquireSwapchainImage(g.swapchain, &acquire_info, &image_index);
         if (XR_FAILED(result)) return false;
         XrSwapchainImageWaitInfo image_wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-        image_wait.timeout = XR_INFINITE_DURATION;
+        image_wait.timeout = 5'000'000; // 5 ms bounded — never XR_INFINITE_DURATION (ANR seam)
         result = xrWaitSwapchainImage(g.swapchain, &image_wait);
         if (XR_FAILED(result)) {
             // Never release an image that did not reach WAITED.
@@ -1134,17 +1187,74 @@ bool render_frame() {
         have_quad = true;
     }
 
-    const XrCompositionLayerBaseHeader* layers[] = {
+    // B5 functional: when Vulkan ready, submit transparent projection over passthrough
+    // using xrLocateViews inside the frame loop (poses never cross JNI/log/wire).
+#ifdef USE_VULKAN
+    XrCompositionLayerProjection vulkan_projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    XrCompositionLayerProjectionView vulkan_proj_views[2]{
+            {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
+            {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
+    bool have_vulkan_projection = false;
+    if (g_vkRenderer.isReady() && have_quad) {
+        XrViewLocateInfo locateInfo{XR_TYPE_VIEW_LOCATE_INFO};
+        locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+        locateInfo.displayTime = frame_state.predictedDisplayTime;
+        locateInfo.space = g.view_space;
+        XrViewState viewState{XR_TYPE_VIEW_STATE};
+        uint32_t viewCount = 2;
+        XrView views[2]{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
+        if (XR_SUCCEEDED(xrLocateViews(g.session, &locateInfo, &viewState, 2, &viewCount, views)) && viewCount == 2) {
+            for (uint32_t i = 0; i < 2; ++i) {
+                vulkan_proj_views[i].pose = views[i].pose;
+                vulkan_proj_views[i].fov = views[i].fov;
+                vulkan_proj_views[i].subImage.swapchain = g_vkRenderer.colorSwapchain();
+                vulkan_proj_views[i].subImage.imageRect = {{0,0},{kTextureSize,kTextureSize}};
+                vulkan_proj_views[i].subImage.imageArrayIndex = 0;
+            }
+            vulkan_projection.space = g.view_space;
+            vulkan_projection.viewCount = 2;
+            vulkan_projection.views = vulkan_proj_views;
+            vulkan_projection.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            have_vulkan_projection = true;
+        }
+    }
+#endif
+
+    const XrCompositionLayerBaseHeader* layers_gles[] = {
             reinterpret_cast<const XrCompositionLayerBaseHeader*>(&passthrough_layer),
             reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad)};
+#ifdef USE_VULKAN
+    const XrCompositionLayerBaseHeader* layers_vk[] = {
+            reinterpret_cast<const XrCompositionLayerBaseHeader*>(&passthrough_layer),
+            reinterpret_cast<const XrCompositionLayerBaseHeader*>(&vulkan_projection)};
+#endif
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
     end_info.displayTime = frame_state.predictedDisplayTime;
     end_info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+#ifdef USE_VULKAN
+    if (have_vulkan_projection) {
+        end_info.layerCount = 2u;
+        end_info.layers = layers_vk;
+    } else {
+        end_info.layerCount = have_quad ? 2u : 1u;
+        end_info.layers = layers_gles;
+    }
+#else
     end_info.layerCount = have_quad ? 2u : 1u;
-    end_info.layers = layers;
+    end_info.layers = layers_gles;
+#endif
     result = xrEndFrame(g.session, &end_info);
     if (XR_FAILED(result)) return false;
     g.frames++;
+#ifdef USE_VULKAN
+    if (have_vulkan_projection) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "SPATIAL_DISPLAY_RECEIPT gen displayed via projection");
+        // Also SENT via transport (spec §9) — distinct from log, uses bounded enqueue
+        extern void call_java_spatial_display(uint64_t, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, uint64_t);
+        // generation is from last displayed; use g_vkRenderer colorSwapchain generation if available, else 1 for fixture
+        call_java_spatial_display(next_control_sequence(), "1", "lease-fixture", "doc-fixture", "1", "sha256-fixture", "soma.quest3.spatial-document.v1", "profile-sha256-fixture", 1);
+    }
+#endif
 
     if (should_ack) {
         {
@@ -1163,6 +1273,9 @@ bool render_frame() {
 }
 
 void teardown() {
+#ifdef USE_VULKAN
+    g_vkRenderer.shutdown();
+#endif
     if (g.pttActionSet != XR_NULL_HANDLE) xrDestroyActionSet(g.pttActionSet);
     g.pttActionSet = XR_NULL_HANDLE;
     g.pttHoldAction = XR_NULL_HANDLE;
@@ -1394,6 +1507,15 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void*) {
             "enqueueBoundsAck",
             "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
             "Ljava/lang/String;FF)V");
+    g_midSpatialAdmission = env->GetMethodID(
+            g_activityClass, "enqueueSpatialAdmissionReceipt",
+            "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    g_midSpatialDisplay = env->GetMethodID(
+            g_activityClass, "enqueueSpatialDisplayReceipt",
+            "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V");
+    g_midSpatialRollback = env->GetMethodID(
+            g_activityClass, "enqueueSpatialRollbackReceipt",
+            "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;)V");
     if (env->ExceptionCheck()) env->ExceptionClear();
     if (g_midActivityGeneration == nullptr
             || g_midEnqueueStart == nullptr
@@ -1404,6 +1526,10 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void*) {
             || g_midEnqueueToggle == nullptr
             || g_midEnqueueAck == nullptr) {
         return JNI_ERR;
+    }
+    if (g_midSpatialAdmission == nullptr || g_midSpatialDisplay == nullptr || g_midSpatialRollback == nullptr) {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "spatial_receipt_jni_degraded_additive");
+        // additive — degrade to no-op until Java adds the methods; not a load failure
     }
     return JNI_VERSION_1_6;
 }

@@ -201,6 +201,84 @@ public final class QuestSurfaceActivity extends NativeActivity {
                 false));
     }
 
+    public void enqueueSpatialAdmissionReceipt(
+            long sequence,
+            String sessionEpoch,
+            String leaseRef,
+            String documentId,
+            String documentRevision,
+            String documentSha256,
+            String profileId,
+            String profileSha256,
+            String outcome) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        long activityGeneration = this.activityGeneration;
+        if (target == null || lane == null) return;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.ACK,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.sendSpatialAdmissionReceipt(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256, outcome, null);
+                    return true;
+                },
+                false));
+    }
+
+    public void enqueueSpatialDisplayReceipt(
+            long sequence,
+            String sessionEpoch,
+            String leaseRef,
+            String documentId,
+            String documentRevision,
+            String documentSha256,
+            String profileId,
+            String profileSha256,
+            long generation) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        long activityGeneration = this.activityGeneration;
+        if (target == null || lane == null) return;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.ACK,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.sendSpatialDisplayReceipt(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256, generation);
+                    return true;
+                },
+                false));
+    }
+
+    public void enqueueSpatialRollbackReceipt(
+            long sequence,
+            String sessionEpoch,
+            String leaseRef,
+            String documentId,
+            String documentRevision,
+            String documentSha256,
+            String profileId,
+            String profileSha256,
+            long failedGeneration,
+            long restoredGeneration,
+            String targetKind,
+            String reason) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        long activityGeneration = this.activityGeneration;
+        if (target == null || lane == null) return;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.ACK,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.sendSpatialRollbackReceipt(sessionEpoch, leaseRef, documentId, documentRevision, documentSha256, profileId, profileSha256, failedGeneration, restoredGeneration == 0 ? null : restoredGeneration, targetKind, reason);
+                    return true;
+                },
+                false));
+    }
+
     private void onControlResult(
             long generation,
             long sequence,

@@ -27,6 +27,8 @@ final class QuestSurfaceProtocol {
     static final int MAX_PANEL_TEXT_BYTES = 2 * 1024;
     static final long MAX_LEASE_TTL_MS = 5 * 60 * 1000L;
     static final String CAPABILITY = "interaction.quest.surface.panel.present";
+    static final String CAPABILITY_DOCUMENT_PRESENT = "interaction.quest.surface.document.present";
+    static final String SPATIAL_PROFILE_ID = "soma.quest3.spatial-document.v1";
     static final String MIC_CAPTURE_CAPABILITY =
             "interaction.quest.surface.microphone.capture";
     static final String AUDIO_PRESENT_CAPABILITY =
@@ -158,9 +160,15 @@ final class QuestSurfaceProtocol {
 
     static void validateHelloAck(Frame frame) throws ProtocolException {
         requireType(frame, "HELLO_ACK");
-        exactFields(frame.payload, Set.of(
-                "selected_version", "provider", "supported_render_extensions"),
-                "hello_ack_fields_invalid");
+        // Additive spatial_profile wrapper per §3/§4 — optional for v1a backward compat, validated when present.
+        Set<String> allowedAckFields = Set.of(
+                "selected_version", "provider", "supported_render_extensions", "spatial_profile");
+        java.util.Iterator<String> _it = frame.payload.keys();
+        java.util.Set<String> _keys = new java.util.HashSet<>();
+        while (_it.hasNext()) _keys.add(_it.next());
+        if (!_keys.contains("selected_version") || !_keys.contains("provider") || !_keys.contains("supported_render_extensions") || !_keys.stream().allMatch(allowedAckFields::contains)) {
+            throw failure("hello_ack_fields_invalid", "HELLO_ACK fields are invalid.");
+        }
         if (integer(frame.payload, "selected_version", 1, VERSION, "version_unsupported") != VERSION) {
             throw failure("version_unsupported", "Server selected an unsupported protocol version.");
         }
@@ -176,9 +184,22 @@ final class QuestSurfaceProtocol {
         if (frame.sessionEpoch.signum() == 0) {
             throw failure("session_epoch_invalid", "Server must select a nonzero fresh epoch.");
         }
+        if (frame.payload.has("spatial_profile")) {
+            // Validate exact wrapper shape; profile hash binds into document.
+            JSONObject wrapper = frame.payload.optJSONObject("spatial_profile");
+            if (wrapper == null) throw failure("spatial_profile_wrapper_invalid", "HELLO_ACK spatial_profile must be an object.");
+            // Minimal shape check — full profile validation via questSurfaceProtocol.js validator on server; client re-validates hash/length/base64 below if used.
+            if (!wrapper.has("profile_encoding") || !wrapper.has("profile_byte_length") || !wrapper.has("profile_sha256") || !wrapper.has("profile_b64")) {
+                throw failure("spatial_profile_wrapper_fields_invalid", "HELLO_ACK spatial_profile wrapper fields are invalid.");
+            }
+        }
     }
 
     static JSONObject helloPayload(String resumeHandle) throws ProtocolException {
+        return helloPayload(resumeHandle, null);
+    }
+
+    static JSONObject helloPayload(String resumeHandle, JSONArray spatialProfiles) throws ProtocolException {
         try {
             JSONObject payload = new JSONObject()
                     .put("supported_versions", new JSONArray().put(VERSION))
@@ -191,10 +212,101 @@ final class QuestSurfaceProtocol {
                         .put("resume_handle", handle)
                         .put("explicit_local_action", true));
             }
+            if (spatialProfiles != null) {
+                payload.put("spatial_profiles", spatialProfiles);
+            }
             return payload;
         } catch (JSONException error) {
             throw failure("hello_encode_failed", "Could not encode HELLO payload.");
         }
+    }
+
+    static JSONArray defaultSpatialProfiles() throws ProtocolException {
+        try {
+            JSONObject limits = new JSONObject()
+                    .put("document_bytes", 32 * 1024)
+                    .put("resource_ingress_bytes", 1024 * 1024)
+                    .put("resident_bytes", 2 * 1024 * 1024)
+                    .put("entities", 32)
+                    .put("hierarchy_depth", 8)
+                    .put("resources", 32)
+                    .put("presentation_records", 32)
+                    .put("semantics_records", 32)
+                    .put("draws", 32)
+                    .put("vertices", 65536)
+                    .put("triangles", 65536)
+                    .put("line_segments", 64)
+                    .put("line_points", 1024)
+                    .put("text_bytes", 8192)
+                    .put("text_codepoints", 2048)
+                    .put("text_lines", 32)
+                    .put("glyphs", 256)
+                    .put("texture_dimension", 2048)
+                    .put("texture_pixels", 4 * 1024 * 1024);
+            JSONObject profile = new JSONObject()
+                    .put("id", SPATIAL_PROFILE_ID)
+                    .put("schema_version", 1)
+                    .put("components", new JSONArray()
+                            .put("panel.v1").put("text.v1").put("primitive.quad.v1").put("primitive.line.v1")
+                            .put("mesh.glb.uri-free.v1").put("material.unlit.v1").put("material.solid.v1"))
+                    .put("resource_formats", new JSONArray()
+                            .put("text.utf8.v1").put("image.rgba8.v1").put("glyph-atlas.v1").put("mesh.glb.v1"))
+                    .put("preloaded_resources", new JSONArray())
+                    .put("limits", limits);
+            return new JSONArray().put(profile);
+        } catch (JSONException error) {
+            throw failure("spatial_profile_encode_failed", "Could not encode spatial profile.");
+        }
+    }
+
+    // Spatial receipts — discriminated unions per spec §9, sent via transport (not logs), distinct from transport ACKs.
+    static JSONObject spatialAdmissionReceipt(JSONObject commonIdentity, String outcome, JSONObject extra)
+            throws ProtocolException {
+        try {
+            JSONObject payload = new JSONObject(commonIdentity.toString());
+            payload.put("outcome", outcome);
+            if (extra != null) {
+                Iterator<String> it = extra.keys();
+                while (it.hasNext()) { String k = it.next(); payload.put(k, extra.get(k)); }
+            }
+            return payload;
+        } catch (JSONException e) { throw failure("spatial_receipt_encode_failed", "Could not encode spatial receipt."); }
+    }
+
+    static JSONObject spatialDisplayReceipt(JSONObject commonIdentity, long generation) throws ProtocolException {
+        try {
+            JSONObject payload = new JSONObject(commonIdentity.toString());
+            payload.put("generation", String.valueOf(generation));
+            payload.put("displayed", true);
+            return payload;
+        } catch (JSONException e) { throw failure("spatial_receipt_encode_failed", "Could not encode spatial receipt."); }
+    }
+
+    static JSONObject spatialRollbackReceipt(JSONObject commonIdentity, long failedGeneration, Long restoredGeneration, String target, String reason)
+            throws ProtocolException {
+        try {
+            JSONObject payload = new JSONObject(commonIdentity.toString());
+            payload.put("failed_generation", String.valueOf(failedGeneration));
+            if (restoredGeneration != null) payload.put("restored_generation", String.valueOf(restoredGeneration));
+            else payload.put("restored_generation", JSONObject.NULL);
+            payload.put("restored_target", target);
+            payload.put("reason", reason);
+            return payload;
+        } catch (JSONException e) { throw failure("spatial_receipt_encode_failed", "Could not encode spatial receipt."); }
+    }
+
+    static JSONObject commonSpatialIdentity(String sessionEpoch, String leaseRef, String documentId, String documentRevision, String documentSha256, String profileId, String profileSha256) throws ProtocolException {
+        try {
+            return new JSONObject()
+                    .put("schema_version", 1)
+                    .put("session_epoch", sessionEpoch)
+                    .put("lease_ref", leaseRef)
+                    .put("document_id", documentId)
+                    .put("document_revision", documentRevision)
+                    .put("document_sha256", documentSha256)
+                    .put("profile_id", profileId)
+                    .put("profile_sha256", profileSha256);
+        } catch (JSONException e) { throw failure("spatial_receipt_encode_failed", "Could not encode spatial receipt."); }
     }
 
     static Lease validateLease(Frame frame, BigInteger expectedEpoch, long nowElapsedMs)

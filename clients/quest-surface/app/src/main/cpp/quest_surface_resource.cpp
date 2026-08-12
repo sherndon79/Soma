@@ -43,33 +43,26 @@ static bool has_key(const std::vector<std::string>& v,const std::string& s){ for
 
 // Find nth object in array starting at arr_start (which is '[' ), return its string and next pos
 static bool nth_object_in_array(const std::string& json, size_t arr_start, size_t n, std::string& out){
-    size_t i=arr_start;
-    while(i<json.size() && json[i]!='[') ++i;
-    if(i>=json.size()) return false;
-    ++i; // after [
+    size_t i = json.find('[', arr_start);
+    if (i==std::string::npos) return false;
+    ++i; // after '['
     size_t idx=0;
-    int depth=0;
-    size_t obj_start=std::string::npos;
-    for(; i<json.size(); ++i){
-        char c=json[i];
-        if(c=='"'){ size_t tmp=i; dec_str(json, tmp); i=tmp-1; continue; }
-        if(c=='{'){
-            if(depth==0 && idx==n) obj_start=i;
-            ++depth;
-        } else if(c=='}'){
-            --depth;
-            if(depth==0 && obj_start!=std::string::npos){
-                if(idx==n){ out=json.substr(obj_start, i-obj_start+1); return true; }
-                ++idx;
-                obj_start=std::string::npos;
-            }
-        } else if(c=='['){
-            // handle nested array depth? For accessors array, objects don't contain arrays except maybe, but track
-            ++depth;
-        } else if(c==']'){
-            --depth;
-            if(depth<0) break;
+    while (i < json.size()) {
+        while (i < json.size() && (json[i]==' '||json[i]=='\n'||json[i]=='\r'||json[i]=='\t'||json[i]==',')) ++i;
+        if (i>=json.size()) return false;
+        if (json[i]==']') return false;
+        if (json[i]!='{') return false;
+        size_t start=i;
+        int depth=0;
+        bool inStr=false;
+        for (; i<json.size(); ++i) {
+            char c=json[i];
+            if (inStr) { if(c=='"' && json[i-1]!='\\') inStr=false; continue; }
+            if (c=='"') { inStr=true; continue; }
+            if (c=='{') depth++;
+            else if (c=='}') { depth--; if(depth==0){ if(idx==n){ out=json.substr(start, i-start+1); return true; } idx++; break; } }
         }
+        ++i; // move past '}'
     }
     return false;
 }
@@ -92,6 +85,7 @@ static bool get_uint_field(const std::string& obj, const std::string& key, uint3
 
 GlbDecodeResult scan_and_decode_glb(const uint8_t* data, size_t len, const GlbCaps& caps) {
     GlbDecodeResult r;
+    try {
     if (data==nullptr || len < 20) { r.reason="frame_too_small"; return r; }
     if (len > caps.max_buffer_bytes + 1024) { r.reason="buffer_too_large"; return r; }
     if (std::memcmp(data, "glTF", 4) != 0) { r.reason="magic_invalid"; return r; }
@@ -126,8 +120,8 @@ GlbDecodeResult scan_and_decode_glb(const uint8_t* data, size_t len, const GlbCa
                 size_t j=i; while(j<json.size() && (json[j]==' '||json[j]=='\n'||json[j]=='\r'||json[j]=='\t')) ++j;
                 if (j<json.size() && json[j]==':' && s=="mode"){
                     ++j; while(j<json.size() && (json[j]==' '||json[j]=='\n'||json[j]=='\r'||json[j]=='\t')) ++j;
-                    size_t k=j; while(k<json.size() && json[k]>='0' && json[k]<='9') ++k;
-                    if (k>j){ int v=std::stoi(json.substr(j,k-j)); if (v==4) mode_ok=true; }
+                    size_t k=j; while(k<json.size() && json[k]>='0' && json[k]<='9' && k-j<20) ++k;
+                    if (k>j){ try{ int v=std::stoi(json.substr(j,k-j)); if (v==4) mode_ok=true; } catch(...){ /* hostile number — treat as not mode 4, will reject */ } }
                     i=j; continue;
                 }
             } else ++i;
@@ -169,10 +163,10 @@ GlbDecodeResult scan_and_decode_glb(const uint8_t* data, size_t len, const GlbCa
         // buffer field must be 0
         uint32_t buf=0; if(get_uint_field(bv0,"buffer",buf) && buf!=0){ r.reason="buffer_index_invalid"; return r; }
     }
-    // Validate byte counts vs actual BIN
+    // Validate byte counts vs actual BIN — must include accessor byteOffset within bufferView and BIN
     uint32_t pos_bytes = acc0_count * 12; // VEC3 float
-    if (bv0_len < pos_bytes) { r.reason="bufferView_too_small"; return r; }
-    if (bv0_offset + pos_bytes > b_chunk_len) { r.reason="accessor_out_of_range"; return r; }
+    if (acc0_offset + pos_bytes > bv0_len) { r.reason="accessor_out_of_range"; return r; }
+    if (bv0_offset + acc0_offset + pos_bytes > b_chunk_len) { r.reason="accessor_out_of_range"; return r; }
     if (acc0_count > caps.max_vertices) { r.reason="vertex_cap_exceeded"; return r; }
     // Indices if present
     uint32_t tri_count=0;
@@ -194,8 +188,8 @@ GlbDecodeResult scan_and_decode_glb(const uint8_t* data, size_t len, const GlbCa
         uint32_t bv1_off=0, bv1_len=0;
         { int o=0; if(get_int_field(bv1,"byteOffset",o)) bv1_off=(uint32_t)o; if(!get_uint_field(bv1,"byteLength",bv1_len)){ r.reason="index_bufferview_length_invalid"; return r; } }
         uint32_t idx_bytes = acc1_count * (acc1_comp==5123?2:4);
-        if (bv1_len < idx_bytes) { r.reason="index_bufferview_too_small"; return r; }
-        if (bv1_off + idx_bytes > b_chunk_len) { r.reason="index_out_of_range"; return r; }
+        if (acc1_off + idx_bytes > bv1_len) { r.reason="index_out_of_range"; return r; }
+        if (bv1_off + acc1_off + idx_bytes > b_chunk_len) { r.reason="index_out_of_range"; return r; }
         tri_count = acc1_count /3;
         if (tri_count > caps.max_triangles) { r.reason="triangle_cap_exceeded"; return r; }
         // Validate indices in range and non-degenerate
@@ -228,5 +222,7 @@ GlbDecodeResult scan_and_decode_glb(const uint8_t* data, size_t len, const GlbCa
     r.ok = true;
     r.reason.clear();
     return r;
+    } catch (const std::exception& e) { r.reason="parser_exception"; return r; }
+    catch (...) { r.reason="parser_exception"; return r; }
 }
 }} // soma::quest

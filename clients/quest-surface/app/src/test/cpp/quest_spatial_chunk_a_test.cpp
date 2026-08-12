@@ -101,6 +101,60 @@ int main(){
   auto r=scan_and_decode_glb(glb,len,caps);
   assert(!r.ok && r.reason=="nan_inf_position");
  }
+ // Fuzz hostile corpus — must not throw/crash, must return !ok with bounded reason (parser_exception or specific reject)
+ {
+  // Oversized mode number (stoi overflow — unguarded stoi would throw)
+  const char* j="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":99999999999999999999}]}],\"buffers\":[{\"byteLength\":42}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],\"accessors\":[{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}]}";
+  unsigned char glb[2048]; size_t len; build_glb(glb,&len,j,44);
+  uint8_t* bin = glb + 12+8+ ((strlen(j)+3)&~3u) +8; float pos[9]={-0.5f,-0.5f,0,0.5f,-0.5f,0,0,0.5f,0}; memcpy(bin,pos,36); uint16_t idx[3]={0,1,2}; memcpy(bin+36,idx,6);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(!r.ok); // must not throw
+ }
+ {
+  // Deep nesting / many brackets
+  const char* j="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],\"accessors\":[[[[[[[[[[\"x\"]]]]]]]]]],\"bufferViews\":[],\"buffers\":[]}";
+  unsigned char glb[2048]; size_t len; build_glb(glb,&len,j,32);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(!r.ok);
+ }
+ {
+  // Whitespace bomb — valid GLB with heavy whitespace
+  const char* j=" { \n\t \"asset\" \t : \t { \"version\" : \"2.0\" } , \"scene\" : 0 , \"scenes\" : [ { \"nodes\" : [ 0 ] } ] , \"nodes\" : [ { \"mesh\" : 0 } ] , \"meshes\" : [ { \"primitives\" : [ { \"attributes\" : { \"POSITION\" : 0 } , \"indices\" : 1 , \"mode\" : 4 } ] } ] , \"buffers\" : [ { \"byteLength\" : 42 } ] , \"bufferViews\" : [ { \"buffer\" : 0 , \"byteOffset\" : 0 , \"byteLength\" : 36 } , { \"buffer\" : 0 , \"byteOffset\" : 36 , \"byteLength\" : 6 } ] , \"accessors\" : [ { \"bufferView\" : 0 , \"byteOffset\" : 0 , \"componentType\" : 5126 , \"count\" : 3 , \"type\" : \"VEC3\" , \"min\" : [ -0.5 , -0.5 , 0 ] , \"max\" : [ 0.5 , 0.5 , 0 ] } , { \"bufferView\" : 1 , \"byteOffset\" : 0 , \"componentType\" : 5123 , \"count\" : 3 , \"type\" : \"SCALAR\" } ] } ";
+  unsigned char glb[2048]; size_t len; build_glb(glb,&len,j,44);
+  uint8_t* bin = glb + 12+8+ ((strlen(j)+3)&~3u) +8; float pos[9]={-0.5f,-0.5f,0,0.5f,-0.5f,0,0,0.5f,0}; memcpy(bin,pos,36); uint16_t idx[3]={0,1,2}; memcpy(bin+36,idx,6);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(r.ok); // whitespace should be tolerated when valid
+ }
+ {
+  // Unterminated string / truncated JSON — must not throw
+  const char* j="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],\"accessors\":[],\"bufferViews\":[],\"buffers\":[]";
+  unsigned char glb[1024]; size_t len; build_glb(glb,&len,j,32);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(!r.ok);
+ }
+ {
+  // Non-numeric accessor count (hostile) — get_int_field would return false, not throw
+  const char* j="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],\"buffers\":[{\"byteLength\":42}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],\"accessors\":[{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":\"three\",\"type\":\"VEC3\"},{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}]}";
+  unsigned char glb[2048]; size_t len; build_glb(glb,&len,j,44);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(!r.ok && (r.reason=="accessor_count_invalid" || r.reason=="parser_exception" || r.reason=="position_missing"));
+ }
+ {
+  // Large accessor byteOffset OOB — must be accessor_out_of_range, not over-read (residual fix)
+  const char* j="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],\"buffers\":[{\"byteLength\":42}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],\"accessors\":[{\"bufferView\":0,\"byteOffset\":100,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"byteOffset\":0,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}]}";
+  unsigned char glb[2048]; size_t len; build_glb(glb,&len,j,44);
+  uint8_t* bin = glb + 12+8+ ((strlen(j)+3)&~3u) +8; float pos[9]={-0.5f,-0.5f,0,0.5f,-0.5f,0,0,0.5f,0}; memcpy(bin,pos,36); uint16_t idx[3]={0,1,2}; memcpy(bin+36,idx,6);
+  auto r=scan_and_decode_glb(glb,len,caps);
+  assert(!r.ok && r.reason=="accessor_out_of_range");
+ }
+ {
+  // Large index accessor byteOffset OOB
+  const char* j2="{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],\"buffers\":[{\"byteLength\":42}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],\"accessors\":[{\"bufferView\":0,\"byteOffset\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"byteOffset\":10,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}]}";
+  unsigned char glb[2048]; size_t len2; build_glb(glb,&len2,j2,44);
+  uint8_t* bin2 = glb + 12+8+ ((strlen(j2)+3)&~3u) +8; float pos2[9]={-0.5f,-0.5f,0,0.5f,-0.5f,0,0,0.5f,0}; memcpy(bin2,pos2,36); uint16_t idx2[3]={0,1,2}; memcpy(bin2+36,idx2,6);
+  auto r2=scan_and_decode_glb(glb,len2,caps);
+  assert(!r2.ok && r2.reason=="index_out_of_range");
+ }
  // Overflow via huge buffer
  {
   GlbCaps small; small.max_buffer_bytes=16;

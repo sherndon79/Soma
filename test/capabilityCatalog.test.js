@@ -111,6 +111,31 @@ test("space history read is explicit-grant occupant capability and provider-back
   assert.equal(spaceHistory.providers[0].provider_contract, "soma.space.history.read.v1");
 });
 
+test("Quest spatial documents are separately requestable and never inherit panel authority", async () => {
+  const catalog = await loadCapabilityCatalog();
+  const providerRegistry = await loadProviderRegistry();
+  const view = buildCapabilityView({ catalog, providerRegistry });
+
+  const panel = view.capabilities.find(
+    (capability) => capability.key === "interaction.quest.surface.panel.present",
+  );
+  const document = view.capabilities.find(
+    (capability) => capability.key === "interaction.quest.surface.document.present",
+  );
+  assert.ok(panel);
+  assert.ok(document);
+  assert.notEqual(document.key, panel.key);
+  assert.equal(document.harness_status, "disabled");
+  assert.equal(document.status, "requestable");
+  assert.equal(document.activation_policy, "explicit_grant");
+  assert.equal(document.provider_contract, "soma.interaction.quest.surface.document.v1");
+  assert.equal(document.providers.length, 1);
+  assert.equal(document.providers[0].id, "soma.provider.quest-surface-fixture");
+  assert.equal(document.providers[0].output_schema, "soma.spatial-document.snapshot.v1");
+  assert.ok(document.excluded_by_default.includes("head or view pose export"));
+  assert.match(document.description, /panel grants do not migrate/i);
+});
+
 test("capability catalog rejects ambiguous base-harness authority", () => {
   assert.throws(
     () => normalizeCapabilityCatalog({

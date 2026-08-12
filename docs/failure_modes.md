@@ -643,6 +643,8 @@ Triggers:
   malformed, inactive, or bound to a different device fingerprint
 - mTLS authentication, hostname validation, version negotiation, epoch,
   lease, sequence, document revision/hash/length/TTL, or surface-bound validation fails
+- spatial profile carrier/wrapper validation, document schema/graph/closure, resource chunk
+  integrity, URI-free GLB decoding, recomputed bounds/cost, or static device-budget admission fails
 - an atomic re-arm replacement fails request or exact-grant preflight validation
 - arm omits its explicit episode id, TTL, reason, provenance id, or `actor=user`
 - the episode is disarmed, expires, or the process restarts
@@ -664,6 +666,10 @@ Expected behavior:
   episode's latch or reviving any already-issued session
 - keep arm state RAM-only so restart returns to disarmed
 - reject malformed, stale, oversized, mismatched, unleased, wrong-direction, or non-v1a-stream input
+- leave an incomplete spatial candidate bounded and pending; cancel it on a newer snapshot,
+  deadline, lease close, disconnect, focus loss, or presence loss, and clear its session cache
+- reject hard-invalid spatial input without disturbing the prior coherent scene; apply only authored
+  fallback/omission choices in deterministic order, with exact semantic receipts
 - clear remote content on disconnect, expiry, focus loss, or presence loss
 - permit only a bounded narrowing/teardown report after local validity is lost
 - treat presence loss and viable transient focus loss as resumable only after synchronous hardware
@@ -698,6 +704,9 @@ Provenance:
 
 - record arm/disarm/expiry and transport/auth/session/lease/revision/bounds metadata plus bounded
   reason/provenance identifiers only
+- for spatial documents, record profile/document/resource hashes, counts, stages, degradation, and
+  admission/display/rollback metadata only; never record document, text, image, glyph, mesh, or view
+  pose bodies
 - do not record panel text, document bytes, TLS private material, head pose, camera pixels, or other
   headset sensor data
 - do not record the participant-facing arm reason, PCM, transcript, answer text, or payload bytes

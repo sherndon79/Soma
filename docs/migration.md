@@ -13,6 +13,9 @@ compatibility.
   disclosure, persistence, or actuation.
 - Breaking or authority-broadening changes require migration, invalidation, or user review.
 - Grants do not silently survive capability splits, merges, or semantic broadening.
+- Existing `interaction.quest.surface.panel.present` grants never migrate to
+  `interaction.quest.surface.document.present`; spatial documents require a new exact grant because
+  they add resource classes, component and space bounds, and a larger presentation surface.
 - Proposal history cannot be used as a grant.
 - Unknown future records should fail closed for authority while remaining inspectable where
   possible.

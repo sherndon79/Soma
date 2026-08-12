@@ -7,7 +7,50 @@ export const QUEST_SURFACE_MAX_DOCUMENT_BYTES = 8 * 1024;
 export const QUEST_SURFACE_MAX_PANEL_TEXT_BYTES = 2 * 1024;
 export const QUEST_SURFACE_MAX_LEASE_TTL_MS = 5 * 60 * 1000;
 export const QUEST_SURFACE_CAPABILITY = "interaction.quest.surface.panel.present";
+export const QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT = "interaction.quest.surface.document.present";
 export const QUEST_SURFACE_PROVIDER_ID = "soma.provider.quest-surface-fixture";
+
+export const QUEST_SPATIAL_PROFILE_ID = "soma.quest3.spatial-document.v1";
+export const QUEST_SPATIAL_MAX_DOCUMENT_BYTES = 32 * 1024;
+export const QUEST_SPATIAL_RESOURCE_CHUNK_BYTES = 24 * 1024;
+export const QUEST_SPATIAL_MAX_PROFILES = 4;
+export const QUEST_SPATIAL_COMPONENTS = Object.freeze([
+  "panel.v1",
+  "text.v1",
+  "primitive.quad.v1",
+  "primitive.line.v1",
+  "mesh.glb.uri-free.v1",
+  "material.unlit.v1",
+  "material.solid.v1",
+]);
+export const QUEST_SPATIAL_RESOURCE_FORMATS = Object.freeze([
+  "text.utf8.v1",
+  "image.rgba8.v1",
+  "glyph-atlas.v1",
+  "mesh.glb.v1",
+]);
+export const QUEST_SPATIAL_LIMIT_FIELDS = Object.freeze([
+  "document_bytes",
+  "resource_ingress_bytes",
+  "resident_bytes",
+  "entities",
+  "hierarchy_depth",
+  "resources",
+  "presentation_records",
+  "semantics_records",
+  "draws",
+  "vertices",
+  "triangles",
+  "line_segments",
+  "line_points",
+  "text_bytes",
+  "text_codepoints",
+  "text_lines",
+  "glyphs",
+  "texture_dimension",
+  "texture_pixels",
+]);
+export const QUEST_SPATIAL_RESOURCE_KINDS = Object.freeze(["text", "image", "glyph", "mesh"]);
 
 // v1b proposed migration keys (disabled-first, explicit-grant) — §13
 export const QUEST_SURFACE_CAPABILITY_MIC_CAPTURE = "interaction.quest.surface.microphone.capture";
@@ -15,6 +58,7 @@ export const QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT = "interaction.quest.surface
 export const QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH = "model.context.audio.microphone.local.attach";
 export const QUEST_SURFACE_V1B_CAPABILITIES = [
   QUEST_SURFACE_CAPABILITY,
+  QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT,
   QUEST_SURFACE_CAPABILITY_MIC_CAPTURE,
   QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT,
   QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH,
@@ -74,6 +118,13 @@ export const QUEST_SURFACE_LEASED_AUDIO_TYPES = new Set([
   "ANSWER_END",
   "PANEL_SNAPSHOT",
   "ACTUAL_BOUNDS_ACK",
+]);
+export const QUEST_SURFACE_SPATIAL_FRAME_TYPES = new Set([
+  "SPATIAL_SNAPSHOT",
+  "RESOURCE_CHUNK",
+  "SPATIAL_ADMISSION_RECEIPT",
+  "SPATIAL_DISPLAY_RECEIPT",
+  "SPATIAL_ROLLBACK_RECEIPT",
 ]);
 const DIRECTIONS = new Set(["uplink", "downlink"]);
 const DECIMAL_U64 = /^(0|[1-9][0-9]{0,19})$/;
@@ -754,8 +805,496 @@ export function decodeLeaseRenewalAckPayload(payload) {
   return createLeaseRenewalAckPayload({ generation: payload.generation });
 }
 
+export function validateQuestSpatialProfile(profile) {
+  requirePlainObject(profile, "spatial_profile_invalid", "Spatial profile must be an object.");
+  requireExactFields(
+    profile,
+    new Set(["id", "schema_version", "components", "resource_formats", "preloaded_resources", "limits"]),
+    "spatial_profile_fields_invalid",
+  );
+  if (profile.id !== QUEST_SPATIAL_PROFILE_ID || profile.schema_version !== 1) {
+    throw protocolError("spatial_profile_unsupported", "Spatial profile id or schema is unsupported.");
+  }
+  const components = exactTokenSet(
+    profile.components,
+    QUEST_SPATIAL_COMPONENTS,
+    "spatial_profile_components_invalid",
+  );
+  const resourceFormats = exactTokenSet(
+    profile.resource_formats,
+    QUEST_SPATIAL_RESOURCE_FORMATS,
+    "spatial_profile_formats_invalid",
+  );
+  if (!Array.isArray(profile.preloaded_resources)
+      || profile.preloaded_resources.length > 256) {
+    throw protocolError("spatial_profile_preloaded_invalid", "Spatial preloaded resources are invalid.");
+  }
+  const preloadedResources = profile.preloaded_resources.map((resource) => (
+    validateQuestSpatialResourceDescriptor(resource, { preloaded: true })
+  ));
+  assertUnique(
+    preloadedResources.map((resource) => resource.resource_sha256),
+    "spatial_profile_preloaded_duplicate",
+  );
+  requirePlainObject(profile.limits, "spatial_profile_limits_invalid", "Spatial profile limits must be an object.");
+  requireExactFields(profile.limits, new Set(QUEST_SPATIAL_LIMIT_FIELDS), "spatial_profile_limits_fields_invalid");
+  const limits = {};
+  for (const field of QUEST_SPATIAL_LIMIT_FIELDS) {
+    limits[field] = boundedInteger(
+      profile.limits[field],
+      0,
+      Number.MAX_SAFE_INTEGER,
+      "spatial_profile_limit_invalid",
+    );
+  }
+  if (limits.document_bytes < 1 || limits.document_bytes > QUEST_SPATIAL_MAX_DOCUMENT_BYTES
+      || limits.entities < 1 || limits.hierarchy_depth < 1
+      || limits.resources < 1 || limits.presentation_records < 1) {
+    throw protocolError("spatial_profile_limit_invalid", "Spatial profile structural limits are unusable.");
+  }
+  for (const resource of preloadedResources) {
+    validateSpatialResourceAgainstProfile(resource, limits);
+  }
+  return {
+    id: QUEST_SPATIAL_PROFILE_ID,
+    schema_version: 1,
+    components,
+    resource_formats: resourceFormats,
+    preloaded_resources: preloadedResources,
+    limits,
+  };
+}
+
+export function decodeQuestSpatialHelloProfiles(payload) {
+  requirePlainObject(payload, "hello_payload_invalid", "HELLO payload must be an object.");
+  if (!Object.hasOwn(payload, "spatial_profiles")) {
+    return [];
+  }
+  if (!Array.isArray(payload.spatial_profiles)
+      || payload.spatial_profiles.length < 1
+      || payload.spatial_profiles.length > QUEST_SPATIAL_MAX_PROFILES) {
+    throw protocolError("spatial_profiles_invalid", "HELLO spatial_profiles must be a bounded non-empty array.");
+  }
+  const profiles = payload.spatial_profiles.map(validateQuestSpatialProfile);
+  assertUnique(
+    profiles.map((profile) => `${profile.id}:${profile.schema_version}`),
+    "spatial_profiles_duplicate",
+  );
+  return profiles;
+}
+
+export function createQuestSpatialProfileWrapper(profile) {
+  const normalized = validateQuestSpatialProfile(profile);
+  const bytes = Buffer.from(JSON.stringify(normalized), "utf8");
+  return {
+    profile_encoding: "base64-json-utf8",
+    profile_byte_length: bytes.length,
+    profile_sha256: sha256(bytes),
+    profile_b64: bytes.toString("base64"),
+  };
+}
+
+export function decodeQuestSpatialProfileWrapper(wrapper) {
+  requirePlainObject(wrapper, "spatial_profile_wrapper_invalid", "Spatial profile wrapper must be an object.");
+  requireExactFields(
+    wrapper,
+    new Set(["profile_encoding", "profile_byte_length", "profile_sha256", "profile_b64"]),
+    "spatial_profile_wrapper_fields_invalid",
+  );
+  if (wrapper.profile_encoding !== "base64-json-utf8") {
+    throw protocolError("spatial_profile_encoding_invalid", "Spatial profile encoding is unsupported.");
+  }
+  const length = boundedInteger(
+    wrapper.profile_byte_length,
+    1,
+    QUEST_SPATIAL_MAX_DOCUMENT_BYTES,
+    "spatial_profile_length_invalid",
+  );
+  requireSha256(wrapper.profile_sha256, "spatial_profile_hash_invalid");
+  const bytes = canonicalBase64Bytes(wrapper.profile_b64, "spatial_profile_base64_invalid");
+  if (bytes.length !== length) {
+    throw protocolError("spatial_profile_length_mismatch", "Spatial profile byte length does not match.");
+  }
+  if (sha256(bytes) !== wrapper.profile_sha256) {
+    throw protocolError("spatial_profile_hash_mismatch", "Spatial profile hash does not match.");
+  }
+  const profile = validateQuestSpatialProfile(parseJsonBytes(bytes, "spatial_profile_json_invalid"));
+  return {
+    profile,
+    profile_bytes: bytes,
+    profile_hash: wrapper.profile_sha256,
+  };
+}
+
+export function negotiateQuestSpatialProfile(profiles) {
+  if (!Array.isArray(profiles)) {
+    throw protocolError("spatial_profiles_invalid", "Spatial profiles must be an array.");
+  }
+  for (const candidate of profiles) {
+    const profile = validateQuestSpatialProfile(candidate);
+    if (profile.id === QUEST_SPATIAL_PROFILE_ID && profile.schema_version === 1) {
+      return {
+        profile,
+        spatial_profile: createQuestSpatialProfileWrapper(profile),
+      };
+    }
+  }
+  return null;
+}
+
+export function validateQuestSpatialResourceDescriptor(resource, { preloaded = false, profile = null } = {}) {
+  requirePlainObject(resource, "spatial_resource_invalid", "Spatial resource descriptor must be an object.");
+  const fields = preloaded
+    ? new Set(["kind", "format", "resource_sha256", "byte_length", "metadata"])
+    : new Set(["id", "kind", "format", "resource_sha256", "byte_length", "required", "metadata"]);
+  requireExactFields(resource, fields, "spatial_resource_fields_invalid");
+  const normalized = {
+    ...(preloaded ? {} : { id: exactToken(resource.id, "spatial_resource_id_invalid") }),
+    kind: exactEnum(resource.kind, QUEST_SPATIAL_RESOURCE_KINDS, "spatial_resource_kind_invalid"),
+    format: exactEnum(resource.format, QUEST_SPATIAL_RESOURCE_FORMATS, "spatial_resource_format_invalid"),
+    resource_sha256: requireSha256(resource.resource_sha256, "spatial_resource_hash_invalid"),
+    byte_length: boundedInteger(resource.byte_length, 1, Number.MAX_SAFE_INTEGER, "spatial_resource_length_invalid"),
+    ...(preloaded ? {} : { required: requireBoolean(resource.required, "spatial_resource_required_invalid") }),
+    metadata: normalizeSpatialResourceMetadata(resource.kind, resource.format, resource.metadata),
+  };
+  const expectedFormat = {
+    text: "text.utf8.v1",
+    image: "image.rgba8.v1",
+    glyph: "glyph-atlas.v1",
+    mesh: "mesh.glb.v1",
+  }[normalized.kind];
+  if (normalized.format !== expectedFormat) {
+    throw protocolError("spatial_resource_kind_format_mismatch", "Spatial resource kind and format do not match.");
+  }
+  if (normalized.kind === "image") {
+    const expectedRowBytes = checkedMultiply(
+      normalized.metadata.width_px,
+      4,
+      "spatial_resource_overflow",
+    );
+    if (normalized.metadata.row_bytes !== expectedRowBytes) {
+      throw protocolError("spatial_image_row_bytes_mismatch", "RGBA8 row_bytes must equal width_px times four.");
+    }
+    const expectedLength = checkedMultiply(
+      normalized.metadata.row_bytes,
+      normalized.metadata.height_px,
+      "spatial_resource_overflow",
+    );
+    if (normalized.byte_length !== expectedLength) {
+      throw protocolError("spatial_image_length_mismatch", "RGBA8 byte length is inconsistent.");
+    }
+  }
+  if (profile) {
+    validateSpatialResourceAgainstProfile(normalized, validateQuestSpatialProfile(profile).limits);
+  }
+  return normalized;
+}
+
+export function createSpatialSnapshotPayload({ document } = {}) {
+  const bytes = Buffer.from(JSON.stringify(document), "utf8");
+  if (bytes.length < 1 || bytes.length > QUEST_SPATIAL_MAX_DOCUMENT_BYTES) {
+    throw protocolError("spatial_document_length_invalid", "Spatial document is outside the byte limit.");
+  }
+  return {
+    document_encoding: "base64-json-utf8",
+    document_byte_length: bytes.length,
+    document_sha256: sha256(bytes),
+    document_b64: bytes.toString("base64"),
+  };
+}
+
+export function decodeSpatialSnapshotPayload(payload) {
+  requirePlainObject(payload, "spatial_snapshot_invalid", "Spatial snapshot payload must be an object.");
+  requireExactFields(
+    payload,
+    new Set(["document_encoding", "document_byte_length", "document_sha256", "document_b64"]),
+    "spatial_snapshot_fields_invalid",
+  );
+  if (payload.document_encoding !== "base64-json-utf8") {
+    throw protocolError("spatial_document_encoding_invalid", "Spatial document encoding is unsupported.");
+  }
+  const length = boundedInteger(
+    payload.document_byte_length,
+    1,
+    QUEST_SPATIAL_MAX_DOCUMENT_BYTES,
+    "spatial_document_length_invalid",
+  );
+  requireSha256(payload.document_sha256, "spatial_document_hash_invalid");
+  const bytes = canonicalBase64Bytes(payload.document_b64, "spatial_document_base64_invalid");
+  if (bytes.length !== length) {
+    throw protocolError("spatial_document_length_mismatch", "Spatial document byte length does not match.");
+  }
+  if (sha256(bytes) !== payload.document_sha256) {
+    throw protocolError("spatial_document_hash_mismatch", "Spatial document hash does not match.");
+  }
+  return {
+    document: parseJsonBytes(bytes, "spatial_document_json_invalid"),
+    document_bytes: bytes,
+    document_hash: payload.document_sha256,
+  };
+}
+
+export function validateQuestSpatialDocument(document, { profile } = {}) {
+  const selectedProfile = validateQuestSpatialProfile(profile);
+  requirePlainObject(document, "spatial_document_invalid", "Spatial document must be an object.");
+  requireExactFields(document, new Set([
+    "schema", "schema_version", "profile_id", "profile_sha256", "document_id", "revision",
+    "session_epoch", "lease_ref", "ttl_ms", "required_components", "optional_components",
+    "declared_cost", "entities", "resources", "presentation", "dynamics", "semantics",
+  ]), "spatial_document_fields_invalid");
+  if (document.schema !== "soma.spatial-document.snapshot" || document.schema_version !== 1) {
+    throw protocolError("spatial_document_schema_unsupported", "Spatial document schema is unsupported.");
+  }
+  const normalized = {
+    schema: document.schema,
+    schema_version: 1,
+    profile_id: exactToken(document.profile_id, "spatial_document_profile_invalid"),
+    profile_sha256: requireSha256(document.profile_sha256, "spatial_document_profile_hash_invalid"),
+    document_id: exactToken(document.document_id, "spatial_document_id_invalid"),
+    revision: decimalU64(document.revision, "spatial_document_revision_invalid"),
+    session_epoch: decimalU64(document.session_epoch, "spatial_document_epoch_invalid"),
+    lease_ref: exactToken(document.lease_ref, "spatial_document_lease_invalid"),
+    ttl_ms: boundedInteger(document.ttl_ms, 1, QUEST_SURFACE_MAX_LEASE_TTL_MS, "spatial_document_ttl_invalid"),
+    required_components: tokenArray(document.required_components, 0, QUEST_SPATIAL_COMPONENTS.length, "spatial_required_components_invalid"),
+    optional_components: tokenArray(document.optional_components, 0, QUEST_SPATIAL_COMPONENTS.length, "spatial_optional_components_invalid"),
+    declared_cost: normalizeSpatialCost(document.declared_cost, "spatial_declared_cost_invalid"),
+  };
+  if (normalized.profile_id !== selectedProfile.id) {
+    throw protocolError("spatial_document_profile_mismatch", "Spatial document profile id does not match selection.");
+  }
+  const selectedComponents = new Set(selectedProfile.components);
+  for (const component of [...normalized.required_components, ...normalized.optional_components]) {
+    if (!selectedComponents.has(component)) {
+      throw protocolError("spatial_document_component_unsupported", "Spatial document component is unsupported.");
+    }
+  }
+  if (normalized.required_components.some((value) => normalized.optional_components.includes(value))) {
+    throw protocolError("spatial_document_component_overlap", "Required and optional components must be disjoint.");
+  }
+  const limits = selectedProfile.limits;
+  const entities = boundedArray(document.entities, 1, limits.entities, "spatial_entities_invalid").map(normalizeSpatialEntity);
+  const resources = boundedArray(document.resources, 0, limits.resources, "spatial_resources_invalid").map((resource) => (
+    validateQuestSpatialResourceDescriptor(resource, { profile: selectedProfile })
+  ));
+  const presentation = boundedArray(
+    document.presentation,
+    1,
+    limits.presentation_records,
+    "spatial_presentation_invalid",
+  ).map(normalizeSpatialPresentation);
+  for (const record of presentation) {
+    if (record.type === "primitive.line.v1" && record.points_m.length > limits.line_points) {
+      throw protocolError("spatial_line_points_invalid", "Spatial line exceeds the selected profile.");
+    }
+    if (record.type === "text.v1" && record.max_lines > limits.text_lines) {
+      throw protocolError("spatial_text_lines_invalid", "Spatial text max_lines exceeds the selected profile.");
+    }
+  }
+  const semantics = boundedArray(
+    document.semantics,
+    0,
+    limits.semantics_records,
+    "spatial_semantics_invalid",
+  ).map(normalizeSpatialSemantics);
+  if (!Array.isArray(document.dynamics) || document.dynamics.length !== 0) {
+    throw protocolError("spatial_dynamics_not_empty", "Spatial dynamics must be empty in v1.");
+  }
+  assertUnique(entities.map((entity) => entity.id), "spatial_entity_id_duplicate");
+  assertUnique(resources.map((resource) => resource.id), "spatial_resource_id_duplicate");
+  assertUnique(presentation.map((record) => record.id), "spatial_presentation_id_duplicate");
+  assertUnique(semantics.map((record) => record.id), "spatial_semantics_id_duplicate");
+  validateSpatialGraph(entities, limits.hierarchy_depth);
+  validateSpatialReferences({
+    entities,
+    resources,
+    presentation,
+    semantics,
+    declaredComponents: new Set([...normalized.required_components, ...normalized.optional_components]),
+  });
+  return {
+    ...normalized,
+    entities,
+    resources,
+    presentation,
+    dynamics: [],
+    semantics,
+  };
+}
+
+export function createResourceChunkPayload({ resource, bytes, chunkIndex } = {}) {
+  const descriptor = validateQuestSpatialResourceDescriptor(resource);
+  const allBytes = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? []);
+  if (allBytes.length !== descriptor.byte_length || sha256(allBytes) !== descriptor.resource_sha256) {
+    throw protocolError("resource_chunk_source_mismatch", "Chunk source bytes do not match the descriptor.");
+  }
+  const chunkCount = Math.ceil(descriptor.byte_length / QUEST_SPATIAL_RESOURCE_CHUNK_BYTES);
+  const index = boundedInteger(chunkIndex, 0, chunkCount - 1, "resource_chunk_index_invalid");
+  const byteOffset = checkedMultiply(index, QUEST_SPATIAL_RESOURCE_CHUNK_BYTES, "resource_chunk_overflow");
+  const chunkBytes = allBytes.subarray(
+    byteOffset,
+    Math.min(allBytes.length, byteOffset + QUEST_SPATIAL_RESOURCE_CHUNK_BYTES),
+  );
+  return {
+    resource_sha256: descriptor.resource_sha256,
+    kind: descriptor.kind,
+    format: descriptor.format,
+    byte_length: descriptor.byte_length,
+    chunk_index: index,
+    chunk_count: chunkCount,
+    byte_offset: byteOffset,
+    bytes_b64: chunkBytes.toString("base64"),
+  };
+}
+
+export function decodeResourceChunkPayload(payload, { maxResourceBytes = Number.MAX_SAFE_INTEGER } = {}) {
+  requirePlainObject(payload, "resource_chunk_invalid", "Resource chunk must be an object.");
+  requireExactFields(payload, new Set([
+    "resource_sha256", "kind", "format", "byte_length", "chunk_index", "chunk_count",
+    "byte_offset", "bytes_b64",
+  ]), "resource_chunk_fields_invalid");
+  const resourceSha256 = requireSha256(payload.resource_sha256, "resource_chunk_hash_invalid");
+  const kind = exactEnum(payload.kind, QUEST_SPATIAL_RESOURCE_KINDS, "resource_chunk_kind_invalid");
+  const format = exactEnum(payload.format, QUEST_SPATIAL_RESOURCE_FORMATS, "resource_chunk_format_invalid");
+  const byteLength = boundedInteger(payload.byte_length, 1, maxResourceBytes, "resource_chunk_length_invalid");
+  const expectedCount = Math.ceil(byteLength / QUEST_SPATIAL_RESOURCE_CHUNK_BYTES);
+  const chunkCount = boundedInteger(payload.chunk_count, 1, expectedCount, "resource_chunk_count_invalid");
+  if (chunkCount !== expectedCount) {
+    throw protocolError("resource_chunk_count_mismatch", "Resource chunk count is not canonical.");
+  }
+  const chunkIndex = boundedInteger(payload.chunk_index, 0, chunkCount - 1, "resource_chunk_index_invalid");
+  const expectedOffset = checkedMultiply(chunkIndex, QUEST_SPATIAL_RESOURCE_CHUNK_BYTES, "resource_chunk_overflow");
+  if (payload.byte_offset !== expectedOffset) {
+    throw protocolError("resource_chunk_offset_mismatch", "Resource chunk offset is not canonical.");
+  }
+  const bytes = canonicalBase64Bytes(payload.bytes_b64, "resource_chunk_base64_invalid");
+  const expectedBytes = Math.min(QUEST_SPATIAL_RESOURCE_CHUNK_BYTES, byteLength - expectedOffset);
+  if (bytes.length !== expectedBytes) {
+    throw protocolError("resource_chunk_size_mismatch", "Resource chunk byte length is not canonical.");
+  }
+  return {
+    resource_sha256: resourceSha256,
+    kind,
+    format,
+    byte_length: byteLength,
+    chunk_index: chunkIndex,
+    chunk_count: chunkCount,
+    byte_offset: expectedOffset,
+    bytes,
+  };
+}
+
+export function decodeSpatialAdmissionReceiptPayload(payload, options = {}) {
+  const common = validateSpatialReceiptCommon(payload, options.expectedIdentity);
+  const commonFields = spatialReceiptCommonFields();
+  const outcome = exactEnum(
+    payload.outcome,
+    ["pending", "rejected", "committed", "degraded_committed"],
+    "spatial_receipt_outcome_invalid",
+  );
+  if (outcome === "pending") {
+    requireExactFields(payload, new Set([
+      ...commonFields, "outcome", "missing_resource_sha256s", "preparation_deadline_ns",
+    ]), "spatial_admission_receipt_fields_invalid");
+    const missing = boundedArray(
+      payload.missing_resource_sha256s,
+      0,
+      256,
+      "spatial_receipt_missing_invalid",
+    ).map((digest) => requireSha256(digest, "spatial_receipt_missing_invalid"));
+    assertUnique(missing, "spatial_receipt_missing_duplicate");
+    assertSorted(missing, "spatial_receipt_missing_unsorted");
+    return {
+      ...common,
+      outcome,
+      missing_resource_sha256s: missing,
+      preparation_deadline_ns: decimalU64(payload.preparation_deadline_ns, "spatial_receipt_deadline_invalid"),
+    };
+  }
+  if (outcome === "rejected") {
+    requireExactFields(payload, new Set([
+      ...commonFields, "outcome", "failed_stage", "reason",
+    ]), "spatial_admission_receipt_fields_invalid");
+    return {
+      ...common,
+      outcome,
+      failed_stage: boundedInteger(payload.failed_stage, 1, 8, "spatial_receipt_stage_invalid"),
+      reason: exactToken(payload.reason, "spatial_receipt_reason_invalid"),
+    };
+  }
+  requireExactFields(payload, new Set([
+    ...commonFields, "outcome", "generation", "recomputed_cost", "scene_actual_bounds",
+    "entity_actual_bounds", "degradation_ledger",
+  ]), "spatial_admission_receipt_fields_invalid");
+  const degradationLedger = normalizeDegradationLedger(payload.degradation_ledger);
+  if (outcome === "committed" && degradationLedger.length !== 0) {
+    throw protocolError("spatial_receipt_degradation_unexpected", "Committed receipt cannot include degradation.");
+  }
+  return {
+    ...common,
+    outcome,
+    generation: decimalU64(payload.generation, "spatial_receipt_generation_invalid"),
+    recomputed_cost: normalizeSpatialCost(payload.recomputed_cost, "spatial_receipt_cost_invalid"),
+    scene_actual_bounds: payload.scene_actual_bounds === null
+      ? null
+      : normalizeSpatialAabb(payload.scene_actual_bounds, "spatial_receipt_bounds_invalid"),
+    entity_actual_bounds: normalizeEntityActualBounds(payload.entity_actual_bounds),
+    degradation_ledger: degradationLedger,
+  };
+}
+
+export function decodeSpatialDisplayReceiptPayload(payload, options = {}) {
+  const common = validateSpatialReceiptCommon(payload, options.expectedIdentity);
+  requireExactFields(payload, new Set([
+    ...spatialReceiptCommonFields(), "generation", "displayed", "scene_actual_bounds",
+    "entity_actual_bounds", "degradation_ledger",
+  ]), "spatial_display_receipt_fields_invalid");
+  if (payload.displayed !== true) {
+    throw protocolError("spatial_display_receipt_invalid", "Display receipt must assert displayed true.");
+  }
+  return {
+    ...common,
+    generation: decimalU64(payload.generation, "spatial_receipt_generation_invalid"),
+    displayed: true,
+    scene_actual_bounds: payload.scene_actual_bounds === null
+      ? null
+      : normalizeSpatialAabb(payload.scene_actual_bounds, "spatial_receipt_bounds_invalid"),
+    entity_actual_bounds: normalizeEntityActualBounds(payload.entity_actual_bounds),
+    degradation_ledger: normalizeDegradationLedger(payload.degradation_ledger),
+  };
+}
+
+export function decodeSpatialRollbackReceiptPayload(payload, options = {}) {
+  const common = validateSpatialReceiptCommon(payload, options.expectedIdentity);
+  requireExactFields(payload, new Set([
+    ...spatialReceiptCommonFields(), "failed_generation", "restored_generation", "restored_target", "reason",
+  ]), "spatial_rollback_receipt_fields_invalid");
+  const restoredTarget = exactEnum(
+    payload.restored_target,
+    ["generation", "local_shell"],
+    "spatial_rollback_target_invalid",
+  );
+  const restoredGeneration = restoredTarget === "generation"
+    ? decimalU64(payload.restored_generation, "spatial_receipt_generation_invalid")
+    : payload.restored_generation;
+  if (restoredTarget === "local_shell" && restoredGeneration !== null) {
+    throw protocolError("spatial_rollback_generation_invalid", "Local-shell rollback has no restored generation.");
+  }
+  return {
+    ...common,
+    failed_generation: decimalU64(payload.failed_generation, "spatial_receipt_generation_invalid"),
+    restored_generation: restoredGeneration,
+    restored_target: restoredTarget,
+    reason: exactEnum(
+      payload.reason,
+      ["device_lost", "first_frame_failed", "runtime_budget"],
+      "spatial_rollback_reason_invalid",
+    ),
+  };
+}
+
 const QUEST_SURFACE_PROVIDER_FOR_CAPABILITY = {
   [QUEST_SURFACE_CAPABILITY]: { provider: QUEST_SURFACE_PROVIDER_ID, scopes: ["session"] },
+  [QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT]: { provider: QUEST_SURFACE_PROVIDER_ID, scopes: ["session"] },
   [QUEST_SURFACE_CAPABILITY_MIC_CAPTURE]: { provider: QUEST_SURFACE_PROVIDER_ID, scopes: ["session"] },
   [QUEST_SURFACE_CAPABILITY_AUDIO_PRESENT]: { provider: QUEST_SURFACE_PROVIDER_ID, scopes: ["session"] },
   [QUEST_SURFACE_CAPABILITY_AUDIO_LOCAL_ATTACH]: { provider: "soma.provider.local-model", scopes: ["once", "window"] },
@@ -783,6 +1322,11 @@ export function createQuestSurfaceLease({
   if (typeof sourceGrant.scope !== "string" || sourceGrant.scope.trim() === "") throw protocolError("grant_scope_missing", "Grant scope is required");
   const grantScope = sourceGrant.scope;
   if (!mapping.scopes.includes(grantScope)) throw protocolError("grant_scope_invalid", `Grant scope ${grantScope} not allowed for ${cap}`);
+  const constraints = normalizeLeaseConstraints(cap, sourceGrant?.constraints);
+  if (cap === QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT
+      && effectiveTtl > constraints.lease_ttl_ms) {
+    throw protocolError("lease_ttl_exceeds_grant", "Spatial lease TTL exceeds its grant constraint.");
+  }
   return {
     lease_id: requireToken(leaseId, "lease_id_missing"),
     source_grant_id: requireToken(sourceGrant?.id, "source_grant_missing"),
@@ -793,7 +1337,7 @@ export function createQuestSurfaceLease({
     issued_at_ms: boundedInteger(issuedAtMs, 0, Number.MAX_SAFE_INTEGER, "lease_issued_at_invalid"),
     ttl_ms: effectiveTtl,
     expires_at_ms: issuedAtMs + effectiveTtl,
-    constraints: normalizeLeaseConstraints(cap, sourceGrant?.constraints),
+    constraints,
   };
 }
 
@@ -938,6 +1482,67 @@ function normalizeBounds(bounds = {}) {
 }
 
 function normalizeLeaseConstraints(capability, constraints = {}) {
+  if (capability === QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT) {
+    requirePlainObject(
+      constraints,
+      "lease_constraints_invalid",
+      "Spatial document constraints must be an object.",
+    );
+    requireExactFields(constraints, new Set([
+      "device_fingerprint256",
+      "lease_ttl_ms",
+      "allowed_document_ids",
+      "components",
+      "resource_classes",
+      "spaces",
+    ]), "lease_constraints_fields_invalid");
+    const deviceFingerprint256 = String(constraints.device_fingerprint256 ?? "").trim();
+    if (!/^(?:[A-Fa-f0-9]{64}|(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2})$/.test(deviceFingerprint256)) {
+      throw protocolError("lease_device_fingerprint_invalid", "Spatial lease requires an exact SHA-256 device fingerprint.");
+    }
+    const leaseTtlMs = boundedInteger(
+      constraints.lease_ttl_ms,
+      1,
+      QUEST_SURFACE_MAX_LEASE_TTL_MS,
+      "lease_ttl_invalid",
+    );
+    const allowedDocumentIds = tokenArray(
+      constraints.allowed_document_ids,
+      1,
+      16,
+      "lease_document_ids_invalid",
+    );
+    const components = tokenArray(
+      constraints.components,
+      1,
+      QUEST_SPATIAL_COMPONENTS.length,
+      "lease_components_invalid",
+    );
+    const resourceClasses = tokenArray(
+      constraints.resource_classes,
+      1,
+      QUEST_SPATIAL_RESOURCE_KINDS.length,
+      "lease_resource_classes_invalid",
+    );
+    const spaces = tokenArray(constraints.spaces, 1, 2, "lease_spaces_invalid");
+    if (components.some((value) => !QUEST_SPATIAL_COMPONENTS.includes(value))) {
+      throw protocolError("lease_components_invalid", "Spatial lease contains an unsupported component.");
+    }
+    if (resourceClasses.some((value) => !QUEST_SPATIAL_RESOURCE_KINDS.includes(value))) {
+      throw protocolError("lease_resource_classes_invalid", "Spatial lease contains an unsupported resource class.");
+    }
+    if (spaces.some((value) => !["view", "local"].includes(value))) {
+      throw protocolError("lease_spaces_invalid", "Spatial lease contains an unsupported space.");
+    }
+    return {
+      device_fingerprint256: deviceFingerprint256,
+      lease_ttl_ms: leaseTtlMs,
+      allowed_document_ids: allowedDocumentIds,
+      components,
+      resource_classes: resourceClasses,
+      spaces,
+    };
+  }
   if (constraints === null || constraints === undefined) return capability === QUEST_SURFACE_CAPABILITY ? {
     max_panel_text_bytes: QUEST_SURFACE_MAX_PANEL_TEXT_BYTES,
     allowed_surface_ids: ["panel.main"],
@@ -986,6 +1591,548 @@ function normalizeLeaseConstraints(capability, constraints = {}) {
     allowed_surface_ids: allowedSurfaceIds,
     device_fingerprint256: String(source.device_fingerprint256 ?? ""),
   };
+}
+
+function normalizeSpatialResourceMetadata(kind, format, metadata) {
+  requirePlainObject(metadata, "spatial_resource_metadata_invalid", "Spatial resource metadata must be an object.");
+  if (kind === "image" && format === "image.rgba8.v1") {
+    requireExactFields(
+      metadata,
+      new Set(["width_px", "height_px", "row_bytes"]),
+      "spatial_resource_metadata_fields_invalid",
+    );
+    return {
+      width_px: boundedInteger(metadata.width_px, 1, Number.MAX_SAFE_INTEGER, "spatial_image_dimension_invalid"),
+      height_px: boundedInteger(metadata.height_px, 1, Number.MAX_SAFE_INTEGER, "spatial_image_dimension_invalid"),
+      row_bytes: boundedInteger(metadata.row_bytes, 1, Number.MAX_SAFE_INTEGER, "spatial_image_row_bytes_invalid"),
+    };
+  }
+  requireExactFields(metadata, new Set(), "spatial_resource_metadata_fields_invalid");
+  return {};
+}
+
+function validateSpatialResourceAgainstProfile(resource, limits) {
+  if (resource.byte_length > limits.resource_ingress_bytes
+      || resource.byte_length > limits.resident_bytes) {
+    throw protocolError("spatial_resource_profile_limit", "Spatial resource exceeds profile byte limits.");
+  }
+  if (resource.kind === "image") {
+    if (resource.metadata.width_px > limits.texture_dimension
+        || resource.metadata.height_px > limits.texture_dimension
+        || checkedMultiply(
+          resource.metadata.width_px,
+          resource.metadata.height_px,
+          "spatial_resource_overflow",
+        ) > limits.texture_pixels) {
+      throw protocolError("spatial_image_profile_limit", "Spatial image exceeds profile limits.");
+    }
+  }
+}
+
+function normalizeSpatialCost(value, code) {
+  requirePlainObject(value, code, "Spatial cost must be an object.");
+  const fields = [
+    "resource_bytes",
+    "resident_bytes",
+    "draws",
+    "vertices",
+    "triangles",
+    "line_segments",
+    "texture_pixels",
+  ];
+  requireExactFields(value, new Set(fields), code);
+  return Object.fromEntries(fields.map((field) => [
+    field,
+    boundedInteger(value[field], 0, Number.MAX_SAFE_INTEGER, code),
+  ]));
+}
+
+function normalizeSpatialEntity(entity) {
+  requirePlainObject(entity, "spatial_entity_invalid", "Spatial entity must be an object.");
+  const isRoot = entity.parent_id === null;
+  requireExactFields(
+    entity,
+    new Set(isRoot
+      ? ["id", "parent_id", "space", "local_transform", "declared_local_bounds", "visibility", "presentation_ids"]
+      : ["id", "parent_id", "local_transform", "declared_local_bounds", "visibility", "presentation_ids"]),
+    "spatial_entity_fields_invalid",
+  );
+  return {
+    id: exactToken(entity.id, "spatial_entity_id_invalid"),
+    parent_id: isRoot ? null : exactToken(entity.parent_id, "spatial_entity_parent_invalid"),
+    ...(isRoot ? { space: exactEnum(entity.space, ["view", "local"], "spatial_entity_space_invalid") } : {}),
+    local_transform: normalizeSpatialTransform(entity.local_transform),
+    declared_local_bounds: normalizeSpatialAabb(entity.declared_local_bounds, "spatial_entity_bounds_invalid"),
+    visibility: requireBoolean(entity.visibility, "spatial_entity_visibility_invalid"),
+    presentation_ids: tokenArray(entity.presentation_ids, 0, 256, "spatial_entity_presentations_invalid"),
+  };
+}
+
+function normalizeSpatialTransform(transform) {
+  requirePlainObject(transform, "spatial_transform_invalid", "Spatial transform must be an object.");
+  requireExactFields(
+    transform,
+    new Set(["translation_m", "rotation_xyzw", "scale"]),
+    "spatial_transform_fields_invalid",
+  );
+  const translation = finiteVector(transform.translation_m, 3, "spatial_translation_invalid");
+  const rotation = finiteVector(transform.rotation_xyzw, 4, "spatial_rotation_invalid");
+  const scale = finiteVector(transform.scale, 3, "spatial_scale_invalid");
+  if (scale.some((value) => value <= 0 || value > 1_000)) {
+    throw protocolError("spatial_scale_invalid", "Spatial scale must be positive and bounded.");
+  }
+  const normSquared = rotation.reduce((sum, value) => sum + value * value, 0);
+  if (Math.abs(normSquared - 1) > 1e-4) {
+    throw protocolError("spatial_rotation_not_normalized", "Spatial quaternion must be normalized.");
+  }
+  return {
+    translation_m: translation,
+    rotation_xyzw: rotation,
+    scale,
+  };
+}
+
+function normalizeSpatialAabb(bounds, code) {
+  requirePlainObject(bounds, code, "Spatial AABB must be an object.");
+  requireExactFields(bounds, new Set(["min_m", "max_m"]), code);
+  const min = finiteVector(bounds.min_m, 3, code);
+  const max = finiteVector(bounds.max_m, 3, code);
+  if (min.some((value, index) => value > max[index])) {
+    throw protocolError(code, "Spatial AABB axes must be ordered.");
+  }
+  return { min_m: min, max_m: max };
+}
+
+function normalizeSpatialPresentation(record) {
+  requirePlainObject(record, "spatial_presentation_record_invalid", "Spatial presentation record must be an object.");
+  const type = exactEnum(record.type, QUEST_SPATIAL_COMPONENTS, "spatial_presentation_type_invalid");
+  const id = exactToken(record.id, "spatial_presentation_id_invalid");
+  switch (type) {
+    case "panel.v1":
+      requireExactFields(record, new Set([
+        "id", "type", "width_m", "height_m", "corner_radius_m", "background_material_ref", "border_material_ref",
+      ]), "spatial_presentation_fields_invalid");
+      return {
+        id,
+        type,
+        width_m: positiveFinite(record.width_m, "spatial_presentation_dimension_invalid"),
+        height_m: positiveFinite(record.height_m, "spatial_presentation_dimension_invalid"),
+        corner_radius_m: nonnegativeFinite(record.corner_radius_m, "spatial_presentation_dimension_invalid"),
+        background_material_ref: exactToken(record.background_material_ref, "spatial_material_ref_invalid"),
+        border_material_ref: record.border_material_ref === null
+          ? null
+          : exactToken(record.border_material_ref, "spatial_material_ref_invalid"),
+      };
+    case "text.v1":
+      requireExactFields(record, new Set([
+        "id", "type", "text_resource_ref", "glyph_resource_ref", "material_ref", "font_size_m",
+        "max_width_m", "horizontal_alignment", "max_lines",
+      ]), "spatial_presentation_fields_invalid");
+      return {
+        id,
+        type,
+        text_resource_ref: exactToken(record.text_resource_ref, "spatial_resource_ref_invalid"),
+        glyph_resource_ref: exactToken(record.glyph_resource_ref, "spatial_resource_ref_invalid"),
+        material_ref: exactToken(record.material_ref, "spatial_material_ref_invalid"),
+        font_size_m: positiveFinite(record.font_size_m, "spatial_presentation_dimension_invalid"),
+        max_width_m: positiveFinite(record.max_width_m, "spatial_presentation_dimension_invalid"),
+        horizontal_alignment: exactEnum(
+          record.horizontal_alignment,
+          ["left", "center", "right"],
+          "spatial_text_alignment_invalid",
+        ),
+        max_lines: boundedInteger(record.max_lines, 1, Number.MAX_SAFE_INTEGER, "spatial_text_lines_invalid"),
+      };
+    case "primitive.quad.v1":
+      requireExactFields(record, new Set([
+        "id", "type", "width_m", "height_m", "material_ref", "image_resource_ref",
+      ]), "spatial_presentation_fields_invalid");
+      return {
+        id,
+        type,
+        width_m: positiveFinite(record.width_m, "spatial_presentation_dimension_invalid"),
+        height_m: positiveFinite(record.height_m, "spatial_presentation_dimension_invalid"),
+        material_ref: exactToken(record.material_ref, "spatial_material_ref_invalid"),
+        image_resource_ref: record.image_resource_ref === null
+          ? null
+          : exactToken(record.image_resource_ref, "spatial_resource_ref_invalid"),
+      };
+    case "primitive.line.v1": {
+      requireExactFields(record, new Set([
+        "id", "type", "points_m", "width_m", "join", "material_ref",
+      ]), "spatial_presentation_fields_invalid");
+      const points = boundedArray(record.points_m, 2, Number.MAX_SAFE_INTEGER, "spatial_line_points_invalid")
+        .map((point) => finiteVector(point, 3, "spatial_line_point_invalid"));
+      return {
+        id,
+        type,
+        points_m: points,
+        width_m: positiveFinite(record.width_m, "spatial_line_width_invalid"),
+        join: exactEnum(record.join, ["bevel"], "spatial_line_join_invalid"),
+        material_ref: exactToken(record.material_ref, "spatial_material_ref_invalid"),
+      };
+    }
+    case "mesh.glb.uri-free.v1":
+      requireExactFields(record, new Set([
+        "id", "type", "mesh_resource_ref", "material_ref",
+      ]), "spatial_presentation_fields_invalid");
+      return {
+        id,
+        type,
+        mesh_resource_ref: exactToken(record.mesh_resource_ref, "spatial_resource_ref_invalid"),
+        material_ref: exactToken(record.material_ref, "spatial_material_ref_invalid"),
+      };
+    case "material.solid.v1":
+    case "material.unlit.v1": {
+      requireExactFields(
+        record,
+        new Set(["id", "type", "base_color_rgba_linear"]),
+        "spatial_presentation_fields_invalid",
+      );
+      const color = finiteVector(record.base_color_rgba_linear, 4, "spatial_material_color_invalid");
+      if (color.some((value) => value < 0 || value > 1) || color[3] !== 1) {
+        throw protocolError("spatial_material_color_invalid", "Spatial material color must be linear RGBA in [0,1] with alpha 1.");
+      }
+      return { id, type, base_color_rgba_linear: color };
+    }
+    default:
+      throw protocolError("spatial_presentation_type_invalid", "Spatial presentation type is unsupported.");
+  }
+}
+
+function normalizeSpatialSemantics(record) {
+  requirePlainObject(record, "spatial_semantics_record_invalid", "Spatial semantics must be an object.");
+  requireExactFields(record, new Set([
+    "id", "entity_id", "required_for_meaning", "degrade_priority", "label", "fallback_presentation_id",
+  ]), "spatial_semantics_fields_invalid");
+  const label = String(record.label ?? "");
+  if (!label || label.trim() !== label || Buffer.byteLength(label, "utf8") > 1_024) {
+    throw protocolError("spatial_semantics_label_invalid", "Spatial semantics label must be bounded non-empty UTF-8.");
+  }
+  return {
+    id: exactToken(record.id, "spatial_semantics_id_invalid"),
+    entity_id: exactToken(record.entity_id, "spatial_semantics_entity_invalid"),
+    required_for_meaning: requireBoolean(record.required_for_meaning, "spatial_semantics_required_invalid"),
+    degrade_priority: boundedInteger(
+      record.degrade_priority,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      "spatial_semantics_priority_invalid",
+    ),
+    label,
+    fallback_presentation_id: record.fallback_presentation_id === null
+      ? null
+      : exactToken(record.fallback_presentation_id, "spatial_semantics_fallback_invalid"),
+  };
+}
+
+function validateSpatialGraph(entities, maxDepth) {
+  const byId = new Map();
+  let roots = 0;
+  const depths = new Map();
+  for (const entity of entities) {
+    if (entity.parent_id === null) {
+      roots += 1;
+      depths.set(entity.id, 1);
+    } else {
+      if (!byId.has(entity.parent_id)) {
+        throw protocolError("spatial_graph_parent_order_invalid", "Spatial entities must be topologically ordered.");
+      }
+      depths.set(entity.id, depths.get(entity.parent_id) + 1);
+    }
+    if (depths.get(entity.id) > maxDepth) {
+      throw protocolError("spatial_graph_depth_exceeded", "Spatial hierarchy exceeds the selected profile.");
+    }
+    byId.set(entity.id, entity);
+  }
+  if (roots !== 1) {
+    throw protocolError("spatial_graph_root_invalid", "Spatial document must contain exactly one root.");
+  }
+}
+
+function validateSpatialReferences({ entities, resources, presentation, semantics, declaredComponents }) {
+  const entityById = new Map(entities.map((value) => [value.id, value]));
+  const resourceById = new Map(resources.map((value) => [value.id, value]));
+  const presentationById = new Map(presentation.map((value) => [value.id, value]));
+  const semanticsByEntity = new Map();
+  const ownership = new Map();
+  const drawableTypes = new Set([
+    "panel.v1", "text.v1", "primitive.quad.v1", "primitive.line.v1", "mesh.glb.uri-free.v1",
+  ]);
+  for (const record of presentation) {
+    if (!declaredComponents.has(record.type)) {
+      throw protocolError("spatial_component_not_declared", "Presentation type is not declared by the document.");
+    }
+  }
+  for (const entity of entities) {
+    assertUnique(entity.presentation_ids, "spatial_entity_presentation_duplicate");
+    for (const presentationId of entity.presentation_ids) {
+      const record = presentationById.get(presentationId);
+      if (!record || !drawableTypes.has(record.type)) {
+        throw protocolError("spatial_presentation_ref_invalid", "Entity presentation reference is missing or not drawable.");
+      }
+      if (ownership.has(presentationId)) {
+        throw protocolError("spatial_presentation_multiply_owned", "Drawable presentation is multiply owned.");
+      }
+      ownership.set(presentationId, entity.id);
+    }
+  }
+  for (const semantic of semantics) {
+    if (!entityById.has(semantic.entity_id) || semanticsByEntity.has(semantic.entity_id)) {
+      throw protocolError("spatial_semantics_entity_invalid", "Spatial semantics entity is missing or duplicated.");
+    }
+    semanticsByEntity.set(semantic.entity_id, semantic);
+    if (semantic.fallback_presentation_id !== null) {
+      const fallback = presentationById.get(semantic.fallback_presentation_id);
+      const entity = entityById.get(semantic.entity_id);
+      if (!fallback || !drawableTypes.has(fallback.type)
+          || entity.presentation_ids.includes(semantic.fallback_presentation_id)
+          || ownership.has(semantic.fallback_presentation_id)) {
+        throw protocolError("spatial_semantics_fallback_invalid", "Spatial fallback must be an unowned drawable.");
+      }
+      ownership.set(semantic.fallback_presentation_id, semantic.entity_id);
+    }
+  }
+  for (const record of presentation) {
+    if (drawableTypes.has(record.type) && !ownership.has(record.id)) {
+      throw protocolError("spatial_presentation_unowned", "Every drawable presentation must have one owner.");
+    }
+    validatePresentationRefs(record, presentationById, resourceById);
+  }
+  for (const resource of resources) {
+    if (resource.required) continue;
+    const usages = presentation
+      .filter((record) => presentationResourceRefs(record).includes(resource.id));
+    if (usages.length === 0) {
+      throw protocolError("spatial_optional_resource_unowned", "Optional resource is not used by an owned drawable.");
+    }
+    for (const usage of usages) {
+      const entityId = ownership.get(usage.id);
+      const semantic = semanticsByEntity.get(entityId);
+      const fallback = semantic?.fallback_presentation_id === null
+        ? null
+        : presentationById.get(semantic?.fallback_presentation_id);
+      if (!semantic || semantic.required_for_meaning !== false
+          || (fallback && presentationResourceRefs(fallback).includes(resource.id))) {
+        throw protocolError("spatial_optional_resource_fallback_invalid", "Optional resource lacks an applicable fallback or omission.");
+      }
+    }
+  }
+}
+
+function validatePresentationRefs(record, presentationById, resourceById) {
+  const expectMaterial = (ref, type) => {
+    if (presentationById.get(ref)?.type !== type) {
+      throw protocolError("spatial_material_ref_invalid", "Spatial material reference has the wrong type.");
+    }
+  };
+  const expectResource = (ref, kind, format) => {
+    const resource = resourceById.get(ref);
+    if (!resource || resource.kind !== kind || resource.format !== format) {
+      throw protocolError("spatial_resource_ref_invalid", "Spatial resource reference has the wrong type.");
+    }
+  };
+  switch (record.type) {
+    case "panel.v1":
+      expectMaterial(record.background_material_ref, "material.solid.v1");
+      if (record.border_material_ref !== null) expectMaterial(record.border_material_ref, "material.solid.v1");
+      break;
+    case "text.v1":
+      expectResource(record.text_resource_ref, "text", "text.utf8.v1");
+      expectResource(record.glyph_resource_ref, "glyph", "glyph-atlas.v1");
+      expectMaterial(record.material_ref, "material.solid.v1");
+      break;
+    case "primitive.quad.v1":
+      expectMaterial(record.material_ref, "material.solid.v1");
+      if (record.image_resource_ref !== null) expectResource(record.image_resource_ref, "image", "image.rgba8.v1");
+      break;
+    case "primitive.line.v1":
+      expectMaterial(record.material_ref, "material.solid.v1");
+      break;
+    case "mesh.glb.uri-free.v1":
+      expectResource(record.mesh_resource_ref, "mesh", "mesh.glb.v1");
+      expectMaterial(record.material_ref, "material.unlit.v1");
+      break;
+    default:
+      break;
+  }
+}
+
+function presentationResourceRefs(record) {
+  switch (record.type) {
+    case "text.v1": return [record.text_resource_ref, record.glyph_resource_ref];
+    case "primitive.quad.v1": return record.image_resource_ref === null ? [] : [record.image_resource_ref];
+    case "mesh.glb.uri-free.v1": return [record.mesh_resource_ref];
+    default: return [];
+  }
+}
+
+function spatialReceiptCommonFields() {
+  return [
+    "schema_version", "session_epoch", "lease_ref", "document_id", "document_revision",
+    "document_sha256", "profile_id", "profile_sha256",
+  ];
+}
+
+function validateSpatialReceiptCommon(payload, expectedIdentity = null) {
+  requirePlainObject(payload, "spatial_receipt_invalid", "Spatial receipt must be an object.");
+  if (payload.schema_version !== 1) {
+    throw protocolError("spatial_receipt_schema_unsupported", "Spatial receipt schema is unsupported.");
+  }
+  const common = {
+    schema_version: 1,
+    session_epoch: decimalU64(payload.session_epoch, "spatial_receipt_epoch_invalid"),
+    lease_ref: exactToken(payload.lease_ref, "spatial_receipt_lease_invalid"),
+    document_id: exactToken(payload.document_id, "spatial_receipt_document_invalid"),
+    document_revision: decimalU64(payload.document_revision, "spatial_receipt_revision_invalid"),
+    document_sha256: requireSha256(payload.document_sha256, "spatial_receipt_document_hash_invalid"),
+    profile_id: exactToken(payload.profile_id, "spatial_receipt_profile_invalid"),
+    profile_sha256: requireSha256(payload.profile_sha256, "spatial_receipt_profile_hash_invalid"),
+  };
+  if (expectedIdentity) {
+    for (const field of spatialReceiptCommonFields()) {
+      if (common[field] !== expectedIdentity[field]) {
+        throw protocolError("spatial_receipt_identity_mismatch", `Spatial receipt ${field} does not match the offer.`);
+      }
+    }
+  }
+  return common;
+}
+
+function normalizeEntityActualBounds(records) {
+  const normalized = boundedArray(records, 0, 256, "spatial_receipt_entity_bounds_invalid").map((record) => {
+    requirePlainObject(record, "spatial_receipt_entity_bounds_invalid", "Entity actual bounds must be an object.");
+    requireExactFields(record, new Set(["entity_id", "actual_bounds"]), "spatial_receipt_entity_bounds_invalid");
+    return {
+      entity_id: exactToken(record.entity_id, "spatial_receipt_entity_invalid"),
+      actual_bounds: normalizeSpatialAabb(record.actual_bounds, "spatial_receipt_bounds_invalid"),
+    };
+  });
+  assertUnique(normalized.map((record) => record.entity_id), "spatial_receipt_entity_duplicate");
+  assertSorted(normalized.map((record) => record.entity_id), "spatial_receipt_entity_unsorted");
+  return normalized;
+}
+
+function normalizeDegradationLedger(records) {
+  const normalized = boundedArray(records, 0, 256, "spatial_receipt_degradation_invalid").map((record) => {
+    requirePlainObject(record, "spatial_receipt_degradation_invalid", "Degradation record must be an object.");
+    requireExactFields(
+      record,
+      new Set(["entity_id", "from_presentation_id", "to_presentation_id", "reason"]),
+      "spatial_receipt_degradation_invalid",
+    );
+    return {
+      entity_id: exactToken(record.entity_id, "spatial_receipt_entity_invalid"),
+      from_presentation_id: exactToken(record.from_presentation_id, "spatial_receipt_presentation_invalid"),
+      to_presentation_id: record.to_presentation_id === null
+        ? null
+        : exactToken(record.to_presentation_id, "spatial_receipt_presentation_invalid"),
+      reason: exactToken(record.reason, "spatial_receipt_reason_invalid"),
+    };
+  });
+  assertUnique(normalized.map((record) => record.entity_id), "spatial_receipt_degradation_duplicate");
+  assertSorted(normalized.map((record) => record.entity_id), "spatial_receipt_degradation_unsorted");
+  return normalized;
+}
+
+function exactTokenSet(values, requiredValues, code) {
+  const normalized = tokenArray(values, requiredValues.length, requiredValues.length, code);
+  if (requiredValues.some((value) => !normalized.includes(value))) {
+    throw protocolError(code, "Spatial profile set is incomplete or contains an unknown value.");
+  }
+  return normalized;
+}
+
+function tokenArray(values, min, max, code) {
+  const normalized = boundedArray(values, min, max, code).map((value) => exactToken(value, code));
+  assertUnique(normalized, code);
+  return normalized;
+}
+
+function boundedArray(value, min, max, code) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
+    throw protocolError(code, "Spatial array is outside its allowed bounds.");
+  }
+  return value;
+}
+
+function exactToken(value, code) {
+  if (typeof value !== "string" || value.length < 1 || value.length > 256 || value.trim() !== value) {
+    throw protocolError(code, "Spatial identifier must be an exact bounded token.");
+  }
+  return value;
+}
+
+function exactEnum(value, allowed, code) {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw protocolError(code, "Spatial enum value is unsupported.");
+  }
+  return value;
+}
+
+function requireSha256(value, code) {
+  if (typeof value !== "string" || !SHA256_HEX.test(value)) {
+    throw protocolError(code, "Spatial SHA-256 digest is invalid.");
+  }
+  return value;
+}
+
+function requireBoolean(value, code) {
+  if (typeof value !== "boolean") {
+    throw protocolError(code, "Spatial boolean is invalid.");
+  }
+  return value;
+}
+
+function canonicalBase64Bytes(value, code) {
+  if (typeof value !== "string" || !isCanonicalBase64(value)) {
+    throw protocolError(code, "Spatial bytes must use canonical base64.");
+  }
+  return Buffer.from(value, "base64");
+}
+
+function finiteVector(value, length, code) {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw protocolError(code, "Spatial vector has the wrong length.");
+  }
+  return value.map((entry) => finiteNumber(entry, code));
+}
+
+function positiveFinite(value, code) {
+  const number = finiteNumber(value, code);
+  if (number <= 0) throw protocolError(code, "Spatial number must be positive.");
+  return number;
+}
+
+function nonnegativeFinite(value, code) {
+  const number = finiteNumber(value, code);
+  if (number < 0) throw protocolError(code, "Spatial number must be non-negative.");
+  return number;
+}
+
+function checkedMultiply(left, right, code) {
+  if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right) || left < 0 || right < 0) {
+    throw protocolError(code, "Spatial integer product operands are invalid.");
+  }
+  const value = left * right;
+  if (!Number.isSafeInteger(value)) {
+    throw protocolError(code, "Spatial integer product overflowed.");
+  }
+  return value;
+}
+
+function assertUnique(values, code) {
+  if (new Set(values).size !== values.length) {
+    throw protocolError(code, "Spatial values must be unique.");
+  }
+}
+
+function assertSorted(values, code) {
+  for (let index = 1; index < values.length; index += 1) {
+    if (values[index - 1].localeCompare(values[index]) > 0) {
+      throw protocolError(code, "Spatial values must be sorted.");
+    }
+  }
 }
 
 function parsePayload(payloadBytes) {

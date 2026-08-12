@@ -5,11 +5,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import tls from "node:tls";
 import test from "node:test";
+import { X509Certificate } from "node:crypto";
 
-import { createQuestSurfaceFixtureProvider } from "../src/questSurfaceFixtureProvider.js";
+import {
+  QuestSpatialAdmissionSession,
+  createQuestSpatialFixtureProfile,
+  createQuestSurfaceFixtureProvider,
+} from "../src/questSurfaceFixtureProvider.js";
 import {
   BoundedLineDecoder,
   QUEST_SURFACE_CAPABILITY,
+  QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT,
   QUEST_SURFACE_PROVIDER_ID,
   createQuestSurfaceFrame,
   parseQuestSurfaceFrame,
@@ -236,6 +242,122 @@ test("quest fixture rejects oversized inline panel content before listening", as
     () => createProvider(credentials, { panel: { text: "x".repeat(2_049) } }),
     (error) => error.code === "panel_text_size_invalid",
   );
+});
+
+test("quest fixture negotiates and emits the disabled-first spatial snapshot/resource seam without a panel", async (t) => {
+  const credentials = await createTlsCredentials(t);
+  const fingerprint = new X509Certificate(credentials.clientCert).fingerprint256;
+  const profile = createQuestSpatialFixtureProfile();
+  const events = [];
+  const spatialGrant = {
+    id: "grant-quest-spatial",
+    status: "active",
+    capability: QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT,
+    provider: QUEST_SURFACE_PROVIDER_ID,
+    scope: "session",
+    constraints: {
+      device_fingerprint256: fingerprint,
+      lease_ttl_ms: 5_000,
+      allowed_document_ids: ["document.spatial-fixture"],
+      components: [...profile.components],
+      resource_classes: ["text", "image", "glyph", "mesh"],
+      spaces: ["local", "view"],
+    },
+    approved_by: "user",
+    approval_provenance_id: "seth-approved-spatial-build-fixture",
+    reason: "Exercise only the disabled-first spatial build seam.",
+    created_at: "2026-08-12T00:00:00.000Z",
+  };
+  const provider = createQuestSurfaceFixtureProvider({
+    tlsOptions: {
+      key: credentials.serverKey,
+      cert: credentials.serverCert,
+      ca: credentials.ca,
+    },
+    grantStore: { schema_version: 1, grants: [spatialGrant] },
+    capabilityCatalog: { capabilities: [{ key: QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT }] },
+    providerRegistry: {
+      providers: [{
+        id: QUEST_SURFACE_PROVIDER_ID,
+        capabilities: [QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT],
+      }],
+    },
+    spatialDocumentGrantId: spatialGrant.id,
+    spatialProfile: profile,
+    leaseTtlMs: 5_000,
+    logger: quietLogger,
+    eventSink(event) {
+      events.push(event);
+    },
+  });
+  t.after(() => provider.stop());
+  const address = await provider.start({ host: "127.0.0.1", port: 0 });
+  const client = await connectClient(address.port, credentials);
+  t.after(() => client.destroy());
+
+  client.send("HELLO", {
+    supported_versions: [1],
+    client: "soma-quest-spatial-v1",
+    spatial_profiles: [profile],
+  }, { epoch: "0", leaseRef: "" });
+
+  const hello = await client.next();
+  assert.equal(hello.type, "HELLO_ACK", JSON.stringify(hello));
+  const leaseFrame = await client.next();
+  assert.equal(leaseFrame.type, "LEASE");
+  const snapshot = await client.next();
+  assert.equal(snapshot.type, "SPATIAL_SNAPSHOT");
+  const chunks = [];
+  for (let index = 0; index < 5; index += 1) {
+    const chunk = await client.next();
+    assert.equal(chunk.type, "RESOURCE_CHUNK");
+    chunks.push(chunk);
+  }
+
+  assert.equal(hello.payload.spatial_profile.profile_sha256.length, 64);
+  assert.equal(leaseFrame.payload.capability, QUEST_SURFACE_CAPABILITY_DOCUMENT_PRESENT);
+  assert.equal(snapshot.lease_ref, leaseFrame.payload.lease_id);
+  assert.ok(chunks.every((frame) => frame.type === "RESOURCE_CHUNK"));
+  assert.ok(chunks.every((frame) => frame.lease_ref === leaseFrame.payload.lease_id));
+  assert.equal(events.some((event) => event.event_type === "quest.surface.snapshot_sent"), false);
+
+  const mirror = new QuestSpatialAdmissionSession({
+    sessionEpoch: hello.session_epoch,
+    lease: leaseFrame.payload,
+    profile,
+    profileWrapper: hello.payload.spatial_profile,
+    peerFingerprint256: fingerprint,
+    now: () => leaseFrame.payload.issued_at_ms,
+    monotonicNowNs: () => 10_000_000_000n,
+  });
+  mirror.offerSnapshot(snapshot.payload);
+  for (const frame of chunks) mirror.acceptResourceChunk(frame.payload);
+  const ready = mirror.finalize("document.spatial-fixture");
+  client.send("SPATIAL_ADMISSION_RECEIPT", {
+    schema_version: 1,
+    session_epoch: ready.session_epoch,
+    lease_ref: ready.lease_ref,
+    document_id: ready.document_id,
+    document_revision: ready.document_revision,
+    document_sha256: ready.document_sha256,
+    profile_id: ready.profile_id,
+    profile_sha256: ready.profile_sha256,
+    outcome: "committed",
+    generation: "1",
+    recomputed_cost: ready.recomputed_cost,
+    scene_actual_bounds: ready.scene_actual_bounds,
+    entity_actual_bounds: ready.entity_actual_bounds,
+    degradation_ledger: ready.degradation_ledger,
+  }, {
+    epoch: hello.session_epoch,
+    leaseRef: leaseFrame.payload.lease_id,
+  });
+  await waitFor(() => events.some((event) => event.event_type === "quest.surface.spatial_receipt_validated"));
+  const receiptEvent = events.find((event) => event.event_type === "quest.surface.spatial_receipt_validated");
+  assert.equal(receiptEvent.receipt_type, "SPATIAL_ADMISSION_RECEIPT");
+  assert.equal(receiptEvent.body_included, false);
+  assert.equal(Object.hasOwn(receiptEvent, "document_b64"), false);
+  assert.equal(Object.hasOwn(receiptEvent, "bytes_b64"), false);
 });
 
 function createProvider(credentials, overrides = {}) {

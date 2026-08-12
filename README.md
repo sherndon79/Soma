@@ -20,6 +20,12 @@ route, and loopback arm/status/disarm control; the built Android capture/playbac
 still needs worn headset validation. See the
 [Quest surface v1b runbook](./docs/runbooks/quest_surface_v1b.md).
 
+The separately authorized Spatial Document v1 build adds exact profile negotiation, a bounded
+content-addressed resource plane, hostile-input admission, deterministic degradation, and semantic
+receipt validation. It remains disabled-first: the Node fixture/host mirror and native resource and
+renderer seams are build artifacts, not activation, deployment, a runtime grant, or device evidence.
+The legacy panel and four-leaf voice paths are unchanged.
+
 ## Architecture Direction
 
 Soma's early service plane is implemented in Node.js for fast iteration on HTTP, JSON, policy,

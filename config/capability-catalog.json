@@ -1497,6 +1497,33 @@
       "description": "Present one bounded snapshot-only text panel to an enrolled Quest client under a short-lived session lease. mTLS identifies transport and grants no authority; focus and presence reports can only narrow the session."
     },
     {
+      "key": "interaction.quest.surface.document.present",
+      "name": "Quest Spatial Document Presentation",
+      "category": "interaction",
+      "risk_class": "low",
+      "default_status": "disabled",
+      "allowed_scopes": [
+        "session"
+      ],
+      "data_exposed": [
+        "bounded spatial document and content-addressed text, RGBA8 image, glyph-atlas, and URI-free GLB resources to one mutually authenticated Quest client",
+        "view-space or session-local presentation transforms and physical bounds",
+        "document, profile, resource, revision, admission, display, and rollback metadata"
+      ],
+      "excluded_by_default": [
+        "head or view pose export",
+        "hand, controller, gaze, camera, passthrough, scene, depth, microphone, or other perception",
+        "audio output or interaction input",
+        "durable anchors or spatial persistence",
+        "URLs, filesystem paths, external resource fetches, shader source or binary, executable code, animation, or streamed media",
+        "automatic resume after focus or presence loss"
+      ],
+      "reversible": true,
+      "activation_policy": "explicit_grant",
+      "provider_contract": "soma.interaction.quest.surface.document.v1",
+      "description": "Present one bounded snapshot-only spatial document to an enrolled Quest client under a separate short-lived exact lease. The profile is renderability evidence, not authority; panel grants do not migrate to this resource-bearing capability."
+    },
+    {
       "key": "interaction.quest.surface.microphone.capture",
       "name": "Quest Microphone Capture",
       "category": "interaction",

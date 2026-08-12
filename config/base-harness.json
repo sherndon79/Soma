@@ -145,6 +145,12 @@
       "description": "Present one bounded snapshot-only panel to an enrolled Quest client under a short-lived session lease."
     },
     {
+      "key": "interaction.quest.surface.document.present",
+      "status": "disabled",
+      "requires": "explicit_grant",
+      "description": "Present one bounded resource-bearing spatial document to an enrolled Quest client under a separate short-lived exact session lease."
+    },
+    {
       "key": "interaction.quest.surface.microphone.capture",
       "status": "disabled",
       "requires": "explicit_grant",

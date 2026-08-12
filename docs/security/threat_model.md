@@ -530,6 +530,39 @@ Residual risks:
 - a Local Control Authenticator could strengthen same-user attribution later, but is intentionally
   outside this slice
 
+## Quest Spatial Document Presentation
+
+Spatial Document v1 expands presentation from one bounded panel to a resource-bearing scene. Its
+primary threats are authority laundering from an old panel grant, profile claims being mistaken for
+authority, parser/resource exhaustion, URI or shader capability smuggling, malformed GLB reaching
+the GPU, partial scene commits, and accidental export of display-driving view poses.
+
+Current controls:
+
+- `interaction.quest.surface.document.present` is a separate disabled-first explicit-grant
+  capability with exact device, TTL, document, component, resource-class, and space constraints;
+  panel grants never migrate or substitute
+- optional `HELLO.spatial_profiles` / `HELLO_ACK.spatial_profile` carriers preserve the old panel
+  path when absent; the selected profile only proves renderability and cannot create authority
+- snapshots precede resources; exact byte lengths, canonical base64, content hashes, bounded chunks,
+  checked arithmetic, one candidate per document, and a session-local immutable cache bound ingress
+- exact schemas reject unknown URI/path/resolver, shader, extension, executable, animation,
+  interaction, sensor, and dynamic-state fields; GLB is a narrow geometry-only URI-free subset
+- admission validates graph/closure/decode/recomputed cost and AABBs off the frame thread; static
+  degradation uses only authored fallbacks or allowed omissions in stable order
+- commit is generation-based and atomic; a rejected candidate does not damage the live scene, and
+  runtime failure restores the prior authorized generation or the client-owned local shell
+- authority is rechecked before commit/display; expiry, revoke, disconnect, focus loss, or presence
+  loss synchronously removes scene eligibility and clears preparation/cache state
+- view poses remain inside the native frame loop and cannot enter JNI, wire, logs, receipts, or
+  provenance; receipts and provenance contain bounded identities, hashes, counts, bounds, and reason
+  codes but never document/resource bodies
+
+Residual risks include bugs in the custom GLB scanner, native allocation accounting, Vulkan driver,
+GPU synchronization, or device-specific thermal/health limits. The current host mirror and native
+seams are build evidence only; native compilation, deployment, activation, and worn-headset
+validation remain separate gates.
+
 ## Non-Defenses
 
 Soma currently does not defend against:

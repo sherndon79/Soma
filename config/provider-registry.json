@@ -472,6 +472,11 @@
           "output_schema": "soma.interaction.quest.surface.panel.snapshot.v1a"
         },
         {
+          "key": "interaction.quest.surface.document.present",
+          "provider_contract": "soma.interaction.quest.surface.document.v1",
+          "output_schema": "soma.spatial-document.snapshot.v1"
+        },
+        {
           "key": "interaction.quest.surface.microphone.capture",
           "provider_contract": "soma.interaction.quest.surface.microphone.capture.v1b",
           "output_schema": "soma.interaction.quest.surface.audio.chunk.v1b"

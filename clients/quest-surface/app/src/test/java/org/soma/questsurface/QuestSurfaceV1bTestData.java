@@ -8,6 +8,8 @@ import java.security.MessageDigest;
 import java.util.Base64;
 
 final class QuestSurfaceV1bTestData {
+    static final String RESUME_HANDLE = "resume-test-handle";
+
     private QuestSurfaceV1bTestData() {}
 
     static JSONObject manifestPayload(String epoch, long issuedAtMs, long ttlMs) throws Exception {
@@ -34,6 +36,7 @@ final class QuestSurfaceV1bTestData {
         return new JSONObject()
                 .put("schema_version", 1)
                 .put("session_epoch", epoch)
+                .put("resume_handle", RESUME_HANDLE)
                 .put("issued_at_ms", issuedAtMs)
                 .put("ttl_ms", ttlMs)
                 .put("expires_at_ms", issuedAtMs + ttlMs)
@@ -48,6 +51,22 @@ final class QuestSurfaceV1bTestData {
                         manifestPayload(epoch, 10_000, ttlMs)),
                 new java.math.BigInteger(epoch),
                 nowElapsedMs);
+    }
+
+    static JSONObject renewalPayload(
+            String epoch, long generation, long issuedAtMs, long ttlMs) throws Exception {
+        return new JSONObject()
+                .put("schema_version", 1)
+                .put("session_epoch", epoch)
+                .put("generation", generation)
+                .put("issued_at_ms", issuedAtMs)
+                .put("ttl_ms", ttlMs)
+                .put("expires_at_ms", issuedAtMs + ttlMs)
+                .put("lease_ids", new JSONObject()
+                        .put("panel", "lease-panel")
+                        .put("mic_capture", "lease-mic")
+                        .put("audio_present", "lease-audio")
+                        .put("local_attach", "lease-local"));
     }
 
     static QuestSurfaceProtocol.Lease compatibilityPanelLease(

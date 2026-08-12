@@ -11,6 +11,8 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class QuestSurfaceProtocolTest {
     @Test
@@ -30,6 +32,27 @@ public final class QuestSurfaceProtocolTest {
                 () -> QuestSurfaceProtocol.encodeFrame(
                         "ACTUAL_BOUNDS_ACK", "1", "uplink", "", 1, 1, new JSONObject()));
         assertEquals("lease_ref_required", error.code);
+    }
+
+    @Test
+    public void resumeHelloIsExactExplicitAndBoundToOpaqueHandle() throws Exception {
+        JSONObject initial = QuestSurfaceProtocol.helloPayload(null);
+        assertEquals(Set.of("supported_versions", "client"), keys(initial));
+
+        JSONObject resume = QuestSurfaceProtocol.helloPayload("resume-episode-99");
+        assertEquals(Set.of("supported_versions", "client", "resume_intent"), keys(resume));
+        JSONObject intent = resume.getJSONObject("resume_intent");
+        assertEquals(
+                Set.of("schema_version", "resume_handle", "explicit_local_action"),
+                keys(intent));
+        assertEquals(1, intent.getInt("schema_version"));
+        assertEquals("resume-episode-99", intent.getString("resume_handle"));
+        assertEquals(true, intent.getBoolean("explicit_local_action"));
+
+        QuestSurfaceProtocol.ProtocolException tooLong = assertThrows(
+                QuestSurfaceProtocol.ProtocolException.class,
+                () -> QuestSurfaceProtocol.helloPayload("x".repeat(257)));
+        assertEquals("resume_handle_invalid", tooLong.code);
     }
 
     @Test
@@ -297,5 +320,11 @@ public final class QuestSurfaceProtocolTest {
             hex.append(String.format("%02x", value & 0xff));
         }
         return hex.toString();
+    }
+
+    private static Set<String> keys(JSONObject object) {
+        Set<String> result = new HashSet<>();
+        object.keys().forEachRemaining(result::add);
+        return result;
     }
 }

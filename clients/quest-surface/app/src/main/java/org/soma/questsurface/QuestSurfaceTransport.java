@@ -4,7 +4,6 @@ import android.content.res.AssetManager;
 import android.os.SystemClock;
 import android.util.Log;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -46,6 +45,20 @@ final class QuestSurfaceTransport {
     private static final int READ_TIMEOUT_MS = 15_000;
     private static final int MAX_ATTEMPTS = 8;
     private static final long MAX_BACKOFF_MS = 8_000;
+    private static final int RESUME_CONNECT_TIMEOUT_MS = 2_000;
+    private static final int RESUME_READ_TIMEOUT_MS = 3_000;
+    private static final int RESUME_MAX_ATTEMPTS = 2;
+    private static final long RESUME_MAX_BACKOFF_MS = 250;
+
+    private enum SessionState {
+        NEW,
+        CONNECTING,
+        ACTIVE,
+        RESUMABLE_SUSPENDING,
+        RESUMABLE_SUSPENDED,
+        RESUME_REQUESTED,
+        TERMINAL
+    }
 
     interface StateSink {
         void accept(String state, String code, int attempt);
@@ -71,25 +84,36 @@ final class QuestSurfaceTransport {
                 long deadlineElapsedMs);
     }
 
+    interface ResumeSink {
+        boolean complete(String freshEpoch);
+    }
+
     private final AssetManager assets;
     private final String host;
     private final int port;
     private final StateSink stateSink;
     private final SnapshotSink snapshotSink;
+    private final ResumeSink resumeSink;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService writeExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stoppedPermanently = new AtomicBoolean(false);
+    private final AtomicReference<SessionState> sessionState =
+            new AtomicReference<>(SessionState.NEW);
     private final AtomicReference<SSLSocket> socket = new AtomicReference<>();
     private final Object sendLock = new Object();
     private final QuestSurfaceSequenceTracker sendSequences =
             new QuestSurfaceSequenceTracker();
     private final QuestSurfaceRuntime runtime;
+    private final AtomicBoolean captureGate;
+    private final long activityGeneration;
     // Device-only mic driver (real AudioRecord), gated on eligibility. Null in the test constructor:
     // capture-driver behavior is unit-tested directly, not through the socket transport.
     private QuestSurfaceCaptureDriver captureDriver;
 
     private volatile OutputStream output;
+    private volatile String latchedSessionEpoch = "";
+    private volatile String resumeHandle = "";
 
     QuestSurfaceTransport(
             AssetManager assets,
@@ -97,9 +121,48 @@ final class QuestSurfaceTransport {
             int port,
             StateSink stateSink,
             SnapshotSink snapshotSink) {
+        this(assets, host, port, stateSink, snapshotSink, freshEpoch -> false);
+    }
+
+    QuestSurfaceTransport(
+            AssetManager assets,
+            String host,
+            int port,
+            StateSink stateSink,
+            SnapshotSink snapshotSink,
+            ResumeSink resumeSink) {
+        this(
+                assets,
+                host,
+                port,
+                stateSink,
+                snapshotSink,
+                resumeSink,
+                new AtomicBoolean(true),
+                0L);
+    }
+
+    QuestSurfaceTransport(
+            AssetManager assets,
+            String host,
+            int port,
+            StateSink stateSink,
+            SnapshotSink snapshotSink,
+            ResumeSink resumeSink,
+            AtomicBoolean captureGate,
+            long activityGeneration) {
         // Device path: real AudioTrack playback hardware + a real AudioRecord capture driver.
-        this(assets, host, port, stateSink, snapshotSink,
-                new QuestSurfaceRuntime(new QuestSurfaceAudioEngine(new QuestSurfaceAudioHardware())));
+        this(
+                assets,
+                host,
+                port,
+                stateSink,
+                snapshotSink,
+                new QuestSurfaceRuntime(
+                        new QuestSurfaceAudioEngine(new QuestSurfaceAudioHardware())),
+                resumeSink,
+                captureGate,
+                activityGeneration);
         this.captureDriver = new QuestSurfaceCaptureDriver(
                 QuestSurfaceCaptureDriver.audioRecordSource(),
                 this::captureEligible,
@@ -120,16 +183,32 @@ final class QuestSurfaceTransport {
                 QuestSurfaceVad.Config.defaults(),
                 null,
                 (mode, state) -> {
-                    try { QuestSurfaceActivity.nativeOnCaptureStatus(mode == QuestSurfaceCaptureDriver.Mode.PTT ? 0 : 1, state); } catch (Throwable ignored) {}
+                    try {
+                        QuestSurfaceActivity.nativeOnCaptureStatus(
+                                this.activityGeneration,
+                                mode == QuestSurfaceCaptureDriver.Mode.PTT ? 0 : 1,
+                                state);
+                    } catch (Throwable ignored) {}
                 });
     }
 
     void setPttHeld(boolean held) {
+        if (!held) {
+            forcePttReleased();
+            return;
+        }
+        if (sessionState.get() != SessionState.ACTIVE) return;
         QuestSurfaceCaptureDriver d = captureDriver;
-        if (d != null) d.setPttHeld(held);
+        if (d != null) d.setPttHeld(true);
+    }
+
+    void forcePttReleased() {
+        QuestSurfaceCaptureDriver d = captureDriver;
+        if (d != null) d.setPttHeld(false);
     }
 
     void toggleCaptureMode() {
+        if (sessionState.get() != SessionState.ACTIVE) return;
         QuestSurfaceCaptureDriver d = captureDriver;
         if (d != null) d.toggleMode();
     }
@@ -141,19 +220,57 @@ final class QuestSurfaceTransport {
             StateSink stateSink,
             SnapshotSink snapshotSink,
             QuestSurfaceRuntime runtime) {
+        this(assets, host, port, stateSink, snapshotSink, runtime, freshEpoch -> false);
+    }
+
+    QuestSurfaceTransport(
+            AssetManager assets,
+            String host,
+            int port,
+            StateSink stateSink,
+            SnapshotSink snapshotSink,
+            QuestSurfaceRuntime runtime,
+            ResumeSink resumeSink) {
+        this(
+                assets,
+                host,
+                port,
+                stateSink,
+                snapshotSink,
+                runtime,
+                resumeSink,
+                new AtomicBoolean(true),
+                0L);
+    }
+
+    QuestSurfaceTransport(
+            AssetManager assets,
+            String host,
+            int port,
+            StateSink stateSink,
+            SnapshotSink snapshotSink,
+            QuestSurfaceRuntime runtime,
+            ResumeSink resumeSink,
+            AtomicBoolean captureGate,
+            long activityGeneration) {
         this.assets = assets;
         this.host = host;
         this.port = port;
         this.stateSink = stateSink;
         this.snapshotSink = snapshotSink;
+        this.resumeSink = resumeSink == null ? freshEpoch -> false : resumeSink;
         this.runtime = runtime;
+        this.captureGate = captureGate == null ? new AtomicBoolean(false) : captureGate;
+        this.activityGeneration = activityGeneration;
         this.captureDriver = null;
     }
 
     /** Capture is authorized only while focused+started, armed with a live mic lease, and unlatched. */
     private boolean captureEligible() {
-        return !stoppedPermanently.get()
+        return captureGate.get()
+                && !stoppedPermanently.get()
                 && started.get()
+                && sessionState.get() == SessionState.ACTIVE
                 && runtime.hasManifest()
                 && runtime.micLease() != null
                 && !runtime.isLatched();
@@ -163,28 +280,100 @@ final class QuestSurfaceTransport {
         if (stoppedPermanently.get()) {
             return false;
         }
-        if (started.compareAndSet(false, true)) {
-            executor.execute(this::runBoundedAttempts);
+        if (sessionState.compareAndSet(SessionState.NEW, SessionState.CONNECTING)) {
+            started.set(true);
+            executor.execute(() -> runBoundedAttempts(false));
         }
-        return true;
+        SessionState state = sessionState.get();
+        return state == SessionState.CONNECTING || state == SessionState.ACTIVE;
     }
 
     void stopPermanently(String reason) {
         if (!stoppedPermanently.compareAndSet(false, true)) {
             return;
         }
-        // Hardware stop and socket close are both local, synchronous narrowing operations. Neither
-        // waits for a workstation write or acknowledgement. Stop the mic first (closes AudioRecord,
-        // abandons any in-flight utterance with no trailing audio), then latch the engine.
-        if (captureDriver != null) {
-            captureDriver.stop(reason == null ? "local_stop" : reason);
-        }
-        runtime.latch(reason == null ? "local_stop" : reason);
-        abortSocket(socket.getAndSet(null));
-        output = null;
-        stateSink.accept("suspended", boundedCode(reason), 0);
+        sessionState.set(SessionState.TERMINAL);
+        started.set(false);
+        narrowSessionSynchronously(reason == null ? "local_stop" : reason);
+        stateSink.accept("terminal", boundedCode(reason), 0);
         executor.shutdownNow();
         writeExecutor.shutdownNow();
+    }
+
+    boolean suspendResumable(String reason) {
+        if (stoppedPermanently.get()) {
+            return false;
+        }
+        SessionState priorState;
+        for (;;) {
+            priorState = sessionState.get();
+            if (priorState == SessionState.CONNECTING || priorState == SessionState.NEW) {
+                stopPermanently(reason == null ? "suspend_before_session" : reason);
+                return false;
+            }
+            if (priorState != SessionState.ACTIVE
+                    && priorState != SessionState.RESUME_REQUESTED) {
+                return false;
+            }
+            if (sessionState.compareAndSet(
+                    priorState, SessionState.RESUMABLE_SUSPENDING)) {
+                break;
+            }
+        }
+        String prior = priorState == SessionState.RESUME_REQUESTED
+                ? latchedSessionEpoch
+                : runtime.sessionEpoch();
+        String handle = priorState == SessionState.RESUME_REQUESTED
+                ? resumeHandle
+                : runtime.resumeHandle();
+        if (prior.isEmpty() || prior.equals("0") || handle.isEmpty()) {
+            stopPermanently(reason == null ? "resume_context_missing" : reason);
+            return false;
+        }
+        latchedSessionEpoch = prior;
+        resumeHandle = handle;
+        started.set(false);
+        narrowSessionSynchronously(reason == null ? "local_suspend" : reason);
+        sessionState.set(SessionState.RESUMABLE_SUSPENDED);
+        stateSink.accept("suspended", "press_a_to_resume", 0);
+        return true;
+    }
+
+    boolean resumeFromExplicitLocalAction() {
+        if (stoppedPermanently.get()
+                || latchedSessionEpoch.isEmpty()
+                || latchedSessionEpoch.equals("0")
+                || resumeHandle.isEmpty()
+                || !sessionState.compareAndSet(
+                        SessionState.RESUMABLE_SUSPENDED, SessionState.RESUME_REQUESTED)) {
+            return false;
+        }
+        started.set(true);
+        stateSink.accept("resuming", "explicit_local_action", 1);
+        try {
+            executor.execute(() -> runBoundedAttempts(true));
+            return true;
+        } catch (RejectedExecutionException error) {
+            started.set(false);
+            sessionState.compareAndSet(
+                    SessionState.RESUME_REQUESTED, SessionState.RESUMABLE_SUSPENDED);
+            stateSink.accept("suspended", "resume_executor_unavailable", 0);
+            return false;
+        }
+    }
+
+    private void narrowSessionSynchronously(String reason) {
+        // Hardware stop and socket abort are local, synchronous narrowing operations. No server
+        // write or acknowledgement is on this path, and an in-flight utterance is abandoned.
+        if (captureDriver != null) {
+            captureDriver.stop(reason);
+        }
+        runtime.latch(reason);
+        abortSocket(socket.getAndSet(null));
+        output = null;
+        synchronized (sendLock) {
+            sendSequences.clear();
+        }
     }
 
     void sendActualBoundsAck(
@@ -195,7 +384,7 @@ final class QuestSurfaceTransport {
             String surfaceId,
             float widthMeters,
             float heightMeters) {
-        if (stoppedPermanently.get()) {
+        if (stoppedPermanently.get() || sessionState.get() != SessionState.ACTIVE) {
             return;
         }
         try {
@@ -220,7 +409,7 @@ final class QuestSurfaceTransport {
             String surfaceId,
             float widthMeters,
             float heightMeters) {
-        if (stoppedPermanently.get()) {
+        if (stoppedPermanently.get() || sessionState.get() != SessionState.ACTIVE) {
             return;
         }
         QuestSurfaceProtocol.Lease lease = runtime.panelLease();
@@ -258,43 +447,91 @@ final class QuestSurfaceTransport {
         }
     }
 
-    private void runBoundedAttempts() {
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS && !stoppedPermanently.get(); attempt++) {
-            stateSink.accept("connecting", "attempt", attempt);
+    private void runBoundedAttempts(boolean resumeAttempt) {
+        int maxAttempts = resumeAttempt ? RESUME_MAX_ATTEMPTS : MAX_ATTEMPTS;
+        SessionState expectedState = resumeAttempt
+                ? SessionState.RESUME_REQUESTED
+                : SessionState.CONNECTING;
+        for (int attempt = 1;
+                attempt <= maxAttempts
+                        && !stoppedPermanently.get()
+                        && sessionState.get() == expectedState;
+                attempt++) {
+            stateSink.accept(resumeAttempt ? "resuming" : "connecting", "attempt", attempt);
             try {
-                runSession(attempt);
+                runSession(attempt, resumeAttempt);
+                if (sessionState.get() == SessionState.ACTIVE) {
+                    terminateAfterTransportLoss(
+                            new IOException("transport_closed"), attempt);
+                    return;
+                }
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception error) {
-                if (!stoppedPermanently.get()) {
-                    runtime.latch(boundedCode(error.getMessage()));
+                SessionState observed = sessionState.get();
+                if (observed == SessionState.RESUMABLE_SUSPENDING
+                        || observed == SessionState.RESUMABLE_SUSPENDED
+                        || observed == SessionState.TERMINAL
+                        || stoppedPermanently.get()) {
+                    return;
+                }
+                if (observed == SessionState.ACTIVE) {
+                    terminateAfterTransportLoss(error, attempt);
+                    return;
+                }
+                if (observed == expectedState) {
+                    if (!runtime.sessionEpoch().isEmpty()) {
+                        runtime.latch(boundedCode(error.getMessage()));
+                    }
                     logTransportFailure(attempt, error);
-                    stateSink.accept("offline", boundedCode(error.getMessage()), attempt);
+                    stateSink.accept(
+                            resumeAttempt ? "resuming" : "offline",
+                            boundedCode(error.getMessage()),
+                            attempt);
                 }
             } finally {
                 closeQuietly(socket.getAndSet(null));
                 output = null;
-                runtime.latch("disconnect");
+                if (!runtime.sessionEpoch().isEmpty()) {
+                    runtime.latch("disconnect");
+                }
                 synchronized (sendLock) {
                     sendSequences.clear();
                 }
             }
-            if (!stoppedPermanently.get() && attempt < MAX_ATTEMPTS) {
+            if (!stoppedPermanently.get()
+                    && sessionState.get() == expectedState
+                    && attempt < maxAttempts) {
                 try {
-                    Thread.sleep(Math.min(MAX_BACKOFF_MS, 250L << Math.min(attempt - 1, 5)));
+                    long maxBackoff = resumeAttempt ? RESUME_MAX_BACKOFF_MS : MAX_BACKOFF_MS;
+                    Thread.sleep(Math.min(maxBackoff, 250L << Math.min(attempt - 1, 5)));
                 } catch (InterruptedException error) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
         }
-        if (!stoppedPermanently.get()) {
-            stateSink.accept("offline", "retry_budget_exhausted", MAX_ATTEMPTS);
+        if (!stoppedPermanently.get()
+                && sessionState.compareAndSet(
+                        expectedState,
+                        resumeAttempt
+                                ? SessionState.RESUMABLE_SUSPENDED
+                                : SessionState.TERMINAL)) {
+            started.set(false);
+            stateSink.accept(
+                    resumeAttempt ? "suspended" : "offline",
+                    "retry_budget_exhausted",
+                    maxAttempts);
+            if (!resumeAttempt) {
+                stoppedPermanently.set(true);
+                writeExecutor.shutdownNow();
+                executor.shutdown();
+            }
         }
     }
 
-    private void runSession(int attempt) throws Exception {
+    private void runSession(int attempt, boolean resumeAttempt) throws Exception {
         SSLContext context = createSslContext();
         SSLSocket connected = (SSLSocket) context.getSocketFactory().createSocket();
         socket.set(connected);
@@ -302,20 +539,35 @@ final class QuestSurfaceTransport {
         parameters.setEndpointIdentificationAlgorithm("HTTPS");
         parameters.setProtocols(new String[] {"TLSv1.3"});
         connected.setSSLParameters(parameters);
-        connected.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
-        connected.setSoTimeout(READ_TIMEOUT_MS);
+        connected.connect(
+                new InetSocketAddress(host, port),
+                resumeAttempt ? RESUME_CONNECT_TIMEOUT_MS : CONNECT_TIMEOUT_MS);
+        connected.setSoTimeout(resumeAttempt ? RESUME_READ_TIMEOUT_MS : READ_TIMEOUT_MS);
         connected.startHandshake();
         output = connected.getOutputStream();
 
-        JSONObject hello = new JSONObject();
-        hello.put("supported_versions", new JSONArray().put(QuestSurfaceProtocol.VERSION));
-        hello.put("client", "soma-quest-surface-v1a");
+        String originalLatchedEpoch = latchedSessionEpoch;
+        String requestedResumeHandle = resumeHandle;
+        JSONObject hello = QuestSurfaceProtocol.helloPayload(
+                resumeAttempt ? requestedResumeHandle : null);
+        if (resumeAttempt) {
+            if (originalLatchedEpoch.isEmpty()
+                    || originalLatchedEpoch.equals("0")
+                    || requestedResumeHandle.isEmpty()) {
+                throw new IOException("resume_context_missing");
+            }
+        }
         send("HELLO", "0", 0, "", hello);
 
         BoundedLineReader reader = new BoundedLineReader(connected.getInputStream());
         QuestSurfaceProtocol.Frame helloAck = receive(reader);
         requireServerEnvelope(helloAck, "HELLO_ACK", null);
         QuestSurfaceProtocol.validateHelloAck(helloAck);
+        if (resumeAttempt) {
+            if (helloAck.sessionEpoch.toString().equals(originalLatchedEpoch)) {
+                throw new IOException("resume_fresh_epoch_required");
+            }
+        }
 
         // G: optional LEASE_MANIFEST bootstrap (v1b) before compatibility LEASE
         QuestSurfaceProtocol.Frame firstLeaseFrame = receive(reader);
@@ -332,6 +584,10 @@ final class QuestSurfaceTransport {
         }
         QuestSurfaceProtocol.Lease lease = QuestSurfaceProtocol.validateLease(
                 leaseFrame, helloAck.sessionEpoch, SystemClock.elapsedRealtime());
+        if (resumeAttempt && (manifest == null
+                || !requestedResumeHandle.equals(manifest.resumeHandle))) {
+            throw new IOException("resume_handle_mismatch");
+        }
         runtime.configureSession(
                 helloAck.sessionEpoch, manifest, lease, SystemClock.elapsedRealtime());
 
@@ -339,6 +595,36 @@ final class QuestSurfaceTransport {
         requireServerEnvelope(snapshotFrame, "PANEL_SNAPSHOT", helloAck.sessionEpoch);
         QuestSurfaceProtocol.SurfaceSnapshot snapshot = runtime.acceptPanel(
                 snapshotFrame, SystemClock.elapsedRealtime());
+        if (resumeAttempt) {
+            String freshEpoch = helloAck.sessionEpoch.toString();
+            if (!runtime.isLatched() || !runtime.deliberateResume(freshEpoch, true)) {
+                throw new IOException("resume_java_latch_rejected");
+            }
+            latchedSessionEpoch = freshEpoch;
+            boolean nativeCompleted;
+            try {
+                nativeCompleted = resumeSink.complete(freshEpoch);
+            } catch (Throwable ignored) {
+                nativeCompleted = false;
+            }
+            if (!nativeCompleted) {
+                runtime.latch("resume_native_rejected");
+                started.set(false);
+                sessionState.set(SessionState.RESUMABLE_SUSPENDED);
+                stateSink.accept("suspended", "resume_native_rejected", attempt);
+                throw new IOException("resume_native_rejected");
+            }
+            if (!sessionState.compareAndSet(
+                    SessionState.RESUME_REQUESTED, SessionState.ACTIVE)) {
+                runtime.latch("resume_state_changed");
+                throw new IOException("resume_state_changed");
+            }
+            // v2.1: reopen capture gate only after accepted fresh-manifest deliberate resume (instance gate)
+            captureGate.set(true);
+        } else if (!sessionState.compareAndSet(SessionState.CONNECTING, SessionState.ACTIVE)) {
+            runtime.latch("session_state_changed");
+            throw new IOException("session_state_changed");
+        }
         stateSink.accept("leased", "panel_ready", attempt);
         deliverSnapshot(snapshot);
 
@@ -350,7 +636,7 @@ final class QuestSurfaceTransport {
 
         // Bootstrap reads are bounded. Once leased, each read is bounded by the locally derived
         // lease deadline; local stop closes the socket to unblock it immediately.
-        while (!stoppedPermanently.get()) {
+        while (!stoppedPermanently.get() && sessionState.get() == SessionState.ACTIVE) {
             long remainingMs = runtime.deadlineElapsedMs() - SystemClock.elapsedRealtime();
             if (remainingMs <= 0) {
                 throw new IOException("lease_expired");
@@ -375,6 +661,23 @@ final class QuestSurfaceTransport {
                 }
                 runtime.latch(code);
                 throw new IOException(code);
+            }
+            if (frame.type.equals("LEASE_RENEWAL")) {
+                try {
+                    QuestSurfaceProtocol.Manifest renewed = runtime.acceptLeaseRenewal(
+                            frame, SystemClock.elapsedRealtime());
+                    send(
+                            "LEASE_RENEWAL_ACK",
+                            renewed.sessionEpoch.toString(),
+                            0,
+                            "",
+                            QuestSurfaceProtocol.leaseRenewalAckPayload(renewed.generation));
+                } catch (QuestSurfaceProtocol.ProtocolException error) {
+                    // A malformed, stale, or late renewal has no authority effect. Keep the
+                    // prior manifest and its original deadline; normal expiry remains terminal.
+                    logAudioStreamFailure(0, error.code);
+                }
+                continue;
             }
             if (frame.type.equals("PANEL_SNAPSHOT")) {
                 QuestSurfaceProtocol.SurfaceSnapshot next = runtime.acceptPanel(
@@ -419,6 +722,19 @@ final class QuestSurfaceTransport {
             }
             throw new IOException("unexpected_server_message");
         }
+    }
+
+    private void terminateAfterTransportLoss(Throwable error, int attempt) {
+        if (!stoppedPermanently.compareAndSet(false, true)) {
+            return;
+        }
+        sessionState.set(SessionState.TERMINAL);
+        started.set(false);
+        narrowSessionSynchronously(boundedCode(error == null ? null : error.getMessage()));
+        logTransportFailure(attempt, error);
+        stateSink.accept("offline", boundedCode(error == null ? null : error.getMessage()), attempt);
+        writeExecutor.shutdownNow();
+        executor.shutdown();
     }
 
     private void deliverSnapshot(QuestSurfaceProtocol.SurfaceSnapshot snapshot) {
@@ -514,16 +830,6 @@ final class QuestSurfaceTransport {
         JSONObject payload = runtime.cancelCapture(streamId, utteranceId, reason, now);
         QuestSurfaceProtocol.Lease micLease = runtime.micLease();
         send("CANCEL", runtime.sessionEpoch(), streamId, micLease.leaseId, payload);
-    }
-
-    String currentSessionEpoch() {
-        return runtime.sessionEpoch();
-    }
-
-    boolean deliberateAudioResumeFromLocalAction(String freshEpoch) {
-        return freshEpoch != null
-                && freshEpoch.equals(runtime.sessionEpoch())
-                && runtime.deliberateResume(freshEpoch, true);
     }
 
     private void send(String type, String epoch, long streamId, String leaseRef, JSONObject payload)

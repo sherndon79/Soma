@@ -3,11 +3,14 @@ package org.soma.questsurface;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import org.json.JSONObject;
 import org.junit.Test;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 public final class QuestSurfaceProtocolV1bTest {
     @Test
@@ -15,6 +18,7 @@ public final class QuestSurfaceProtocolV1bTest {
         QuestSurfaceProtocol.Manifest manifest = QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000);
 
         assertEquals(new BigInteger("99"), manifest.sessionEpoch);
+        assertEquals(QuestSurfaceV1bTestData.RESUME_HANDLE, manifest.resumeHandle);
         assertEquals(7_000, manifest.deadlineElapsedMs);
         assertEquals(4, manifest.leases.size());
         assertEquals(QuestSurfaceProtocol.CAPABILITY, manifest.lease("panel").capability);
@@ -28,6 +32,30 @@ public final class QuestSurfaceProtocolV1bTest {
                 QuestSurfaceProtocol.LOCAL_MODEL_PROVIDER,
                 manifest.lease("local_attach").provider);
         assertEquals("once", manifest.lease("local_attach").scope);
+    }
+
+    @Test
+    public void validatesNodeProducedManifestAndResumeHandleCrossConformance() throws Exception {
+        java.io.InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("questSurfaceV1bManifestFixture.json");
+        if (in == null) {
+            throw new AssertionError("questSurfaceV1bManifestFixture.json not found on test classpath");
+        }
+        JSONObject fixture = new JSONObject(
+                new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        JSONObject input = fixture.getJSONObject("input");
+        JSONObject payload = fixture.getJSONObject("payload");
+        String epoch = input.getString("session_epoch");
+        QuestSurfaceProtocol.Manifest manifest = QuestSurfaceProtocol.validateManifest(
+                QuestSurfaceV1bTestData.serverFrame(
+                        "LEASE_MANIFEST", epoch, 0, "", 2, payload),
+                new BigInteger(epoch),
+                2_000);
+
+        assertEquals(input.getString("resume_handle"), manifest.resumeHandle);
+        assertEquals(input.getLong("issued_at_ms"), manifest.issuedAtMs);
+        assertEquals(input.getLong("ttl_ms"), manifest.ttlMs);
+        assertEquals(4, manifest.leases.size());
     }
 
     @Test
@@ -54,6 +82,18 @@ public final class QuestSurfaceProtocolV1bTest {
     @Test
     public void rejectsManifestShapeAuthorityIdentityTimeAndConstraintDrift() throws Exception {
         JSONObject base = QuestSurfaceV1bTestData.manifestPayload("99", 10_000, 5_000);
+
+        JSONObject missingHandle = QuestSurfaceV1bTestData.deepCopy(base);
+        missingHandle.remove("resume_handle");
+        assertManifestError(missingHandle, "manifest_payload_fields_invalid");
+
+        JSONObject invalidHandle = QuestSurfaceV1bTestData.deepCopy(base)
+                .put("resume_handle", "");
+        assertManifestError(invalidHandle, "resume_handle_invalid");
+
+        JSONObject extraTopLevel = QuestSurfaceV1bTestData.deepCopy(base)
+                .put("resume_handle_hint", "not-authoritative");
+        assertManifestError(extraTopLevel, "manifest_payload_fields_invalid");
 
         JSONObject extra = QuestSurfaceV1bTestData.deepCopy(base);
         extra.getJSONObject("leases").put("extra", new JSONObject());
@@ -104,6 +144,66 @@ public final class QuestSurfaceProtocolV1bTest {
         panelConstraint.getJSONObject("leases").getJSONObject("panel")
                 .getJSONObject("constraints").remove("allowed_surface_ids");
         assertManifestError(panelConstraint, "lease_constraint_fields_invalid");
+    }
+
+    @Test
+    public void renewalExtendsTimeOnlyAndPreservesExactFourLeaseIds() throws Exception {
+        QuestSurfaceProtocol.Manifest current = QuestSurfaceV1bTestData.manifest(
+                "99", 2_000, 5_000);
+        QuestSurfaceProtocol.Frame frame = QuestSurfaceV1bTestData.serverFrame(
+                "LEASE_RENEWAL", "99", 0, "", 5,
+                QuestSurfaceV1bTestData.renewalPayload("99", 1, 12_000, 5_000));
+
+        QuestSurfaceProtocol.Manifest renewed = QuestSurfaceProtocol.validateLeaseRenewal(
+                frame, current, 3_000);
+
+        assertEquals(1, renewed.generation);
+        assertEquals(current.resumeHandle, renewed.resumeHandle);
+        assertEquals(8_000, renewed.deadlineElapsedMs);
+        assertEquals(17_000, renewed.expiresAtMs);
+        for (String name : new String[] {"panel", "mic_capture", "audio_present", "local_attach"}) {
+            assertEquals(current.lease(name).leaseId, renewed.lease(name).leaseId);
+            assertEquals(current.lease(name).sourceGrantId, renewed.lease(name).sourceGrantId);
+            assertEquals(current.lease(name).capability, renewed.lease(name).capability);
+            assertEquals(current.lease(name).provider, renewed.lease(name).provider);
+            assertEquals(current.lease(name).scope, renewed.lease(name).scope);
+        }
+        assertEquals(
+                Set.of("schema_version", "generation"),
+                jsonKeys(QuestSurfaceProtocol.leaseRenewalAckPayload(1)));
+    }
+
+    @Test
+    public void renewalRejectsChangedIdsAuthorityFieldsStaleGenerationAndNonExtension()
+            throws Exception {
+        QuestSurfaceProtocol.Manifest current = QuestSurfaceV1bTestData.manifest(
+                "99", 2_000, 5_000);
+
+        JSONObject changed = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 1, 12_000, 5_000);
+        changed.getJSONObject("lease_ids").put("mic_capture", "lease-other");
+        assertRenewalError(current, changed, 3_000, "renewal_lease_ids_changed");
+
+        JSONObject authority = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 1, 12_000, 5_000).put("capability", QuestSurfaceProtocol.CAPABILITY);
+        assertRenewalError(current, authority, 3_000, "renewal_payload_fields_invalid");
+
+        JSONObject stale = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 1, 12_000, 5_000);
+        QuestSurfaceProtocol.Manifest generationOne = QuestSurfaceProtocol.validateLeaseRenewal(
+                QuestSurfaceV1bTestData.serverFrame("LEASE_RENEWAL", "99", 0, "", 5, stale),
+                current,
+                3_000);
+        assertRenewalError(generationOne, stale, 3_001, "renewal_generation_stale");
+
+        JSONObject notExtending = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 1, 10_001, 1);
+        assertRenewalError(current, notExtending, 3_000, "renewal_not_extending");
+
+        JSONObject localNotExtending = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 1, 12_000, 3_000);
+        assertRenewalError(current, localNotExtending, 3_000, "renewal_not_extending");
+        assertTrue(current.deadlineElapsedMs == 7_000);
     }
 
     @Test
@@ -170,6 +270,25 @@ public final class QuestSurfaceProtocolV1bTest {
                 () -> QuestSurfaceProtocol.validateManifest(
                         frame, new BigInteger("99"), 2_000));
         assertEquals(expectedCode, error.code);
+    }
+
+    private static void assertRenewalError(
+            QuestSurfaceProtocol.Manifest current,
+            JSONObject payload,
+            long nowElapsedMs,
+            String expectedCode) throws Exception {
+        QuestSurfaceProtocol.Frame frame = QuestSurfaceV1bTestData.serverFrame(
+                "LEASE_RENEWAL", "99", 0, "", 5, payload);
+        QuestSurfaceProtocol.ProtocolException error = assertThrows(
+                QuestSurfaceProtocol.ProtocolException.class,
+                () -> QuestSurfaceProtocol.validateLeaseRenewal(frame, current, nowElapsedMs));
+        assertEquals(expectedCode, error.code);
+    }
+
+    private static java.util.Set<String> jsonKeys(JSONObject object) {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        object.keys().forEachRemaining(keys::add);
+        return keys;
     }
 
     private static void assertAudioError(

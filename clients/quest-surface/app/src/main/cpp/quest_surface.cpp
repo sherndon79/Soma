@@ -28,6 +28,7 @@
 
 #include "font5x7.h"
 #include "quest_surface_latch.h"
+#include "quest_surface_lifecycle.h"
 
 #define TAG "SOMA_QUEST_SURFACE"
 
@@ -94,11 +95,35 @@ struct AppState {
     bool transport_started = false;
     bool suspended_latched = false;
     bool suspend_notified = false;
+    bool suspended_resumable = false;
+    bool resuming = false;
+    bool pendingResumeAToken = false;
+    bool triggerReleaseRequired = false;
+    bool aReleaseRequired = false;
+    bool pendingLocalStop = false;
+    bool pendingPause = false;
+    bool androidResumed = true;
+    bool finishRequested = false;
+    uint64_t activityGeneration = 0;
+    uint64_t controlGeneration = 0;
+    uint64_t pendingStartSequence = 0;
+    uint64_t pendingResumeSequence = 0;
     soma::quest::MicLatchState micLatch;
     uint64_t frames = 0;
 };
 
 AppState g;
+
+// v2.1: cached JNI class/methodIDs for bounded nonblocking enqueue (no Get* inline per call)
+static jclass g_activityClass = nullptr;
+static jmethodID g_midActivityGeneration = nullptr;
+static jmethodID g_midEnqueueStart = nullptr;
+static jmethodID g_midEnqueueSuspend = nullptr;
+static jmethodID g_midEnqueueStop = nullptr;
+static jmethodID g_midEnqueueResume = nullptr;
+static jmethodID g_midEnqueuePtt = nullptr;
+static jmethodID g_midEnqueueToggle = nullptr;
+static jmethodID g_midEnqueueAck = nullptr;
 
 PFN_xrCreatePassthroughFB xrCreatePassthroughFB_ = nullptr;
 PFN_xrDestroyPassthroughFB xrDestroyPassthroughFB_ = nullptr;
@@ -165,62 +190,115 @@ void detach_java(bool attached) {
     if (attached && g.app != nullptr) g.app->activity->vm->DetachCurrentThread();
 }
 
-bool call_java_start() {
+uint64_t next_control_sequence() {
+    std::lock_guard<std::mutex> lock(g.mutex);
+    return ++g.controlGeneration;
+}
+
+int64_t call_java_activity_generation() {
+    if (g_midActivityGeneration == nullptr) return 0;
+    bool attached = false;
+    JNIEnv* env = attach_java(&attached);
+    if (env == nullptr) return 0;
+    jlong generation = env->CallLongMethod(
+            g.app->activity->clazz, g_midActivityGeneration);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        generation = 0;
+    }
+    detach_java(attached);
+    return generation;
+}
+
+bool call_java_enqueue_start(uint64_t sequence) {
+    if (g_midEnqueueStart == nullptr) return false;
     bool attached = false;
     JNIEnv* env = attach_java(&attached);
     if (env == nullptr) return false;
-    jclass activity = env->GetObjectClass(g.app->activity->clazz);
-    jmethodID method = env->GetStaticMethodID(activity, "startTransportFromNative", "()Z");
-    bool started = false;
-    if (method != nullptr) started = env->CallStaticBooleanMethod(activity, method) == JNI_TRUE;
+    jboolean admitted = env->CallBooleanMethod(
+            g.app->activity->clazz, g_midEnqueueStart, static_cast<jlong>(sequence));
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        started = false;
+        admitted = JNI_FALSE;
     }
-    env->DeleteLocalRef(activity);
     detach_java(attached);
-    return started;
+    return admitted == JNI_TRUE;
 }
 
-void call_java_suspend(const char* reason) {
+void call_java_enqueue_suspend_resumable(uint64_t sequence, const char* reason) {
+    if (g_midEnqueueSuspend == nullptr) return;
     bool attached = false;
     JNIEnv* env = attach_java(&attached);
     if (env == nullptr) return;
-    jclass activity = env->GetObjectClass(g.app->activity->clazz);
-    jmethodID method = env->GetStaticMethodID(
-            activity, "suspendTransportFromNative", "(Ljava/lang/String;)V");
-    jstring value = env->NewStringUTF(reason);
-    if (method != nullptr && value != nullptr) env->CallStaticVoidMethod(activity, method, value);
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    if (value != nullptr) env->DeleteLocalRef(value);
-    env->DeleteLocalRef(activity);
+    jstring value = env->NewStringUTF(reason == nullptr ? "local_suspend" : reason);
+    if (value != nullptr) {
+        env->CallVoidMethod(
+                g.app->activity->clazz,
+                g_midEnqueueSuspend,
+                static_cast<jlong>(sequence),
+                value);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(value);
+    }
     detach_java(attached);
 }
 
-void call_java_ack(const Snapshot& snapshot) {
+void call_java_enqueue_stop_permanent(uint64_t sequence, const char* reason) {
+    if (g_midEnqueueStop == nullptr) return;
     bool attached = false;
     JNIEnv* env = attach_java(&attached);
     if (env == nullptr) return;
-    jclass activity = env->GetObjectClass(g.app->activity->clazz);
-    jmethodID method = env->GetStaticMethodID(
-            activity,
-            "sendActualBoundsAckFromNative",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-            "Ljava/lang/String;FF)V");
+    jstring value = env->NewStringUTF(reason == nullptr ? "local_stop" : reason);
+    if (value != nullptr) {
+        env->CallVoidMethod(
+                g.app->activity->clazz,
+                g_midEnqueueStop,
+                static_cast<jlong>(sequence),
+                value);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(value);
+    }
+    detach_java(attached);
+}
+
+bool call_java_enqueue_resume(uint64_t sequence) {
+    if (g_midEnqueueResume == nullptr) return false;
+    bool attached = false;
+    JNIEnv* env = attach_java(&attached);
+    if (env == nullptr) return false;
+    jboolean admitted = env->CallBooleanMethod(
+            g.app->activity->clazz, g_midEnqueueResume, static_cast<jlong>(sequence));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        admitted = JNI_FALSE;
+    }
+    detach_java(attached);
+    return admitted == JNI_TRUE;
+}
+
+void call_java_enqueue_ack(uint64_t sequence, const Snapshot& snapshot) {
+    bool attached = false;
+    JNIEnv* env = attach_java(&attached);
+    if (env == nullptr) return;
     jstring epoch = env->NewStringUTF(snapshot.epoch.c_str());
     jstring lease = env->NewStringUTF(snapshot.lease.c_str());
     jstring revision = env->NewStringUTF(snapshot.revision.c_str());
     jstring hash = env->NewStringUTF(snapshot.hash.c_str());
     jstring surface = env->NewStringUTF(snapshot.surface.c_str());
-    if (method != nullptr
-            && epoch != nullptr
-            && lease != nullptr
-            && revision != nullptr
-            && hash != nullptr
-            && surface != nullptr) {
-        env->CallStaticVoidMethod(
-                activity,
-                method,
+    if (epoch == nullptr || lease == nullptr || revision == nullptr || hash == nullptr || surface == nullptr) {
+        if (epoch) env->DeleteLocalRef(epoch);
+        if (lease) env->DeleteLocalRef(lease);
+        if (revision) env->DeleteLocalRef(revision);
+        if (hash) env->DeleteLocalRef(hash);
+        if (surface) env->DeleteLocalRef(surface);
+        detach_java(attached);
+        return;
+    }
+    if (g_midEnqueueAck != nullptr) {
+        env->CallVoidMethod(
+                g.app->activity->clazz,
+                g_midEnqueueAck,
+                static_cast<jlong>(sequence),
                 epoch,
                 lease,
                 revision,
@@ -235,12 +313,55 @@ void call_java_ack(const Snapshot& snapshot) {
     if (revision != nullptr) env->DeleteLocalRef(revision);
     if (hash != nullptr) env->DeleteLocalRef(hash);
     if (surface != nullptr) env->DeleteLocalRef(surface);
-    env->DeleteLocalRef(activity);
     detach_java(attached);
 }
 
 void latch_suspend(const char* reason) {
-    // capture epoch for latch before locking
+    std::string epoch_copy;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        epoch_copy = g.snapshot.epoch;
+    }
+    bool notify = false;
+    bool upgrade_to_terminal = false;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        if (!g.suspended_latched) {
+            g.suspended_latched = true;
+            g.suspended_resumable = false;
+            g.resuming = false;
+            g.pendingResumeAToken = false;
+            g.pendingStartSequence = 0;
+            g.pendingResumeSequence = 0;
+            g.snapshot = Snapshot{};
+            g.shell_state = "SUSPENDED";
+            g.shell_code = "EXIT AND RELAUNCH TO RESUME";
+            g.content_dirty = true;
+        } else if (g.suspended_resumable) {
+            // resumable -> terminal upgrade (e.g., STOPPING after presence loss)
+            g.suspended_resumable = false;
+            g.resuming = false;
+            g.pendingResumeAToken = false;
+            g.pendingStartSequence = 0;
+            g.pendingResumeSequence = 0;
+            g.shell_state = "SUSPENDED";
+            g.shell_code = "EXIT AND RELAUNCH TO RESUME";
+            g.content_dirty = true;
+            upgrade_to_terminal = true;
+        }
+        soma::quest::latchMic(g.micLatch, reason ? reason : "suspend", epoch_copy);
+        if (!g.suspend_notified) {
+            g.suspend_notified = true;
+            notify = true;
+        } else if (upgrade_to_terminal) {
+            // already notified as resumable, now need terminal notification
+            notify = true;
+        }
+    }
+    if (notify) call_java_enqueue_stop_permanent(next_control_sequence(), reason);
+}
+
+void latch_suspend_resumable(const char* reason) {
     std::string epoch_copy;
     {
         std::lock_guard<std::mutex> lock(g.mutex);
@@ -251,25 +372,31 @@ void latch_suspend(const char* reason) {
         std::lock_guard<std::mutex> lock(g.mutex);
         if (!g.suspended_latched) {
             g.suspended_latched = true;
+            g.suspended_resumable = true;
+            // Do not retain server snapshot while suspended
             g.snapshot = Snapshot{};
-            g.shell_state = "SUSPENDED";
-            g.shell_code = "EXIT AND RELAUNCH TO RESUME";
-            g.content_dirty = true;
+        } else if (!g.suspended_resumable) {
+            // already terminally suspended — do not downgrade to resumable
+            return;
         }
-        // v1b mic-off latch: narrowing-only, requires deliberate resume with fresh epoch
+        // A repeated loss while an explicit resume is queued/in flight must supersede it too.
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.pendingResumeSequence = 0;
+        g.triggerReleaseRequired = false;
+        g.aReleaseRequired = true;
+        g.shell_state = "SUSPENDED";
+        g.shell_code = "PRESS A TO RESUME";
+        g.content_dirty = true;
         soma::quest::latchMic(g.micLatch, reason ? reason : "suspend", epoch_copy);
-        if (!g.suspend_notified) {
-            g.suspend_notified = true;
-            notify = true;
-        }
+        g.suspend_notified = true;
+        notify = true;
     }
-    if (notify) call_java_suspend(reason);
+    if (notify) call_java_enqueue_suspend_resumable(next_control_sequence(), reason);
 }
 
-// Deliberate resume requires fresh epoch and explicit intent; re-don alone never clears.
-bool try_deliberate_mic_resume(const char* fresh_epoch, bool explicit_intent) {
-    std::lock_guard<std::mutex> lock(g.mutex);
-    return soma::quest::tryDeliberateMicResume(g.micLatch, fresh_epoch, explicit_intent);
+void latch_suspend_terminal(const char* reason) {
+    latch_suspend(reason);
 }
 
 int glyph_index(char value) {
@@ -437,28 +564,30 @@ bool passthrough_init() {
     return g.passthrough_running;
 }
 
-void call_java_ptt_held(bool held) {
+void call_java_enqueue_ptt_held(bool held) {
+    if (g_midEnqueuePtt == nullptr) return;
     bool attached = false;
     JNIEnv* env = attach_java(&attached);
     if (env == nullptr) return;
-    jclass activity = env->GetObjectClass(g.app->activity->clazz);
-    jmethodID method = env->GetStaticMethodID(activity, "onPttHeldFromNative", "(Z)V");
-    if (method != nullptr) env->CallStaticVoidMethod(activity, method, held ? JNI_TRUE : JNI_FALSE);
+    env->CallVoidMethod(
+            g.app->activity->clazz, g_midEnqueuePtt, held ? JNI_TRUE : JNI_FALSE);
     if (env->ExceptionCheck()) env->ExceptionClear();
-    env->DeleteLocalRef(activity);
     detach_java(attached);
 }
 
-void call_java_toggle_mode() {
+bool call_java_enqueue_toggle_mode(uint64_t sequence) {
+    if (g_midEnqueueToggle == nullptr) return false;
     bool attached = false;
     JNIEnv* env = attach_java(&attached);
-    if (env == nullptr) return;
-    jclass activity = env->GetObjectClass(g.app->activity->clazz);
-    jmethodID method = env->GetStaticMethodID(activity, "onToggleModeFromNative", "()V");
-    if (method != nullptr) env->CallStaticVoidMethod(activity, method);
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    env->DeleteLocalRef(activity);
+    if (env == nullptr) return false;
+    jboolean admitted = env->CallBooleanMethod(
+            g.app->activity->clazz, g_midEnqueueToggle, static_cast<jlong>(sequence));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        admitted = JNI_FALSE;
+    }
     detach_java(attached);
+    return admitted == JNI_TRUE;
 }
 
 bool create_ptt_actions() {
@@ -520,38 +649,121 @@ void poll_ptt_actions() {
     sync.countActiveActionSets = 1;
     sync.activeActionSets = &active;
     if (XR_FAILED(xrSyncActions(g.session, &sync))) {
-        // Fail closed: controller loss while held must not stream indefinitely
         if (g.pttHeld) {
             g.pttHeld = false;
-            call_java_ptt_held(false);
+            call_java_enqueue_ptt_held(false);
         }
         return;
     }
-    // Trigger float with hysteresis 0.6 / 0.4
+    // Always poll both actions for state, but gate handling on suspend/resume
     XrActionStateFloat hold_state{XR_TYPE_ACTION_STATE_FLOAT};
     XrActionStateGetInfo get_hold{XR_TYPE_ACTION_STATE_GET_INFO};
     get_hold.action = g.pttHoldAction;
     XrResult hr = xrGetActionStateFloat(g.session, &get_hold, &hold_state);
-    if (XR_FAILED(hr) || hold_state.isActive != XR_TRUE) {
+    bool hold_active = XR_SUCCEEDED(hr) && hold_state.isActive == XR_TRUE;
+    bool hold_held = false;
+    if (hold_active) {
+        if (g.pttHeld) hold_held = hold_state.currentState > 0.4f;
+        else hold_held = hold_state.currentState > 0.6f;
+    } else {
+        // inactive while held must fail closed
         if (g.pttHeld) {
             g.pttHeld = false;
-            call_java_ptt_held(false);
-        }
-    } else {
-        bool held = false;
-        if (g.pttHeld) held = hold_state.currentState > 0.4f;
-        else held = hold_state.currentState > 0.6f;
-        if (held != g.pttHeld) {
-            g.pttHeld = held;
-            call_java_ptt_held(held);
+            call_java_enqueue_ptt_held(false);
         }
     }
     XrActionStateBoolean toggle_state{XR_TYPE_ACTION_STATE_BOOLEAN};
     XrActionStateGetInfo get_toggle{XR_TYPE_ACTION_STATE_GET_INFO};
     get_toggle.action = g.modeToggleAction;
-    if (XR_SUCCEEDED(xrGetActionStateBoolean(g.session, &get_toggle, &toggle_state)) && toggle_state.isActive == XR_TRUE) {
-        bool pressed = toggle_state.currentState == XR_TRUE && toggle_state.changedSinceLastSync == XR_TRUE;
-        if (pressed) call_java_toggle_mode();
+    XrResult tr = xrGetActionStateBoolean(g.session, &get_toggle, &toggle_state);
+    bool toggle_active = XR_SUCCEEDED(tr) && toggle_state.isActive == XR_TRUE;
+    bool toggle_pressed = toggle_active && toggle_state.currentState == XR_TRUE && toggle_state.changedSinceLastSync == XR_TRUE;
+
+    // Suspended handling: ignore trigger/PTT, consume only new A rising edge after return
+    bool is_suspended = false;
+    bool is_resuming = false;
+    bool can_attempt_resume = false;
+    bool a_release_needed = false;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        is_suspended = g.suspended_latched && g.suspended_resumable;
+        is_resuming = g.resuming;
+        a_release_needed = g.aReleaseRequired;
+        can_attempt_resume = is_suspended && !is_resuming
+                && g.session_state == XR_SESSION_STATE_FOCUSED
+                && g.presence_known && g.user_present;
+    }
+    if (is_suspended) {
+        // While suspended, ignore trigger entirely
+        if (g.pttHeld) {
+            g.pttHeld = false;
+            call_java_enqueue_ptt_held(false);
+        }
+        // Held-across-A protection: require observed A release before accepting any rising edge
+        if (a_release_needed) {
+            bool a_currently_pressed = toggle_active && toggle_state.currentState == XR_TRUE;
+            if (a_currently_pressed) {
+                return; // still held across suspend, wait for release
+            } else {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                g.aReleaseRequired = false;
+            }
+        }
+        if (can_attempt_resume && toggle_pressed) {
+            // Install one-shot token+resuming UNDER LOCK before enqueue to avoid race
+            uint64_t sequence = 0;
+            {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                sequence = ++g.controlGeneration;
+                g.pendingResumeSequence = sequence;
+                g.pendingResumeAToken = true;
+                g.resuming = true;
+                g.shell_state = "RESUMING...";
+                g.shell_code = "PLEASE WAIT";
+                g.content_dirty = true;
+            }
+            if (!call_java_enqueue_resume(sequence)) {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                if (g.pendingResumeSequence == sequence) {
+                    g.pendingResumeSequence = 0;
+                    g.pendingResumeAToken = false;
+                    g.resuming = false;
+                    g.aReleaseRequired = true;
+                    g.shell_state = "SUSPENDED";
+                    g.shell_code = "PRESS A TO RESUME";
+                    g.content_dirty = true;
+                }
+            }
+            // Do not call toggle_mode for this A press (suppressed)
+            return;
+        }
+        // While suspended (including resuming), never toggle mode
+        return;
+    }
+
+    // Not suspended: normal PTT/VAD handling, but respect triggerReleaseRequired after resume
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        if (g.triggerReleaseRequired) {
+            // Require observed trigger release (<0.4) before PTT becomes eligible
+            bool released = !hold_active || hold_state.currentState < 0.4f;
+            if (released) {
+                g.triggerReleaseRequired = false;
+            } else {
+                // Still held from before resume — suppress held
+                if (hold_held) hold_held = false;
+            }
+        }
+    }
+    if (hold_held != g.pttHeld) {
+        g.pttHeld = hold_held;
+        call_java_enqueue_ptt_held(hold_held);
+    } else if (!hold_active && g.pttHeld) {
+        g.pttHeld = false;
+        call_java_enqueue_ptt_held(false);
+    }
+    if (toggle_pressed) {
+        call_java_enqueue_toggle_mode(next_control_sequence());
     }
 }
 
@@ -700,70 +912,151 @@ bool xr_init(android_app* app) {
 }
 
 void poll_xr() {
-    for (;;) {
+    // Cap per-iteration work so ALooper is not starved; 8 events per call matches spec
+    int poll_budget = 8;
+    for (int budget = 0; budget < poll_budget; ++budget) {
         XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
         XrResult result = xrPollEvent(g.instance, &event);
         if (result == XR_EVENT_UNAVAILABLE) break;
         if (XR_FAILED(result)) {
-            g.exiting = true;
+            latch_suspend_terminal("xr_poll_failed");
+            if (!g.finishRequested && g.app != nullptr) {
+                g.finishRequested = true;
+                ANativeActivity_finish(g.app->activity);
+            }
             break;
         }
         if (event.type == XR_TYPE_EVENT_DATA_USER_PRESENCE_CHANGED_EXT) {
             const auto* presence =
                     reinterpret_cast<const XrEventDataUserPresenceChangedEXT*>(&event);
             if (presence->session != g.session) continue;
-            g.presence_known = true;
-            g.user_present = presence->isUserPresent == XR_TRUE;
+            {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                g.presence_known = true;
+                g.user_present = presence->isUserPresent == XR_TRUE;
+            }
             log_state("user_presence", g.user_present ? "present" : "absent");
-            if (!g.user_present) latch_suspend("user_presence_lost");
+            bool should_suspend = false;
+            {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                should_suspend = !g.user_present;
+                if (should_suspend && g.resuming) {
+                    g.resuming = false;
+                    g.pendingResumeAToken = false;
+                    g.aReleaseRequired = true;
+                    g.shell_state = "SUSPENDED";
+                    g.shell_code = "PRESS A TO RESUME";
+                    g.content_dirty = true;
+                }
+            }
+            if (should_suspend) latch_suspend_resumable("user_presence_lost");
             continue;
         }
         if (event.type != XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) continue;
         const auto* changed =
                 reinterpret_cast<const XrEventDataSessionStateChanged*>(&event);
-        const XrSessionState previous = g.session_state;
-        g.session_state = changed->state;
+        XrSessionState previous;
+        {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            previous = g.session_state;
+            g.session_state = changed->state;
+        }
         log_state("session_state", state_name(previous));
         if (previous == XR_SESSION_STATE_FOCUSED
                 && changed->state != XR_SESSION_STATE_FOCUSED) {
-            latch_suspend("openxr_focus_lost");
+            if (changed->state != XR_SESSION_STATE_STOPPING
+                    && changed->state != XR_SESSION_STATE_EXITING
+                    && changed->state != XR_SESSION_STATE_LOSS_PENDING) {
+                {
+                    std::lock_guard<std::mutex> lock(g.mutex);
+                    if (g.resuming) {
+                        g.resuming = false;
+                        g.pendingResumeAToken = false;
+                        g.aReleaseRequired = true;
+                        g.shell_state = "SUSPENDED";
+                        g.shell_code = "PRESS A TO RESUME";
+                        g.content_dirty = true;
+                    }
+                }
+                latch_suspend_resumable("openxr_focus_lost");
+            }
         }
         if (changed->state == XR_SESSION_STATE_READY && !g.session_running) {
             XrSessionBeginInfo begin_info{XR_TYPE_SESSION_BEGIN_INFO};
             begin_info.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
             result = xrBeginSession(g.session, &begin_info);
             g.session_running = XR_SUCCEEDED(result);
-            if (!g.session_running) g.exiting = true;
+            if (!g.session_running) {
+                latch_suspend_terminal("xr_begin_failed");
+                if (!g.finishRequested && g.app != nullptr) {
+                    g.finishRequested = true;
+                    ANativeActivity_finish(g.app->activity);
+                }
+            }
         } else if (changed->state == XR_SESSION_STATE_FOCUSED) {
             g.focus_ever_reached = true;
         } else if (changed->state == XR_SESSION_STATE_STOPPING) {
+            // Lifetime fix: STOPPING ends XrSession but never android_main. Resumable so explicit A can recover
+            // even when STOPPING arrives before presence event. Pre-first-focus remains inert.
+            if (soma::quest::isResumableLifecycleLoss(g.focus_ever_reached)) {
+                latch_suspend_resumable("openxr_stopping");
+            } else {
+                // Pre-first-focus boot STOP is inert - no latch/notify, just end session if running
+                log_state("stopping_pre_focus_inert");
+            }
             if (g.session_running) xrEndSession(g.session);
             g.session_running = false;
-            g.exiting = true;
         } else if (changed->state == XR_SESSION_STATE_EXITING
                 || changed->state == XR_SESSION_STATE_LOSS_PENDING) {
-            g.exiting = true;
+            latch_suspend_terminal(state_name(changed->state));
+            // EXITING/LOSS_PENDING request finish once but keep pumping ALooper until DESTROY
+            if (!g.finishRequested && g.app != nullptr && g.app->activity != nullptr) {
+                g.finishRequested = true;
+                ANativeActivity_finish(g.app->activity);
+            }
         }
     }
 
-    if (g.session_state == XR_SESSION_STATE_FOCUSED
-            && g.presence_known
-            && g.user_present
-            && !g.transport_started
-            && !g.suspended_latched) {
-        // NativeActivity can start android_main while the Java subclass is still completing
-        // onCreate. Retry until the Java transport boundary confirms it actually started.
-        g.transport_started = call_java_start();
+    uint64_t start_sequence = 0;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        bool should_start = (g.session_state == XR_SESSION_STATE_FOCUSED
+                && g.presence_known && g.user_present
+                && !g.transport_started && !g.suspended_latched);
+        if (should_start) {
+            start_sequence = ++g.controlGeneration;
+            g.pendingStartSequence = start_sequence;
+            // Reserve the single in-flight start before Java can report its async result.
+            g.transport_started = true;
+        }
+    }
+    if (start_sequence != 0 && !call_java_enqueue_start(start_sequence)) {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        if (g.pendingStartSequence == start_sequence) {
+            g.pendingStartSequence = 0;
+            g.transport_started = false;
+        }
     }
 }
 
 bool render_frame() {
-    if (!g.session_running || g.exiting) return true;
+    bool should_poll = false;
+    bool should_frame = false;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        should_frame = soma::quest::shouldFramePump(
+                g.session_running, g.androidResumed);
+        should_poll = soma::quest::shouldPollLocalActions(
+                g.session_running,
+                g.androidResumed,
+                g.session_state == XR_SESSION_STATE_FOCUSED);
+    }
+    if (!should_frame || g.exiting) return true;
     XrFrameWaitInfo wait_info{XR_TYPE_FRAME_WAIT_INFO};
     XrFrameState frame_state{XR_TYPE_FRAME_STATE};
     XrResult result = xrWaitFrame(g.session, &wait_info, &frame_state);
     if (XR_FAILED(result)) return false;
-    if (g.session_state == XR_SESSION_STATE_FOCUSED) poll_ptt_actions();
+    if (should_poll) poll_ptt_actions();
     XrFrameBeginInfo begin_info{XR_TYPE_FRAME_BEGIN_INFO};
     result = xrBeginFrame(g.session, &begin_info);
     if (XR_FAILED(result)) return false;
@@ -777,9 +1070,12 @@ bool render_frame() {
     Snapshot frame_snapshot;
     bool have_quad = false;
     bool should_ack = false;
-    const bool eligible = g.session_state == XR_SESSION_STATE_FOCUSED
-            && g.presence_known
-            && g.user_present;
+    bool eligible = false;
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        eligible = (g.session_state == XR_SESSION_STATE_FOCUSED
+                && g.presence_known && g.user_present);
+    }
 
     if (frame_state.shouldRender == XR_TRUE && eligible) {
         std::lock_guard<std::mutex> lock(g.mutex);
@@ -861,7 +1157,7 @@ bool render_frame() {
                 should_ack = false;
             }
         }
-        if (should_ack) call_java_ack(frame_snapshot);
+        if (should_ack) call_java_enqueue_ack(next_control_sequence(), frame_snapshot);
     }
     return true;
 }
@@ -907,11 +1203,38 @@ std::string from_jstring(JNIEnv* env, jstring value) {
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnTransportState(
-        JNIEnv* env, jclass, jstring state, jstring code, jint) {
+        JNIEnv* env, jclass, jlong activity_generation, jstring state, jstring code, jint) {
     std::string next_state = from_jstring(env, state);
     std::string next_code = from_jstring(env, code);
     std::lock_guard<std::mutex> lock(g.mutex);
-    if (g.suspended_latched) return;
+    if (static_cast<uint64_t>(activity_generation) != g.activityGeneration) return;
+    if (g.suspended_latched) {
+        if (g.suspended_resumable) {
+            if (next_state == "suspended") {
+                g.resuming = false;
+                g.pendingResumeAToken = false;
+                g.aReleaseRequired = true;
+                g.shell_state = "SUSPENDED";
+                g.shell_code = "PRESS A TO RESUME";
+                g.content_dirty = true;
+            } else if (next_state == "resuming") {
+                g.shell_state = "RESUMING...";
+                g.shell_code = "PLEASE WAIT";
+                g.content_dirty = true;
+            } else if (next_state == "terminal" || next_state == "offline") {
+                // Java NEW/CONNECTING failure after resumable suspend became terminal — upgrade shell
+                g.suspended_resumable = false;
+                g.resuming = false;
+                g.pendingResumeAToken = false;
+                g.aReleaseRequired = false;
+                g.triggerReleaseRequired = false;
+                g.shell_state = "SUSPENDED";
+                g.shell_code = "EXIT AND RELAUNCH TO RESUME";
+                g.content_dirty = true;
+            }
+        }
+        return;
+    }
     // Every state transition precedes or replaces capability content. Never retain a panel
     // from the prior connection while negotiation, reconnect, or teardown is in progress.
     g.snapshot = Snapshot{};
@@ -921,17 +1244,57 @@ Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnTransportState(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_soma_questsurface_QuestSurfaceActivity_nativeTryDeliberateMicResume(
-        JNIEnv* env, jclass, jstring fresh_epoch, jboolean explicit_intent) {
+Java_org_soma_questsurface_QuestSurfaceActivity_nativeCompleteDeliberateResume(
+        JNIEnv* env, jclass, jlong activity_generation, jstring fresh_epoch) {
     std::string epoch = from_jstring(env, fresh_epoch);
-    return try_deliberate_mic_resume(
-            epoch.c_str(), explicit_intent == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+    std::lock_guard<std::mutex> lock(g.mutex);
+    if (static_cast<uint64_t>(activity_generation) != g.activityGeneration) return JNI_FALSE;
+    if (!g.suspended_latched || !g.suspended_resumable || !g.resuming || !g.pendingResumeAToken) {
+        return JNI_FALSE;
+    }
+    bool focus_presence_ok = (g.session_state == XR_SESSION_STATE_FOCUSED && g.presence_known && g.user_present);
+    if (!focus_presence_ok) {
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.shell_state = "SUSPENDED";
+        g.shell_code = "PRESS A TO RESUME";
+        g.content_dirty = true;
+        return JNI_FALSE;
+    }
+    if (epoch.empty() || epoch == "0" || epoch == g.micLatch.latchedEpoch) {
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.shell_state = "SUSPENDED";
+        g.shell_code = "PRESS A TO RESUME";
+        g.content_dirty = true;
+        return JNI_FALSE;
+    }
+    if (!soma::quest::tryDeliberateMicResume(g.micLatch, epoch.c_str(), true)) {
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.shell_state = "SUSPENDED";
+        g.shell_code = "PRESS A TO RESUME";
+        g.content_dirty = true;
+        return JNI_FALSE;
+    }
+    g.suspended_latched = false;
+    g.suspended_resumable = false;
+    g.suspend_notified = false;
+    g.resuming = false;
+    g.pendingResumeAToken = false;
+    g.pendingResumeSequence = 0;
+    g.triggerReleaseRequired = true;
+    g.shell_state = "RESUMING...";
+    g.shell_code = "AWAITING FRESH PANEL";
+    g.content_dirty = true;
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnPanelSnapshot(
         JNIEnv* env,
         jclass,
+        jlong activity_generation,
         jstring session_epoch,
         jstring lease_id,
         jstring revision,
@@ -962,6 +1325,7 @@ Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnPanelSnapshot(
     snapshot.deadline_ms = deadline_ms;
     snapshot.ready = true;
     std::lock_guard<std::mutex> lock(g.mutex);
+    if (static_cast<uint64_t>(activity_generation) != g.activityGeneration) return;
     if (g.suspended_latched) return;
     g.snapshot = std::move(snapshot);
     g.content_dirty = true;
@@ -969,45 +1333,255 @@ Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnPanelSnapshot(
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnCaptureStatus(
-        JNIEnv* env, jclass, jint mode, jstring state) {
+        JNIEnv* env, jclass, jlong activity_generation, jint mode, jstring state) {
     std::string next = from_jstring(env, state);
     if (next.empty()) next = "idle";
     std::lock_guard<std::mutex> lock(g.mutex);
+    if (static_cast<uint64_t>(activity_generation) != g.activityGeneration) return;
     if (g.captureMode == static_cast<int>(mode) && g.captureState == next) return;
     g.captureMode = static_cast<int>(mode);
     g.captureState = next;
     g.content_dirty = true;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_soma_questsurface_QuestSurfaceActivity_nativeOnControlResult(
+        JNIEnv*, jclass, jlong activity_generation, jlong sequence, jint kind, jboolean accepted) {
+    std::lock_guard<std::mutex> lock(g.mutex);
+    if (static_cast<uint64_t>(activity_generation) != g.activityGeneration) return;
+    const uint64_t result_sequence = static_cast<uint64_t>(sequence);
+    if (kind == 1 && g.pendingStartSequence == result_sequence) {
+        g.pendingStartSequence = 0;
+        if (accepted != JNI_TRUE) g.transport_started = false;
+        return;
+    }
+    if (kind == 2 && g.pendingResumeSequence == result_sequence) {
+        g.pendingResumeSequence = 0;
+        if (accepted == JNI_TRUE) return;
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.aReleaseRequired = true;
+        g.shell_state = "SUSPENDED";
+        g.shell_code = "PRESS A TO RESUME";
+        g.content_dirty = true;
+    }
+}
+
+extern "C" jint JNI_OnLoad(JavaVM* vm, void*) {
+    JNIEnv* env = nullptr;
+    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
+    jclass local = env->FindClass("org/soma/questsurface/QuestSurfaceActivity");
+    if (local == nullptr) return JNI_VERSION_1_6;
+    g_activityClass = reinterpret_cast<jclass>(env->NewGlobalRef(local));
+    env->DeleteLocalRef(local);
+    if (g_activityClass == nullptr) return JNI_VERSION_1_6;
+    g_midActivityGeneration = env->GetMethodID(
+            g_activityClass, "activityGenerationFromNative", "()J");
+    g_midEnqueueStart = env->GetMethodID(
+            g_activityClass, "enqueueStartTransport", "(J)Z");
+    g_midEnqueueSuspend = env->GetMethodID(
+            g_activityClass, "enqueueSuspendResumable", "(JLjava/lang/String;)V");
+    g_midEnqueueStop = env->GetMethodID(
+            g_activityClass, "enqueueStopPermanently", "(JLjava/lang/String;)V");
+    g_midEnqueueResume = env->GetMethodID(
+            g_activityClass, "enqueueResumeTransport", "(J)Z");
+    g_midEnqueuePtt = env->GetMethodID(
+            g_activityClass, "setPttHeldFromNative", "(Z)V");
+    g_midEnqueueToggle = env->GetMethodID(
+            g_activityClass, "enqueueToggleMode", "(J)Z");
+    g_midEnqueueAck = env->GetMethodID(
+            g_activityClass,
+            "enqueueBoundsAck",
+            "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+            "Ljava/lang/String;FF)V");
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (g_midActivityGeneration == nullptr
+            || g_midEnqueueStart == nullptr
+            || g_midEnqueueSuspend == nullptr
+            || g_midEnqueueStop == nullptr
+            || g_midEnqueueResume == nullptr
+            || g_midEnqueuePtt == nullptr
+            || g_midEnqueueToggle == nullptr
+            || g_midEnqueueAck == nullptr) {
+        return JNI_ERR;
+    }
+    return JNI_VERSION_1_6;
+}
+
 extern "C" void android_main(android_app* app) {
-    app->onAppCmd = [](android_app*, int32_t command) {
-        if (command == APP_CMD_STOP) latch_suspend("local_stop");
+    // Reset per-run state for same-process Activity recreation (AppState is static) — manual due to mutex non-assignable
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        g.session_state = XR_SESSION_STATE_UNKNOWN;
+        g.view_space = XR_NULL_HANDLE;
+        g.swapchain = XR_NULL_HANDLE;
+        g.images.clear();
+        g.pttActionSet = XR_NULL_HANDLE;
+        g.pttHoldAction = XR_NULL_HANDLE;
+        g.modeToggleAction = XR_NULL_HANDLE;
+        g.rightHandPath = XR_NULL_PATH;
+        g.pttHeld = false;
+        g.prevPttHeld = false;
+        g.prevTogglePressed = false;
+        g.captureMode = 0;
+        g.captureState = "idle";
+        g.display = EGL_NO_DISPLAY;
+        g.config = nullptr;
+        g.context = EGL_NO_CONTEXT;
+        g.surface = EGL_NO_SURFACE;
+        g.passthrough = XR_NULL_HANDLE;
+        g.passthrough_layer = XR_NULL_HANDLE;
+        g.passthrough_running = false;
+        g.presence_supported = false;
+        g.pixels.clear();
+        g.snapshot = Snapshot{};
+        g.shell_state = "WAITING FOR FOCUS AND PRESENCE";
+        g.shell_code = "LOCAL STOP: EXIT APP";
+        g.content_dirty = true;
+        g.session_running = false;
+        g.exiting = false;
+        g.focus_ever_reached = false;
+        g.presence_known = false;
+        g.user_present = false;
+        g.transport_started = false;
+        g.suspended_latched = false;
+        g.suspend_notified = false;
+        g.suspended_resumable = false;
+        g.resuming = false;
+        g.pendingResumeAToken = false;
+        g.triggerReleaseRequired = false;
+        g.aReleaseRequired = false;
+        g.pendingLocalStop = false;
+        g.pendingPause = false;
+        g.androidResumed = true;
+        g.finishRequested = false;
+        g.activityGeneration = 0;
+        g.controlGeneration = 0;
+        g.pendingStartSequence = 0;
+        g.pendingResumeSequence = 0;
+        g.micLatch = soma::quest::MicLatchState{};
+        g.frames = 0;
+        g.app = app;
+        g.instance = XR_NULL_HANDLE;
+        g.system = XR_NULL_SYSTEM_ID;
+        g.session = XR_NULL_HANDLE;
+    }
+    app->onAppCmd = [](android_app* /*app*/, int32_t command) {
+        if (command == APP_CMD_RESUME) {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            g.androidResumed = true;
+        }
+        if (command == APP_CMD_PAUSE) {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            g.androidResumed = false;
+            g.pendingPause = true;
+        }
+        if (command == APP_CMD_STOP) {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            g.androidResumed = false;
+            g.pendingLocalStop = true;
+        }
         if (command == APP_CMD_DESTROY) g.exiting = true;
     };
+    const int64_t activity_generation = call_java_activity_generation();
+    {
+        std::lock_guard<std::mutex> lock(g.mutex);
+        if (activity_generation > 0) {
+            g.activityGeneration = static_cast<uint64_t>(activity_generation);
+        }
+    }
     log_state("startup", "perceives_nothing");
-    if (!xr_init(app)) {
+    if (activity_generation <= 0 || !xr_init(app)) {
         log_state("startup_failed");
+        latch_suspend_terminal("xr_init_failed");
+        if (!g.finishRequested && app->activity != nullptr) {
+            g.finishRequested = true;
+            ANativeActivity_finish(app->activity);
+        }
+        // Pump ALooper to DESTROY instead of returning immediately (avoid dead glue)
+        while (!soma::quest::shouldExitNativeLoop(
+                g.exiting, app->destroyRequested != 0)) {
+            int events; android_poll_source* src;
+            ALooper_pollOnce(50, nullptr, &events, reinterpret_cast<void**>(&src));
+            if (src) src->process(app, src);
+            if (app->destroyRequested) g.exiting = true;
+        }
         teardown();
-        ANativeActivity_finish(app->activity);
         return;
     }
 
-    while (!g.exiting) {
+    while (!soma::quest::shouldExitNativeLoop(
+            g.exiting, app->destroyRequested != 0)) {
+        // v2.1: frame-pump whenever Android resumed and XrSession running (including resumable-suspended for A)
+        bool framePaced = false;
+        {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            framePaced = soma::quest::shouldFramePump(
+                    g.session_running, g.androidResumed);
+        }
+        int timeoutMs = framePaced ? 0 : 20;
         int events = 0;
         android_poll_source* source = nullptr;
-        while (ALooper_pollOnce(
-                       g.session_running ? 0 : 100,
-                       nullptr,
-                       &events,
-                       reinterpret_cast<void**>(&source)) >= 0) {
+        int pollRes = ALooper_pollOnce(timeoutMs, nullptr, &events, reinterpret_cast<void**>(&source));
+        bool sawLifecyclePauseStop = false;
+        if (pollRes >= 0) {
             if (source != nullptr) source->process(app, source);
-            if (app->destroyRequested != 0) g.exiting = true;
+            if (app->destroyRequested != 0) {
+                g.exiting = true;
+                sawLifecyclePauseStop = true;
+            }
+        }
+        // Burst drain all ready sources (ensure full APP_CMD_PAUSE/STOP burst processed)
+        while (ALooper_pollOnce(0, nullptr, &events, reinterpret_cast<void**>(&source)) >= 0) {
+            if (source != nullptr) source->process(app, source);
+            if (app->destroyRequested != 0) {
+                g.exiting = true;
+                sawLifecyclePauseStop = true;
+            }
+        }
+        // Handle deferred pause/stop with resumable classification after first focus
+        bool do_pause = false;
+        bool do_stop = false;
+        {
+            std::lock_guard<std::mutex> lock(g.mutex);
+            if (g.pendingPause) { g.pendingPause = false; do_pause = true; }
+            if (g.pendingLocalStop) { g.pendingLocalStop = false; do_stop = true; }
+        }
+        if (do_pause || do_stop) sawLifecyclePauseStop = true;
+        if (do_pause) {
+            bool resumable = false;
+            { std::lock_guard<std::mutex> lock(g.mutex); resumable = g.focus_ever_reached; }
+            if (soma::quest::isResumableLifecycleLoss(resumable)) {
+                latch_suspend_resumable("local_pause");
+            }
+            else log_state("pause_pre_focus_inert");
+        }
+        if (do_stop) {
+            bool resumable = false;
+            { std::lock_guard<std::mutex> lock(g.mutex); resumable = g.focus_ever_reached; }
+            if (soma::quest::isResumableLifecycleLoss(resumable)) {
+                latch_suspend_resumable("local_stop");
+            }
+            else log_state("stop_pre_focus_inert");
+        }
+        if (app->destroyRequested != 0) {
+            sawLifecyclePauseStop = true;
+        }
+        if (sawLifecyclePauseStop) {
+            // Ack lifecycle immediately without blocking in XR/render
+            continue;
         }
         poll_xr();
+        // v2.1: eligibility controls content, not frame pacing — still pump to read A while resumable-suspended
+        // Skip xrWaitFrame only while Android-paused/session-stopped, which is handled by render_frame's early return
         if (!render_frame()) {
             log_state("frame_failure");
-            latch_suspend("frame_failure");
-            g.exiting = true;
+            latch_suspend_terminal("frame_failure");
+            if (!g.finishRequested && app->activity != nullptr) {
+                g.finishRequested = true;
+                ANativeActivity_finish(app->activity);
+            }
+            // keep pumping ALooper until DESTROY (do not set g.exiting directly)
         }
     }
 

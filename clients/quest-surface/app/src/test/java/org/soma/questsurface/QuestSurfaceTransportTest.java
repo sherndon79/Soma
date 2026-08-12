@@ -10,6 +10,11 @@ import java.math.BigInteger;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.SSLHandshakeException;
 
@@ -17,6 +22,57 @@ import org.json.JSONObject;
 import org.junit.Test;
 
 public final class QuestSurfaceTransportTest {
+    @Test
+    public void redonAloneIsInertAndOneExplicitActionCreatesOneResumeWindow()
+            throws Exception {
+        QuestSurfaceRuntime runtime = new QuestSurfaceRuntime(new QuestSurfaceAudioEngine());
+        runtime.configureSession(
+                new BigInteger("99"),
+                QuestSurfaceV1bTestData.manifest("99", 2_000, 5_000),
+                QuestSurfaceV1bTestData.compatibilityPanelLease("99", 2_000, 5_000),
+                2_000);
+        List<String> states = new ArrayList<>();
+        QuestSurfaceTransport transport = new QuestSurfaceTransport(
+                null,
+                "unused",
+                1,
+                (state, code, attempt) -> states.add(state + ":" + code),
+                (epoch, lease, revision, hash, surface, text, x, y, z, qx, qy, qz, qw,
+                 width, height, deadline) -> {},
+                runtime,
+                freshEpoch -> false);
+        setTransportState(transport, "ACTIVE");
+        ((AtomicBoolean) field(transport, "started")).set(true);
+
+        ExecutorService executor = (ExecutorService) field(transport, "executor");
+        CountDownLatch blockerEntered = new CountDownLatch(1);
+        CountDownLatch blockerRelease = new CountDownLatch(1);
+        executor.execute(() -> {
+            blockerEntered.countDown();
+            try {
+                blockerRelease.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(blockerEntered.await(1, TimeUnit.SECONDS));
+
+        assertTrue(transport.suspendResumable("user_presence_lost"));
+        assertTrue(runtime.isLatched());
+        assertEquals("", runtime.sessionEpoch());
+        assertEquals("99", field(transport, "latchedSessionEpoch"));
+        assertEquals("resume-test-handle", field(transport, "resumeHandle"));
+        assertEquals(List.of("suspended:press_a_to_resume"), states);
+
+        assertTrue(!transport.startIfEligible());
+        assertTrue(transport.resumeFromExplicitLocalAction());
+        assertTrue(!transport.resumeFromExplicitLocalAction());
+
+        transport.stopPermanently("activity_destroyed");
+        blockerRelease.countDown();
+        assertTrue(states.contains("terminal:activity_destroyed"));
+    }
+
     @Test
     public void diagnosticPreservesBoundedTopAndRootReasonClasses() {
         SSLHandshakeException handshake = new SSLHandshakeException("handshake failed");
@@ -221,5 +277,20 @@ public final class QuestSurfaceTransportTest {
         public void stopHardwareCapture(String e,long s){events.add("stopCapture:"+e+":"+s);}
         public void startHardwarePlayback(String e,long s,String l,byte[] p){events.add("startPlayback:"+e+":"+s+":"+l+":"+p[0]);}
         public void stopHardwarePlayback(String e,long s,String a){events.add("stopPlayback:"+e+":"+s+":"+a);}
+    }
+
+    private static Object field(Object target, String name) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void setTransportState(QuestSurfaceTransport transport, String state)
+            throws Exception {
+        AtomicReference reference = (AtomicReference) field(transport, "sessionState");
+        Class enumClass = Class.forName(
+                "org.soma.questsurface.QuestSurfaceTransport$SessionState");
+        reference.set(Enum.valueOf(enumClass, state));
     }
 }

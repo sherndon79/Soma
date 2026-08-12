@@ -55,6 +55,37 @@ public final class QuestSurfaceRuntimeTest {
     }
 
     @Test
+    public void validRenewalAtomicallyExtendsManifestAndInvalidRenewalKeepsOldDeadline()
+            throws Exception {
+        QuestSurfaceRuntime runtime = configuredRuntime(
+                "99", 2_000, 5_000, true, new RecordingHardware());
+        QuestSurfaceProtocol.Lease originalMic = runtime.micLease();
+
+        QuestSurfaceProtocol.Manifest renewed = runtime.acceptLeaseRenewal(
+                QuestSurfaceV1bTestData.serverFrame(
+                        "LEASE_RENEWAL", "99", 0, "", 5,
+                        QuestSurfaceV1bTestData.renewalPayload("99", 1, 12_000, 5_000)),
+                3_000);
+        assertEquals(8_000, runtime.deadlineElapsedMs());
+        assertEquals(1, renewed.generation);
+        assertEquals(originalMic.leaseId, runtime.micLease().leaseId);
+        assertEquals(originalMic.capability, runtime.micLease().capability);
+
+        JSONObject changed = QuestSurfaceV1bTestData.renewalPayload(
+                "99", 2, 14_000, 5_000);
+        changed.getJSONObject("lease_ids").put("panel", "lease-other");
+        QuestSurfaceProtocol.ProtocolException error = assertThrows(
+                QuestSurfaceProtocol.ProtocolException.class,
+                () -> runtime.acceptLeaseRenewal(
+                        QuestSurfaceV1bTestData.serverFrame(
+                                "LEASE_RENEWAL", "99", 0, "", 6, changed),
+                        4_000));
+        assertEquals("renewal_lease_ids_changed", error.code);
+        assertEquals(8_000, runtime.deadlineElapsedMs());
+        assertEquals(1, renewed.generation);
+    }
+
+    @Test
     public void v1bCaptureAndCorrelatedPlaybackUseExactLeaseLeaves() throws Exception {
         RecordingHardware hardware = new RecordingHardware();
         QuestSurfaceRuntime runtime = configuredRuntime("99", 2_000, 5_000, true, hardware);
@@ -288,10 +319,10 @@ public final class QuestSurfaceRuntimeTest {
                  width, height, deadline) -> {},
                 runtime);
 
-        transport.stopPermanently("focus_lost");
+        transport.stopPermanently("activity_destroyed");
 
         assertEquals(List.of("stopCapture:99:7"), hardware.events);
-        assertEquals(List.of("suspended:focus_lost"), states);
+        assertEquals(List.of("terminal:activity_destroyed"), states);
         assertTrue(runtime.isLatched());
     }
 

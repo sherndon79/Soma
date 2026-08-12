@@ -48,6 +48,7 @@ final class QuestSurfaceRuntime {
         }
         boolean streamZero = frame.type.equals("HELLO_ACK")
                 || frame.type.equals("LEASE_MANIFEST")
+                || frame.type.equals("LEASE_RENEWAL")
                 || frame.type.equals("LEASE")
                 || frame.type.equals("PANEL_SNAPSHOT")
                 || frame.type.equals("TEARDOWN_ACK");
@@ -111,6 +112,17 @@ final class QuestSurfaceRuntime {
         expectedAnswerId = snapshot.answerId == null ? "" : snapshot.answerId;
         expectedUtteranceId = snapshot.utteranceId == null ? "" : snapshot.utteranceId;
         return snapshot;
+    }
+
+    synchronized QuestSurfaceProtocol.Manifest acceptLeaseRenewal(
+            QuestSurfaceProtocol.Frame frame, long nowElapsedMs)
+            throws QuestSurfaceProtocol.ProtocolException {
+        requireConfigured();
+        QuestSurfaceProtocol.Manifest renewed = QuestSurfaceProtocol.validateLeaseRenewal(
+                frame, manifest, nowElapsedMs);
+        manifest = renewed;
+        panelLease = renewed.lease("panel");
+        return renewed;
     }
 
     synchronized QuestSurfaceProtocol.AudioChunk acceptPlayback(
@@ -316,6 +328,10 @@ final class QuestSurfaceRuntime {
 
     synchronized QuestSurfaceProtocol.Lease micLease() {
         return manifest == null ? null : manifest.lease("mic_capture");
+    }
+
+    synchronized String resumeHandle() {
+        return manifest == null ? "" : manifest.resumeHandle;
     }
 
     synchronized QuestSurfaceProtocol.SurfaceSnapshot pendingSnapshot() {

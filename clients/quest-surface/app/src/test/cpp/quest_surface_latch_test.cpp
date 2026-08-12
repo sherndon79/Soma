@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include "quest_surface_latch.h"
+#include "quest_surface_lifecycle.h"
 
 using namespace soma::quest;
 
@@ -41,6 +42,22 @@ int main() {
   assert(isMicLatched(s));
   assert(tryDeliberateMicResume(s, "401", true));
   assert(!isMicLatched(s));
-  std::cout << "C++ latch epoch tests PASS (production)\n";
+
+  // Production lifecycle reducer: pre-focus loss is inert; post-focus loss is resumable.
+  assert(!isResumableLifecycleLoss(false));
+  assert(isResumableLifecycleLoss(true));
+  // A running resumed session remains frame-pumped while its content/capture is suspended, so the
+  // controller A action can be observed. Android pause/stop closes this render path immediately.
+  assert(shouldFramePump(true, true));
+  assert(!shouldFramePump(true, false));
+  assert(shouldPollLocalActions(true, true, true));
+  assert(!shouldPollLocalActions(true, false, true));
+  assert(!shouldPollLocalActions(true, true, false));
+  // Finish requests continue pumping glue; only DESTROY/destroyRequested exits the native loop.
+  assert(!shouldExitNativeLoop(false, false));
+  assert(shouldExitNativeLoop(true, false));
+  assert(shouldExitNativeLoop(false, true));
+
+  std::cout << "C++ latch and lifecycle policy tests PASS (production)\n";
   return 0;
 }

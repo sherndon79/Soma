@@ -51,8 +51,8 @@ final class QuestSurfaceProtocol {
             "version", "type", "session_epoch", "stream_id", "direction", "lease_ref",
             "seq", "send_ts_ns", "payload_len", "payload_b64");
     private static final Set<String> UNLEASED_TYPES = Set.of(
-            "HELLO", "HELLO_ACK", "LEASE", "LEASE_MANIFEST", "FOCUS_LOST", "SUSPEND",
-            "TEARDOWN_ACK", "ERROR");
+            "HELLO", "HELLO_ACK", "LEASE", "LEASE_MANIFEST", "LEASE_RENEWAL",
+            "LEASE_RENEWAL_ACK", "FOCUS_LOST", "SUSPEND", "TEARDOWN_ACK", "ERROR");
 
     private QuestSurfaceProtocol() {}
 
@@ -175,6 +175,25 @@ final class QuestSurfaceProtocol {
         }
         if (frame.sessionEpoch.signum() == 0) {
             throw failure("session_epoch_invalid", "Server must select a nonzero fresh epoch.");
+        }
+    }
+
+    static JSONObject helloPayload(String resumeHandle) throws ProtocolException {
+        try {
+            JSONObject payload = new JSONObject()
+                    .put("supported_versions", new JSONArray().put(VERSION))
+                    .put("client", "soma-quest-surface-v1a");
+            String handle = resumeHandle == null ? "" : resumeHandle.trim();
+            if (!handle.isEmpty()) {
+                handle = token(handle, "resume_handle_invalid");
+                payload.put("resume_intent", new JSONObject()
+                        .put("schema_version", 1)
+                        .put("resume_handle", handle)
+                        .put("explicit_local_action", true));
+            }
+            return payload;
+        } catch (JSONException error) {
+            throw failure("hello_encode_failed", "Could not encode HELLO payload.");
         }
     }
 
@@ -650,7 +669,7 @@ final class QuestSurfaceProtocol {
             throw failure("session_epoch_mismatch", "Manifest epoch does not match HELLO_ACK.");
         }
         exactFields(frame.payload, Set.of(
-                "schema_version", "session_epoch", "issued_at_ms", "ttl_ms",
+                "schema_version", "session_epoch", "resume_handle", "issued_at_ms", "ttl_ms",
                 "expires_at_ms", "leases"), "manifest_payload_fields_invalid");
         if (integer(frame.payload, "schema_version", 1, 1,
                 "manifest_schema_unsupported") != 1) {
@@ -662,6 +681,9 @@ final class QuestSurfaceProtocol {
         if (!epoch.equals(expectedEpoch)) {
             throw failure("manifest_epoch_mismatch", "Manifest payload epoch does not match.");
         }
+        String resumeHandle = token(
+                string(frame.payload, "resume_handle", "resume_handle_invalid"),
+                "resume_handle_invalid");
         long issuedAt = integer(
                 frame.payload, "issued_at_ms", 0, MAX_SAFE_JSON_INTEGER,
                 "manifest_issued_invalid");
@@ -728,7 +750,106 @@ final class QuestSurfaceProtocol {
         }
         long deadlineElapsedMs = safeDeadline(nowElapsedMs, ttlMs, "manifest_deadline_invalid");
         return new Manifest(
-                epoch, issuedAt, ttlMs, expiresAt, deadlineElapsedMs, leases);
+                epoch, resumeHandle, issuedAt, ttlMs, expiresAt, deadlineElapsedMs, 0, leases);
+    }
+
+    static Manifest validateLeaseRenewal(
+            Frame frame, Manifest current, long nowElapsedMs) throws ProtocolException {
+        requireType(frame, "LEASE_RENEWAL");
+        if (current == null) {
+            throw failure("manifest_required", "Lease renewal requires an active manifest.");
+        }
+        if (!frame.sessionEpoch.equals(current.sessionEpoch)) {
+            throw failure("session_epoch_mismatch", "Lease renewal epoch does not match.");
+        }
+        if (nowElapsedMs >= current.deadlineElapsedMs) {
+            throw failure("lease_expired", "Lease renewal arrived after the local deadline.");
+        }
+        exactFields(frame.payload, Set.of(
+                "schema_version", "session_epoch", "generation", "issued_at_ms", "ttl_ms",
+                "expires_at_ms", "lease_ids"), "renewal_payload_fields_invalid");
+        if (integer(frame.payload, "schema_version", 1, 1,
+                "renewal_schema_unsupported") != 1) {
+            throw failure("renewal_schema_unsupported", "Lease renewal schema is unsupported.");
+        }
+        BigInteger epoch = unsigned(
+                string(frame.payload, "session_epoch", "renewal_epoch_invalid"),
+                "renewal_epoch_invalid");
+        if (!epoch.equals(current.sessionEpoch)) {
+            throw failure("renewal_epoch_mismatch", "Lease renewal payload epoch does not match.");
+        }
+        long generation = integer(
+                frame.payload, "generation", 1, MAX_SAFE_JSON_INTEGER,
+                "renewal_generation_invalid");
+        if (generation <= current.generation) {
+            throw failure("renewal_generation_stale", "Lease renewal generation is not newer.");
+        }
+        long issuedAt = integer(
+                frame.payload, "issued_at_ms", 0, MAX_SAFE_JSON_INTEGER,
+                "renewal_issued_invalid");
+        long ttlMs = integer(
+                frame.payload, "ttl_ms", 1, MAX_LEASE_TTL_MS,
+                "renewal_ttl_invalid");
+        long expiresAt = integer(
+                frame.payload, "expires_at_ms", 0, MAX_SAFE_JSON_INTEGER,
+                "renewal_expires_invalid");
+        if (issuedAt > Long.MAX_VALUE - ttlMs || issuedAt + ttlMs != expiresAt) {
+            throw failure("renewal_expires_mismatch", "Lease renewal expiry is inconsistent.");
+        }
+        if (issuedAt <= current.issuedAtMs || expiresAt <= current.expiresAtMs) {
+            throw failure("renewal_not_extending", "Lease renewal does not extend server time.");
+        }
+        long deadlineElapsedMs = safeDeadline(
+                nowElapsedMs, ttlMs, "renewal_deadline_invalid");
+        if (deadlineElapsedMs <= current.deadlineElapsedMs) {
+            throw failure("renewal_not_extending", "Lease renewal does not extend local time.");
+        }
+
+        JSONObject leaseIds = object(frame.payload, "lease_ids", "renewal_lease_ids_invalid");
+        Set<String> required = Set.of("panel", "mic_capture", "audio_present", "local_attach");
+        exactFields(leaseIds, required, "renewal_lease_ids_invalid");
+        Map<String, Lease> renewedLeases = new HashMap<>();
+        Set<String> seen = new HashSet<>();
+        for (String name : required) {
+            Lease prior = current.lease(name);
+            String leaseId = token(
+                    string(leaseIds, name, "renewal_lease_id_invalid"),
+                    "renewal_lease_id_invalid");
+            if (prior == null || !leaseId.equals(prior.leaseId) || !seen.add(leaseId)) {
+                throw failure(
+                        "renewal_lease_ids_changed",
+                        "Lease renewal must preserve the exact four unique lease ids.");
+            }
+            renewedLeases.put(name, new Lease(
+                    prior.leaseId,
+                    prior.sourceGrantId,
+                    prior.capability,
+                    prior.provider,
+                    prior.scope,
+                    prior.sessionEpoch,
+                    issuedAt,
+                    ttlMs,
+                    expiresAt,
+                    deadlineElapsedMs,
+                    prior.maxPanelTextBytes,
+                    prior.allowedSurfaceIds));
+        }
+        return new Manifest(
+                epoch, current.resumeHandle, issuedAt, ttlMs, expiresAt, deadlineElapsedMs,
+                generation, renewedLeases);
+    }
+
+    static JSONObject leaseRenewalAckPayload(long generation) throws ProtocolException {
+        if (generation < 1 || generation > MAX_SAFE_JSON_INTEGER) {
+            throw failure("renewal_generation_invalid", "Renewal generation is invalid.");
+        }
+        try {
+            return new JSONObject()
+                    .put("schema_version", 1)
+                    .put("generation", generation);
+        } catch (JSONException error) {
+            throw failure("renewal_ack_encode_failed", "Could not encode renewal acknowledgement.");
+        }
     }
 
     private static void validateManifestAuthority(
@@ -1108,24 +1229,42 @@ final class QuestSurfaceProtocol {
 
     static final class Manifest {
         final BigInteger sessionEpoch;
+        final String resumeHandle;
         final long issuedAtMs;
         final long ttlMs;
         final long expiresAtMs;
         final long deadlineElapsedMs;
+        final long generation;
         final Map<String, Lease> leases;
 
         Manifest(
                 BigInteger sessionEpoch,
+                String resumeHandle,
                 long issuedAtMs,
                 long ttlMs,
                 long expiresAtMs,
                 long deadlineElapsedMs,
                 Map<String, Lease> leases) {
+            this(sessionEpoch, resumeHandle, issuedAtMs, ttlMs, expiresAtMs,
+                    deadlineElapsedMs, 0, leases);
+        }
+
+        Manifest(
+                BigInteger sessionEpoch,
+                String resumeHandle,
+                long issuedAtMs,
+                long ttlMs,
+                long expiresAtMs,
+                long deadlineElapsedMs,
+                long generation,
+                Map<String, Lease> leases) {
             this.sessionEpoch = sessionEpoch;
+            this.resumeHandle = resumeHandle;
             this.issuedAtMs = issuedAtMs;
             this.ttlMs = ttlMs;
             this.expiresAtMs = expiresAtMs;
             this.deadlineElapsedMs = deadlineElapsedMs;
+            this.generation = generation;
             this.leases = Map.copyOf(leases);
         }
 

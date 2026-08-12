@@ -3,89 +3,176 @@ package org.soma.questsurface;
 import android.app.NativeActivity;
 import android.os.Bundle;
 
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Small Java boundary around NativeActivity. OpenXR focus/presence, not Android creation,
- * starts transport. Once narrowed, this Activity instance cannot resume transport.
- */
+/** Java boundary around the NativeActivity and its instance-owned transport control lane. */
 public final class QuestSurfaceActivity extends NativeActivity {
     static {
-        // NativeActivity loads its entry-point library for android_main, but Java-declared JNI
-        // callbacks still need the library associated with this application class loader.
         System.loadLibrary("somaquestsurface");
     }
 
-    private static final AtomicReference<QuestSurfaceActivity> CURRENT = new AtomicReference<>();
+    private static final int CONTROL_RESULT_START = 1;
+    private static final int CONTROL_RESULT_RESUME = 2;
+    private static final AtomicLong NEXT_ACTIVITY_GENERATION = new AtomicLong(0);
 
-    private QuestSurfaceTransport transport;
+    private final long activityGeneration = NEXT_ACTIVITY_GENERATION.incrementAndGet();
+    private final AtomicLong commandSequence = new AtomicLong(0);
+    private final AtomicBoolean captureAllowed = new AtomicBoolean(true);
+    private final AtomicBoolean latestPttHeld = new AtomicBoolean(false);
+
+    private volatile QuestSurfaceControlLane controlLane;
+    private volatile QuestSurfaceTransport transport;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        captureAllowed.set(true);
+        latestPttHeld.set(false);
+        controlLane = new QuestSurfaceControlLane(
+                activityGeneration, 30, this::onControlResult);
         transport = new QuestSurfaceTransport(
                 getAssets(),
                 BuildConfig.QUEST_SERVER_HOST,
                 BuildConfig.QUEST_SERVER_PORT,
-                QuestSurfaceActivity::nativeOnTransportState,
-                QuestSurfaceActivity::nativeOnPanelSnapshot);
-        CURRENT.set(this);
+                this::onTransportState,
+                this::onPanelSnapshot,
+                this::completeNativeResume,
+                captureAllowed,
+                activityGeneration);
     }
 
     @Override
     protected void onDestroy() {
-        CURRENT.compareAndSet(this, null);
-        if (transport != null) {
-            transport.stopPermanently("activity_destroyed");
-        }
+        publishTerminal("activity_destroyed");
         super.onDestroy();
     }
 
     @Override
     public void onBackPressed() {
-        QuestSurfaceTransport active = transport;
-        if (active != null) {
-            active.stopPermanently("local_stop");
-        }
+        publishTerminal("local_stop");
         finishAndRemoveTask();
     }
 
-    /** Called by native code only after OpenXR is focused and user presence is affirmative. */
-    public static boolean startTransportFromNative() {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity != null && activity.transport != null) {
-            return activity.transport.startIfEligible();
-        }
-        return false;
+    private void publishTerminal(String reason) {
+        captureAllowed.set(false);
+        latestPttHeld.set(false);
+        QuestSurfaceTransport target = transport;
+        if (target != null) target.forcePttReleased();
+        QuestSurfaceControlLane lane = controlLane;
+        if (lane == null || target == null) return;
+        long sequence = commandSequence.incrementAndGet();
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.TERMINAL,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.stopPermanently(reason);
+                    return true;
+                },
+                false));
     }
 
-    /** Focus/presence loss is narrowing-only and latches until deliberate app relaunch. */
-    public static void suspendTransportFromNative(String reason) {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity != null && activity.transport != null) {
-            activity.transport.stopPermanently(reason == null ? "local_suspend" : reason);
+    /** Read once by the native Activity instance to bind later callbacks and results. */
+    public long activityGenerationFromNative() {
+        return activityGeneration;
+    }
+
+    /** Bounded admission only; heavy transport start runs on this Activity's control worker. */
+    public boolean enqueueStartTransport(long sequence) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        return target != null
+                && lane != null
+                && lane.offer(new QuestSurfaceControlLane.Command(
+                        QuestSurfaceControlLane.Kind.START,
+                        activityGeneration,
+                        sequence,
+                        target::startIfEligible,
+                        true));
+    }
+
+    /** Immediately narrows local authority, then publishes the heavy resumable suspend. */
+    public void enqueueSuspendResumable(long sequence, String reason) {
+        captureAllowed.set(false);
+        latestPttHeld.set(false);
+        QuestSurfaceTransport target = transport;
+        if (target != null) target.forcePttReleased();
+        QuestSurfaceControlLane lane = controlLane;
+        if (target == null || lane == null) return;
+        String boundedReason = reason == null ? "local_suspend" : reason;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.SUSPEND,
+                activityGeneration,
+                sequence,
+                () -> target.suspendResumable(boundedReason),
+                false));
+    }
+
+    /** Immediately narrows local authority, then publishes a durable terminal command. */
+    public void enqueueStopPermanently(long sequence, String reason) {
+        captureAllowed.set(false);
+        latestPttHeld.set(false);
+        QuestSurfaceTransport target = transport;
+        if (target != null) target.forcePttReleased();
+        QuestSurfaceControlLane lane = controlLane;
+        if (target == null || lane == null) return;
+        String boundedReason = reason == null ? "local_stop" : reason;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.TERMINAL,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.stopPermanently(boundedReason);
+                    return true;
+                },
+                false));
+    }
+
+    /** Returns bounded admission; the eventual Java transition result is generation-bound. */
+    public boolean enqueueResumeTransport(long sequence) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        return target != null
+                && lane != null
+                && lane.offer(new QuestSurfaceControlLane.Command(
+                        QuestSurfaceControlLane.Kind.RESUME,
+                        activityGeneration,
+                        sequence,
+                        target::resumeFromExplicitLocalAction,
+                        true));
+    }
+
+    /** PTT is a direct instance-bound level; false bypasses transport session state. */
+    public void setPttHeldFromNative(boolean held) {
+        latestPttHeld.set(held);
+        QuestSurfaceTransport target = transport;
+        if (target == null) return;
+        if (!held || !captureAllowed.get()) {
+            target.forcePttReleased();
+        } else {
+            target.setPttHeld(true);
         }
     }
 
-    /**
-     * Boundary for a future explicit local mute affordance. Merely regaining focus or presence
-     * never calls this method. The current transport epoch must be fresh for both native and Java
-     * latches, and Java remains fail-closed if the two layers ever disagree.
-     */
-    public static boolean deliberateAudioResumeFromLocalAction() {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity == null || activity.transport == null) {
-            return false;
-        }
-        String freshEpoch = activity.transport.currentSessionEpoch();
-        if (freshEpoch.isEmpty() || !nativeTryDeliberateMicResume(freshEpoch, true)) {
-            return false;
-        }
-        return activity.transport.deliberateAudioResumeFromLocalAction(freshEpoch);
+    public boolean enqueueToggleMode(long sequence) {
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        return target != null
+                && lane != null
+                && lane.offer(new QuestSurfaceControlLane.Command(
+                        QuestSurfaceControlLane.Kind.TOGGLE,
+                        activityGeneration,
+                        sequence,
+                        () -> {
+                            target.toggleCaptureMode();
+                            return true;
+                        },
+                        false));
     }
 
-    /** Sent only after native rendering actually applied the accepted panel and its clamped bounds. */
-    public static void sendActualBoundsAckFromNative(
+    public void enqueueBoundsAck(
+            long sequence,
             String sessionEpoch,
             String leaseId,
             String revision,
@@ -93,41 +180,107 @@ public final class QuestSurfaceActivity extends NativeActivity {
             String surfaceId,
             float widthMeters,
             float heightMeters) {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity != null && activity.transport != null) {
-            activity.transport.sendActualBoundsAck(
-                    sessionEpoch,
-                    leaseId,
-                    revision,
-                    documentHash,
-                    surfaceId,
-                    widthMeters,
-                    heightMeters);
+        QuestSurfaceTransport target = transport;
+        QuestSurfaceControlLane lane = controlLane;
+        if (target == null || lane == null) return;
+        lane.offer(new QuestSurfaceControlLane.Command(
+                QuestSurfaceControlLane.Kind.ACK,
+                activityGeneration,
+                sequence,
+                () -> {
+                    target.sendActualBoundsAck(
+                            sessionEpoch,
+                            leaseId,
+                            revision,
+                            documentHash,
+                            surfaceId,
+                            widthMeters,
+                            heightMeters);
+                    return true;
+                },
+                false));
+    }
+
+    private void onControlResult(
+            long generation,
+            long sequence,
+            QuestSurfaceControlLane.Kind kind,
+            boolean accepted) {
+        int nativeKind;
+        if (kind == QuestSurfaceControlLane.Kind.START) {
+            nativeKind = CONTROL_RESULT_START;
+        } else if (kind == QuestSurfaceControlLane.Kind.RESUME) {
+            nativeKind = CONTROL_RESULT_RESUME;
+        } else {
+            return;
+        }
+        try {
+            nativeOnControlResult(generation, sequence, nativeKind, accepted);
+        } catch (Throwable ignored) {
+            // Native teardown may already own this old Activity generation.
         }
     }
 
-    /** PTT hold from native OpenXR action (right trigger). Client-local, bounded by Gate. */
-    public static void onPttHeldFromNative(boolean held) {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity != null && activity.transport != null) {
-            activity.transport.setPttHeld(held);
+    private void onTransportState(String state, String code, int attempt) {
+        nativeOnTransportState(activityGeneration, state, code, attempt);
+    }
+
+    private void onPanelSnapshot(
+            String sessionEpoch,
+            String leaseId,
+            String revision,
+            String documentHash,
+            String surfaceId,
+            String text,
+            float x,
+            float y,
+            float z,
+            float qx,
+            float qy,
+            float qz,
+            float qw,
+            float widthMeters,
+            float heightMeters,
+            long deadlineElapsedMs) {
+        nativeOnPanelSnapshot(
+                activityGeneration,
+                sessionEpoch,
+                leaseId,
+                revision,
+                documentHash,
+                surfaceId,
+                text,
+                x,
+                y,
+                z,
+                qx,
+                qy,
+                qz,
+                qw,
+                widthMeters,
+                heightMeters,
+                deadlineElapsedMs);
+    }
+
+    private boolean completeNativeResume(String freshEpoch) {
+        try {
+            return nativeCompleteDeliberateResume(activityGeneration, freshEpoch);
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
-    /** VAD/PTT toggle from native OpenXR action (right A click). Client-local, no protocol. */
-    public static void onToggleModeFromNative() {
-        QuestSurfaceActivity activity = CURRENT.get();
-        if (activity != null && activity.transport != null) {
-            activity.transport.toggleCaptureMode();
-        }
-    }
+    private static native void nativeOnControlResult(
+            long activityGeneration, long sequence, int kind, boolean accepted);
 
-    private static native void nativeOnTransportState(String state, String code, int attempt);
+    private static native void nativeOnTransportState(
+            long activityGeneration, String state, String code, int attempt);
 
-    private static native boolean nativeTryDeliberateMicResume(
-            String freshEpoch, boolean explicitIntent);
+    private static native boolean nativeCompleteDeliberateResume(
+            long activityGeneration, String freshEpoch);
 
     private static native void nativeOnPanelSnapshot(
+            long activityGeneration,
             String sessionEpoch,
             String leaseId,
             String revision,
@@ -145,5 +298,6 @@ public final class QuestSurfaceActivity extends NativeActivity {
             float heightMeters,
             long deadlineElapsedMs);
 
-    static native void nativeOnCaptureStatus(int mode, String state);
+    static native void nativeOnCaptureStatus(
+            long activityGeneration, int mode, String state);
 }

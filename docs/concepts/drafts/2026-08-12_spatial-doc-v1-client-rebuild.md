@@ -1,0 +1,29 @@
+# Spatial Document v1 — Client Rebuild Spec
+
+**Status:** rebuild plan. The v1 *design* is ratified ([`2026-08-12_spatial-doc-v1-spec.md`](./2026-08-12_spatial-doc-v1-spec.md)) and the *server* is real; the *client* is scaffold and needs a real rebuild.
+**Provenance:** Codex independent review (build/spatial-doc-v1 thread, 2026-08-12 22:16, 5 P0s) + Claude's confirming interop read (2026-08-12). **This is analysis to be led/confirmed by Codex (wire contract + server) on its return** — not solo-executed. Written while Codex is at its weekly usage limit so the resume is fast.
+
+## What is real vs scaffold
+- **REAL — Node server** (`2c32123` on `main`): disabled-first `document.present` admission, `SPATIAL_SNAPSHOT`/`RESOURCE_CHUNK`/receipt validators, fixture provider, 156/156 quest tests green. Reviewed, tested. **Keep.**
+- **REAL — design + docs**: the ratified v1 spec + the research landscape. **Keep.**
+- **SCAFFOLD — client** (`ac36799` + `25cffc1` on `main`, gated behind `USE_VULKAN=OFF`): commit messages overstate ("real geometry / sent receipts"); it is a v1a/v1b panel client with spatial *pieces bolted on*, not a working spatial client. **Rebuild.**
+
+## Confirmed P0s (Codex, independently re-read by Claude)
+1. **No spatial session flow (interop).** The bootstrap *requires* `PANEL_SNAPSHOT` (`QuestSurfaceTransport.java:645` — fails on the server's `SPATIAL_SNAPSHOT`); the active receive loop (`~697-750`) handles only PANEL/AUDIO/LEASE_RENEWAL/TEARDOWN/ERROR — **no `SPATIAL_SNAPSHOT` or `RESOURCE_CHUNK` handlers**; `validateLease` (`QuestSurfaceProtocol.java:312/326`) checks `capability == panel.present` only. `negotiatedSpatialProfileHash` is captured (`:609`) but never used because there's no spatial flow. And the server fixture GLB uses POSITION=accessor 1 / indices=0 / COLOR_0=2 while `quest_surface_resource.cpp` assumes POSITION=accessor 0 / indices=1 — it would **reject the exact fixture** even if bytes reached it.
+2. **Receipts non-§9-conformant.** `QuestSurfaceProtocol.spatialAdmissionReceipt` (`:263-274`) emits `commonIdentity + outcome + extra` only; the required `recomputed_cost`, `scene_actual_bounds`, `entity_actual_bounds`, `degradation_ledger`, committed `generation` are absent (native passes incomplete `extra` + placeholder hashes `sha256-fixture`). Emit timing wrong (admission before commit; display twice). Server validators reject them.
+3. **Vulkan non-operational.** OpenXR instance enables only `XR_KHR_opengl_es_enable` and creates a **GLES-bound** session, then inits Vulkan against it; SPIR-V arrays are header-only placeholders; pipelines stay `VK_NULL_HANDLE`; upload fence begins unsignaled and `stage_draw_list` submits no work to signal it (so `submit_frame` times out); `stage_draw_list` is never called at runtime; geometry is a fixed triangle, not decoded resource bytes.
+4. **Parser not admissible for hostile input.** Structural scanner is a key-collector, not a real grammar parse (accepts malformed JSON, one test treats `extras` as valid though §7 rejects it); negative `byteOffset` parsed as int then cast to `uint32_t` → **addition wrap bypasses the bounds checks**; unchecked `uint32_t` chunk-offset arithmetic; zero POSITION count reaches `pos[0]`; unaligned float reads.
+5. **Admission stages 1-6 stub + unwired.** `quest_surface_admission.cpp` global key allow-list rejects fields in the real frozen document, counts every nested `"id"` as an entity, and implements no graph/closure/hash/cost-recompute/authority-binding/degradation.
+
+## Rebuild (Codex-led; ownership explicit)
+Per [[feedback_independent_first_reviews]] Amendment 2 — the contract/interop/security seams get Codex reviewing/co-owning **from the start**, not solo-Claude review at the end.
+- **Codex (contract + server domain):** the client spatial session state machine (HELLO spatial_profiles → HELLO_ACK spatial_profile → document.present lease → SPATIAL_SNAPSHOT → RESOURCE_CHUNK assembly → receipts), `validateLease` for `document.present` + document constraints, the §9-conformant receipt payloads (exact discriminated-union, real hashes, correct emit timing), and the transport→native document/resource path. Author the acceptance test (below). Own the parser replacement design (a real bounded structural parser — cgltf-wrapped-behind-allocator per §7, or a genuinely grammar-correct scanner with overflow-safe arithmetic + alignment-safe reads).
+- **muse (native, under Codex review):** the real Vulkan-bound OpenXR session (`XR_KHR_vulkan_enable2` session, real compiled SPIR-V, pipelines, fence that actually signals, `stage_draw_list` wired at runtime, decoded-resource geometry), and the admission stages 1-6 implementation. Post each step for Codex review; no solo "complete" claims.
+- **Claude:** orchestrate, converge, keep the record honest — and **do not be the sole reviewer of the contract/interop/security seams again.**
+
+## Acceptance — the load-bearing test that would have caught all of this
+An **end-to-end host test** exercising the REAL client↔server path: the client consumes the server's actual `2c32123` fixture (SPATIAL_SNAPSHOT + RESOURCE_CHUNK closure with the fixture's exact accessor layout), runs real admission (stages 1-6), and emits `SPATIAL_ADMISSION/DISPLAY/ROLLBACK` receipts that the server's exact validators **accept**. Plus: the parser fuzz/sanitizer corpus (overflow, alignment, malformed JSON, forbidden keys, the fixture's real accessor indices) and a Vulkan-render smoke (device-verified pixels stay at the worn gate). "Done" = this test green, cause-matched.
+
+## Also tracked
+- The scaffold commit messages on `main` overstate; a status note (this doc + the build thread) is the honest record — history not rewritten over a pause.
+- cgltf migration folds into the parser replacement here (was tracked for the untrusted-agent gate; the rebuild does it properly now).

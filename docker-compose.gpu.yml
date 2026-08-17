@@ -1,61 +1,60 @@
-# GPU model runtime for Soma MVP testing.
+# GPU inference stack for Soma — local voice pipeline + agentic brain.
+#
+# DRAFT (Claude, 2026-08-17) — pending Codex review per AGENTS.md steward convention.
+# Rewrites the previous vLLM-only file. gemma4 + Qwen3.6 vLLM services RETIRED
+# (Seth: retiring Gemma 4, moving the local brain to Qwen3.8-27B). Models now live
+# in the shared library at /srv/models (bind-mounted to /home/models on the 2TB disk),
+# NOT under ./models — infra is no longer tied to one project's tree.
+#
+# Services (all reachable from the host Soma server on 127.0.0.1):
+#   whisper-stt   :4001  faster-whisper large-v3-turbo   (STT)
+#   kokoro-tts    :4010  kokoro                          (TTS, weights in-image)
+#   soma-brain    :8000  local agentic brain via llama.cpp (OpenAI /v1); model = $BRAIN_GGUF
+#
+# STABLE NAMING: "soma-brain" is a role name, NOT a model name — service, container, and served
+# alias stay "soma-brain" across model swaps so Soma/Hermes/agents never need re-wiring. To swap
+# the local model: drop a new GGUF in /srv/models/gguf/ and change BRAIN_GGUF only. Nothing else moves.
 #
 # Usage:
-#   docker compose -f docker-compose.gpu.yml up gemma4-llm
-#   docker compose -f docker-compose.gpu.yml up qwen36-a3b-llm
-#   docker compose -f docker-compose.gpu.yml up qwen36-27b-llm
+#   docker compose -f docker-compose.gpu.yml up whisper-stt kokoro-tts soma-brain
 #
-# Run only one LLM service at a time; all bind the same OpenAI-compatible
-# container port and default host port.
+# VRAM budget (measured 2026-08-17 on the RTX 4090 / 24GB):
+#   whisper ~1.5GB + kokoro ~1.1GB + desktop ~2GB  ->  ~19.5GB left for the brain.
+#   UD-Q4_K_XL weights = 17.9GB, so KV cache is tight (~1.5-2GB, ~8K ctx). This is
+#   the ceiling that co-resides with voice; Q5+ or larger context needs the dedicated
+#   inference host (see memory: dedicated-inference-server).
 #
-# Requires:
-#   - NVIDIA GPU with CUDA support
-#   - nvidia-container-toolkit installed
-#   - enough model-cache disk before first pull; Qwen AWQ candidates are
-#     roughly 20GB each (`df -h models`).
-#
-# Optional overrides:
-#   - VLLM_IMAGE: pin/override inference image
-#   - LLM_MODEL: model id
-#   - LLM_PORT: host port, default 8000
-#   - VLLM_MAX_MODEL_LEN: context length, default 65536
-#   - VLLM_GPU_MEMORY_UTILIZATION: default 0.80
-#   - VLLM_MAX_CONCURRENCY: default 1
-#   - VLLM_TOOL_CALL_PARSER: default gemma4
-#   - VLLM_EXTRA_ARGS: append additional vLLM flags
-#   - QWEN36_A3B_MODEL: default cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit
-#   - QWEN36_A3B_CPU_OFFLOAD_GB: default 5
-#   - QWEN36_27B_MODEL: default cyankiwi/Qwen3.6-27B-AWQ-INT4
-#   - QWEN36_MAX_MODEL_LEN: default 32768
-#   - VLLM_QWEN_QUANTIZATION_ARGS: default empty; vLLM auto-detects
+# @codex REVIEW ITEMS (flagged, please validate — I could not test llama.cpp flags live):
+#   1. llama.cpp-server image tag + exact flag forms drift by version. Validate against
+#      the pinned image: --flash-attn form, -ngl, -c, --jinja, --parallel.
+#   2. AGENTIC TOOL USE is the point of this model — llama.cpp needs --jinja (and possibly
+#      an explicit --chat-template) to emit Qwen tool-call format. Confirm tool calls work
+#      end-to-end before this replaces the vLLM path the voice/agent stack expected.
+#   3. Qwen3.8 has MTP draft layers (speculative decoding). Confirm whether llama.cpp uses
+#      them automatically or needs a flag; it's a real tok/s win for the latency loop.
+#   4. Context size (-c) vs measured KV budget — 8192 is the safe starting point; raise
+#      only if VRAM headroom under the full co-resident load allows.
+#   5. whisper/kokoro mounts are RW here (matches how they ran). Library-hardening goal is
+#      :ro + a writable HF scratch so no service can mutate the shared library — a follow-up.
+#   6. Image coupling: whisper/kokoro run TheCommons-built images (thecommons/*:dev). Soma
+#      owning those builds would make it fully self-contained — separate follow-up.
 
 services:
-  gemma4-llm:
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:gemma4-cu130}
-    container_name: soma-gemma4-llm
-    command: >-
-      --model ${LLM_MODEL:-ciocan/gemma-4-E4B-it-W4A16}
-      --host 0.0.0.0
-      --port 8000
-      --max-model-len ${VLLM_MAX_MODEL_LEN:-65536}
-      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.80}
-      --max-num-seqs ${VLLM_MAX_CONCURRENCY:-1}
-      --enable-auto-tool-choice
-      --tool-call-parser ${VLLM_TOOL_CALL_PARSER:-gemma4}
-      --trust-remote-code
-      --quantization gptq_marlin
-      ${VLLM_EXTRA_ARGS:-}
-      --enforce-eager
+  whisper-stt:
+    image: ${WHISPER_IMAGE:-thecommons/whisper-stt:dev}
+    container_name: soma-whisper-stt
     environment:
-      - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
-      - VLLM_WORKER_MULTIPROC_METHOD=spawn
-      - HF_HOME=/models/cache
-      - HF_TOKEN=${HF_TOKEN:-}
-    restart: unless-stopped
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3-turbo}
+      - WHISPER_DEVICE=cuda
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8_float16}
+      - WHISPER_DOWNLOAD_ROOT=/models
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-internal-key}
+      - ALLOW_INSECURE_DEV_INTERNAL_API_KEY=${ALLOW_INSECURE_DEV_INTERNAL_API_KEY:-true}
     ports:
-      - "${LLM_PORT:-8000}:8000"
+      - "${WHISPER_PORT:-4001}:4001"
     volumes:
-      - ./models:/models/cache
+      - /srv/models/whisper:/models
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
@@ -64,37 +63,25 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
       interval: 10s
       timeout: 3s
-      start_period: 120s
-      retries: 12
+      start_period: 90s
+      retries: 8
 
-  qwen36-a3b-llm:
-    image: ${VLLM_QWEN_IMAGE:-vllm/vllm-openai:latest}
-    container_name: soma-qwen36-a3b-llm
-    command: >-
-      --model ${QWEN36_A3B_MODEL:-cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit}
-      --host 0.0.0.0
-      --port 8000
-      --max-model-len ${QWEN36_MAX_MODEL_LEN:-32768}
-      --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
-      --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
-      --trust-remote-code
-      ${VLLM_QWEN_QUANTIZATION_ARGS:-}
-      --cpu-offload-gb ${QWEN36_A3B_CPU_OFFLOAD_GB:-5}
-      ${VLLM_QWEN_EXTRA_ARGS:-}
-      --enforce-eager
+  kokoro-tts:
+    image: ${KOKORO_IMAGE:-thecommons/kokoro-tts:dev}
+    container_name: soma-kokoro-tts
     environment:
-      - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
-      - VLLM_WORKER_MULTIPROC_METHOD=spawn
-      - HF_HOME=/models/cache
-      - HF_TOKEN=${HF_TOKEN:-}
-    restart: unless-stopped
+      - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-48000}
+      - KOKORO_LANG_CODE=${KOKORO_LANG_CODE:-a}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-internal-key}
+      - ALLOW_INSECURE_DEV_INTERNAL_API_KEY=${ALLOW_INSECURE_DEV_INTERNAL_API_KEY:-true}
     ports:
-      - "${LLM_PORT:-8000}:8000"
+      - "${KOKORO_PORT:-4010}:4010"
     volumes:
-      - ./models:/models/cache
+      - /srv/models/kokoro:/home/appuser/.local/share/kokoro
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
@@ -103,36 +90,37 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4010/health"]
       interval: 10s
       timeout: 3s
-      start_period: 180s
-      retries: 18
+      start_period: 60s
+      retries: 8
 
-  qwen36-27b-llm:
-    image: ${VLLM_QWEN_IMAGE:-vllm/vllm-openai:latest}
-    container_name: soma-qwen36-27b-llm
+  # Agentic local brain via llama.cpp (OpenAI-compatible /v1). Replaces the retired vLLM services.
+  # Role-named "soma-brain" (see header) — current model is Qwen3.8-27B-UD-Q4_K_XL, a REASONING
+  # model (clients read message.content; reasoning lands in message.reasoning_content).
+  soma-brain:
+    image: ${LLAMA_SERVER_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    container_name: soma-brain
     command: >-
-      --model ${QWEN36_27B_MODEL:-cyankiwi/Qwen3.6-27B-AWQ-INT4}
+      -m /models/gguf/${BRAIN_GGUF:-Qwen3.8-27B-UD-Q4_K_XL.gguf}
+      --alias soma-brain
       --host 0.0.0.0
       --port 8000
-      --max-model-len ${QWEN36_MAX_MODEL_LEN:-32768}
-      --gpu-memory-utilization ${VLLM_QWEN_GPU_MEMORY_UTILIZATION:-0.90}
-      --max-num-seqs ${VLLM_QWEN_MAX_CONCURRENCY:-1}
-      --trust-remote-code
-      ${VLLM_QWEN_QUANTIZATION_ARGS:-}
-      ${VLLM_QWEN_EXTRA_ARGS:-}
-      --enforce-eager
+      --n-gpu-layers ${BRAIN_NGL:-99}
+      --ctx-size ${BRAIN_CTX:-8192}
+      --parallel ${BRAIN_PARALLEL:-1}
+      --flash-attn on
+      --jinja
+      --metrics
+      ${BRAIN_EXTRA_ARGS:-}
     environment:
       - CUDA_VISIBLE_DEVICES=${LLM_CUDA_VISIBLE_DEVICES:-0}
-      - VLLM_WORKER_MULTIPROC_METHOD=spawn
-      - HF_HOME=/models/cache
-      - HF_TOKEN=${HF_TOKEN:-}
-    restart: unless-stopped
     ports:
       - "${LLM_PORT:-8000}:8000"
     volumes:
-      - ./models:/models/cache
+      - /srv/models/gguf:/models/gguf:ro
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
